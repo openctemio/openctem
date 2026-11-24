@@ -14,14 +14,17 @@ import { submitSignIn } from './auth'
  *   pastPanel        a control whose box runs past its column, rail or frame
  *   cutText          text cut at a frame or table scroller edge, no ellipsis
  *   wastedRow        a toolbar row above the first data row that holds only
- *                    meta text or one small control and is mostly empty
+ *                    meta text or one small control and is mostly empty;
+ *                    facts are content (a MetaLine of label and value, a <dl>,
+ *                    a bordered fact card), a notice or a lone label is not
  *   duplicateAction  two primary buttons with one name or one target
  *   wideStretch      at 1900 px and up: a field or text line wider than 960 px,
  *                    or a side rail more than 400 px from its content (in a
  *                    grid wider than 960 px: a capped frame does not stretch)
  *   joined           a field and a button side by side less than 8 px apart
  *                    (the kit gap), not one segmented group: /scope's Filters
- *                    button against its search box
+ *                    button against its search box. A field under a sticky or
+ *                    fixed bar is on another layer than the bar's buttons
  *   emptyTail        the full-page picture is more than 1.5x as tall as the
  *                    bottom of its last visible content (and taller than the
  *                    window): a boxed list's height leaked into the page, or
@@ -602,7 +605,7 @@ export async function findMatrixBreaks(
         // An overlay's title block (title and its one-line description) is
         // its header, not a wasted row.
         root.querySelectorAll(
-          '[role=tablist], [data-slot="page-header"], h1, [data-slot="dialog-header"], [data-slot="sheet-header"], [data-slot="drawer-header"], [data-slot="detail-header"]'
+          '[role=tablist], [data-slot="page-header"], [data-slot="entry-header"], h1, [data-slot="dialog-header"], [data-slot="sheet-header"], [data-slot="drawer-header"], [data-slot="detail-header"]'
         )
       ).filter(shown)
       let first: Element | undefined = Array.from(
@@ -634,6 +637,8 @@ export async function findMatrixBreaks(
         list = first ?? null
       }
       if (!first || !list) continue
+      const firstEl: Element = first
+      const listEl: Element = list
       const fr = first.getBoundingClientRect()
       const lr = list.getBoundingClientRect()
       const anchors = anchorsAll.filter((a) => a.getBoundingClientRect().bottom <= fr.top)
@@ -659,13 +664,77 @@ export async function findMatrixBreaks(
           .map((h) => h.getBoundingClientRect().top)
         if (own.length) top = Math.max(top, Math.max(...own) - 1)
       }
-      type Item = { r: DOMRect; control: boolean; field: boolean; heading: boolean; text: string }
+      // Facts are content, not toolbar rows: a label and its value in a
+      // MetaLine (two items or more, or one MetaItem "Label value"), a <dl>
+      // fact grid, and a bordered fact card (the entry page's organization
+      // card, a detail page's summary card). A card that holds the list or the
+      // page's header is the page's frame, and a notice (alert, status, entry
+      // banner) is a notice row: neither makes its lines facts.
+      const factCache = new Map<Element, boolean>()
+      const isFactCard = (box: Element): boolean => {
+        if (factCache.has(box)) return factCache.get(box)!
+        const cs = getComputedStyle(box)
+        const bordered =
+          box.getAttribute('data-slot') === 'card' ||
+          (['Top', 'Right', 'Bottom', 'Left'] as const).every(
+            (side) => parseFloat(cs[`border${side}Width`]) > 0
+          )
+        let fact = false
+        if (bordered && !box.contains(listEl) && !box.contains(firstEl)) {
+          const b = box.getBoundingClientRect()
+          const notice = box.matches(
+            '[role=alert], [role=status], [role=note], [data-slot="alert"], [data-slot="entry-banner"], [data-slot*="callout"]'
+          )
+          const framesHeader = anchorsAll.some((a) => box.contains(a))
+          // Two lines of text or more: a bordered chip or badge is not a card.
+          const lines = new Set<number>()
+          const tw = document.createTreeWalker(box, NodeFilter.SHOW_TEXT)
+          for (let n = tw.nextNode(); n && lines.size < 2; n = tw.nextNode()) {
+            if (!(n.textContent ?? '').trim() || !n.parentElement || hidden(n.parentElement))
+              continue
+            const rg = document.createRange()
+            rg.selectNodeContents(n)
+            const nr = rg.getBoundingClientRect()
+            if (nr.height >= 1) lines.add(Math.round(nr.top / 4))
+          }
+          fact = !notice && !framesHeader && b.width >= 120 && b.height >= 40 && lines.size >= 2
+        }
+        factCache.set(box, fact)
+        return fact
+      }
+      const isFact = (el: Element): boolean => {
+        const dl = el.closest('dl')
+        if (dl && root.contains(dl) && dl.querySelector('dt') && dl.querySelector('dd')) return true
+        const meta = el.closest('[data-slot="meta-line"]')
+        if (meta && root.contains(meta)) {
+          const parts = Array.from(meta.querySelectorAll('[data-slot="meta-line-item"]')).filter(
+            shown
+          )
+          // MetaItem: the label as text, the value in the line's ink beside it.
+          const keyValue = (p: Element) =>
+            Array.from(p.childNodes).some(
+              (k) => k.nodeType === 3 && (k.textContent ?? '').trim()
+            ) && Array.from(p.children).some((k) => k.classList.contains('text-foreground'))
+          if (parts.length >= 2 || parts.some(keyValue)) return true
+        }
+        for (let a: Element | null = el; a && a !== root && root.contains(a); a = a.parentElement)
+          if (isFactCard(a)) return true
+        return false
+      }
+      type Item = {
+        r: DOMRect
+        control: boolean
+        field: boolean
+        heading: boolean
+        fact: boolean
+        text: string
+      }
       const items: Item[] = []
       for (const el of Array.from(root.querySelectorAll('*'))) {
         if (
           list.contains(el) ||
           el.closest(
-            '[role=tablist], [data-slot="page-header"], [data-slot="dialog-header"], [data-slot="sheet-header"], [data-slot="drawer-header"], [data-slot="detail-header"]'
+            '[role=tablist], [data-slot="page-header"], [data-slot="entry-header"], [data-slot="dialog-header"], [data-slot="sheet-header"], [data-slot="drawer-header"], [data-slot="detail-header"]'
           )
         )
           continue
@@ -691,6 +760,7 @@ export async function findMatrixBreaks(
           control,
           field: el.matches('input, textarea, select, [role=combobox]'),
           heading: !!el.closest('h1, h2, h3, h4, h5, h6, [role=heading]'),
+          fact: isFact(el),
           text: short(el.getAttribute('aria-label') || el.textContent, 60),
         })
       }
@@ -704,8 +774,9 @@ export async function findMatrixBreaks(
       }
       if (rows.length < 2) continue
       for (const row of rows) {
-        // A field, a heading or a paragraph (more than two lines) is content.
-        if (row.some((o) => o.field || o.heading || (!o.control && o.r.height > 44))) continue
+        // A field, a heading, a fact or a paragraph (more than two lines) is content.
+        if (row.some((o) => o.field || o.heading || o.fact || (!o.control && o.r.height > 44)))
+          continue
         const controls = row.filter((o) => o.control)
         if (controls.length > 1) continue
         if (controls.length === 1 && controls[0].r.width >= lr.width * 0.4) continue
@@ -847,6 +918,14 @@ export async function findMatrixBreaks(
       }
     }
     // ---- joined: a field with a button beside it closer than the kit gap.
+    // The pinned layer of an element: its nearest sticky or fixed box.
+    const pinnedOf = (el: Element): Element | null => {
+      for (let a: Element | null = el; a; a = a.parentElement) {
+        const p = getComputedStyle(a).position
+        if (p === 'sticky' || p === 'fixed') return a
+      }
+      return null
+    }
     for (const root of roots) {
       const fields = Array.from(
         root.querySelectorAll(
@@ -865,8 +944,13 @@ export async function findMatrixBreaks(
           if (a.getBoundingClientRect().width > f.getBoundingClientRect().width + 80) break
         }
         const fr = frame.getBoundingClientRect()
+        const fLayer = pinnedOf(f)
         for (const b of buttons) {
           if (frame.contains(b)) continue
+          // A sticky or fixed action bar scrolls over the page: a field that
+          // passes under it is not beside the bar's buttons (and a pinned
+          // field is not beside the page's).
+          if (pinnedOf(b) !== fLayer) continue
           const br = b.getBoundingClientRect()
           if (br.bottom <= fr.top + 2 || br.top >= fr.bottom - 2) continue
           const gap =

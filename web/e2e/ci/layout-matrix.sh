@@ -13,7 +13,9 @@
 # Steps
 #   1. stack: Postgres, Redis, migrations and the API (compose.yml, plus
 #      console.compose.yml for the console listener with CONSOLE=1), seeded by
-#      seed.sh and, for the tenant app, seed-matrix.sh. With CONSOLE=1 a
+#      seed.sh and, for the tenant app, seed-matrix.sh (the rows behind the
+#      id routes, the legal pages, a pending AI-application confirmation; the
+#      invitation and two-organization accounts are seed.sh's). With CONSOLE=1 a
 #      platform administrator is made by bootstrap-admin; its one-time password
 #      is masked in GitHub Actions and never printed.
 #   2. web: `next start` on 127.0.0.1 behind a small proxy that gives every
@@ -81,7 +83,9 @@ if [ "$CONSOLE" = 1 ]; then
   unset pw
   rm -rf "$web/.console-e2e-auth"
 else
-  ( load_seed; bash "$here/seed-matrix.sh" ) 2>"$STACK_DIR/seed-matrix.log" \
+  # Its extra seed values (E2E_MCP_CONFIRM_ID) join seed.out for the spec.
+  ( umask 077; load_seed; API="http://127.0.0.1:$API_PORT" bash "$here/seed-matrix.sh" ) \
+    >>"$STACK_DIR/seed.out" 2>"$STACK_DIR/seed-matrix.log" \
     || { tail -15 "$STACK_DIR/seed-matrix.log" >&2; exit 1; }
 fi
 

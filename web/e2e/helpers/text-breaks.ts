@@ -20,7 +20,8 @@ import type { Page, Route } from '@playwright/test'
  *               sideways with controls out of view (owner report 2026-11-20:
  *               "Last 7 d..." faded at the edge read as hidden buttons)
  *   mixedRows   controls of different heights side by side in one row
- *   untranslated English catalog strings left on a Vietnamese page
+ *   untranslated English catalog strings left on a Vietnamese page (text in an
+ *               element whose lang differs from the page's is content)
  *   emptyLabels a label shown with no value beside it
  *   lopsided    a row bunched at one side: a phone card whose content all
  *               stops short of its end (nothing on the right: no state, no
@@ -186,6 +187,15 @@ export async function findBreaks(
           : null
       }
 
+      // Text marked with a language other than the document's (its primary
+      // subtag: en-GB is en). An empty lang="" means unknown: not foreign.
+      const primary = (l: string | null | undefined) => (l ?? '').trim().toLowerCase().split('-')[0]
+      const pageLang = primary(document.documentElement.getAttribute('lang'))
+      const foreignLang = (el: Element) => {
+        const own = primary(el.closest('[lang]')?.getAttribute('lang'))
+        return !!own && !!pageLang && own !== pageLang
+      }
+
       type Box = { text: string; owner: Element; layer: Element; r: DOMRect }
       const texts: Box[] = []
       const enSet = new Set(enOnly)
@@ -199,8 +209,16 @@ export async function findBreaks(
           const text = n.textContent ?? ''
           const parent = n.parentElement
           if (!parent || !text.trim() || hiddenByAncestor(parent) || !shown(parent)) continue
-          // translate="no" marks stored text (a dashboard's description): data, not catalog copy.
-          if (enSet.size && enSet.has(text.trim()) && !parent.closest('[translate="no"]'))
+          // translate="no" marks stored text (a dashboard's description), and
+          // a `lang` other than the page's marks text published in that
+          // language (an English legal document on a vi page): content, not
+          // catalog copy.
+          if (
+            enSet.size &&
+            enSet.has(text.trim()) &&
+            !parent.closest('[translate="no"]') &&
+            !foreignLang(parent)
+          )
             untranslated.add(text.trim())
           const clip = clipOf(parent)
           const range = document.createRange()
@@ -243,7 +261,7 @@ export async function findBreaks(
           for (const e of Array.from(root.querySelectorAll('[aria-label],[placeholder],[title]'))) {
             for (const a of ['aria-label', 'placeholder', 'title']) {
               const s = e.getAttribute(a)?.trim()
-              if (s && enSet.has(s)) untranslated.add(`@${a}: ${s}`)
+              if (s && enSet.has(s) && !foreignLang(e)) untranslated.add(`@${a}: ${s}`)
             }
           }
         }

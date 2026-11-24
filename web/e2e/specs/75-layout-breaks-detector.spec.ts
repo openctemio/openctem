@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { findBreaks } from '../helpers/text-breaks'
+import { englishOnlyStrings, findBreaks } from '../helpers/text-breaks'
 
 /**
  * The layout-break detector (helpers/text-breaks.ts) must catch a labelled
@@ -107,5 +107,35 @@ test.describe('layout-break detector: phone title row', { tag: ['@phone', '@shel
     await p.setViewportSize({ width: 390, height: 844 })
     await p.setContent(row('<button style="height:36px">Add asset</button>'))
     expect((await findBreaks(p)).lopsided).toEqual([])
+  })
+})
+
+// A Vietnamese page that publishes a document in English (the legal pages:
+// the text is the administrator's, in the language it is published in). The
+// document is marked lang="en"; our chrome around it must still be translated.
+test.describe('layout-break detector: untranslated text', { tag: ['@shell'] }, () => {
+  const en = () => englishOnlyStrings()[0]
+  const viPage = (body: string) =>
+    `<!doctype html><html lang="vi"><body><main style="width:600px;font:14px sans-serif">${body}</main></body></html>`
+
+  test('flags an English catalog string on a vi page', async ({ page: p }) => {
+    await p.setContent(viPage(`<p>${en()}</p>`))
+    expect((await findBreaks(p, { vi: true })).untranslated).toContain(en())
+  })
+
+  test('is quiet for English text marked lang="en" on a vi page', async ({ page: p }) => {
+    await p.setContent(
+      viPage(
+        `<article lang="en"><section><p>${en()}</p><p title="${en()}">Terms</p></section></article>`
+      )
+    )
+    expect((await findBreaks(p, { vi: true })).untranslated).toEqual([])
+  })
+
+  test('flags the chrome around an English document', async ({ page: p }) => {
+    await p.setContent(
+      viPage(`<nav><a href="/x">${en()}</a></nav><article lang="en-GB"><p>Text</p></article>`)
+    )
+    expect((await findBreaks(p, { vi: true })).untranslated).toContain(en())
   })
 })
