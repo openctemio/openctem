@@ -90,7 +90,7 @@ describe('ListTitleRow', () => {
     expect(row).toHaveAttribute('data-slot', 'list-title-row')
     expect(row).toHaveClass('@container/actions')
     expect(screen.getByTestId('view-name')).toHaveTextContent('Active')
-    expect(screen.getByText('after').parentElement).toHaveAttribute('data-slot', 'list-title-start')
+    expect(screen.getByText('after').closest('[data-slot=list-title-start]')).not.toBeNull()
     expect(screen.getByRole('button', { name: 'Refresh' }).parentElement).toHaveAttribute(
       'data-slot',
       'list-title-end'
