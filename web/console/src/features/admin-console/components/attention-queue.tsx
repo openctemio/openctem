@@ -2,7 +2,6 @@
 
 import Link from '@/components/link'
 import { AlertTriangle, ArrowRight, CircleCheck, Info, OctagonAlert } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
@@ -55,8 +54,8 @@ export function AttentionQueue({
         <CardContent className="flex items-center gap-3 py-6">
           <CircleCheck className="size-5 shrink-0 text-success" aria-hidden="true" />
           <div>
-            <p className="text-sm font-medium">{t('admin.attention.clear', 'All clear')}</p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-body font-medium">{t('admin.attention.clear', 'All clear')}</p>
+            <p className="text-body text-muted-foreground">
               {t(
                 'admin.attention.clearDetail',
                 'Nothing needs an administrator right now. This list refreshes every minute.'
@@ -69,7 +68,11 @@ export function AttentionQueue({
   }
 
   // One bordered list with a divider per item: a problem is a row, not a
-  // card, so eight problems still leave the numbers on the first screen.
+  // card, so eight problems still leave the numbers on the first screen. A
+  // problem a console page handles is one link, the whole row: its words and
+  // the action's name with an arrow at the end, so the row never holds a
+  // lone button under its text. On a phone the action's name is read out
+  // only and the arrow ends the row.
   return (
     <ul
       className="divide-y overflow-hidden rounded-lg border bg-card"
@@ -78,36 +81,40 @@ export function AttentionQueue({
       {items.map((item) => {
         const sev = SEVERITY[item.severity]
         const Icon = sev.icon
+        const href = item.href && item.actionKey ? safeHref(item.href) : undefined
+        const body = (
+          <>
+            <Icon className={cn('mt-0.5 size-4 shrink-0', sev.className)} aria-hidden="true" />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="text-body font-medium">
+                <span className="sr-only">{t(sev.labelKey)}: </span>
+                {t(item.titleKey, item.title, item.vars)}
+              </span>
+              <span className="text-body text-muted-foreground">
+                {t(item.detailKey, item.detail, item.vars)}
+              </span>
+            </span>
+          </>
+        )
         return (
-          <li
-            key={item.id}
-            data-severity={item.severity}
-            className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4"
-          >
-            <div className="flex min-w-0 flex-1 items-start gap-3">
-              <Icon className={cn('mt-0.5 size-4 shrink-0', sev.className)} aria-hidden="true" />
-              <div className="min-w-0">
-                <p className="text-sm font-medium">
-                  <span className="sr-only">{t(sev.labelKey)}: </span>
-                  {t(item.titleKey, item.title, item.vars)}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  {t(item.detailKey, item.detail, item.vars)}
-                </p>
-              </div>
-            </div>
-            {item.href && item.actionKey && (
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="ms-7 shrink-0 self-start sm:ms-0 sm:self-center"
+          <li key={item.id} data-severity={item.severity}>
+            {href && item.actionKey ? (
+              <Link
+                href={href}
+                data-slot="attention-item"
+                className="flex items-start gap-3 px-4 py-3 outline-none hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               >
-                <Link href={safeHref(item.href) ?? '/'}>
-                  {t(item.actionKey, item.action)}
-                  <ArrowRight className="ms-1 size-4" />
-                </Link>
-              </Button>
+                {body}
+                <span className="flex shrink-0 items-center gap-1 self-center text-body font-medium text-primary">
+                  {/* On a phone only the arrow: the text keeps the row's width. */}
+                  <span className="max-sm:sr-only">{t(item.actionKey, item.action)}</span>
+                  <ArrowRight className="size-4 rtl:rotate-180" aria-hidden="true" />
+                </span>
+              </Link>
+            ) : (
+              <div data-slot="attention-item" className="flex items-start gap-3 px-4 py-3">
+                {body}
+              </div>
             )}
           </li>
         )

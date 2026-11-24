@@ -16,6 +16,11 @@ import { FilterSheet, claimFilterSheetTokens, useFilterSheetTokensHost } from '.
  * keyboard the same.
  *
  * Slots, in this order on every page:
+ * - `title`: on a list with no search box, the list's name and its one count
+ *   (`ListToolbarTitle`) at the start of the row, in place of a title row of
+ *   its own above the toolbar: the filter tokens and the Display menu share
+ *   its line, so no control sits alone on a row under the name. On a phone the
+ *   Filters button follows it on the first line.
  * - `search` + `filter`: the list's search box, with the filter trigger (when
  *   the list has a filter panel) joined to its start. Always the first
  *   control, so the search sits at the same place on every list. A list with a
@@ -69,6 +74,8 @@ import { FilterSheet, claimFilterSheetTokens, useFilterSheetTokensHost } from '.
  * whose own popover answers `f` there.
  */
 export interface ListToolbarProps {
+  /** The list's name and count (`ListToolbarTitle`), for a list with no search box. */
+  title?: React.ReactNode
   /** The list's search box. */
   search?: ListSearchProps
   /**
@@ -321,6 +328,7 @@ function useFilteringCount(group: React.RefObject<HTMLElement | null>, enabled: 
 }
 
 export function ListToolbar({
+  title,
   search,
   filterToggle,
   filter: filterProp,
@@ -385,6 +393,11 @@ export function ListToolbar({
 
   const lead = search ? (
     <ListSearch {...search} filter={filter} statusSlot={hasQuery ? statusSlot : undefined} />
+  ) : title ? (
+    <>
+      {title}
+      {filter}
+    </>
   ) : (
     filter
   )

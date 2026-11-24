@@ -19,7 +19,7 @@ import {
   RelativeTime,
   type MetricStripItem,
 } from '@/features/shared'
-import { ListTitleRow } from '@/features/shared/components/list-title-row'
+import { ListToolbarTitle } from '@/features/shared/components/list-title-row'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
 import { AssetTypeIcon } from '@/features/assets/lib/asset-type-icon'
@@ -356,16 +356,22 @@ export default function TargetMappingsPage() {
         {/* On a phone the list comes first: the strip's status filters follow it
             (their two rows would push the first card below the fold). */}
         <MetricStrip items={metrics} loading={stats.isLoading} className="max-md:order-last" />
-        <ListTitleRow
-          title={
-            status === 'active'
-              ? t('admin.scanningTargetMappingsPage.viewActive', 'Active mappings')
-              : status === 'inactive'
-                ? t('admin.scanningTargetMappingsPage.viewInactive', 'Inactive mappings')
-                : t('admin.scanningTargetMappingsPage.viewAll', 'All custom mappings')
-          }
-        />
         <DataTable
+          // The view name leads the toolbar row: the filters (on a phone, the
+          // Filters button) and Display share its line.
+          toolbarTitle={
+            <ListToolbarTitle
+              title={
+                status === 'active'
+                  ? t('admin.scanningTargetMappingsPage.viewActive', 'Active mappings')
+                  : status === 'inactive'
+                    ? t('admin.scanningTargetMappingsPage.viewInactive', 'Inactive mappings')
+                    : t('admin.scanningTargetMappingsPage.viewAll', 'All custom mappings')
+              }
+            />
+          }
+          // When the table scrolls sideways the row menu stays in view.
+          pinActions
           columns={columns}
           data={list.data?.data ?? []}
           caption={t('admin.scanningTargetMappingsPage.targetMappings', 'Target mappings')}

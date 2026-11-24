@@ -13,11 +13,13 @@ import { ListCount, ListTitleRow } from '@/features/shared/components/list-title
 import { useCallback, useMemo, useState, type ReactElement } from 'react'
 import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Download, ShieldX } from 'lucide-react'
+import { Boxes, Bug, Download, ShieldX } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { ToolbarAction } from '@/features/shared/components/toolbar-action'
 import {
   DataTable,
+  DataTableRowActions,
   EmptyCell,
   EmptyState,
   ErrorState,
@@ -123,13 +125,26 @@ function ExploitCell({ row }: { row: TechnologyRow }) {
   return <EmptyCell title={t('attackSurface.technologies.noExploit', 'No known exploit')} />
 }
 
+/**
+ * Frame widths (px) under which a column folds, by measured width: the name
+ * (floor 192), Version 112, Category 160, Assets 96 and the row menu 48 always
+ * fit a 768 screen; each next column joins once the frame holds it whole, so
+ * no header is ever cut by the table's scroller. The row menu stays pinned.
+ */
+const HIDE_BELOW = { cves: 790, exploit: 960, lastSeen: 1130, alerts: 1230 } as const
+
 function useColumns(canSeeVulns: boolean): ColumnDef<TechnologyRow>[] {
   const { t } = useTranslation()
+  const router = useRouter()
   const categoryLabel = useCategoryLabel()
   return useMemo<ColumnDef<TechnologyRow>[]>(
     () => [
       {
         id: 'name',
+        meta: {
+          kind: 'name',
+          label: t('attackSurface.technologies.col.technology', 'Technology'),
+        },
         header: t('attackSurface.technologies.col.technology', 'Technology'),
         cell: ({ row }) => (
           <StackedCell
@@ -142,6 +157,11 @@ function useColumns(canSeeVulns: boolean): ColumnDef<TechnologyRow>[] {
       },
       {
         id: 'version',
+        meta: {
+          kind: 'text',
+          width: 112,
+          label: t('attackSurface.technologies.col.version', 'Version'),
+        },
         header: t('attackSurface.technologies.col.version', 'Version'),
         cell: ({ row }) =>
           row.original.version_known ? (
@@ -154,11 +174,17 @@ function useColumns(canSeeVulns: boolean): ColumnDef<TechnologyRow>[] {
       },
       {
         id: 'category',
+        meta: {
+          kind: 'text',
+          width: 160,
+          label: t('attackSurface.technologies.col.category', 'Category'),
+        },
         header: t('attackSurface.technologies.col.category', 'Category'),
         cell: ({ row }) => categoryLabel(row.original.category as AssetTechnologyCategory),
       },
       {
         id: 'asset_count',
+        meta: { kind: 'number', label: t('attackSurface.technologies.col.assets', 'Assets') },
         header: t('attackSurface.technologies.col.assets', 'Assets'),
         cell: ({ row }) => (
           <Link
@@ -179,17 +205,34 @@ function useColumns(canSeeVulns: boolean): ColumnDef<TechnologyRow>[] {
       },
       {
         id: 'cve_count',
+        meta: {
+          kind: 'text',
+          width: 168,
+          hideBelow: HIDE_BELOW.cves,
+          label: t('attackSurface.technologies.col.cves', 'CVEs'),
+        },
         header: t('attackSurface.technologies.col.cves', 'CVEs'),
         cell: ({ row }) => <CVECell row={row.original} canSeeVulns={canSeeVulns} />,
       },
       {
         id: 'exploit',
+        meta: {
+          kind: 'text',
+          width: 140,
+          hideBelow: HIDE_BELOW.exploit,
+          label: t('attackSurface.technologies.col.exploit', 'Exploit'),
+        },
         header: t('attackSurface.technologies.col.exploit', 'Exploit'),
         enableSorting: false,
         cell: ({ row }) => <ExploitCell row={row.original} />,
       },
       {
         id: 'active_alerts',
+        meta: {
+          kind: 'number',
+          hideBelow: HIDE_BELOW.alerts,
+          label: t('attackSurface.technologies.col.alerts', 'Active alerts'),
+        },
         header: t('attackSurface.technologies.col.alerts', 'Active alerts'),
         cell: ({ row }) => (
           <span
@@ -205,11 +248,54 @@ function useColumns(canSeeVulns: boolean): ColumnDef<TechnologyRow>[] {
       },
       {
         id: 'last_seen',
+        meta: {
+          kind: 'datetime-recent',
+          hideBelow: HIDE_BELOW.lastSeen,
+          label: t('attackSurface.technologies.col.lastSeen', 'Last seen'),
+        },
         header: t('attackSurface.technologies.col.lastSeen', 'Last seen'),
         cell: ({ row }) => <RelativeTime date={row.original.last_seen} />,
       },
+      {
+        // The row menu: where the row leads (its assets, its top CVE). On a
+        // phone card it ends the title line.
+        id: 'actions',
+        meta: { kind: 'actions', label: t('common.table.actionsColumn', 'Actions') },
+        header: () => <span className="sr-only">{t('common.table.actionsColumn', 'Actions')}</span>,
+        enableSorting: false,
+        cell: ({ row }) => {
+          const r = row.original
+          const name = r.version_known ? `${r.name} ${r.version}` : r.name
+          const assetsHref = safeHref(technologyAssetsHref(r)) ?? '/assets'
+          return (
+            <DataTableRowActions
+              title={name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', { name })}
+              actions={[
+                {
+                  label: t('attackSurface.technologies.action.assets', 'Show the assets'),
+                  icon: Boxes,
+                  onClick: () => router.push(assetsHref),
+                },
+                ...(canSeeVulns && r.top_cve
+                  ? [
+                      {
+                        label: t('attackSurface.technologies.action.topCve', 'Open {cve}', {
+                          cve: r.top_cve,
+                        }),
+                        icon: Bug,
+                        onClick: () =>
+                          router.push(`/vulnerabilities/${encodeURIComponent(r.top_cve!)}`),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+          )
+        },
+      },
     ],
-    [t, categoryLabel, canSeeVulns]
+    [t, router, categoryLabel, canSeeVulns]
   )
 }
 
@@ -419,6 +505,8 @@ export function EASMTechnologies() {
           ),
         }}
         showColumnToggle={false}
+        // The row menu stays in view on a narrow frame (as on /scans).
+        pinActions
         toolbarStart={
           <>
             <FilterSelect<AssetTechnologyCategory>

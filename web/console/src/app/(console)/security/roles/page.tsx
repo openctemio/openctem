@@ -1,7 +1,7 @@
 'use client'
 
 import { EmptyCell } from '@/features/shared/components/empty-cell'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { KeyRound, ShieldAlert, UserRound, X } from 'lucide-react'
 import { toast } from 'sonner'
@@ -20,10 +20,11 @@ import {
   DataTable,
   DataTableRowActions,
   EmptyState,
+  MetaLine,
   PageHeader,
   PageStack,
 } from '@/features/shared'
-import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { ListCount, ListToolbarTitle } from '@/features/shared/components/list-title-row'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { useTranslation } from '@/context/i18n-provider'
 import {
@@ -134,6 +135,28 @@ export default function AdminRolesPage() {
     [t]
   )
 
+  // Giving a role: the row's one action, behind its menu (table and phone card).
+  const holderMenu = useCallback(
+    (a: PlatformRoleAssignment) =>
+      canAssign && a.admin_id !== me.id && a.active ? (
+        <DataTableRowActions
+          label={t('admin.roles.rowActions', 'Actions for the administrator {email}', {
+            email: toDisplayText(a.email),
+          })}
+          actions={[
+            {
+              label: t('admin.roles.giveRole', 'Give a role'),
+              onClick: () => {
+                setNewRole('')
+                setChange({ kind: 'assign', target: a })
+              },
+            },
+          ]}
+        />
+      ) : null,
+    [t, canAssign, me.id]
+  )
+
   const holderColumns = useMemo<ColumnDef<PlatformRoleAssignment>[]>(
     () => [
       {
@@ -217,26 +240,10 @@ export default function AdminRolesPage() {
         header: '',
         meta: { kind: 'actions' },
         // Giving a role is the row's one action: it stays behind the row's menu.
-        cell: ({ row }) =>
-          canAssign && row.original.admin_id !== me.id && row.original.active ? (
-            <DataTableRowActions
-              label={t('admin.roles.rowActions', 'Actions for the administrator {email}', {
-                email: toDisplayText(row.original.email),
-              })}
-              actions={[
-                {
-                  label: t('admin.roles.giveRole', 'Give a role'),
-                  onClick: () => {
-                    setNewRole('')
-                    setChange({ kind: 'assign', target: row.original })
-                  },
-                },
-              ]}
-            />
-          ) : null,
+        cell: ({ row }) => holderMenu(row.original),
       },
     ],
-    [t, canAssign, me.id, roleName, additional]
+    [t, canAssign, me.id, roleName, additional, holderMenu]
   )
 
   const assignable =
@@ -266,22 +273,25 @@ export default function AdminRolesPage() {
             </AlertDescription>
           </Alert>
         )}
-        <ListTitleRow
-          title={t('admin.roles.viewRoles', 'Platform roles')}
-          count={
-            <ListCount
-              total={roles.length}
-              loading={!catalog.data && !catalog.error}
-              label={t('admin.roles.total', '{count, plural, one {# role} other {# roles}}', {
-                count: roles.length,
-              })}
-            />
-          }
-        />
         <DataTable
           columns={roleColumns}
           data={roles}
           caption={t('admin.roles.viewRoles', 'Platform roles')}
+          // The name and count share the Display menu's row.
+          toolbarTitle={
+            <ListToolbarTitle
+              title={t('admin.roles.viewRoles', 'Platform roles')}
+              count={
+                <ListCount
+                  total={roles.length}
+                  loading={!catalog.data && !catalog.error}
+                  label={t('admin.roles.total', '{count, plural, one {# role} other {# roles}}', {
+                    count: roles.length,
+                  })}
+                />
+              }
+            />
+          }
           getRowId={(r) => r.key}
           error={catalog.error}
           onRetry={() => void catalog.mutate()}
@@ -289,7 +299,9 @@ export default function AdminRolesPage() {
           isLoading={catalog.isLoading && !catalog.data}
           showSearch={false}
           showSelectionCount={false}
-          mobileCards
+          // A phone card with fixed slots: the description gets the card's
+          // width under the name, never squeezed beside it.
+          mobileRow={(r) => <RolePhoneCard role={r} />}
           paginationNoun={t('admin.roles.noun', 'roles')}
           emptyState={{
             nothingYet: <EmptyState icon={KeyRound} title={t('admin.roles.empty', 'No roles')} />,
@@ -297,24 +309,28 @@ export default function AdminRolesPage() {
         />
         {canSeeHolders && (
           <>
-            <ListTitleRow
-              title={t('admin.roles.viewHolders', 'Who holds them')}
-              count={
-                <ListCount
-                  total={holders.length}
-                  loading={!assignments.data && !assignments.error}
-                  label={t(
-                    'admin.roles.holdersTotal',
-                    '{count, plural, one {# administrator} other {# administrators}}',
-                    { count: holders.length }
-                  )}
-                />
-              }
-            />
             <DataTable
               columns={holderColumns}
               data={holders}
               caption={t('admin.roles.viewHolders', 'Who holds them')}
+              toolbarTitle={
+                <ListToolbarTitle
+                  title={t('admin.roles.viewHolders', 'Who holds them')}
+                  count={
+                    <ListCount
+                      total={holders.length}
+                      loading={!assignments.data && !assignments.error}
+                      label={t(
+                        'admin.roles.holdersTotal',
+                        '{count, plural, one {# administrator} other {# administrators}}',
+                        { count: holders.length }
+                      )}
+                    />
+                  }
+                />
+              }
+              // When the table scrolls sideways the row menu stays in view.
+              pinActions
               getRowId={(a) => a.admin_id}
               error={assignments.error}
               onRetry={() => void assignments.mutate()}
@@ -322,7 +338,9 @@ export default function AdminRolesPage() {
               isLoading={assignments.isLoading && !assignments.data}
               showSearch={false}
               showSelectionCount={false}
-              mobileCards
+              mobileRow={(a) => (
+                <HolderPhoneCard holder={a} roleName={roleName} menu={holderMenu(a)} />
+              )}
               paginationNoun={t('admin.roles.holdersNoun', 'administrators')}
               emptyState={{
                 nothingYet: (
@@ -404,5 +422,105 @@ export default function AdminRolesPage() {
         )}
       </PageStack>
     </Main>
+  )
+}
+
+/**
+ * A role holder on a phone: the name with its roles at the line's end and the
+ * row menu (when the viewer may give a role), then the address and the
+ * account's state. The roles end the first line, so the card never stops short.
+ *
+ *   Ana Example                                   Platform owner   (...)
+ *   ana@example.com
+ *   Break-glass
+ */
+function HolderPhoneCard({
+  holder,
+  roleName,
+  menu,
+}: {
+  holder: PlatformRoleAssignment
+  roleName: (key: string) => string
+  menu: ReactNode
+}) {
+  const { t } = useTranslation()
+  const name = toDisplayText(holder.name || holder.email)
+  const email = holder.name && holder.name !== holder.email ? toDisplayText(holder.email) : ''
+  return (
+    <div data-slot="holder-card" className="flex w-full min-w-0 items-start gap-2 px-3 py-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 flex-1 truncate font-medium" title={name}>
+            {name}
+          </span>
+          <span className="flex shrink-0 flex-wrap justify-end gap-1">
+            {holder.roles.map((key) => (
+              <Badge key={key} variant="outline">
+                {roleName(key)}
+              </Badge>
+            ))}
+          </span>
+        </div>
+        {email && (
+          <span className="truncate text-cap text-muted-foreground" title={email}>
+            {email}
+          </span>
+        )}
+        {(holder.break_glass || !holder.active) && (
+          <span className="flex flex-wrap gap-1">
+            {holder.break_glass && (
+              <Badge variant="secondary">{t('admin.roles.breakGlass', 'Break-glass')}</Badge>
+            )}
+            {!holder.active && (
+              <Badge variant="secondary">{t('admin.roles.inactive', 'Inactive')}</Badge>
+            )}
+          </span>
+        )}
+      </div>
+      {menu ? <div className="shrink-0">{menu}</div> : null}
+    </div>
+  )
+}
+
+/**
+ * A platform role on a phone: the name with its kind at the line's end, the
+ * description on the card's width under it, then the counts.
+ *
+ *   Platform owner                                             Base
+ *   Every platform permission. Keep at least two named owners...
+ *   40 permissions   2 administrators
+ */
+function RolePhoneCard({ role }: { role: PlatformRoleInfo }) {
+  const { t } = useTranslation()
+  const name = t(`admin.platformRole.${role.key}`, role.name)
+  const desc = t(`admin.platformRoleDesc.${role.key}`, role.description)
+  return (
+    <div data-slot="role-card" className="flex w-full min-w-0 flex-col gap-1 px-3 py-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0 flex-1 truncate font-medium" title={name}>
+          {name}
+        </span>
+        <Badge variant="outline">
+          {role.base
+            ? t('admin.roles.kind.base', 'Base')
+            : t('admin.roles.kind.additional', 'Additional')}
+        </Badge>
+      </div>
+      {desc && <p className="line-clamp-2 text-cap text-muted-foreground">{desc}</p>}
+      <MetaLine
+        items={[
+          <span key="permissions" className="tabular-nums">
+            {t('admin.roles.permissionCount', '{n} permissions', { n: role.permissions.length })}
+          </span>,
+          <span key="holders" className="tabular-nums">
+            {t(
+              'admin.roles.holdersTotal',
+              '{count, plural, one {# administrator} other {# administrators}}',
+              { count: role.holders }
+            )}
+          </span>,
+        ]}
+      />
+    </div>
   )
 }

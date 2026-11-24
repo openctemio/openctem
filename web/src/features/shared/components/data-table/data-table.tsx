@@ -258,6 +258,12 @@ interface DataTableProps<TData, TValue> {
    * a lens. Never a search box (pass `search`).
    */
   toolbarStart?: React.ReactNode
+  /**
+   * The list's name and count (`ListToolbarTitle`) at the start of the
+   * toolbar row, for a list with no search box: its filters and the Display
+   * menu share the name's line instead of a row of their own under it.
+   */
+  toolbarTitle?: React.ReactNode
   /** Rendered at the end of the toolbar, before the column toggle. */
   toolbarEnd?: React.ReactNode
   /**
@@ -1032,6 +1038,7 @@ export function DataTable<TData, TValue>({
   filterToggle,
   filter,
   toolbarStart,
+  toolbarTitle,
   toolbarEnd,
   toolbarBelow,
   beforeRows,
@@ -1789,6 +1796,7 @@ export function DataTable<TData, TValue>({
           there). */}
       {showToolbar && (
         <ListToolbar
+          title={toolbarTitle}
           filterToggle={filterToggle}
           filter={filter}
           search={

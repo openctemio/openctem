@@ -777,9 +777,17 @@ export default function BusinessUnitsPage() {
             )}
           >
             <Can permission={Permission.AssetsWrite}>
-              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+              {/* A phone shows the short label, so the button stays beside the title. */}
+              <Button
+                size="sm"
+                onClick={() => setIsCreateOpen(true)}
+                aria-label={t('businessContext.units.new', 'New business unit')}
+              >
                 <Plus className="me-2 h-4 w-4" />
-                {t('businessContext.units.new', 'New business unit')}
+                <span className="sm:hidden">{t('businessContext.units.newShort', 'New unit')}</span>
+                <span className="max-sm:hidden">
+                  {t('businessContext.units.new', 'New business unit')}
+                </span>
               </Button>
             </Can>
           </PageHeader>

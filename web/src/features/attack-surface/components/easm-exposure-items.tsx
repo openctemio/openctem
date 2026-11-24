@@ -450,7 +450,9 @@ export function ExposureTypeSummary({
       <h2 className="text-sm font-medium text-muted-foreground">
         {t('attackSurface.exposures.byType', 'By type')}
       </h2>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      {/* A last tile alone on its row of four takes two columns, so it never
+          sits as a narrow row of its own above the list. */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 lg:[&>:last-child:nth-child(4n+1)]:col-span-2">
         {keys.map((k) => {
           const n = counts?.[k] ?? 0
           const pressed = selected.includes(k)

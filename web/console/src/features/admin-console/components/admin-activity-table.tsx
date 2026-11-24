@@ -4,11 +4,79 @@ import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
 import { History } from 'lucide-react'
-import { DataTable, EmptyState, RelativeTime, type FilterPanelToggleProps } from '@/features/shared'
+import {
+  DataTable,
+  EmptyState,
+  MetaLine,
+  RelativeTime,
+  type FilterPanelToggleProps,
+} from '@/features/shared'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { EmptyCell } from '@/features/shared/components/empty-cell'
 import { auditActionLabel } from '../lib/audit-action-label'
 import type { AdminAuditEntry } from '../types'
+
+function ResultBadge({ entry }: { entry: AdminAuditEntry }) {
+  const { t } = useTranslation()
+  return entry.success ? (
+    <Badge variant="secondary">{t('admin.adminActivityTable.succeeded', 'Succeeded')}</Badge>
+  ) : (
+    <Badge variant="destructive">
+      {entry.response_status
+        ? t('admin.adminActivityTable.failed', 'Failed ({response_status})', {
+            response_status: entry.response_status,
+          })
+        : t('admin.adminActivityTable.failedPlain', 'Failed')}
+    </Badge>
+  )
+}
+
+/**
+ * An administrator action on a phone:
+ *
+ *   Password changed                                       Succeeded
+ *   console.password_changed
+ *   admin@example.com
+ *   8 minutes ago   192.0.2.10
+ */
+export function AdminActivityPhoneCard({
+  entry,
+  showIp,
+}: {
+  entry: AdminAuditEntry
+  showIp: boolean
+}) {
+  const { t } = useTranslation()
+  const email = toDisplayText(entry.admin_email)
+  return (
+    <div data-slot="activity-card" className="flex w-full min-w-0 flex-col gap-1 px-3 py-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0 flex-1 truncate font-medium">
+          {auditActionLabel(t, entry.action)}
+        </span>
+        <ResultBadge entry={entry} />
+      </div>
+      <span className="truncate font-mono text-code text-muted-foreground" title={entry.action}>
+        {entry.action}
+      </span>
+      {email && (
+        <span className="truncate text-cap" title={email}>
+          {email}
+        </span>
+      )}
+      <MetaLine
+        items={[
+          <RelativeTime key="when" date={entry.created_at} />,
+          showIp && entry.ip_address ? (
+            <span key="ip" className="tabular-nums">
+              {entry.ip_address}
+            </span>
+          ) : null,
+        ]}
+      />
+    </div>
+  )
+}
 
 function useColumns(): ColumnDef<AdminAuditEntry>[] {
   const { t } = useTranslation()
@@ -21,7 +89,7 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
       meta: {
         kind: 'name',
         pin: 'start',
-        minWidth: 200,
+        minWidth: 168,
         label: t('admin.adminActivityTable.action', 'Action'),
       },
       cell: ({ row }) => (
@@ -41,7 +109,7 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
       header: t('admin.adminActivityTable.administrator', 'Administrator'),
       meta: {
         kind: 'text',
-        width: 200,
+        width: 176,
         label: t('admin.adminActivityTable.administrator', 'Administrator'),
       },
       cell: ({ row }) => (
@@ -53,19 +121,8 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
     {
       accessorKey: 'success',
       header: t('admin.adminActivityTable.result', 'Result'),
-      meta: { kind: 'status', width: 152, label: t('admin.adminActivityTable.result', 'Result') },
-      cell: ({ row }) =>
-        row.original.success ? (
-          <Badge variant="secondary">{t('admin.adminActivityTable.succeeded', 'Succeeded')}</Badge>
-        ) : (
-          <Badge variant="destructive">
-            {row.original.response_status
-              ? t('admin.adminActivityTable.failed', 'Failed ({response_status})', {
-                  response_status: row.original.response_status,
-                })
-              : t('admin.adminActivityTable.failedPlain', 'Failed')}
-          </Badge>
-        ),
+      meta: { kind: 'status', width: 128, label: t('admin.adminActivityTable.result', 'Result') },
+      cell: ({ row }) => <ResultBadge entry={row.original} />,
     },
     {
       accessorKey: 'ip_address',
@@ -88,7 +145,7 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
       header: t('admin.adminActivityTable.when', 'When'),
       meta: {
         kind: 'datetime-recent',
-        width: 152,
+        width: 136,
         label: t('admin.adminActivityTable.when', 'When'),
       },
       cell: ({ row }) => <RelativeTime date={row.original.created_at} />,
@@ -107,6 +164,10 @@ interface AdminActivityTableProps {
     onPageChange: (page: number) => void
   }
   toolbarStart?: React.ReactNode
+  /** The list's name and count, leading the toolbar row (`ListToolbarTitle`). */
+  toolbarTitle?: React.ReactNode
+  /** The list's own actions (Export), before the Display menu. */
+  toolbarEnd?: React.ReactNode
   /** The active filter chips, one row under the toolbar. */
   toolbarBelow?: React.ReactNode
   /** The phone's filter entry (a sheet), joined to the toolbar's start. */
@@ -131,6 +192,8 @@ export function AdminActivityTable({
   isLoading,
   paging,
   toolbarStart,
+  toolbarTitle,
+  toolbarEnd,
   toolbarBelow,
   filterToggle,
   onRowClick,
@@ -163,9 +226,11 @@ export function AdminActivityTable({
       onRetry={onRetry}
       errorTitle={t('admin.securityActivityPage.adminActivity', 'admin activity')}
       showSearch={false}
-      showToolbar={!!toolbarStart}
+      showToolbar={!!toolbarStart || !!toolbarTitle}
       showSelectionCount={false}
       showPagination={!!paging}
+      toolbarTitle={toolbarTitle}
+      toolbarEnd={toolbarEnd}
       toolbarStart={toolbarStart}
       toolbarBelow={toolbarBelow}
       filterToggle={filterToggle}
@@ -186,7 +251,9 @@ export function AdminActivityTable({
         },
       }}
       paginationNoun={t('admin.adminActivityTable.noun', 'events')}
-      mobileCards
+      // A phone card with fixed slots: the action's code gets a line of its
+      // own instead of breaking beside the action's words.
+      mobileRow={(e) => <AdminActivityPhoneCard entry={e} showIp={showIp} />}
       onRowClick={onRowClick}
       {...(paging && {
         manualPagination: true,

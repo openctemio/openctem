@@ -99,7 +99,7 @@ function NotAvailablePanel() {
   return (
     <Card data-testid="shared-sensors-unavailable">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
+        <CardTitle role="heading" aria-level={2} className="flex items-center gap-2 text-base">
           <Info className="size-4 text-muted-foreground" aria-hidden />
           {t(
             'admin.scanning.unavailable.title',
@@ -125,31 +125,34 @@ function NotAvailablePanel() {
 }
 
 /**
- * The page while the release keeps shared sensors closed: no tabs. A link to
- * the Blocked names tab (`?tab=blocked`) opens on its list: the exceptions
- * first, then the blocked-names policy, then the notice and the domain-proof
- * policy. Any other address shows the notice, the domain-proof policy, then
- * the blocked names.
+ * The page while the release keeps shared sensors closed: two tabs, one job
+ * each. Policy holds the notice and the domain-proof policy; Blocked names
+ * (`?tab=blocked`) opens on its exceptions list, then the blocked-names
+ * policy. A list never sits under the policy cards, where their lines would
+ * stand between the page's title and the list's first row.
  */
 function ClosedLayout({ s }: { s: Scanning }) {
-  const [tab] = useUrlFilter('tab', 'policy')
-  if (tab === 'blocked') {
-    return (
-      <>
-        <ScopeBlockedNamesPanel canEdit={s.canEditNames} />
-        <NotAvailablePanel />
-        <ProofPolicy s={s} />
-      </>
-    )
-  }
+  const { t } = useTranslation()
+  const [rawTab, setTab] = useUrlFilter('tab', 'policy')
+  const tab = rawTab === 'blocked' ? 'blocked' : 'policy'
   return (
-    <>
-      <NotAvailablePanel />
-      <ProofPolicy s={s} />
-      {/* The blocked names come once the card above has its final height,
-          so their table is drawn where it stays. */}
-      {s.proof.data || s.proof.error ? <ScopeBlockedNamesPanel canEdit={s.canEditNames} /> : null}
-    </>
+    <Tabs value={tab} onValueChange={setTab}>
+      <TabsList>
+        <TabsTrigger value="policy">{t('admin.scanning.tab.policy', 'Policy')}</TabsTrigger>
+        <TabsTrigger value="blocked">
+          {t('admin.scanning.tab.blocked', 'Blocked names')}
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="policy">
+        <PageStack>
+          <NotAvailablePanel />
+          <ProofPolicy s={s} />
+        </PageStack>
+      </TabsContent>
+      <TabsContent value="blocked">
+        <ScopeBlockedNamesPanel canEdit={s.canEditNames} />
+      </TabsContent>
+    </Tabs>
   )
 }
 
@@ -160,7 +163,8 @@ function SharedTabs({ s }: { s: Scanning }) {
   const { shared, zones, anomaly, egress, canEdit } = s
   return (
     <Tabs value={tab} onValueChange={setTab}>
-      <TabsList className="h-auto flex-wrap justify-start">
+      {/* One swipeable row on a phone (the kit's tab strip), never wrapped. */}
+      <TabsList>
         <TabsTrigger value="policy">{t('admin.scanning.tab.policy', 'Policy')}</TabsTrigger>
         <TabsTrigger value="blocked">
           {t('admin.scanning.tab.blocked', 'Blocked names')}
