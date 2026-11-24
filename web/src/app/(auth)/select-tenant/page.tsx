@@ -52,7 +52,7 @@ export default function SelectTenantPage() {
   const { t } = useTranslation()
   // Read through a ref so the redirect effect below does not depend on t.
   const listExpiredRef = useRef(
-    t('auth.selectTenant.listExpired', 'Your team list expired. Please sign in again to continue.')
+    t('auth.selectTenant.listExpired', 'Your organization list expired. Sign in again to continue.')
   )
   const { canCreate: canCreateTeam } = useCanCreateOrganization()
   const [isPending, startTransition] = useTransition()
@@ -109,14 +109,17 @@ export default function SelectTenantPage() {
         // cookie initialization and flash a 401 error before auto-recovering.
         await new Promise((resolve) => setTimeout(resolve, 100))
         navigateAfterSessionChange('/', {
-          flash: { kind: 'success', title: t('auth.selectTenant.selected', 'Team selected') },
+          flash: {
+            kind: 'success',
+            title: t('auth.selectTenant.selected', 'Organization selected'),
+          },
         })
       } else {
         setSelectedId(null)
         toast.error(
           getErrorMessage(
             result.error,
-            t('auth.selectTenant.selectFailed', 'Failed to select team')
+            t('auth.selectTenant.selectFailed', 'Failed to select organization')
           )
         )
       }
@@ -164,13 +167,16 @@ export default function SelectTenantPage() {
   return (
     <EntryCard>
       <EntryHeader
-        title={t('auth.selectTenant.title', 'Select a team')}
+        title={t('auth.selectTenant.title', 'Select an organization')}
         description={
           tenants.length === 1
-            ? t('auth.selectTenant.one', 'You have access to one team. Select it to continue.')
+            ? t(
+                'auth.selectTenant.one',
+                'You have access to one organization. Select it to continue.'
+              )
             : t(
                 'auth.selectTenant.many',
-                'You have access to {count} teams. Pick one to continue.',
+                'You have access to {count} organizations. Pick one to continue.',
                 {
                   count: tenants.length,
                 }
@@ -185,12 +191,12 @@ export default function SelectTenantPage() {
           <Search className="text-muted-foreground pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2" />
           <Input
             type="search"
-            placeholder={t('auth.selectTenant.search', 'Search teams…')}
+            placeholder={t('auth.selectTenant.search', 'Search organizations…')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             disabled={isPending || isLoggingOut}
             className="ps-9"
-            aria-label={t('auth.selectTenant.searchLabel', 'Search teams')}
+            aria-label={t('auth.selectTenant.searchLabel', 'Search organizations')}
             autoFocus
           />
         </div>
@@ -199,7 +205,7 @@ export default function SelectTenantPage() {
       {/* The list is the only part that scrolls, so a person with many teams
           still sees the create and sign-out actions under it. */}
       <ul
-        aria-label={t('auth.selectTenant.listLabel', 'Teams')}
+        aria-label={t('auth.selectTenant.listLabel', 'Organizations')}
         className="flex max-h-[min(50svh,26rem)] flex-col gap-2 overflow-y-auto"
       >
         {filteredTenants.map((tenant) => {
@@ -226,7 +232,7 @@ export default function SelectTenantPage() {
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-body truncate font-medium">{tenant.name}</span>
                   <span className="text-cap text-muted-foreground truncate">
-                    {tenant.slug}, {tenant.role}
+                    {tenant.slug}, {t(`org.role.${tenant.role}`, tenant.role)}
                   </span>
                 </span>
                 {isSelected && !isPending && <Check aria-hidden className="size-4 shrink-0" />}
@@ -238,7 +244,9 @@ export default function SelectTenantPage() {
         {filteredTenants.length === 0 && (
           <li className="flex flex-col items-center gap-1 py-6 text-center">
             <p className="text-dense text-muted-foreground">
-              {t('auth.selectTenant.noMatch', 'No teams match “{query}”', { query: searchQuery })}
+              {t('auth.selectTenant.noMatch', 'No organizations match “{query}”', {
+                query: searchQuery,
+              })}
             </p>
             <Button variant="link" onClick={() => setSearchQuery('')}>
               {t('auth.selectTenant.clearSearch', 'Clear search')}
@@ -261,7 +269,7 @@ export default function SelectTenantPage() {
           </span>
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="text-body font-medium">
-              {t('auth.selectTenant.createTitle', 'Create a new team')}
+              {t('auth.selectTenant.createTitle', 'Create a new organization')}
             </span>
             <span className="text-cap text-muted-foreground truncate">
               {t(
