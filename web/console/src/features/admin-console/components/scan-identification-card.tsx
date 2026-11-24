@@ -1,19 +1,23 @@
 'use client'
 
 import { useCallback, useEffect, useId, useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
-import { DetailDisclosure, ErrorState } from '@/features/shared'
+import {
+  DetailDisclosure,
+  ErrorState,
+  SettingsBlock,
+  SettingsField,
+  SettingsSaveBar,
+  SettingsSection,
+  SettingsSwitchRow,
+} from '@/features/shared'
 import {
   HeaderListEditor,
   IdentityPreview,
   QueryParamFields,
-  RequireIdentificationSwitch,
   RequiredMissingAlert,
   UserAgentRotationField,
 } from '@/features/sensors/components/scan-identification-parts'
@@ -53,7 +57,6 @@ export function ScanIdentificationCard({ canEdit }: { canEdit: boolean }) {
   const uaId = useId()
   const uaEnfId = useId()
   const qEnfId = useId()
-  const reqId = useId()
   const rotId = useId()
   const { data, error, isLoading, mutate } = useScanIdentification()
   const [ua, setUa] = useState('')
@@ -144,69 +147,72 @@ export function ScanIdentificationCard({ canEdit }: { canEdit: boolean }) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t('admin.scanIdent.title', 'Platform layer')}</CardTitle>
-        <CardDescription>
-          {t(
-            'admin.scanIdent.description',
-            "Sent with every organization's scans. An organization's own headers are added; an organization replaces a header of the same name unless it is enforced. Never put an organization's data here."
+    <>
+      <SettingsSection
+        framed
+        id="platform-scan-identification"
+        title={t('admin.scanIdent.title', 'Platform layer')}
+        description={t(
+          'admin.scanIdent.description',
+          "Sent with every organization's scans. An organization's own headers are added; an organization replaces a header of the same name unless it is enforced. Never put an organization's data here."
+        )}
+        meta={<SettingChangedLine change={data} />}
+      >
+        <SettingsSwitchRow
+          label={t('sensors.scanIdent.required.label', 'Require identification on every request')}
+          hint={t(
+            'sensors.scanIdent.required.help',
+            'Tools that cannot carry the headers or query parameter are skipped with a reason; nothing is sent without them.'
           )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <RequireIdentificationSwitch
-          id={reqId}
           checked={required}
-          onChange={setRequired}
+          onCheckedChange={setRequired}
           disabled={!canEdit}
         />
         {missingMarker && (
-          <RequiredMissingAlert
-            onAddHeader={
-              canEdit && headers.length < MAX_PLATFORM_HEADERS
-                ? () => {
-                    const idx = headers.length
-                    setHeaders([...headers, { name: '', value: '' }])
-                    requestAnimationFrame(() =>
-                      document.getElementById(`platform-scan-ident-name-${idx}`)?.focus()
-                    )
-                  }
-                : undefined
-            }
-          />
-        )}
-        <div className="space-y-2">
-          <Label htmlFor={uaId}>{t('admin.scanIdent.ua', 'User-Agent')}</Label>
-          <Input
-            id={uaId}
-            value={ua}
-            maxLength={MAX_USER_AGENT}
-            placeholder={t(
-              'admin.scanIdent.uaPlaceholder',
-              'scanner (+https://scan.example/about)'
-            )}
-            aria-invalid={uaError ? true : undefined}
-            onChange={(e) => setUa(e.target.value)}
-            disabled={!canEdit}
-          />
-          {uaError && <p className="text-sm text-destructive">{uaError}</p>}
-          <div className="flex items-center gap-3">
-            <Switch
-              id={uaEnfId}
-              checked={uaEnforced}
-              onCheckedChange={setUaEnforced}
-              disabled={!canEdit || !hasUA}
+          <SettingsBlock>
+            <RequiredMissingAlert
+              onAddHeader={
+                canEdit && headers.length < MAX_PLATFORM_HEADERS
+                  ? () => {
+                      const idx = headers.length
+                      setHeaders([...headers, { name: '', value: '' }])
+                      requestAnimationFrame(() =>
+                        document.getElementById(`platform-scan-ident-name-${idx}`)?.focus()
+                      )
+                    }
+                  : undefined
+              }
             />
-            <Label htmlFor={uaEnfId} className="font-normal">
-              {t(
-                'admin.scanIdent.uaEnforced',
-                'Enforce: organizations cannot replace it (the User-Agent or the rotation list)'
-              )}
-            </Label>
-          </div>
-        </div>
-        <div className="space-y-2">
+          </SettingsBlock>
+        )}
+        <SettingsBlock>
+          <SettingsField id={uaId} label={t('admin.scanIdent.ua', 'User-Agent')} error={uaError}>
+            {(control) => (
+              <Input
+                {...control}
+                value={ua}
+                maxLength={MAX_USER_AGENT}
+                placeholder={t(
+                  'admin.scanIdent.uaPlaceholder',
+                  'scanner (+https://scan.example/about)'
+                )}
+                onChange={(e) => setUa(e.target.value)}
+                disabled={!canEdit}
+              />
+            )}
+          </SettingsField>
+        </SettingsBlock>
+        <SettingsSwitchRow
+          id={uaEnfId}
+          label={t(
+            'admin.scanIdent.uaEnforced',
+            'Enforce: organizations cannot replace it (the User-Agent or the rotation list)'
+          )}
+          checked={uaEnforced}
+          onCheckedChange={setUaEnforced}
+          disabled={!canEdit || !hasUA}
+        />
+        <SettingsBlock>
           <Label>{t('admin.scanIdent.headers', 'Request headers')}</Label>
           <HeaderListEditor
             idPrefix="platform-scan-ident"
@@ -216,67 +222,64 @@ export function ScanIdentificationCard({ canEdit }: { canEdit: boolean }) {
             disabled={!canEdit}
             withEnforced
           />
-        </div>
-        <DetailDisclosure
-          summary={t(
-            'sensors.scanIdent.advanced',
-            'Advanced: User-Agent rotation and query parameter'
-          )}
-        >
-          <div className="mt-4 space-y-6">
-            <UserAgentRotationField
-              id={rotId}
-              text={uaList}
-              onChange={setUaList}
-              disabled={!canEdit}
-            />
-            <div className="space-y-2">
+        </SettingsBlock>
+        <SettingsBlock>
+          <DetailDisclosure
+            summary={t(
+              'sensors.scanIdent.advanced',
+              'Advanced: User-Agent rotation and query parameter'
+            )}
+          >
+            <div className="mt-4 space-y-6">
+              <UserAgentRotationField
+                id={rotId}
+                text={uaList}
+                onChange={setUaList}
+                disabled={!canEdit}
+              />
               <QueryParamFields
                 idPrefix="platform-scan-ident"
                 value={query}
                 onChange={setQuery}
                 disabled={!canEdit}
               />
-              <div className="flex items-center gap-3">
-                <Switch
-                  id={qEnfId}
-                  checked={queryEnforced}
-                  onCheckedChange={setQueryEnforced}
-                  disabled={!canEdit || !q}
-                />
-                <Label htmlFor={qEnfId} className="font-normal">
-                  {t('admin.scanIdent.queryEnforced', 'Enforce: organizations cannot replace it')}
-                </Label>
-              </div>
             </div>
-          </div>
-        </DetailDisclosure>
-        <IdentityPreview identity={identity} />
-        <SettingChangedLine change={data} />
-        {canEdit && (
-          <SettingsSaveBar
-            className="basis-full"
-            dirty={dirty}
-            saveDisabled={invalid}
-            onSave={() => setConfirm(true)}
-            onDiscard={reset}
-          />
-        )}
-        <ReasonConfirmDialog
-          open={confirm}
-          onOpenChange={setConfirm}
-          title={t(
-            'admin.scanIdent.confirmTitle',
-            'Change the scan identification of every organization?'
-          )}
-          desc={t(
-            'admin.scanIdent.confirmDesc',
-            'The new values go out with every scan job delivered from now on, for every organization.'
-          )}
-          confirmText={t('admin.scanIdent.confirm', 'Save scan identification')}
-          onConfirm={save}
+            <SettingsSwitchRow
+              id={qEnfId}
+              className="mt-4"
+              label={t('admin.scanIdent.queryEnforced', 'Enforce: organizations cannot replace it')}
+              checked={queryEnforced}
+              onCheckedChange={setQueryEnforced}
+              disabled={!canEdit || !q}
+            />
+          </DetailDisclosure>
+        </SettingsBlock>
+        <SettingsBlock>
+          <IdentityPreview identity={identity} />
+        </SettingsBlock>
+      </SettingsSection>
+      {canEdit && (
+        <SettingsSaveBar
+          dirty={dirty}
+          saveDisabled={invalid}
+          onSave={() => setConfirm(true)}
+          onDiscard={reset}
         />
-      </CardContent>
-    </Card>
+      )}
+      <ReasonConfirmDialog
+        open={confirm}
+        onOpenChange={setConfirm}
+        title={t(
+          'admin.scanIdent.confirmTitle',
+          'Change the scan identification of every organization?'
+        )}
+        desc={t(
+          'admin.scanIdent.confirmDesc',
+          'The new values go out with every scan job delivered from now on, for every organization.'
+        )}
+        confirmText={t('admin.scanIdent.confirm', 'Save scan identification')}
+        onConfirm={save}
+      />
+    </>
   )
 }

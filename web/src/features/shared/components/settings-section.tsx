@@ -86,8 +86,10 @@ export function SettingsSection({
                 {description}
               </p>
             )}
+            {/* Under the description, aligned with it: beside it, the note
+                floated in a middle column that lined up with nothing. */}
+            {meta && <div className="mt-1 min-w-0 text-cap text-muted-foreground">{meta}</div>}
           </div>
-          {meta && <div className="min-w-0 text-cap text-muted-foreground">{meta}</div>}
           {actions && <div className={SETTINGS_SECTION_ACTIONS}>{actions}</div>}
         </div>
         {children}
