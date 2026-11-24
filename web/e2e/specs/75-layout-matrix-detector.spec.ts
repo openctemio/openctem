@@ -12,6 +12,8 @@ import { findEmptyTail, findMatrixBreaks, openedPath } from '../helpers/layout-m
  *     first data row (/my-work at iPad width);
  *   - two primary buttons for one job;
  *   - a stretched field, text line or far rail on a 1920 px screen.
+ * Facts (a <dl>, a MetaLine of label and value, a bordered fact card) are not
+ * wasted rows, and a field under a sticky action bar is not joined to it.
  */
 
 const doc = (body: string) =>
@@ -242,6 +244,116 @@ test.describe('layout matrix detector: wasted row', { tag: ['@shell'] }, () => {
     expect(found.wastedRow).toEqual([])
   })
 
+  // Detail and entry pages: facts above the page's only table (console
+  // /users/[userId], /organizations/[tenantId], /programs/[id]) or above the
+  // first content block (/invitations) are content, not toolbar rows.
+  const detail = (facts: string) => `<main style="width:1000px">
+      <div data-slot="page-header"><h1>admin@example.com</h1></div>
+      ${facts}
+      <h2>Activity</h2>
+      <table style="width:100%"><tbody><tr><td>Signed in</td><td>2 minutes ago</td></tr></tbody></table>
+    </main>`
+
+  test('is quiet for a <dl> fact grid on a detail page', async ({ page }) => {
+    const found = await at(
+      page,
+      1024,
+      detail(`<dl style="display:grid;grid-template-columns:1fr 1fr;gap:12px 24px;margin:0">
+        <div><dt>Signs in with</dt><dd style="margin:0">Password</dd></div>
+        <div><dt>Two-step verification</dt><dd style="margin:0">Off</dd></div>
+        <div><dt>Last sign-in</dt><dd style="margin:0">1 minute ago</dd></div>
+        <div><dt>Created</dt><dd style="margin:0">3 minutes ago</dd></div></dl>`)
+    )
+    expect(found.wastedRow).toEqual([])
+  })
+
+  test('is quiet for bordered fact cards side by side', async ({ page }) => {
+    const card = (title: string, note: string) =>
+      `<section data-slot="card" style="border:1px solid;border-radius:8px;padding:16px"><div>${title}</div><p style="margin:8px 0 0">${note}</p></section>`
+    const found = await at(
+      page,
+      1024,
+      detail(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        ${card('Organizations', 'Not a member of any organization.')}
+        ${card('Linked identities', 'No identity provider is linked.')}</div>`)
+    )
+    expect(found.wastedRow).toEqual([])
+  })
+
+  test('is quiet for a MetaLine of label and value facts', async ({ page }) => {
+    const found = await at(
+      page,
+      1024,
+      detail(`<p data-slot="meta-line" style="display:flex;gap:12px">
+        <span data-slot="meta-line-item">Platform <span class="text-foreground">bug bounty</span></span>
+        <span data-slot="meta-line-item">Handle <span class="text-foreground">example-shop</span></span></p>
+        <p data-slot="meta-line"><span data-slot="meta-line-item">Scope <span class="text-foreground">4 targets</span></span></p>`)
+    )
+    expect(found.wastedRow).toEqual([])
+  })
+
+  test('is quiet for an entry page: its header line and the organization card', async ({
+    page,
+  }) => {
+    const found = await at(
+      page,
+      1024,
+      `<main style="width:600px"><section data-slot="card" style="border:1px solid;padding:24px">
+        <div data-slot="entry-header"><h1>Join Example Org</h1><div>A team member invited you to join Example Org.</div></div>
+        <div style="border:1px solid;border-radius:8px;padding:12px;display:flex;gap:12px">
+          <span>EO</span><div><p style="margin:0">Example Org</p><p style="margin:0">For invitee@example.com</p></div></div>
+        <div style="height:160px;border:1px solid">What accepting gives</div>
+      </section></main>`
+    )
+    expect(found.wastedRow).toEqual([])
+  })
+
+  test('still flags a lone label, a lone notice and a lone button beside fact cards', async ({
+    page,
+  }) => {
+    const found = await at(
+      page,
+      1024,
+      detail(`<dl style="margin:0"><dt>Created</dt><dd style="margin:0">3 minutes ago</dd></dl>
+        <p data-slot="meta-line"><span data-slot="meta-line-item">Updated 2 minutes ago</span></p>
+        <div role="status" style="border:1px solid;padding:8px">No session is active right now.</div>
+        <div><button>Copy reset link</button></div>`)
+    )
+    const lines = found.wastedRow.join('\n')
+    expect(lines).toMatch(/Updated 2 minutes ago/)
+    expect(lines).toMatch(/No session is active right now/)
+    expect(lines).toMatch(/Copy reset link/)
+    expect(lines).not.toMatch(/Created/)
+  })
+
+  test('is quiet for score and exploit cards: a card title over a <dl>', async ({ page }) => {
+    // /emerging-threats/[id]: the Score and Exploit status cards above the
+    // affected assets table.
+    const card = (title: string, rows: string) =>
+      `<section data-slot="card" style="border:1px solid;padding:16px"><div data-slot="card-title">${title}</div>
+        <dl style="display:grid;grid-template-columns:1fr auto;margin:0">${rows}</dl></section>`
+    const found = await at(
+      page,
+      1024,
+      detail(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        ${card('Score', '<dt>Severity</dt><dd style="margin:0">40</dd><dt>Total</dt><dd style="margin:0">87</dd>')}
+        ${card('Exploit status', '<dt>Known exploited</dt><dd style="margin:0">Yes</dd><dt>EPSS</dt><dd style="margin:0">0.97</dd>')}</div>`)
+    )
+    expect(found.wastedRow).toEqual([])
+  })
+
+  test('still flags the lines of a bordered panel with fields', async ({ page }) => {
+    // /programs/[id] notifications: a panel to attach a channel is a form,
+    // not a card of facts.
+    const found = await at(
+      page,
+      1024,
+      detail(`<section style="border:1px solid;padding:16px"><p>No channel is attached.</p>
+        <p>Alerts go to the channels below.</p><select><option>Pick a channel</option></select></section>`)
+    )
+    expect(found.wastedRow.join('\n')).toMatch(/No channel is attached/)
+  })
+
   test('is quiet for one toolbar row with the meta at its end', async ({ page }) => {
     const found = await at(
       page,
@@ -359,6 +471,25 @@ test.describe('layout matrix detector: joined controls', { tag: ['@shell'] }, ()
     expect(found.joined.join('\n')).toMatch(/button 0px from a field/)
   })
 
+  // /pentest/findings/new from 768 to 1280 px: the form's sticky action bar
+  // scrolls over a field; the field is not beside the bar's buttons.
+  const underBar = (pinned: boolean) => `<main style="width:700px">
+    <div style="height:60px"></div>
+    <div style="${pinned ? 'position:sticky;top:0;' : ''}display:flex;justify-content:flex-end;gap:8px;height:40px;background:#fff">
+      <button style="width:100px">Save draft</button></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:-30px">
+      <input placeholder="Reference URL" style="width:200px;margin-right:104px"></div>
+    <div style="height:1200px"></div></main>`
+
+  test('flags a field pressed against a button in the same flow', async ({ page }) => {
+    const found = await at(page, 1024, underBar(false))
+    expect(found.joined.join('\n')).toMatch(/Save draft.*Reference URL/)
+  })
+
+  test('is quiet for a field passing under a sticky action bar', async ({ page }) => {
+    expect((await at(page, 1024, underBar(true))).joined).toEqual([])
+  })
+
   test('is quiet inside one segmented group', async ({ page }) => {
     const found = await at(
       page,
@@ -376,6 +507,23 @@ test.describe('layout matrix detector: joined controls', { tag: ['@shell'] }, ()
     expect(found.joined).toEqual([])
   })
 })
+
+test(
+  'a node of a zoomable canvas is not past its column',
+  { tag: ['@shell'] },
+  async ({ page }) => {
+    // /scans/workflows/[id]: React Flow draws nodes past its pane when zoomed.
+    const pane = (cls: string) => `<main style="width:900px">
+    <div style="display:grid;grid-template-columns:600px 280px;gap:20px">
+      <div class="${cls}" style="position:relative;height:300px"><div style="position:absolute;left:0;top:20px">
+        <button style="width:900px;white-space:nowrap">Subdomain discovery</button></div></div>
+      <aside><p>Palette</p></aside></div></main>`
+    expect((await at(page, 1440, pane('canvas'))).pastPanel.join('\n')).toMatch(
+      /Subdomain discovery/
+    )
+    expect((await at(page, 1440, pane('react-flow'))).pastPanel).toEqual([])
+  }
+)
 
 test('a display:contents wrapper is not a column', { tag: ['@shell'] }, async ({ page }) => {
   const found = await at(
