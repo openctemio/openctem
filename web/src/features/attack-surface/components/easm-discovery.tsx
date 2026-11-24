@@ -456,7 +456,9 @@ export function EASMDiscovery({ lens }: { lens?: ReactNode } = {}) {
         </div>
       </div>
       <MetricStrip loading={isLoading && !overview} items={metrics} />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* Four across only where a card keeps room for its facts (a 1280 screen
+          with the sidebar open broke "Never" letter by letter in Vietnamese). */}
+      <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
         {(overview?.stages ?? []).map((row, i) => (
           <StageCard
             key={row.stage}

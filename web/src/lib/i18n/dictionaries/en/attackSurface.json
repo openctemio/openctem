@@ -384,6 +384,7 @@
   "attackSurface.external.risk.low": "Low",
   "attackSurface.external.risk.medium": "Medium",
   "attackSurface.external.saveChanges": "Save changes",
+  "attackSurface.external.scanNothing": "No asset on this page to scan",
   "attackSurface.external.scanPage": "Scan this page",
   "attackSurface.external.scanTitle": "Scan external assets",
   "attackSurface.external.search": "Search assets…",

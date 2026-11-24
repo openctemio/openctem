@@ -384,6 +384,7 @@
   "attackSurface.external.risk.low": "Thấp",
   "attackSurface.external.risk.medium": "Trung bình",
   "attackSurface.external.saveChanges": "Lưu thay đổi",
+  "attackSurface.external.scanNothing": "Trang này không có tài sản nào để quét",
   "attackSurface.external.scanPage": "Quét trang này",
   "attackSurface.external.scanTitle": "Quét tài sản bên ngoài",
   "attackSurface.external.search": "Tìm tài sản…",
