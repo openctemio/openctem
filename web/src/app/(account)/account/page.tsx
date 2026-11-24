@@ -1,16 +1,21 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { KeyValueList, PageStack } from '@/features/shared'
-import { Button } from '@/components/ui/button'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  KeyValueList,
+  SETTINGS_SECTION_FRAME,
+  SettingsBlock,
+  SettingsField,
+  SettingsFieldGrid,
+  SettingsSaveBar,
+  SettingsSection,
+} from '@/features/shared'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
+import { StatusLozenge } from '@/components/ui/status-lozenge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { User, Mail, Phone, Save, Loader2, AlertCircle, Check } from 'lucide-react'
+import { AlertCircle, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import { useProfile, useUpdateProfile } from '@/features/account'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -19,55 +24,52 @@ import { identityProviderLabel } from '@/lib/identity-provider-label'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatDate } from '@/lib/app-locale'
 
+type ProfileForm = { name: string; phone: string }
+
+/**
+ * Account > Profile: who you are (picture from the identity provider, or
+ * initials; name; e-mail with its verification), the two fields you can
+ * change, and the account's details. Changes save through the save bar,
+ * shown only while there are unsaved changes.
+ */
 export default function ProfilePage() {
   const { t } = useTranslation()
   const { profile, isLoading, isError, error, mutate } = useProfile()
   const { updateProfile, isUpdating } = useUpdateProfile()
 
-  // Form state
-  const [formData, setFormData] = useState({
-    name: '',
-    phone: '',
-  })
-  const [hasChanges, setHasChanges] = useState(false)
+  const saved = useMemo<ProfileForm>(
+    () => ({ name: profile?.name || '', phone: profile?.phone || '' }),
+    [profile?.name, profile?.phone]
+  )
+  const [form, setForm] = useState<ProfileForm>(saved)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
-  // Populate form when profile loads
+  // The saved values replace the form when they load or after a save.
   useEffect(() => {
-    if (profile) {
-      setFormData({
-        name: profile.name || '',
-        phone: profile.phone || '',
-      })
-      setHasChanges(false)
-    }
-  }, [profile])
+    setForm(saved)
+  }, [saved])
 
-  // Track changes
-  const handleChange = (field: keyof typeof formData, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
-    const hasAnyChange =
-      (field === 'name' ? value : formData.name) !== (profile?.name || '') ||
-      (field === 'phone' ? value : formData.phone) !== (profile?.phone || '')
-    setHasChanges(hasAnyChange)
-  }
+  const changes = [
+    form.name !== saved.name && t('account.profile.fullName', 'Full name'),
+    form.phone !== saved.phone && t('account.profile.phone', 'Phone number'),
+  ].filter((c): c is string => !!c)
+  const dirty = changes.length > 0
 
-  // Save profile
   const handleSave = async () => {
+    setSaveError(null)
     try {
-      const result = await updateProfile(formData)
+      const result = await updateProfile(form)
       if (result) {
         mutate(result)
-        setHasChanges(false)
         toast.success(t('account.profile.updated', 'Profile updated'))
       }
-    } catch (error) {
-      toast.error(
-        getErrorMessage(error, t('account.profile.updateFailed', 'Could not update the profile'))
+    } catch (err) {
+      setSaveError(
+        getErrorMessage(err, t('account.profile.updateFailed', 'Could not update the profile'))
       )
     }
   }
 
-  // Generate initials
   const initials = profile?.name
     ? profile.name
         .split(' ')
@@ -77,17 +79,21 @@ export default function ProfilePage() {
         .slice(0, 2)
     : profile?.email?.charAt(0).toUpperCase() || 'U'
 
-  // Loading state
   if (isLoading) {
     return (
-      <PageStack>
-        <Skeleton className="h-64 w-full" />
-        <Skeleton className="h-48 w-full" />
-      </PageStack>
+      <>
+        <div className="flex items-center gap-3">
+          <Skeleton className="size-12 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-3 w-56" />
+          </div>
+        </div>
+        <Skeleton className="h-20 w-full" />
+      </>
     )
   }
 
-  // Error state
   if (isError) {
     return (
       <Alert variant="destructive">
@@ -101,117 +107,92 @@ export default function ProfilePage() {
     )
   }
 
-  return (
-    <PageStack>
-      {/* Profile Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <User className="h-5 w-5" />
-            {t('account.profile.title', 'Profile information')}
-          </CardTitle>
-          <CardDescription>
-            {t('account.profile.description', 'Your name and contact details')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col lg:flex-row gap-8">
-            {/* Avatar: shows the picture from the identity provider when there is
-                one, otherwise initials. There is no picture upload. */}
-            <div className="flex flex-col items-center">
-              <Avatar className="h-24 w-24 ring-2 ring-border">
-                <AvatarImage src={safeAvatarSrc(profile?.avatar_url)} alt="" />
-                <AvatarFallback className="bg-primary/10 text-2xl">{initials}</AvatarFallback>
-              </Avatar>
-            </div>
+  const managedBy =
+    profile?.auth_provider && profile.auth_provider !== 'local'
+      ? identityProviderLabel(profile.auth_provider, t)
+      : null
 
-            {/* Form Section */}
-            <div className="flex-1 space-y-4">
-              {/* Name */}
-              <div className="space-y-2">
-                <Label htmlFor="name">{t('account.profile.fullName', 'Full name')}</Label>
+  return (
+    <>
+      <section
+        data-slot="settings-section"
+        aria-label={t('account.area.nav.profile', 'Profile')}
+        className={SETTINGS_SECTION_FRAME}
+      >
+        {/* Who you are: the picture comes from the identity provider when it
+            sends one (there is no upload), otherwise initials. */}
+        <div className="flex min-w-0 items-center gap-3 pb-4">
+          <Avatar className="size-12 shrink-0">
+            <AvatarImage src={safeAvatarSrc(profile?.avatar_url)} alt="" />
+            <AvatarFallback className="bg-primary/10 text-body font-medium">
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-body font-medium">{saved.name || profile?.email}</p>
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="min-w-0 text-dense break-all text-muted-foreground">
+                {profile?.email}
+              </span>
+              {profile?.email_verified ? (
+                <StatusLozenge
+                  tone="resolved"
+                  icon={Check}
+                  label={t('account.profile.verified', 'Verified')}
+                />
+              ) : (
+                <StatusLozenge
+                  tone="accepted"
+                  label={t('account.profile.unverified', 'Unverified')}
+                />
+              )}
+            </div>
+            {managedBy && (
+              <p className="text-cap text-muted-foreground">
+                {t(
+                  'account.profile.managedByProvider',
+                  'Managed by your identity provider ({provider})',
+                  { provider: managedBy }
+                )}
+              </p>
+            )}
+          </div>
+        </div>
+        <SettingsBlock>
+          <SettingsFieldGrid>
+            <SettingsField id="name" label={t('account.profile.fullName', 'Full name')}>
+              {(control) => (
                 <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => handleChange('name', e.target.value)}
+                  {...control}
+                  autoComplete="name"
+                  value={form.name}
+                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                   placeholder={t('account.profile.fullNamePlaceholder', 'Enter your full name')}
                 />
-              </div>
-
-              {/* Email (read-only) */}
-              <div className="space-y-2">
-                <Label htmlFor="email" className="flex items-center gap-2">
-                  <Mail className="h-4 w-4" />
-                  {t('account.profile.email', 'Email')}
-                </Label>
-                <div className="flex items-center gap-2">
-                  <Input id="email" value={profile?.email || ''} disabled className="bg-muted" />
-                  {profile?.email_verified ? (
-                    <Badge variant="outline" className="border-success/40 text-success">
-                      <Check className="h-3 w-3 me-1" />
-                      {t('account.profile.verified', 'Verified')}
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="border-warning/40 text-warning">
-                      {t('account.profile.unverified', 'Unverified')}
-                    </Badge>
-                  )}
-                </div>
-                {profile?.auth_provider && profile.auth_provider !== 'local' && (
-                  <p className="text-xs text-muted-foreground">
-                    {t(
-                      'account.profile.managedByProvider',
-                      'Managed by your identity provider ({provider})',
-                      {
-                        provider: identityProviderLabel(profile.auth_provider, t),
-                      }
-                    )}
-                  </p>
-                )}
-              </div>
-
-              {/* Phone */}
-              <div className="space-y-2">
-                <Label htmlFor="phone" className="flex items-center gap-2">
-                  <Phone className="h-4 w-4" />
-                  {t('account.profile.phone', 'Phone number')}
-                </Label>
+              )}
+            </SettingsField>
+            <SettingsField id="phone" label={t('account.profile.phone', 'Phone number')}>
+              {(control) => (
                 <Input
-                  id="phone"
+                  {...control}
                   type="tel"
-                  value={formData.phone}
-                  onChange={(e) => handleChange('phone', e.target.value)}
-                  placeholder={t('account.profile.phonePlaceholder', '+84 xxx xxx xxx')}
+                  autoComplete="tel"
+                  value={form.phone}
+                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                  placeholder={t('account.profile.phonePlaceholder', 'For example +1 202 555 0123')}
                 />
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+              )}
+            </SettingsField>
+          </SettingsFieldGrid>
+        </SettingsBlock>
+      </section>
 
-      {/* Save Button */}
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={!hasChanges || isUpdating}>
-          {isUpdating ? (
-            <Loader2 className="me-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="me-2 h-4 w-4" />
-          )}
-          {isUpdating
-            ? t('account.saving', 'Saving...')
-            : t('account.profile.save', 'Save changes')}
-        </Button>
-      </div>
-
-      {/* Account Info Card */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('account.info.title', 'Account information')}</CardTitle>
-          <CardDescription>
-            {t('account.info.description', 'Details about your account')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <SettingsSection
+        framed
+        id="account-details"
+        title={t('account.info.title', 'Account details')}
+      >
+        <SettingsBlock>
           <KeyValueList
             items={[
               {
@@ -237,10 +218,20 @@ export default function ProfilePage() {
               },
             ]}
           />
-        </CardContent>
-      </Card>
+        </SettingsBlock>
+      </SettingsSection>
 
-      {/* Every member can leave; the only owner sees why they cannot. */}
-    </PageStack>
+      <SettingsSaveBar
+        dirty={dirty}
+        saving={isUpdating}
+        onSave={handleSave}
+        onDiscard={() => {
+          setForm(saved)
+          setSaveError(null)
+        }}
+        changes={changes}
+        error={saveError}
+      />
+    </>
   )
 }
