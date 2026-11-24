@@ -18,7 +18,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { supportedLocales } from '@/lib/i18n'
 import { usePreferences, useUpdatePreferences } from '@/features/account'
 import type { FindingsInformationalPreference, UpdatePreferencesInput } from '@/features/account'
-import { SettingsRow, SettingsSaveBar, SettingsSection } from '@/features/shared'
+import { ErrorState, SettingsRow, SettingsSaveBar, SettingsSection } from '@/features/shared'
 
 type Theme = 'light' | 'dark' | 'system'
 type PreferencesForm = Required<
@@ -49,7 +49,7 @@ const INFORMATIONAL_CHOICES: ReadonlyArray<{
 export default function PreferencesPage() {
   const { t, locale } = useTranslation()
   const { setTheme } = useTheme()
-  const { preferences, isLoading, mutate } = usePreferences()
+  const { preferences, isLoading, isError, error, mutate } = usePreferences()
   const { updatePreferences, isUpdating } = useUpdatePreferences()
 
   // A personal time zone and date or time format come back when one date
@@ -126,6 +126,17 @@ export default function PreferencesPage() {
           </div>
         ))}
       </div>
+    )
+  }
+
+  // A failed load never shows the defaults as if they were saved.
+  if (isError) {
+    return (
+      <ErrorState
+        title={t('account.area.nav.preferences', 'Preferences')}
+        error={error}
+        onRetry={() => void mutate()}
+      />
     )
   }
 

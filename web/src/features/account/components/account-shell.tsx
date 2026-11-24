@@ -70,12 +70,15 @@ export function AccountShell({
 
   return (
     <AccountSpaceProvider>
-      <div className="flex min-h-svh flex-col bg-background">
+      {/* The screen is the frame: the header stays, and the page scrolls in
+          main#content (the one scroller, as in the app shell), never the
+          document. */}
+      <div className="flex h-svh flex-col overflow-hidden bg-background">
         <SkipToMain />
         {/* One row from 1024px: brand, tabs, the way back, theme, sign out.
             Below it two rows: brand with the way back and a menu (theme, sign
             out), then the tabs. */}
-        <header className="border-b bg-background">
+        <header className="shrink-0 border-b bg-background">
           <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-2 lg:gap-x-6 sm:px-6 lg:py-3">
             <Link
               href={organizationName === undefined ? ACCOUNT_HOME_PATH : '/account'}
@@ -129,9 +132,11 @@ export function AccountShell({
             </div>
           </div>
         </header>
-        <MainRegion className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6">
-          <OwnershipInvitationBanner className="mb-4" enabled={sessionReady} />
-          {children}
+        <MainRegion className="min-h-0 w-full flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6">
+            <OwnershipInvitationBanner className="mb-4" enabled={sessionReady} />
+            {children}
+          </div>
         </MainRegion>
         {/* Re-authentication prompt for sensitive actions (STEP_UP_REQUIRED). */}
         <StepUpDialogHost />
