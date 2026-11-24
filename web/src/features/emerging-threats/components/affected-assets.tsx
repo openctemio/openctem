@@ -13,6 +13,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { DataTable, KeyValueList, type KeyValueItem } from '@/features/shared'
 import type {
   AssetTier,
@@ -113,6 +114,7 @@ export function AffectedAssets({
   onRetry?: () => void
 }) {
   const { t } = useTranslation()
+  const isPhone = useIsMobile()
 
   const rows = useMemo<HostRow[]>(
     () =>
@@ -254,7 +256,13 @@ export function AffectedAssets({
   )
 
   const mobileRow = (row: HostRow) => {
-    const facts: KeyValueItem[] = []
+    const facts: KeyValueItem[] = [
+      {
+        key: 'tier',
+        label: t('emergingThreats.col.tier'),
+        value: t(`emergingThreats.assets.${row.tier}`, row.tier),
+      },
+    ]
     const criticality = cells.criticality(row)
     // The title line ends with the host's state: internet-facing, else its
     // criticality (then not repeated in the facts), so no card is bunched
@@ -310,7 +318,6 @@ export function AffectedAssets({
     )
   }
 
-  const onlyConfirmed = rows.length > 0 && rows.every((r) => r.tier === 'confirmed')
   const noneConfirmed = !error && !groups.some((g) => g.tier !== 'possible' && g.hosts.length > 0)
 
   return (
@@ -332,10 +339,9 @@ export function AffectedAssets({
           showToolbar={false}
           pageSize={50}
           pageSizeOptions={PAGE_SIZES}
-          // Confirmed hosts only: the header already says the alert is
-          // confirmed, so a lone "Confirmed affected" group row would be a
-          // row of its own above the hosts. Likely or possible hosts keep it.
-          rowGroups={onlyConfirmed ? undefined : rowGroups}
+          // A phone shows no group rows (each was a row of its own above
+          // its cards): the cards keep the tier order and each says its match.
+          rowGroups={isPhone ? undefined : rowGroups}
           mobileRow={mobileRow}
         />
       )}
