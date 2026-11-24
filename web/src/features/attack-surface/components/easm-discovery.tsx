@@ -244,7 +244,8 @@ export function EASMDiscovery({ lens }: { lens?: ReactNode } = {}) {
   const [confirmAbort, setConfirmAbort] = useState(false)
   const canRun = can(Permission.ScansWrite) && can(Permission.ScansExecute)
   const noRunPermission = t(
-    'attackSurface.discovery.run.noPermission',
+    'attackSurface.discovery.run.noPermission', // anatomy-ok: why Run is absent, one status line beside the page actions; the page itself stays readable
+
     'Running a stage needs the scan execute permission.'
   )
   const canAbort = can(Permission.ScansWrite)
