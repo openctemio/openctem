@@ -962,9 +962,10 @@ function AutoMobileCard<TData>({
               }
               className={cn('flex min-w-0 items-baseline gap-1.5', fullLine && 'col-span-2')}
             >
-              {/* The label is never cut against its own value ("As…" beside
-                  "12"): the value gives way first, at the card's edge. */}
-              <dt className="max-w-full shrink-0 truncate text-xs text-muted-foreground">
+              {/* The label keeps at least 6rem ("Assets" beside "12" is never
+                  "As…"), at most half the field beyond that, so a chip value
+                  keeps its room. */}
+              <dt className="max-w-[max(50%,6rem)] shrink-0 truncate text-xs text-muted-foreground">
                 {labels.get(cell.column.id)}
               </dt>
               <CardFieldValue wide={pick?.wide.includes(cell.column.id)}>

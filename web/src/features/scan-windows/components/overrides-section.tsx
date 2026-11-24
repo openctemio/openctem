@@ -96,19 +96,19 @@ export function OverridesSection({ policies }: { policies: ScanWindowPolicy[] })
       className="space-y-3"
       data-testid="overrides-section"
     >
-      {/* The action shares the heading's line; the hint takes the whole width
+      {/* The action shares the heading's line; on a phone the hint takes the whole width
           under them (never a button alone on a row). */}
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1">
         <h2 id="overrides-heading" className="text-base font-semibold">
           {t('scanWindows.override.heading', 'Overrides')}
         </h2>
-        <p className="col-span-2 row-start-2 text-sm text-muted-foreground">
+        <p className="col-span-2 row-start-2 text-sm text-muted-foreground sm:col-span-1">
           {t(
             'scanWindows.override.headingHint',
             'Lift policy windows for a short time in an emergency. Bug-bounty program windows are never lifted.'
           )}
         </p>
-        <div className="col-start-2 row-start-1">
+        <div className="col-start-2 row-start-1 sm:row-span-2 sm:self-start">
           <GatedButton
             allowed={canOverride}
             reason={noPermission}
