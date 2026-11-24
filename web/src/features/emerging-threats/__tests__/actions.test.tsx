@@ -154,13 +154,16 @@ describe('create remediation task', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('finding already in a task')
   })
 
-  it('is disabled when there is nothing to add', () => {
+  it('is replaced by a reason when there is nothing to add', () => {
     wrap(
       <AlertActions
         alert={detail({ assets: [asset({ task_id: 't1' }), asset({ finding_id: '' })] })}
       />
     )
-    expect(screen.getByRole('button', { name: /Create remediation task/ })).toBeDisabled()
+    expect(
+      screen.queryByRole('button', { name: /Create remediation task/ })
+    ).not.toBeInTheDocument()
+    expect(screen.getByText(/No open finding without a task to add/)).toBeInTheDocument()
     expect(api.post).not.toHaveBeenCalled()
   })
 })

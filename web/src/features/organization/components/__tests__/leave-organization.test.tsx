@@ -33,7 +33,7 @@ describe('LeaveOrganization', () => {
   it('lets a member leave: the button is enabled', () => {
     render(<LeaveOrganization />)
     expect(screen.getByRole('button', { name: /leave organization/i })).toBeEnabled()
-    expect(screen.getByText(/organization membership/i)).toBeInTheDocument()
+    expect(screen.getByText(/leave this organization/i)).toBeInTheDocument()
   })
 
   it('lets an owner leave when another owner exists', () => {
