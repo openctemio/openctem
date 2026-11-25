@@ -6,15 +6,7 @@ import { OUTBOX_HEALTH } from '@/features/notifications/lib/outbox-health'
 import { useState } from 'react'
 import { useListParams } from '@/hooks/use-list-params'
 import type { ColumnDef } from '@tanstack/react-table'
-import {
-  MoreHorizontal,
-  Clock,
-  Loader2,
-  RotateCcw,
-  Trash2,
-  ExternalLink,
-  AlertCircle,
-} from 'lucide-react'
+import { MoreHorizontal, Loader2, RotateCcw, Trash2, ExternalLink, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Main } from '@/components/layout'
@@ -36,8 +28,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useCanMutate } from '@/lib/permissions'
-import { HEALTH_ICON_CLASS } from '@/lib/health-colors'
-import { cn } from '@/lib/utils'
 
 import {
   useNotificationOutboxApi,
@@ -71,12 +61,10 @@ function QueueHealthStatus({
   }
 
   const hasIssues = stats.failed > 0 || stats.dead > 0
-  const hasPending = stats.pending > 0 || stats.processing > 0
-  const isHealthy = !hasIssues && !hasPending
-
-  // A healthy queue needs no banner: the table under it says the queue is
-  // empty (a box of its own above the list was a wasted row).
-  if (isHealthy) return null
+  // Only a problem earns a banner above the list: a healthy or busy queue is
+  // read from the table itself (its rows carry their status), so a box of its
+  // own there was a wasted row.
+  if (!hasIssues) return null
 
   // Build status parts
   const parts: string[] = []
@@ -98,24 +86,16 @@ function QueueHealthStatus({
     parts.push(t('notificationChannels.outbox.count.dead', '{count} dead', { count: stats.dead }))
 
   return (
-    <Alert variant={hasIssues ? 'destructive' : 'default'}>
-      {hasIssues ? (
-        <AlertCircle className="h-4 w-4" />
-      ) : (
-        <Clock className={cn('h-4 w-4', HEALTH_ICON_CLASS.run)} />
-      )}
+    <Alert variant="destructive">
+      <AlertCircle className="h-4 w-4" />
       <AlertTitle>{parts.join(', ')}</AlertTitle>
       <AlertDescription>
-        {hasIssues
-          ? t('notificationChannels.outbox.needAttention', 'Some notifications need attention')
-          : t('notificationChannels.outbox.processingDesc', 'Notifications are being processed')}
-        {hasIssues && (
-          <div className="mt-2">
-            <Button variant="outline" size="sm" onClick={onViewFailed}>
-              {t('notificationChannels.outbox.viewIssues', 'View Issues')}
-            </Button>
-          </div>
-        )}
+        {t('notificationChannels.outbox.needAttention', 'Some notifications need attention')}
+        <div className="mt-2">
+          <Button variant="outline" size="sm" onClick={onViewFailed}>
+            {t('notificationChannels.outbox.viewIssues', 'View Issues')}
+          </Button>
+        </div>
       </AlertDescription>
     </Alert>
   )
