@@ -12,3 +12,4 @@
 - The bundled sensor's default (`sensor.latest`) moves to v0.42.0, the first sensor release that publishes the
   `-relay` image. It scans each target host under a per-host budget, at the Standard pacing level by default; its
   seccomp profile is unchanged from v0.41.1.
+- Docs: server/docs/deployment/docker.md, server/docs/architecture/feed-transfer.md, https://github.com/openctemio/sensor/blob/main/docs/PROFILES.md
