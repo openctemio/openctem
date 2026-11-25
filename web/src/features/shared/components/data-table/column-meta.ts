@@ -89,10 +89,12 @@ export const KIND_LAYOUT: Record<ColumnKind, KindLayout> = {
   asset: { align: 'start', minWidth: 200, maxWidth: 280, sortFirst: 'asc' },
   owner: { align: 'start', width: 160, sortFirst: 'asc' },
   // The longest relative time whole at 14px: "khoảng 11 tháng trước" (vi;
-  // "about 11 months ago" in en) plus the cell padding. Anything longer is
-  // cut with an ellipsis, the exact time in the <time> title.
+  // "about 11 months ago" in en) plus the cell padding. A longer one, or one
+  // in a column a page made narrower, wraps between its words; the exact
+  // time is in the <time> title.
   'datetime-recent': { align: 'end', width: 168, maxWidth: 168, sortFirst: 'desc' },
-  date: { align: 'end', width: 112, sortFirst: 'desc' },
+  // The longest date whole at 14px: "25 thg 11, 2026" (vi) plus the cell padding.
+  date: { align: 'end', width: 124, sortFirst: 'desc' },
   // The SLA chip's longest text whole, never cut: "999+ d overdue" (128 with
   // the KEV mark; "Trễ 999+ ngày" 121) plus the cell padding.
   due: { align: 'start', width: 140, sortFirst: 'asc' },

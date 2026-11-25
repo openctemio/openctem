@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils'
 import type { Sensor } from '@/lib/api/sensor-types'
 
 import { SensorStateBadge } from './sensor-state-badge'
-import { ConfigHealthTag, ProtocolTag, SensorGrantTags, SensorPostureTag } from './sensor-cells'
+import { SensorFlags, sensorFlags } from './sensor-cells'
 import { sensorFacts } from '../lib/sensor-facts'
 import type { FleetThresholds } from '../lib/sensor-state'
 import type { ReleaseChannel } from '../lib/fleet'
@@ -87,13 +87,8 @@ export function SensorMobileCard({
           <SensorStateBadge sensor={sensor} now={now} thresholds={thresholds} />
           {actions && <div className="-my-1 shrink-0">{actions}</div>}
         </div>
-        {/* Tags, not a full-width bar; the line takes no room when none applies. */}
-        <span className="flex flex-wrap items-center gap-1.5 self-start empty:hidden">
-          <ProtocolTag sensor={sensor} />
-          <ConfigHealthTag health={sensor.config_health} />
-          <SensorPostureTag sensor={sensor} />
-          {sensor.status !== 'revoked' && <SensorGrantTags grant={grant} />}
-        </span>
+        {/* Every mark, in the list's one look, wrapping; no line when none applies. */}
+        <SensorFlags flags={sensorFlags(sensor, grant, t)} />
         {facts.length > 0 && (
           <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {facts.map((f) => (

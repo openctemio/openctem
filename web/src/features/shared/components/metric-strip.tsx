@@ -116,8 +116,8 @@ const PHONE_SPAN_CLASS = { 2: 'col-span-2', 3: 'col-span-3', 6: 'col-span-6' } a
  *
  * Phone (research/244 mobile decision M2): compact tiles on a six-track
  * grid, at most two rows: 2 and 4 tiles in halves, 3 in thirds, 5 as three
- * thirds over two halves; smaller values; a long label wraps to a second line
- * instead of being cut. Never a sideways scroll. A strip with detail lines
+ * thirds over two halves; smaller values; a long label wraps (never cut by an
+ * ellipsis or a clamp, at any width). Never a sideways scroll. A strip with detail lines
  * uses halves (the first tile full width when the count is odd) and keeps
  * its captions, so no sentence is squeezed into a third (`phoneSpan`).
  * Every tile starts at the top, whatever element it is: a `<button>` centres
@@ -221,16 +221,16 @@ export function MetricStrip({
               <span
                 data-slot="metric-label"
                 className={cn(
-                  'line-clamp-2 block text-xs text-muted-foreground',
-                  longLabels
-                    ? // Never cut on one line ("Tài sản trọng yếu có phát hiện đ…").
-                      'min-h-8'
-                    : cn(
-                        'sm:line-clamp-none sm:truncate',
-                        // In a third, a label may wrap: every third keeps two
-                        // lines so the values of a row stay on one baseline.
-                        span === 2 && 'min-h-8 sm:min-h-0'
-                      )
+                  // A label is never cut, by an ellipsis or a clamp: it wraps
+                  // ("mất kết nối, SDK, heart…" hid what the number counts).
+                  'block break-words text-xs text-muted-foreground',
+                  // The label takes the tile's spare height, so the values of
+                  // a row stay on one line whatever their labels' lengths
+                  // (tiles of a grid row are one height). A detailed strip
+                  // keeps its labels at the top: its details differ in height.
+                  !detailed && 'grow',
+                  // Two lines held where a label is likely to wrap.
+                  longLabels ? 'min-h-8' : span === 2 && 'min-h-8 sm:min-h-0'
                 )}
               >
                 {item.label}

@@ -91,7 +91,7 @@ describe('SensorTable', () => {
     expect(row.querySelector('[data-slot="sensor-ip"]')).toHaveTextContent('192.0.2.10')
   })
 
-  it('says the reason beside the state, on the same line, and the whole of it on hover', () => {
+  it('says the reason under the state, whole, and all of it on hover', () => {
     renderTable([
       {
         ...base,
@@ -111,14 +111,16 @@ describe('SensorTable', () => {
     ])
     const reason = document.querySelector('[data-slot="sensor-reason"]') as HTMLElement
     expect(reason).toHaveTextContent('takes no new jobs: storage full')
-    expect(reason).toHaveClass('truncate', 'text-destructive')
-    // The state and its reason share one flex line.
-    expect(reason.parentElement).toHaveClass('flex', 'items-center')
-    expect(reason.parentElement?.getAttribute('title')).toContain('Local storage is full.')
-    expect(within(reason.parentElement as HTMLElement).getByText('Degraded')).toBeInTheDocument()
+    expect(reason).toHaveClass('text-destructive')
+    // The reason is the cell's second line: it wraps instead of being cut.
+    const line = reason.closest('[data-slot="stacked-cell-secondary"]')
+    expect(line).toHaveClass('line-clamp-2', 'whitespace-normal')
+    const cell = reason.closest('[data-slot="sensor-status"]') as HTMLElement
+    expect(cell.getAttribute('title')).toContain('Local storage is full.')
+    expect(within(cell).getByText('Degraded')).toBeInTheDocument()
   })
 
-  it('shows the heartbeat age beside the state of a sensor with nothing to report', () => {
+  it('shows the heartbeat age under the state of a sensor with nothing to report', () => {
     renderTable([{ ...base, state: 'online', health_reasons: [] }])
     expect(document.querySelector('[data-slot="sensor-reason"]')).toBeNull()
     expect(document.querySelector('[data-slot="sensor-state-detail"]')).toHaveTextContent(
@@ -214,5 +216,44 @@ describe('SensorTable', () => {
     expect(screen.getByPlaceholderText('Search sensors…')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /retry/i }))
     expect(retry).toHaveBeenCalled()
+  })
+
+  it('puts the marks under the name in one look, the most serious first and the rest as +N', () => {
+    render(
+      <SensorTable
+        sensors={[{ ...base, posture: { unhardened: ['policy_none'] } } as Sensor]}
+        now={NOW}
+        channel={{}}
+        grants={
+          new Map([['s1', { sensor_id: 's1', legacy_broad: true, trust_level: 'new' } as never]])
+        }
+        {...handlers}
+      />
+    )
+    const name = document.querySelector('[data-slot="sensor-name-cell"]') as HTMLElement
+    // The name on its own line, the marks on the line under it.
+    expect(name).toHaveClass('flex-col')
+    const flags = name.querySelector('[data-slot="sensor-flags"]') as HTMLElement
+    const shown = flags.querySelectorAll('[data-slot="health-status"]')
+    expect(shown).toHaveLength(1)
+    expect(shown[0]).toHaveAttribute('data-health', 'warn')
+    expect(flags.querySelector('[data-slot="sensor-flags-more"]')).toHaveTextContent('+2')
+    // Every mark is in the hover text, Passive only included.
+    expect(flags.getAttribute('title')).toContain('Passive only')
+    expect(flags.getAttribute('title')).toContain('Legacy broad grant')
+  })
+
+  it('shows a quiet dash for a host never reported and no bar while no job runs', () => {
+    renderTable([{ ...base, hostname: undefined, ip_address: undefined } as unknown as Sensor])
+    const none = document.querySelector('[data-slot="sensor-host-none"]') as HTMLElement
+    expect(none).toHaveAttribute('title', 'No host reported yet')
+    expect(none).toHaveTextContent('—')
+    expect(document.querySelector('[data-slot="sensor-jobs-bar"]')).toBeNull()
+    expect(screen.getByText('0/5')).toBeInTheDocument()
+  })
+
+  it('draws the jobs bar while jobs run', () => {
+    renderTable([{ ...base, current_jobs: 2 }])
+    expect(document.querySelector('[data-slot="sensor-jobs-bar"]')).not.toBeNull()
   })
 })

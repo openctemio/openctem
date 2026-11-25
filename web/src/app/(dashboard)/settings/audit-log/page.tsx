@@ -20,6 +20,7 @@ import {
   DetailSection,
   DetailSections,
   DetailSheet,
+  CellText,
 } from '@/features/shared'
 import { AddFilterPanel } from '@/features/shared/components/add-filter-panel'
 import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
@@ -269,9 +270,7 @@ export default function AuditLogPage() {
         meta: { kind: 'owner', hideBelow: AUDIT_HIDE_BELOW.actor, label: actorLabel },
         header: actorLabel,
         enableSorting: false,
-        cell: ({ row }) => (
-          <span className="block truncate text-sm">{actorText(row.original, t)}</span>
-        ),
+        cell: ({ row }) => <CellText className="text-sm">{actorText(row.original, t)}</CellText>,
       },
       {
         id: 'resource_type',

@@ -109,10 +109,7 @@ export function FindingTicketLinks({
       case 'create_failed':
         return t('findings.ticketHolds.createFailed', 'Not sent to Jira. The last attempt failed')
       default:
-        return t(
-          'findings.ticketHolds.belowThreshold',
-          'Not sent to Jira: below the create policy'
-        )
+        return t('findings.ticketHolds.belowThreshold', 'Not sent to Jira: below the create policy')
     }
   }
 

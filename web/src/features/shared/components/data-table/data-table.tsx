@@ -97,6 +97,7 @@ import {
   pageSizeChoices,
 } from '@/lib/page-size-options'
 import { PhoneMoreFooter } from './phone-more-footer'
+import { isTextCut, syncCutTitle } from './cut-title'
 import { formatNumber } from '@/lib/app-locale'
 import {
   knownRowCount,
@@ -775,6 +776,12 @@ function AutoMobileCard<TData>({
   const candidates = rest.filter((c) => c !== status && c !== subtitle)
 
   const titleRef = React.useRef<HTMLDivElement>(null)
+  // The card's title (the row's name) may end in an ellipsis or a clamp: its
+  // full text is then the title.
+  React.useLayoutEffect(() => {
+    const el = titleRef.current
+    if (el) syncCutTitle(el, isTextCut(el))
+  })
   const subtitleRef = React.useRef<HTMLDivElement>(null)
   const fieldsRef = React.useRef<HTMLDListElement>(null)
   const statusRef = React.useRef<HTMLDivElement>(null)
@@ -887,6 +894,7 @@ function AutoMobileCard<TData>({
           <div
             ref={titleRef}
             data-slot="mobile-card-title"
+            data-column-kind="name"
             className={cn('min-w-0 flex-1', CARD_TITLE_CLASS)}
           >
             {flexRender(title.column.columnDef.cell, title.getContext())}
@@ -927,6 +935,7 @@ function AutoMobileCard<TData>({
         <div
           ref={subtitleRef}
           data-slot="mobile-card-subtitle"
+          data-column-kind={kindOf(subtitle)}
           className={cn(
             'mt-1 h-5 truncate text-sm leading-5 text-muted-foreground',
             CARD_LINE_CLASS,
@@ -955,6 +964,7 @@ function AutoMobileCard<TData>({
               key={cell.id}
               data-slot="mobile-card-field"
               data-column={cell.column.id}
+              data-column-kind={kindOf(cell)}
               data-figure={
                 CARD_FIGURE_KINDS.has(kindOf(cell)) ||
                 (cell.column.columnDef.meta as DataTableColumnMeta | undefined)?.cardFigure
@@ -1639,17 +1649,28 @@ export function DataTable<TData, TValue>({
         : declared
     return {
       'data-pinned-actions': columnId === 'actions' && actionsPinned ? '' : undefined,
+      // The column's kind, for the layout checks: a name may end in an
+      // ellipsis (with its full text reachable), no other value may.
+      'data-column-kind': layout.kind,
       className: cn(
         pin.className,
         ALIGN_CLASS[layout.align],
         layout.kind === 'name' && NAME_SIZED_BY_FLOOR,
-        // A date is one line: it never breaks between day, month and year.
-        (layout.kind === 'date' || layout.kind === 'datetime-recent') && 'whitespace-nowrap',
-        // A cell still too wide for its column ends in an ellipsis (its full
-        // text in the title, set below), never a hard clip.
+        // A date is one line: it never breaks between day, month and year. A
+        // relative time ("khoảng 2 giờ trước") wraps between its words in a
+        // narrow column rather than being cut.
+        !head && layout.kind === 'date' && 'whitespace-nowrap',
+        // A column header is never cut: a long label wraps onto a second line.
+        head &&
+          layout.kind !== 'select' &&
+          layout.kind !== 'actions' &&
+          'whitespace-normal break-words',
+        // A body cell still too wide for its column ends in an ellipsis (its
+        // full text in the title, set below), never a hard clip.
         // A pinned cell is left alone: its edge shadow (`after:-end-3`) sits
         // outside the cell, and a clip would hide it.
-        !pin.className &&
+        !head &&
+          !pin.className &&
           layout.kind !== 'name' &&
           layout.kind !== 'select' &&
           layout.kind !== 'actions' &&
@@ -1666,18 +1687,15 @@ export function DataTable<TData, TValue>({
   }
 
   // A cell that is cut gets its full text as the title (a pointer or a long
-  // press shows it); a cell that fits again loses the title it was given.
+  // press shows it); a cell that fits again loses the title it was given. A
+  // name cell is cut when a box inside it ends in an ellipsis or a clamp.
   React.useLayoutEffect(() => {
     const cells = tableWrapRef.current?.querySelectorAll<HTMLElement>('tbody td')
     cells?.forEach((td) => {
-      const cut = td.classList.contains('overflow-hidden') && td.scrollWidth > td.clientWidth + 1
-      if (cut && !td.title) {
-        td.title = td.textContent?.trim() ?? ''
-        td.dataset.autoTitle = ''
-      } else if (!cut && td.dataset.autoTitle !== undefined) {
-        td.removeAttribute('title')
-        delete td.dataset.autoTitle
-      }
+      const cut =
+        (td.classList.contains('overflow-hidden') && td.scrollWidth > td.clientWidth + 1) ||
+        (td.dataset.columnKind === 'name' && isTextCut(td))
+      syncCutTitle(td, cut)
     })
   })
 
