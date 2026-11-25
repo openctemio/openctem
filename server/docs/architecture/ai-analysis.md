@@ -282,9 +282,9 @@ trusts the request, not the document, and then the document only as untrusted da
 **Who may end the job.** `complete` and `fail` of an `analyze` command are accepted only from a
 request signed with the worker's own registered key (RFC 9421, the body covered by its content
 digest; `sensorsig`) that states the lease epoch it holds the job under
-(`X-OpenCTEM-Lease-Epoch`). A bearer key, an unsigned request or a request without the epoch is told
-`command-not-found`, as is a sensor of another organization; a superseded epoch is refused by the
-lease fencing every command has (`command.Transition`, `signedOnly`). Only the platform creates the
+(`X-OpenCTEM-Lease-Epoch`). A bearer key, an unsigned request, a request without the epoch or under a
+superseded epoch, and a sensor of another organization are all told `command-not-found`
+(`command.Transition`, `signedOnly`). Only the platform creates the
 job, and only an AI worker grant claims it.
 
 **Taking the result** (`WorkerExecutor.ApplyResult`, `internal/app/aianalysis/worker_result.go`), right
@@ -313,6 +313,8 @@ for a completed job whose request ended first:
    compared with the row version **the run saw when it built the bundle**: if anyone changed it since,
    every change becomes a comment (`finding_changed`). A person's action always wins.
 7. An `incomplete` result applies what validates; the run completes with the worker's code.
+   The outcome is written only over the claim (`FinishClaimedRun`: still `running` with this result
+   digest), so a run the deadline sweep ended meanwhile keeps the sweep's outcome.
 8. Audit: `ai_agent.analysis_result_applied` or `ai_agent.analysis_result_refused` with the run, job,
    finding, worker, provider, model, model family, result digest, status, outcome, error code and the
    action log (never model text).

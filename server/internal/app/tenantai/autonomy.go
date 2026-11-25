@@ -28,6 +28,10 @@ import (
 // ErrAutonomyUnavailable: the store cannot read or write the setting.
 var ErrAutonomyUnavailable = fmt.Errorf("%w: AI autonomy store not wired", shared.ErrInternal)
 
+// ErrAutonomyChanged: the setting changed after it was read for this
+// change; nothing was written (409, reload and try again).
+var ErrAutonomyChanged = fmt.Errorf("%w: the AI autonomy setting changed meanwhile", shared.ErrConflict)
+
 // AutonomyView is the setting as an administrator sees it.
 type AutonomyView struct {
 	aidom.Autonomy
@@ -85,9 +89,13 @@ func (s *Service) SaveAutonomy(ctx context.Context, tenantID string, in Autonomy
 	if err != nil {
 		return AutonomyView{}, fmt.Errorf("%w: invalid id format", shared.ErrValidation)
 	}
-	before, err := s.autonomy(ctx, tid)
+	stored, found, err := store.GetAutonomy(ctx, tid)
 	if err != nil {
 		return AutonomyView{}, err
+	}
+	before, expected := aidom.DefaultAutonomy(), (*aidom.Autonomy)(nil)
+	if found {
+		before, expected = stored, &stored
 	}
 	next := before
 	next.Paused, next.PerHour, next.PerDay = in.Paused, in.PerHour, in.PerDay
@@ -114,8 +122,15 @@ func (s *Service) SaveAutonomy(ctx context.Context, tenantID string, in Autonomy
 		next.PausedAt, next.PausedBy = nil, ""
 	}
 	next.UpdatedAt, next.UpdatedBy = &now, actx.ActorID
-	if err := store.SaveAutonomy(ctx, tid, next); err != nil {
+	// Written only over the setting this decision was made on: a change
+	// that landed meanwhile could make a loosening look like a tightening
+	// (and skip the recent sign-in), so the caller reloads instead.
+	saved, err := store.SaveAutonomy(ctx, tid, expected, next)
+	if err != nil {
 		return AutonomyView{}, err
+	}
+	if !saved {
+		return AutonomyView{}, ErrAutonomyChanged
 	}
 
 	actx.TenantID = tenantID

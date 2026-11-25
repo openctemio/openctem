@@ -32,7 +32,7 @@ Stored in `tenant_ai_settings.autonomy` (JSON, `version: 1`); `NULL` reads as th
 - Each allowed change is counted in `ai_auto_change_counts` (organization, clock hour). The count and
   the check run under a transaction-scoped advisory lock on the organization, so concurrent runs
   cannot both take the last slot. Counts older than two days are dropped as new ones are written.
-- An unreadable setting or count holds the change (fail closed).
+- An unreadable setting or count, or an executor without the gate wired, holds the change (fail closed).
 
 ## API
 
@@ -49,6 +49,9 @@ Stored in `tenant_ai_settings.autonomy` (JSON, `version: 1`); `NULL` reads as th
 - Resuming, raising a limit or making it unlimited is a loosening: a recent sign-in
   (`403 STEP_UP_REQUIRED` otherwise), audited `ai_autonomy.resumed` / `ai_autonomy.updated` as
   critical, and every owner and administrator is told.
+- A change is written only over the setting it was decided on (compare-and-set): if another
+  administrator saved in between, the answer is `409` and nothing is written, so a raise can never
+  pass as a tightening judged against an older, higher limit.
 - The tenant is the token's; another organization's setting is never read or written.
 
 ## Tests
@@ -56,6 +59,9 @@ Stored in `tenant_ai_settings.autonomy` (JSON, `version: 1`); `NULL` reads as th
 `internal/infra/http/routes/ai_autonomy_route_db_test.go`: defaults, the authorization matrix, both
 limits required and bounded, pause and lower without a recent sign-in, resume / raise / remove refused
 on a stale sign-in and nothing stored, audit severities, tenant isolation.
+`internal/app/tenantai/autonomy_test.go`: a save decided on a stale read is refused and never skips
+the recent sign-in. `internal/infra/postgres/tenant_ai_autonomy_db_test.go`: compare-and-set and the
+concurrent limit count.
 `internal/infra/http/routes/ai_worker_result_db_test.go` (`TestAIWorkerResult_OrganizationPauseAndLimits_DB`):
 a pause set while a job was out holds its confirm; with one change an hour the first applies and the
 second is held.
