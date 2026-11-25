@@ -125,7 +125,7 @@ const REVIEWED = new Set([
   'app/(dashboard)/settings/page.tsx|Link|href={item.url}',
   'app/(dashboard)/settings/page.tsx|Link|href={r.href}',
   // integrationManageHref returns one of the constant settings paths only.
-  'app/(dashboard)/settings/integrations/page.tsx|Link|href={integrationManageHref(row.original)}',
+  'app/(dashboard)/settings/integrations/page.tsx|Link|href={integrationManageHref(i)}',
   'app/(dashboard)/settings/integrations/page.tsx|LinkCard|href={category.href}',
   'components/layout/grouped-nav.tsx|SidebarLink|href={item.url}',
   'components/layout/nav-group.tsx|SidebarLink|href={item.url}',
