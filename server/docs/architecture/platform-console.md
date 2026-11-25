@@ -79,6 +79,17 @@ not act with does not send it and shows the elevation notice instead.
 Suspending an organization and blocking an account (the console's kill
 switches): [organization-suspension.md](organization-suspension.md).
 
+Threat intelligence (System > Threat intelligence) holds the feed cards, Feed
+delivery (direct or relay, [feed-transfer.md](feed-transfer.md#relay-feeds-through-a-platform-sensor-no-outbound-access))
+and, next to it, Vulnerability feed address: the release address and mirrors
+(platform owner, fresh step-up and reason; locked while the server's
+environment sets them), a test fetch that checks each address against the
+signing root without importing, and, read only, the signing root (official or
+custom, with its fingerprint) and whether a local feed folder is set
+([feed-transfer.md](feed-transfer.md#feed-sources-in-the-console)). The card
+shows the delivery mode; in relay mode the mirrors are marked as used in direct
+mode only and the test fetch is off.
+
 ## Users and the content catalog
 
 Customers > Users (`GET /api/v1/admin/platform-users`, operations admin and
