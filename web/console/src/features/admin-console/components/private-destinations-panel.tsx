@@ -319,64 +319,66 @@ export function PrivateDestinationsPanel({
               {t('admin.privateNetworks.consoleNone', 'No range is opened here.')}
             </p>
           )}
-          <ul className="space-y-2" data-testid="console-ranges">
-            {rows.map((r) => {
-              const idx = rowIndex(r.key)
-              const error = rowError && rowError.index === idx ? rowError.text : null
-              return (
-                <li key={r.key} className="space-y-1">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <Input
-                      value={r.cidr}
-                      onChange={(e) => update(r.key, { cidr: e.target.value })}
-                      disabled={!canEdit}
-                      placeholder="192.168.10.0/24"
-                      aria-label={t('admin.privateNetworks.rangeLabel', 'Range')}
-                      aria-invalid={!!error}
-                      className="font-mono sm:w-56"
-                    />
-                    <Input
-                      value={r.note}
-                      onChange={(e) => update(r.key, { note: e.target.value })}
-                      disabled={!canEdit}
-                      maxLength={100}
-                      placeholder={t(
-                        'admin.privateNetworks.notePlaceholder',
-                        'Note, such as GitLab'
-                      )}
-                      aria-label={t('admin.privateNetworks.noteLabel', 'Note')}
-                      className="sm:flex-1"
-                    />
-                    {canEdit && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => remove(r.key)}
-                        aria-label={t('admin.privateNetworks.remove', 'Remove {range}', {
-                          range: r.cidr || t('admin.privateNetworks.rangeLabel', 'Range'),
-                        })}
-                      >
-                        <Trash2 className="size-4" aria-hidden />
-                      </Button>
-                    )}
-                  </div>
-                  {error ? (
-                    <p className="text-body text-destructive">{error}</p>
-                  ) : (
-                    isWideDraft(r.cidr) && (
-                      <p className="flex items-center gap-1.5 text-cap text-warning">
-                        <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
-                        {t(
-                          'admin.privateNetworks.wide',
-                          'A wide range: every address in it becomes reachable. Prefer the host’s own /32 or its /24.'
+          {rows.length > 0 && (
+            <ul className="space-y-2" data-testid="console-ranges">
+              {rows.map((r) => {
+                const idx = rowIndex(r.key)
+                const error = rowError && rowError.index === idx ? rowError.text : null
+                return (
+                  <li key={r.key} className="space-y-1">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <Input
+                        value={r.cidr}
+                        onChange={(e) => update(r.key, { cidr: e.target.value })}
+                        disabled={!canEdit}
+                        placeholder="192.168.10.0/24"
+                        aria-label={t('admin.privateNetworks.rangeLabel', 'Range')}
+                        aria-invalid={!!error}
+                        className="font-mono sm:w-56"
+                      />
+                      <Input
+                        value={r.note}
+                        onChange={(e) => update(r.key, { note: e.target.value })}
+                        disabled={!canEdit}
+                        maxLength={100}
+                        placeholder={t(
+                          'admin.privateNetworks.notePlaceholder',
+                          'Note, such as GitLab'
                         )}
-                      </p>
-                    )
-                  )}
-                </li>
-              )
-            })}
-          </ul>
+                        aria-label={t('admin.privateNetworks.noteLabel', 'Note')}
+                        className="sm:flex-1"
+                      />
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => remove(r.key)}
+                          aria-label={t('admin.privateNetworks.remove', 'Remove {range}', {
+                            range: r.cidr || t('admin.privateNetworks.rangeLabel', 'Range'),
+                          })}
+                        >
+                          <Trash2 className="size-4" aria-hidden />
+                        </Button>
+                      )}
+                    </div>
+                    {error ? (
+                      <p className="text-body text-destructive">{error}</p>
+                    ) : (
+                      isWideDraft(r.cidr) && (
+                        <p className="flex items-center gap-1.5 text-cap text-warning">
+                          <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+                          {t(
+                            'admin.privateNetworks.wide',
+                            'A wide range: every address in it becomes reachable. Prefer the host’s own /32 or its /24.'
+                          )}
+                        </p>
+                      )
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
           {pending && (
             <p className="text-cap text-muted-foreground">
               {t(
@@ -539,7 +541,9 @@ function DestinationTestCard({
           <RoleRequiredNotice permission={NETWORK_PERMISSION} />
         ) : (
           <form
-            className="flex flex-col gap-2 sm:flex-row sm:items-end"
+            // The button sits right after the field at every width: on a
+            // phone beside it, never a full-width bar of its own.
+            className="flex items-end gap-2"
             onSubmit={(e) => {
               e.preventDefault()
               if (host.trim()) void run()
@@ -549,7 +553,7 @@ function DestinationTestCard({
                 )
             }}
           >
-            <div className="space-y-1.5 sm:flex-1">
+            <div className="min-w-0 flex-1 space-y-1.5 sm:max-w-[32rem]">
               <Label htmlFor={id}>{t('admin.privateNetworks.test.hostLabel', 'Host name')}</Label>
               <Input
                 id={id}
