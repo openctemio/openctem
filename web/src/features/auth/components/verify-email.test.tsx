@@ -24,7 +24,7 @@ describe('verify email', () => {
 
   it('has en and vi text and opens without a session', () => {
     const keys = Object.keys(en).filter((k) => k.startsWith('auth.verifyEmail.'))
-    expect(keys).toHaveLength(9)
+    expect(keys).toHaveLength(11)
     for (const key of keys) expect((vi_ as Record<string, string>)[key], key).toBeTruthy()
     expect(PUBLIC_ROUTES).toContain('/verify-email')
   })
@@ -42,12 +42,12 @@ describe('verify email', () => {
     vi.mocked(verifyEmailAction).mockResolvedValue({ success: false, error: 'expired' })
     window.history.replaceState(null, '', '/verify-email#token=old')
     render(<VerifyEmail />)
-    expect(await screen.findByText(/invalid or has expired/i)).toBeInTheDocument()
+    expect(await screen.findByText(/verification link does not work/i)).toBeInTheDocument()
   })
 
   it('does not call the API without a token', async () => {
     render(<VerifyEmail />)
-    expect(await screen.findByText(/invalid or has expired/i)).toBeInTheDocument()
+    expect(await screen.findByText(/verification link does not work/i)).toBeInTheDocument()
     expect(verifyEmailAction).not.toHaveBeenCalled()
   })
 
@@ -60,7 +60,7 @@ describe('verify email', () => {
     it('posts the typed address and answers the same whatever the address is', async () => {
       vi.mocked(post).mockResolvedValue({})
       render(<VerifyEmail />)
-      await screen.findByText(/invalid or has expired/i)
+      await screen.findByText(/verification link does not work/i)
       await userEvent.type(screen.getByLabelText(/email address/i), 'person@corp.test')
       await userEvent.click(screen.getByRole('button', { name: /send a new verification link/i }))
       await waitFor(() =>

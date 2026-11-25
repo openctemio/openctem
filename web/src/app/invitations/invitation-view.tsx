@@ -8,9 +8,11 @@ import { toast } from 'sonner'
 
 import {
   EntryActions,
+  EntryBackLink,
   EntryBanner,
   EntryCard,
   EntryHeader,
+  EntryLinkProblem,
   EntryLine,
   EntryNote,
 } from '@/components/entry'
@@ -387,18 +389,11 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
   // Error state
   if (error) {
     return (
-      <EntryCard>
-        <EntryHeader title={t('org.acceptInvite.errorTitle')} />
-        <EntryBanner tone="danger">{error}</EntryBanner>
-        <EntryActions>
-          <Button variant="outline" onClick={() => router.push('/login')}>
-            {t('org.acceptInvite.goToLogin')}
-          </Button>
-          <Button variant="ghost" onClick={() => router.push('/')}>
-            {t('org.acceptInvite.goHome')}
-          </Button>
-        </EntryActions>
-      </EntryCard>
+      <EntryLinkProblem
+        title={t('org.acceptInvite.linkProblemTitle', 'This invitation link does not work')}
+        description={error}
+        exit={hasSession ? 'app' : 'signIn'}
+      />
     )
   }
 
@@ -413,9 +408,7 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
           })}
         />
         <EntryActions>
-          <Button variant="outline" onClick={() => router.push('/')}>
-            {t('org.acceptInvite.goHome')}
-          </Button>
+          <EntryBackLink to={hasSession ? 'app' : 'signIn'} />
         </EntryActions>
       </EntryCard>
     )
@@ -529,16 +522,9 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
                 ? t('org.acceptInvite.openRetryIn', undefined, { seconds: openWait })
                 : t('org.acceptInvite.openOrg', undefined, { org: invitation.tenant.name })}
             </Button>
-          ) : (
-            !hasSession && (
-              <Button variant="signal" onClick={() => router.push('/login')}>
-                {t('org.acceptInvite.goToLogin')}
-              </Button>
-            )
-          )}
-          <Button variant="ghost" onClick={() => router.push('/')}>
-            {t('org.acceptInvite.goHome')}
-          </Button>
+          ) : null}
+          {/* One way out: the organization (signed in), else back to sign in. */}
+          <EntryBackLink to={hasSession ? 'app' : 'signIn'} />
         </EntryActions>
       </EntryCard>
     )

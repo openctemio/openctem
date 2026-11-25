@@ -1,9 +1,14 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import Link from '@/components/link'
 import { Loader2 } from 'lucide-react'
-import { EntryActions, EntryBanner, EntryCard, EntryHeader } from '@/components/entry'
+import {
+  EntryActions,
+  EntryBackLink,
+  EntryBanner,
+  EntryCard,
+  EntryHeader,
+} from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -120,9 +125,7 @@ export function RequestAccessForm() {
           </p>
         </EntryBanner>
         <EntryActions>
-          <Button asChild variant="signal">
-            <Link href="/login">{t('auth.notSetUp.backToSignIn', 'Back to sign in')}</Link>
-          </Button>
+          <EntryBackLink />
         </EntryActions>
       </EntryCard>
     )
@@ -199,9 +202,7 @@ export function RequestAccessForm() {
             {isPending && <Loader2 aria-hidden className="size-4 animate-spin" />}
             {t('auth.requestAccess.submit', 'Send request')}
           </Button>
-          <Button asChild variant="outline">
-            <Link href="/login">{t('auth.notSetUp.backToSignIn', 'Back to sign in')}</Link>
-          </Button>
+          <EntryBackLink />
         </EntryActions>
       </form>
     </EntryCard>
