@@ -1,0 +1,142 @@
+# Feed relay sensor (docs/rfcs/RFC-142-feed-relay.md): an optional overlay that
+# runs a separate container whose only job is to relay the platform's signed
+# feeds, so the API needs no outbound access. It uses the sensor's relay
+# profile image (<version>-relay, sensor repository docs/PROFILES.md): the
+# sensor binary on a distroless static base and no tool at all. It reports
+# feed.relay@1 and nothing else, so the platform never places a scan on it.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.relay-sensor.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.relay-sensor.yml logs relay-sensor
+#     # "Enrolled: shared sensor ..." then "Feed relay: on, origins ..."
+#
+# Add it to COMPOSE_FILE in .env so every `docker compose` call (and
+# install.sh) keeps it, alone or next to the bundled scanning sensor:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.sensor.yml:docker-compose.relay-sensor.yml
+#
+# - Needs the sensor's relay profile image, first published with sensor
+#   v0.42.0: SENSOR_VERSION (the bundled sensor's pin, also used here) must
+#   name that release or a later one.
+# - Its own single-use enrollment token, SENSOR_RELAY_ENROLLMENT_TOKEN (setup.sh
+#   writes one; an older .env needs the line from .env.example). The
+#   relay-sensor-enrollment job registers it (valid one hour) with -feed-relay:
+#   on a new install (feed delivery never set) the platform starts in relay mode
+#   and designates this sensor once it reports feed.relay@1. With the bundled
+#   sensor overlay too, whichever enrollment runs first is designated: add the
+#   other under Console > System > Feed delivery (one to three relay sensors;
+#   two give redundancy). An existing install keeps its feed delivery setting:
+#   designate this sensor there.
+# - Shared mode, like the bundled sensor: the SDK requires the tool sandbox,
+#   network confinement and a local policy even though this image runs no
+#   tool, so it uses the same seccomp profile, local policy and job-signing key.
+#   It needs far less: 256 MiB and half a CPU by default.
+# - Network: sensor-net only (the gateway under OPENCTEM_HOSTNAME, and the
+#   internet for the feed origins). It reaches no datastore. Allow egress to
+#   the feed origins on 443 (github.com and its release asset hosts, or your
+#   mirror in SENSOR_FEED_RELAY_ORIGINS, which the signer must allow too); it
+#   contacts nothing else.
+# - The sensor refuses to start when it cannot relay (no pinned job-signing
+#   key, not a shared sensor) and says why in its log.
+services:
+  relay-sensor-enrollment:
+    image: ${API_IMAGE:-ghcr.io/openctemio/openctem-server}:${API_VERSION:-${OPENCTEM_VERSION:?OPENCTEM_VERSION is not set (run ./setup.sh, or set it in .env)}}
+    entrypoint: ["/app/bootstrap-admin"]
+    command:
+      - "sensor-token"
+      - "-from-env"
+      - "SENSOR_RELAY_ENROLLMENT_TOKEN"
+      - "-name=${RELAY_SENSOR_NAME:-relay-sensor}"
+      - "-reason=feed relay sensor of the compose install"
+      # A new install receives its feeds through this sensor (relay mode);
+      # an existing install keeps its feed delivery setting.
+      - "-feed-relay"
+    environment:
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER:-openctem}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-openctem}
+      DB_SSLMODE: ${DB_SSLMODE:-require}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?APP_ENCRYPTION_KEY is required (openssl rand -hex 32)}
+      SENSOR_KEY_PEPPER: ${SENSOR_KEY_PEPPER:-}
+      SENSOR_RELAY_ENROLLMENT_TOKEN: ${SENSOR_RELAY_ENROLLMENT_TOKEN:?SENSOR_RELAY_ENROLLMENT_TOKEN is required (see .env.example)}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - openctem
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  relay-sensor:
+    image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.41.1}-relay
+    environment:
+      SENSOR_API_URL: https://${OPENCTEM_HOSTNAME:?OPENCTEM_HOSTNAME is required (DNS name or IP clients use)}
+      SENSOR_CA_CERT_FILE: ${SENSOR_CA_CERT_FILE-/ca/openctem-root-ca.crt}
+      SENSOR_NAME: ${RELAY_SENSOR_NAME:-relay-sensor}
+      SENSOR_REGION: ${SENSOR_REGION:-default}
+      SENSOR_INSTANCE_ENROLLMENT_TOKEN: ${SENSOR_RELAY_ENROLLMENT_TOKEN:?SENSOR_RELAY_ENROLLMENT_TOKEN is required (see .env.example)}
+      # The job signer's public key (pinned; the relay needs it).
+      SENSOR_JOB_SIGNING_KEYS_FILE: /etc/openctem/signer-pub/signer.pub
+      SENSOR_STATE_DIR: /var/lib/openctem/state
+      SENSOR_OUTBOX_DIR: /var/lib/openctem/outbox
+      SENSOR_SHARED_MODE: "1"
+      SENSOR_SANDBOX: required
+      SENSOR_SANDBOX_NETWORK: required
+      SENSOR_LOCAL_POLICY: /etc/openctem/sensor-policy.yaml
+      # The relay is required (the image's default too).
+      SENSOR_FEED_RELAY: "1"
+    depends_on:
+      relay-sensor-enrollment:
+        condition: service_completed_successfully
+      gateway:
+        condition: service_healthy
+    networks:
+      - sensor-net
+    restart: unless-stopped
+    volumes:
+      # The relay sensor's identity (state/) and its relay working directory.
+      # It holds a credential: back it up like one.
+      - relay-sensor-data:/var/lib/openctem
+      - ./sensor/sensor-policy.yaml:/etc/openctem/sensor-policy.yaml:ro
+      - signer-pub:/etc/openctem/signer-pub:ro
+      - ${OPENCTEM_CA_EXPORT_DIR:-./ca}:/ca:ro
+    tmpfs:
+      - /tmp
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+      - seccomp=./sensor/seccomp.json
+    deploy:
+      resources:
+        limits:
+          memory: ${RELAY_SENSOR_MEMORY_LIMIT:-256m}
+          cpus: ${RELAY_SENSOR_CPUS:-0.5}
+          pids: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  gateway:
+    networks:
+      sensor-net:
+        aliases:
+          - ${OPENCTEM_HOSTNAME}
+
+networks:
+  sensor-net:
+    driver: bridge
+
+volumes:
+  relay-sensor-data:
+  signer-pub:
