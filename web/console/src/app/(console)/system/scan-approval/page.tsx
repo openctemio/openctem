@@ -1,9 +1,7 @@
 'use client'
 
-import { Main } from '@/components/layout'
-import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { SettingsPage } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import {
   saveScanPolicyDefault,
@@ -23,44 +21,36 @@ export default function ScanApprovalPolicyPage() {
   const { data, error, isLoading, mutate } = useScanPolicyDefault()
 
   return (
-    <Main>
-      <PageStack>
-        <PageHeader
-          title={t('admin.scanPolicy.pageTitle', 'Scan approval')}
+    <SettingsPage
+      title={t('admin.scanPolicy.pageTitle', 'Scan approval')}
+      description={t(
+        'admin.scanPolicy.pageDesc',
+        'Whether organizations choose their own scan approval, or the platform sets it.'
+      )}
+      state={error ? 'error' : isLoading || !data ? 'loading' : 'ready'}
+      error={error}
+      onRetry={() => void mutate()}
+    >
+      {data && (
+        <ScanPolicyForm
+          title={t('admin.scanPolicy.defaultTitle', 'Platform default')}
           description={t(
-            'admin.scanPolicy.pageDesc',
-            'Whether organizations choose their own scan approval, or the platform sets it.'
+            'admin.scanPolicy.defaultDesc',
+            'Applies to every organization without its own setting.'
           )}
+          value={data.policy}
+          canEdit={adminHas(me, 'platform.sensors.manage')}
+          onSave={async (policy, reason, code) => {
+            await saveScanPolicyDefault({
+              policy: policy ?? 'tenant_controlled',
+              version: data.version ?? 0,
+              reason,
+              totp_code: code,
+            })
+            await mutate()
+          }}
         />
-        {error ? (
-          <ErrorState
-            title={t('admin.scanPolicy.errorTitle', 'the scan approval policy')}
-            error={error}
-            onRetry={() => void mutate()}
-          />
-        ) : isLoading || !data ? (
-          <Skeleton className="h-72 w-full" />
-        ) : (
-          <ScanPolicyForm
-            title={t('admin.scanPolicy.defaultTitle', 'Platform default')}
-            description={t(
-              'admin.scanPolicy.defaultDesc',
-              'Applies to every organization without its own setting.'
-            )}
-            value={data.policy}
-            canEdit={adminHas(me, 'platform.sensors.manage')}
-            onSave={async (policy, reason, code) => {
-              await saveScanPolicyDefault({
-                policy: policy ?? 'tenant_controlled',
-                version: data.version ?? 0,
-                reason,
-                totp_code: code,
-              })
-              await mutate()
-            }}
-          />
-        )}
-      </PageStack>
-    </Main>
+      )}
+    </SettingsPage>
   )
 }

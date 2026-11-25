@@ -1,8 +1,6 @@
 'use client'
 
-import { Main } from '@/components/layout'
-import { Skeleton } from '@/components/ui/skeleton'
-import { ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { SettingsPage } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useSignupPolicy } from '@console/features/admin-console/api/use-signup-policy'
 import { SignupPolicyForm } from '@console/features/admin-console/components/signup-policy-form'
@@ -11,7 +9,7 @@ import { useTranslation } from '@/context/i18n-provider'
 
 /**
  * System -> Sign-up: who may create an organization on this deployment. Any
- * administrator sees it; super admins change it.
+ * administrator sees it; super admins change it (the form says so itself).
  */
 export default function SignupPolicyPage() {
   const { t } = useTranslation()
@@ -19,25 +17,20 @@ export default function SignupPolicyPage() {
   const { data, error, isLoading, mutate } = useSignupPolicy()
 
   return (
-    <Main>
-      <PageStack>
-        <PageHeader title={t('admin.signup.pageTitle')} description={t('admin.signup.pageDesc')} />
-        {error ? (
-          <ErrorState
-            title={t('admin.signup.errorTitle')}
-            error={error}
-            onRetry={() => void mutate()}
-          />
-        ) : isLoading || !data ? (
-          <Skeleton className="h-72 w-full" />
-        ) : (
-          <SignupPolicyForm
-            policy={data}
-            canEdit={adminHas(me, 'platform.settings.signup.write')}
-            onSaved={() => void mutate()}
-          />
-        )}
-      </PageStack>
-    </Main>
+    <SettingsPage
+      title={t('admin.signup.pageTitle')}
+      description={t('admin.signup.pageDesc')}
+      state={error ? 'error' : isLoading || !data ? 'loading' : 'ready'}
+      error={error}
+      onRetry={() => void mutate()}
+    >
+      {data && (
+        <SignupPolicyForm
+          policy={data}
+          canEdit={adminHas(me, 'platform.settings.signup.write')}
+          onSaved={() => void mutate()}
+        />
+      )}
+    </SettingsPage>
   )
 }

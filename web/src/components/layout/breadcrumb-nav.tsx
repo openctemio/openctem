@@ -122,7 +122,13 @@ export function BreadcrumbNav({
   const titles = useBreadcrumbTitles()
 
   const breadcrumbItems = trail
-    ? trail.levels.map((level, i) => ({ ...level, isLast: i === trail.levels.length - 1 }))
+    ? // A shell's own trail takes the names pages gave their records too, so
+      // a record level reads as its name ("Acme"), not its kind.
+      trail.levels.map((level, i) => ({
+        ...level,
+        label: titles.get(level.path) ?? level.label,
+        isLast: i === trail.levels.length - 1,
+      }))
     : crumbsFromUrl(pathname, {
         hideIdSegment,
         pageTitle,
