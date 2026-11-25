@@ -80,11 +80,10 @@ describe('ZoneCoverageCard', () => {
   it('shows labelled counts, a few examples (private first) and a link to the rest', async () => {
     renderCard()
     const counts = screen.getByTestId('zone-outside-counts')
-    expect(within(counts).getByText('Private, scans skip these').nextSibling).toHaveTextContent('2')
-    expect(
-      within(counts).getByText('Public, any of your sensors scans these (no default zone)')
-        .nextSibling
-    ).toHaveTextContent('185')
+    expect(counts).toHaveTextContent('Private, scans skip these 2')
+    expect(counts).toHaveTextContent(
+      'Public, any of your sensors scans these (no default zone) 185'
+    )
 
     const list = await screen.findByTestId('zone-outside-list')
     const items = within(list).getAllByRole('listitem')

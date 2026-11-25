@@ -14,6 +14,7 @@ import { fetchAllPages } from '@/lib/api/fetch-all-pages'
 import { API_BASE } from '@/lib/api/endpoints'
 import type { ScanZone, ScanZoneCoverage } from '@/lib/api/scan-zone-types'
 import { Permission, useHasPermission } from '@/lib/permissions'
+import { MetaItem, MetaLine } from '@/features/shared'
 
 import { isPrivatePrefix, parsePrefix, prefixContainsAddr } from '../lib/ranges'
 import { formatNumber } from '@/lib/app-locale'
@@ -97,21 +98,18 @@ const SHOWN_WARNINGS = new Set([
   'public_addresses_without_default_zone',
 ])
 
-/** One labelled number: the label, then the figure. */
-function Figure({ label, value, tone }: { label: string; value: number; tone?: 'warning' }) {
+/** A count in a MetaLine: amber while private addresses are skipped. */
+function Count({ value, tone }: { value: number; tone?: 'warning' }) {
   return (
-    <div className="flex items-baseline gap-1.5">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd
-        className={
-          tone === 'warning' && value > 0
-            ? 'font-semibold tabular-nums text-warning'
-            : 'font-semibold tabular-nums'
-        }
-      >
-        {formatNumber(value)}
-      </dd>
-    </div>
+    <span
+      className={
+        tone === 'warning' && value > 0
+          ? 'font-semibold tabular-nums text-warning'
+          : 'font-semibold tabular-nums'
+      }
+    >
+      {formatNumber(value)}
+    </span>
   )
 }
 
@@ -162,17 +160,17 @@ export function ZoneCoverageCard({ coverage, zones }: ZoneCoverageCardProps) {
             </p>
           ) : (
             <>
-              <dl
-                className="flex flex-wrap gap-x-6 gap-y-1 text-sm"
+              <MetaLine
                 data-testid="zone-outside-counts"
-              >
-                <Figure
-                  label={t('scans.zones.coverage.outsidePrivate')}
-                  value={coverage.outside_private}
-                  tone="warning"
-                />
-                <Figure label={t(publicLabel)} value={coverage.outside_public} />
-              </dl>
+                items={[
+                  <MetaItem key="private" label={t('scans.zones.coverage.outsidePrivate')}>
+                    <Count value={coverage.outside_private} tone="warning" />
+                  </MetaItem>,
+                  <MetaItem key="public" label={t(publicLabel)}>
+                    <Count value={coverage.outside_public} />
+                  </MetaItem>,
+                ]}
+              />
               {!canReadAssets ? (
                 <p className="text-sm text-muted-foreground">
                   {t('scans.zones.coverage.noAssetsAccess', undefined, {
