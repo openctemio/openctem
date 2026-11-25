@@ -14,7 +14,7 @@ import { test, expect } from '../fixtures/authenticated-page'
 async function openTaskDialog(page: Page) {
   await page.goto('/findings')
   await page.waitForLoadState('networkidle')
-  const name = /^(task from filters|nhiệm vụ từ bộ lọc)$/i
+  const name = /^(task from filters|công việc từ bộ lọc)$/i
   const direct = page.getByRole('button', { name })
   if (await direct.isVisible()) {
     await direct.click()

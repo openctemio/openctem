@@ -43,7 +43,7 @@ test.describe('Sensors list', { tag: ['@sensors'] }, () => {
     expect(overflow).toBeLessThanOrEqual(1)
 
     await expect(row.locator('[data-slot="sensor-reason"]')).toHaveText(
-      'no local policy: network jobs refused'
+      'No local policy: network tasks are refused'
     )
     // One line per row at the default density.
     expect((await row.boundingBox())?.height).toBe(40)
@@ -67,7 +67,7 @@ test.describe('Sensors list', { tag: ['@sensors'] }, () => {
       .locator('[data-slot="sensor-card"]')
       .filter({ hasText: 'e2e-sensor' })
       .filter({
-        hasText: 'no local policy: network jobs refused',
+        hasText: 'No local policy: network tasks are refused',
       })
     await expect(card.first()).toBeVisible({ timeout: 30_000 })
     const sideways = await page.evaluate(
