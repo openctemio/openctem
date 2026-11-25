@@ -1139,7 +1139,6 @@
   "settings.perm.pentestTemplatesRead": "Xem mẫu pentest",
   "settings.perm.scansRead": "Xem lượt quét",
   "settings.perm.scansWrite": "Sửa lượt quét",
-  "settings.preferences.appearanceDescription": "Tùy chỉnh giao diện {product} trên thiết bị của bạn",
   "settings.saveBar.count": "{count, plural, other {# thay đổi chưa lưu}}",
   "settings.saveBar.discard": "Hủy thay đổi",
   "settings.saveBar.failed": "Không lưu được. Các thay đổi của bạn vẫn được giữ.",

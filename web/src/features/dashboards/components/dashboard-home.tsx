@@ -74,6 +74,7 @@ import { metricNameKey } from '../metrics'
 import {
   DashboardDataNotice,
   DashboardFreshness,
+  hasDataNotice,
   RefreshButton,
   scheduleSubmenu,
 } from './dashboard-freshness'
@@ -483,15 +484,11 @@ export function DashboardHome() {
           // Whose figures these are and how fresh: one line under the name,
           // part of the header, so the widgets start right below it. While
           // the lists load, a line of the same height holds its place. A
-          // building or stale notice is the line under it, still inside the
-          // header: never a row of its own above the widgets, and the title
-          // row's controls never move.
+          // building or stale notice is under the header, never inside it,
+          // so the title row's controls never move.
           description={
             dashboard && active ? (
-              <>
-                <DashboardFreshness kind={active.kind} data={data.data} />
-                {!customizing && <DashboardDataNotice data={data.data} />}
-              </>
+              <DashboardFreshness kind={active.kind} data={data.data} />
             ) : listsLoading ? (
               <Skeleton className="h-4 w-56 max-w-full" data-testid="dashboard-meta-pending" />
             ) : undefined
@@ -565,11 +562,20 @@ export function DashboardHome() {
           />
         ) : (
           <>
+            {/* A building or stale notice is a line of its own only when no
+                other note shows here; otherwise it opens that note's line,
+                so the widgets never sit under two rows of notes. */}
+            {!seededName && !layoutHint && <DashboardDataNotice data={data.data} />}
             {seededName && (
               <p
                 className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
                 role="status"
               >
+                {hasDataNotice(data.data) && (
+                  <>
+                    <DashboardDataNotice data={data.data} inline />{' '}
+                  </>
+                )}
                 {t(
                   'dashboards.view.seeded',
                   'This is the {name} layout, shown for what you can access.',
@@ -594,6 +600,11 @@ export function DashboardHome() {
                 data-testid="layout-hint"
               >
                 <span className="min-w-0 flex-1 basis-60 text-muted-foreground">
+                  {hasDataNotice(data.data) && (
+                    <>
+                      <DashboardDataNotice data={data.data} inline />{' '}
+                    </>
+                  )}
                   {layoutHint.missing.length > 0
                     ? t('dashboards.layoutHint.text', 'New on the {template} layout: {names}.', {
                         template: t(templateNameKey(layoutHint.template), layoutHint.template),

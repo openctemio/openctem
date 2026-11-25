@@ -6,7 +6,7 @@
  * (?from=&to=); otherwise the last 7, 14 or 30 days.
  */
 
-import { type ReactNode, useMemo } from 'react'
+import { useMemo } from 'react'
 import {
   Award,
   CircleOff,
@@ -182,15 +182,7 @@ function ChangeRow({ change }: { change: EASMChange }) {
   )
 }
 
-export function EASMChanges({
-  lens,
-}: {
-  /**
-   * The view's route lens (Surface / Page changes). It sits in the toolbar,
-   * after the filters, so on a phone the Filters button never has a row alone.
-   */
-  lens?: ReactNode
-} = {}) {
+export function EASMChanges() {
   const { t } = useTranslation()
   const kindLabel = useKindLabel()
   const [kindParam, setKinds] = useUrlFilterList('kind')
@@ -305,7 +297,6 @@ export function EASMChanges({
             />
           </>
         }
-        end={lens}
         below={
           chips.length > 0 ? (
             <FilterChipsRow

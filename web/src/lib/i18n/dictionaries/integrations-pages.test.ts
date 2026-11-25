@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getDictionary, translate } from '@/lib/i18n'
 
-// The notification-channel pages and the SCM connections page resolve their
+// The notification-channel pages and the source control connections page resolve their
 // text through these keys in both shipped catalogs.
 const KEYS: Record<string, [string, string]> = {
   'notificationChannels.page.title': ['Notification channels', 'Kênh thông báo'],
@@ -9,7 +9,7 @@ const KEYS: Record<string, [string, string]> = {
   'notificationChannels.outbox.title': ['Notification queue', 'Hàng đợi thông báo'],
   'notificationChannels.status.error': ['Error', 'Lỗi'],
   'notificationChannels.outbox.status.dead': ['Dead', 'Đã bỏ'],
-  'scmIntegration.page.title': ['SCM connections', 'Kết nối SCM'],
+  'scmIntegration.page.title': ['Source control connections', 'Kết nối mã nguồn'],
   'scmIntegration.col.lastVerified': ['Last verified', 'Xác minh lần cuối'],
 }
 

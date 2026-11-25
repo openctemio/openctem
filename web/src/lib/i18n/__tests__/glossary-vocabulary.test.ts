@@ -45,14 +45,6 @@ const RULES: Rule[] = [
         why: 'multi-tenant is the deployment model of a public cloud, not our organization',
       },
       {
-        key: 'admin.socialLogin.note.microsoft',
-        why: 'the Entra app registration option is called multi-tenant',
-      },
-      {
-        key: 'admin.proof.recommend',
-        why: 'multi-tenant is the deployment model of a public cloud, not our organization',
-      },
-      {
         key: 'scans.ci.refusal.legacy_audienceFix',
         why: 'quotes the literal audience string openctem:tenant:<id> that old CI snippets send',
       },
@@ -77,7 +69,6 @@ const RULES: Rule[] = [
         key: 'admin.identityProvidersPanel.workspaceDomain',
         why: 'the Google Workspace domain field',
       },
-      { key: 'admin.socialLogin.note.google', why: 'Google Workspace is the product name' },
       {
         key: 'scans.ci.refusal.organization_mismatchFix',
         why: 'Bitbucket calls a repository owner a workspace',

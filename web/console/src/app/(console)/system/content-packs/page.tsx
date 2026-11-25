@@ -71,14 +71,15 @@ function formatBytes(n?: number): string {
 function usePackLabels() {
   const { t } = useTranslation()
   const missing = '\u0000'
-  const word = (ns: string, v: string) => {
+  const word = (ns: string, v?: string) => {
+    if (!v) return ''
     const found = t(`${ns}.${v}`, missing)
     return found !== missing ? found : humanizeIdentifier(v)
   }
   return {
-    kindLabel: (v: string) => word('admin.cp.kindName', v),
-    tierLabel: (v: string) => word('admin.cp.tierName', v),
-    channelLabel: (v: string) => word('admin.cp.channelName', v),
+    kindLabel: (v?: string) => word('admin.cp.kindName', v),
+    tierLabel: (v?: string) => word('admin.cp.tierName', v),
+    channelLabel: (v?: string) => word('admin.cp.channelName', v),
   }
 }
 

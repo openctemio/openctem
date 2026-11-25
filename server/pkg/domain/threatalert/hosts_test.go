@@ -323,3 +323,14 @@ func TestHostNames(t *testing.T) {
 		t.Fatalf("HostNames = %v, want %v", got, want)
 	}
 }
+
+func TestCriticalityRank(t *testing.T) {
+	cases := map[string]int{
+		"critical": 4, "HIGH": 3, " medium ": 2, "low": 1, "none": 0, "": 0, "bogus": 0,
+	}
+	for in, want := range cases {
+		if got := criticalityRank(in); got != want {
+			t.Errorf("criticalityRank(%q) = %d, want %d", in, got, want)
+		}
+	}
+}

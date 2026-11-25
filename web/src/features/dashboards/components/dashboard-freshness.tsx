@@ -146,40 +146,55 @@ export function DashboardFreshness({ kind, data }: DashboardFreshnessProps) {
   )
 }
 
+/** Whether the figures need a notice: still being built, or stale. */
+export function hasDataNotice(data?: DashboardData): boolean {
+  return !!data && (!data.facts_built_at || !!data.stale)
+}
+
 /**
  * Why the figures may not be current: still being built for the first time,
- * or older than their schedule (with the last refresh's failure). The line
- * under the freshness line in the header's description, never a row of its
- * own above the widgets, and never on the title row, so a notice never moves
- * the header's controls. Building wins over stale: nothing older exists yet.
+ * or older than their schedule (with the last refresh's failure). Under the
+ * page header, never inside it, so a notice never moves the header's
+ * controls. When another note shows under the header (the seeded layout, a
+ * layout hint), the notice opens that note's line (`inline`) instead of
+ * taking a row of its own. Building wins over stale: nothing older exists yet.
  */
-export function DashboardDataNotice({ data }: { data?: DashboardData }) {
+export function DashboardDataNotice({
+  data,
+  inline,
+}: {
+  data?: DashboardData
+  /** A run of text that opens another note's line, not a line of its own. */
+  inline?: boolean
+}) {
   const { t } = useTranslation()
-  if (!data) return null
+  if (!data || !hasDataNotice(data)) return null
   const building = !data.facts_built_at
-  if (!building && !data.stale) return null
+  const Icon = building ? Clock : AlertTriangle
+  const tone = building ? 'text-muted-foreground' : 'text-warning'
+  const text = building
+    ? t('dashboards.freshness.building', 'Dashboard data is being built for the first time.')
+    : data.last_refresh_error
+      ? t(
+          'dashboards.freshness.failed',
+          'The last refresh failed; these are the last good figures.'
+        )
+      : t('dashboards.freshness.stale', 'These figures are older than their schedule.')
+  if (inline)
+    return (
+      <span className={tone} role="status" data-testid="dashboard-data-notice">
+        <Icon className="me-1.5 inline h-4 w-4 align-[-3px]" aria-hidden />
+        {text}
+      </span>
+    )
   return (
     <p
-      className={cn(
-        'mt-1 flex items-start gap-1.5 text-xs',
-        building ? 'text-muted-foreground' : 'text-warning'
-      )}
+      className={cn('flex items-start gap-1.5 text-sm', tone)}
       role="status"
       data-testid="dashboard-data-notice"
     >
-      {building ? (
-        <Clock className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
-      ) : (
-        <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
-      )}
-      {building
-        ? t('dashboards.freshness.building', 'Dashboard data is being built for the first time.')
-        : data.last_refresh_error
-          ? t(
-              'dashboards.freshness.failed',
-              'The last refresh failed; these are the last good figures.'
-            )
-          : t('dashboards.freshness.stale', 'These figures are older than their schedule.')}
+      <Icon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+      {text}
     </p>
   )
 }

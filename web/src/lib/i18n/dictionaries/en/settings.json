@@ -1139,7 +1139,6 @@
   "settings.perm.pentestTemplatesRead": "Read pentest templates",
   "settings.perm.scansRead": "Read scans",
   "settings.perm.scansWrite": "Change scans",
-  "settings.preferences.appearanceDescription": "Customize how {product} looks on your device",
   "settings.saveBar.count": "{count, plural, one {# unsaved change} other {# unsaved changes}}",
   "settings.saveBar.discard": "Discard",
   "settings.saveBar.failed": "Couldn't save. Your changes are kept.",
