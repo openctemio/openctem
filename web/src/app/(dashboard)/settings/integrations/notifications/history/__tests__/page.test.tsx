@@ -12,7 +12,10 @@ const SECOND = '0191c2b4-7a1e-7d3a-8f10-2b6a9c4d5e62'
 
 const m = vi.hoisted(() => ({ eventsFor: [] as string[] }))
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/settings/integrations/notifications',
+  useRouter: () => ({ push: vi.fn() }),
+}))
 vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }))

@@ -50,6 +50,15 @@ export function MappingListView() {
   const { data, error, isLoading, mutate } = useMappingProfiles()
   const profiles = data?.data ?? []
 
+  const newButton = (
+    <Can permission={Permission.IntegrationsManage}>
+      <Button onClick={() => setCreateOpen(true)}>
+        <Plus className="me-2 h-4 w-4" aria-hidden />
+        {t('ticketMapping.list.new', 'New mapping')}
+      </Button>
+    </Can>
+  )
+
   return (
     <Main>
       <PageStack>
@@ -60,12 +69,8 @@ export function MappingListView() {
             'Which {product} attribute goes to which Jira field, which Jira field comes back, and how statuses map, per project and issue type.'
           )}
         >
-          <Can permission={Permission.IntegrationsManage}>
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="me-2 h-4 w-4" aria-hidden />
-              {t('ticketMapping.list.new', 'New mapping')}
-            </Button>
-          </Can>
+          {/* The create button stays in the header; the empty state only explains. */}
+          {newButton}
         </PageHeader>
 
         <div>
