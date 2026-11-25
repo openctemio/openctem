@@ -843,7 +843,7 @@ export default function ExternalSurfacePage() {
             </Can>
           </PageHeader>
 
-          <MetricStrip loading={metricsLoading} items={metrics} />
+          <MetricStrip loading={metricsLoading} items={metrics} listFirst />
 
           {error && !isLoading ? (
             <ErrorState

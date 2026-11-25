@@ -546,7 +546,11 @@ export default function CompliancePage() {
                 onRetry={() => void retryStats()}
               />
             ) : (
-              <MetricStrip items={metrics} />
+              <MetricStrip
+                items={metrics}
+                listFirst
+                listEmpty={!loadingFrameworks && !frameworksError && frameworks.length === 0}
+              />
             )}
 
             <TabsContent value="frameworks">

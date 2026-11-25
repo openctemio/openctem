@@ -26,6 +26,10 @@ import {
 import { RoleRequiredNotice } from './role-required-notice'
 
 /** The platform permission that changes the list and runs the test. */
+
+/** The server variable that opens private ranges for the whole installation. */
+const SERVER_CIDRS_VAR = 'OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS'
+
 export const NETWORK_PERMISSION = 'platform.settings.network'
 
 type TFn = ReturnType<typeof useTranslation>['t']
@@ -258,12 +262,12 @@ export function PrivateDestinationsPanel({
   return (
     <>
       <Card>
+        {/* No title: the page header names it; the description says what opening costs. */}
         <CardHeader>
-          <CardTitle>{t('admin.privateNetworks.title', 'Private network destinations')}</CardTitle>
           <CardDescription>
             {t(
               'admin.privateNetworks.description',
-              'Private addresses the platform may connect to, such as a self-managed GitLab or a mail relay on your network. Every organization’s webhooks, integrations and CI connections can reach an address opened here, so open only the hosts the platform needs.'
+              'For example a self-managed GitLab or a mail relay. Every organization’s webhooks, integrations and CI connections can reach an address opened here, so open only the hosts the platform needs.'
             )}
           </CardDescription>
         </CardHeader>
@@ -317,10 +321,34 @@ export function PrivateDestinationsPanel({
               </ul>
             )}
             <p className="text-cap text-muted-foreground">
+              {/* The variable name may wrap only at its underscores. */}
               {t(
                 'admin.privateNetworks.serverHint',
-                'Changed only in the server’s environment (OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS) and a restart.'
-              )}
+                'Changed only in the server’s environment ({name}) and a restart.',
+                { name: '\u0000' }
+              )
+                .split('\u0000')
+                .map((part, i) =>
+                  i === 0 ? (
+                    part
+                  ) : (
+                    <span key={i}>
+                      <code className="font-mono">
+                        {SERVER_CIDRS_VAR.split('_').map((w, j) => (
+                          <span key={j}>
+                            {j > 0 && (
+                              <>
+                                _<wbr />
+                              </>
+                            )}
+                            {w}
+                          </span>
+                        ))}
+                      </code>
+                      {part}
+                    </span>
+                  )
+                )}
             </p>
           </section>
 
@@ -512,6 +540,10 @@ function DestinationTestCard({
             onSubmit={(e) => {
               e.preventDefault()
               if (host.trim()) void run()
+              else
+                setError(
+                  t('admin.privateNetworks.test.hostRequired', 'Enter the host name to test first.')
+                )
             }}
           >
             <div className="space-y-1.5 sm:flex-1">
@@ -526,7 +558,7 @@ function DestinationTestCard({
                 className="font-mono"
               />
             </div>
-            <Button type="submit" disabled={busy || !host.trim()}>
+            <Button type="submit" variant="outline" disabled={busy}>
               {busy && <Loader2 className="me-1.5 size-4 animate-spin" aria-hidden />}
               {t('admin.privateNetworks.test.run', 'Test')}
             </Button>

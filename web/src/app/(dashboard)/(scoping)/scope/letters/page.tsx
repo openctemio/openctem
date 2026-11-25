@@ -30,7 +30,14 @@ import { useTranslation } from '@/context/i18n-provider'
 import { SCOPE_SECTION_TABS } from '@/config/section-tabs'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { Permission, useHasPermission } from '@/lib/permissions'
-import { EmptyState, ErrorState, GatedSectionTabs, PageHeader, PageStack } from '@/features/shared'
+import {
+  EmptyState,
+  ErrorState,
+  FilePicker,
+  GatedSectionTabs,
+  PageHeader,
+  PageStack,
+} from '@/features/shared'
 import {
   LETTER_PROBLEM_TEXT,
   LETTER_TYPES,
@@ -84,6 +91,8 @@ function UploadForm({ onDone }: { onDone: () => void }) {
   const [validFrom, setValidFrom] = useState('')
   const [validUntil, setValidUntil] = useState('')
   const [busy, setBusy] = useState(false)
+  // Upload was pressed: what is missing is said under the button.
+  const [tried, setTried] = useState(false)
 
   const problem = useMemo(
     () => letterFormProblem({ file, title, validFrom, validUntil }),
@@ -91,6 +100,7 @@ function UploadForm({ onDone }: { onDone: () => void }) {
   )
 
   const submit = async () => {
+    setTried(true)
     if (!file || problem) return
     setBusy(true)
     try {
@@ -108,11 +118,11 @@ function UploadForm({ onDone }: { onDone: () => void }) {
     <section className="grid gap-4 rounded-md border p-4 sm:grid-cols-2">
       <div className="space-y-2 sm:col-span-2">
         <Label htmlFor={`${id}-file`}>{t('letters.form.file', 'Signed letter')}</Label>
-        <Input
+        <FilePicker
           id={`${id}-file`}
-          type="file"
+          file={file}
           accept={LETTER_TYPES.join(',')}
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          onFile={setFile}
         />
       </div>
       <div className="space-y-2">
@@ -165,7 +175,7 @@ function UploadForm({ onDone }: { onDone: () => void }) {
         />
       </div>
       <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-        <Button onClick={submit} disabled={busy || problem !== null}>
+        <Button onClick={submit} disabled={busy}>
           {busy ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (
@@ -173,8 +183,12 @@ function UploadForm({ onDone }: { onDone: () => void }) {
           )}
           {t('letters.upload', 'Upload letter')}
         </Button>
-        {problem && (file || title || validFrom || validUntil) && (
-          <p className="text-muted-foreground text-xs">
+        {problem && (tried || file || title || validFrom || validUntil) && (
+          <p
+            className={
+              tried ? 'text-cap font-medium text-destructive' : 'text-muted-foreground text-xs'
+            }
+          >
             {t(`letters.problem.${problem}`, LETTER_PROBLEM_TEXT[problem])}
           </p>
         )}

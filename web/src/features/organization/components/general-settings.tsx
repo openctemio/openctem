@@ -9,6 +9,7 @@ import {
   SettingsBlock,
   SettingsField,
   SettingsFieldGrid,
+  SettingsValue,
   SettingsPage,
   SettingsRow,
   SettingsSaveBar,
@@ -385,37 +386,43 @@ export function GeneralSettings() {
                   : undefined
               }
             >
-              {(control) => (
-                <Input
-                  {...control}
-                  value={orgInfo.name}
-                  onChange={(e) => {
-                    clearFieldError('name')
-                    setOrgInfo((p) => ({ ...p, name: e.target.value }))
-                  }}
-                  disabled={!canUpdateTenant}
-                  maxLength={100}
-                />
-              )}
+              {(control) =>
+                canUpdateTenant ? (
+                  <Input
+                    {...control}
+                    value={orgInfo.name}
+                    onChange={(e) => {
+                      clearFieldError('name')
+                      setOrgInfo((p) => ({ ...p, name: e.target.value }))
+                    }}
+                    maxLength={100}
+                  />
+                ) : (
+                  <SettingsValue {...control} value={orgInfo.name} />
+                )
+              }
             </SettingsField>
             <SettingsField
               id="org-website"
               label={t('org.general.website', 'Website')}
               error={fieldErrors.website}
             >
-              {(control) => (
-                <Input
-                  {...control}
-                  type="url"
-                  placeholder="https://example.com"
-                  value={general.website}
-                  onChange={(e) => {
-                    clearFieldError('website')
-                    setGeneral((g) => ({ ...g, website: e.target.value }))
-                  }}
-                  disabled={!canUpdateTenant}
-                />
-              )}
+              {(control) =>
+                canUpdateTenant ? (
+                  <Input
+                    {...control}
+                    type="url"
+                    placeholder="https://example.com"
+                    value={general.website}
+                    onChange={(e) => {
+                      clearFieldError('website')
+                      setGeneral((g) => ({ ...g, website: e.target.value }))
+                    }}
+                  />
+                ) : (
+                  <SettingsValue {...control} value={general.website} />
+                )
+              }
             </SettingsField>
             <SettingsField
               id="org-slug"
@@ -431,31 +438,34 @@ export function GeneralSettings() {
                   : t('org.general.slugHelpLocked', 'Only the owner can change the URL.')
               }
             >
-              {(control) => (
-                <div className="flex min-w-0">
-                  <span
-                    data-testid="slug-host-prefix"
-                    className="inline-flex max-w-[50%] min-w-0 items-center rounded-s-md border border-e-0 bg-muted px-3 text-code text-muted-foreground"
-                    title={`${appHost}/`}
-                  >
-                    {/* The ellipsis needs a block box: text directly in a flex box is cut without one. */}
-                    <span className="truncate">{appHost}/</span>
-                  </span>
-                  <Input
-                    {...control}
-                    value={orgInfo.slug}
-                    onChange={(e) => {
-                      clearFieldError('slug')
-                      setOrgInfo((p) => ({
-                        ...p,
-                        slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                      }))
-                    }}
-                    className="rounded-s-none"
-                    disabled={!canUpdateTenant || !owner}
-                  />
-                </div>
-              )}
+              {(control) =>
+                !canUpdateTenant || !owner ? (
+                  <SettingsValue {...control} mono value={`${appHost}/${orgInfo.slug}`} />
+                ) : (
+                  <div className="flex min-w-0">
+                    <span
+                      data-testid="slug-host-prefix"
+                      className="inline-flex max-w-[50%] min-w-0 items-center rounded-s-md border border-e-0 bg-muted px-3 text-code text-muted-foreground"
+                      title={`${appHost}/`}
+                    >
+                      {/* The ellipsis needs a block box: text directly in a flex box is cut without one. */}
+                      <span className="truncate">{appHost}/</span>
+                    </span>
+                    <Input
+                      {...control}
+                      value={orgInfo.slug}
+                      onChange={(e) => {
+                        clearFieldError('slug')
+                        setOrgInfo((p) => ({
+                          ...p,
+                          slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                        }))
+                      }}
+                      className="rounded-s-none"
+                    />
+                  </div>
+                )
+              }
             </SettingsField>
             <div id="org-timezone-setting" className="min-w-0">
               <SettingsField
@@ -467,18 +477,21 @@ export function GeneralSettings() {
                   'The organization clock: alert quiet hours, the daily digest and scan approval hours use it.'
                 )}
               >
-                {(control) => (
-                  <TimezoneSelect
-                    id={control.id}
-                    aria-describedby={control['aria-describedby']}
-                    value={general.timezone}
-                    onChange={(zone) => {
-                      clearFieldError('timezone')
-                      setGeneral((g) => ({ ...g, timezone: zone }))
-                    }}
-                    disabled={!canUpdateTenant}
-                  />
-                )}
+                {(control) =>
+                  canUpdateTenant ? (
+                    <TimezoneSelect
+                      id={control.id}
+                      aria-describedby={control['aria-describedby']}
+                      value={general.timezone}
+                      onChange={(zone) => {
+                        clearFieldError('timezone')
+                        setGeneral((g) => ({ ...g, timezone: zone }))
+                      }}
+                    />
+                  ) : (
+                    <SettingsValue {...control} value={general.timezone} />
+                  )
+                }
               </SettingsField>
             </div>
           </SettingsFieldGrid>

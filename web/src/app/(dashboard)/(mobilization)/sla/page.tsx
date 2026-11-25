@@ -192,7 +192,7 @@ export default function SlaCompliancePage() {
           />
         ) : null}
 
-        <MetricStrip loading={sla.isLoading} items={items} />
+        <MetricStrip loading={sla.isLoading} items={items} listFirst />
 
         <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           <Card>

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
@@ -160,8 +160,8 @@ export function LegalSettingsForm({ settings, canEdit, onSaved }: LegalSettingsF
   return (
     <>
       <Card>
+        {/* No title: the page header names it; the description says where it shows. */}
         <CardHeader>
-          <CardTitle>{t('admin.legal.title', 'Legal information')}</CardTitle>
           <CardDescription>
             {t(
               'admin.legal.description',

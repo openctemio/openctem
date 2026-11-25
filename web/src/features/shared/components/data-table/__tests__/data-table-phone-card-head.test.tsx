@@ -127,8 +127,8 @@ describe('automatic phone card: the title line', () => {
       expect(el.className).toMatch(/(^|\s)-my-2(\s|$)/)
       expect(el.className).toMatch(/(^|\s)items-center(\s|$)/)
     }
-    expect(status.className).toContain('[&_button]:h-9')
-    expect(status.className).toContain('[&_button]:items-center')
+    expect(status.className).toContain('[&_button:not([role=switch])]:h-9')
+    expect(status.className).toContain('[&_button:not([role=switch])]:items-center')
     expect(status.querySelector('[data-testid="chip-control"]')).not.toBeNull()
   })
 

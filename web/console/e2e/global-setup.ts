@@ -73,10 +73,9 @@ export default async function globalSetup() {
     const signIn = async (pw: string) => {
       await openLogin(page)
       // The form is server-rendered, then hydrated: text typed before React
-      // has taken the inputs over is lost, and typing the same text again is
-      // ignored (React compares it with the value it saw), so Continue stays
-      // disabled for good. Empty the fields first, then fill, until the button
-      // is enabled: that is the proof the page is live.
+      // has taken the inputs over is lost. Continue is enabled once the page
+      // is live; empty the fields, fill them, and retry until the page is
+      // live and still holds what was typed.
       const next = page.getByRole('button', { name: 'Continue' })
       const emailField = page.getByLabel('Email')
       const passwordField = page.getByLabel('Password', { exact: true })
@@ -86,6 +85,8 @@ export default async function globalSetup() {
         await emailField.fill(email)
         await passwordField.fill(pw)
         await expect(next).toBeEnabled({ timeout: 1_000 })
+        await expect(emailField).toHaveValue(email, { timeout: 500 })
+        await expect(passwordField).toHaveValue(pw, { timeout: 500 })
       }).toPass({ timeout: 30_000 })
       await next.click()
       await answerCode(page, () => secret)

@@ -5,7 +5,7 @@
  * would change (nothing is written), then import.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AlertTriangle, CheckCircle2, FileJson, Loader2 } from 'lucide-react'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
+import { FilePicker } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { importSbom } from '../api/hooks'
 import type { SbomImportResult } from '../api/types'
@@ -70,7 +71,8 @@ export function SbomImportDialog({
   const [result, setResult] = useState<SbomImportResult | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  // Preview was pressed: missing choices are said under their fields.
+  const [tried, setTried] = useState(false)
 
   useEffect(() => {
     if (!open) {
@@ -79,6 +81,7 @@ export function SbomImportDialog({
       setDoc(null)
       setResult(null)
       setError(null)
+      setTried(false)
       setAsset(initialAsset)
     }
   }, [open, initialAsset])
@@ -94,6 +97,7 @@ export function SbomImportDialog({
         : getErrorMessage(e, t('components.import.failed', 'The SBOM could not be read.'))
 
   const preview = async () => {
+    setTried(true)
     if (!asset || !file) return
     setBusy(true)
     setError(null)
@@ -143,17 +147,25 @@ export function SbomImportDialog({
               <div className="space-y-2">
                 <Label>{t('components.import.asset', 'Asset the SBOM describes')}</Label>
                 <AssetChooser value={asset} onChange={setAsset} enabled={open} />
+                {tried && !asset && (
+                  <p className="text-cap font-medium text-destructive">
+                    {t('components.import.assetRequired', 'Choose the asset first.')}
+                  </p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="sbom-file">{t('components.import.file', 'SBOM file')}</Label>
-                <input
-                  ref={inputRef}
+                <FilePicker
                   id="sbom-file"
-                  type="file"
+                  file={file}
                   accept=".json,application/json"
-                  className="block w-full text-sm file:me-3 file:rounded-md file:border file:bg-muted file:px-3 file:py-1.5 file:text-sm"
-                  onChange={(e) => {
-                    setFile(e.target.files?.[0] ?? null)
+                  error={
+                    tried && !file
+                      ? t('components.import.fileRequired', 'Choose the SBOM file first.')
+                      : undefined
+                  }
+                  onFile={(f) => {
+                    setFile(f)
                     setDoc(null)
                     setError(null)
                   }}
@@ -188,7 +200,7 @@ export function SbomImportDialog({
               <Button variant="outline" onClick={() => onOpenChange(false)}>
                 {t('common.cancel', 'Cancel')}
               </Button>
-              <Button onClick={preview} disabled={!asset || !file || busy}>
+              <Button onClick={preview} disabled={busy}>
                 {busy && <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden />}
                 {t('components.import.preview', 'Preview')}
               </Button>

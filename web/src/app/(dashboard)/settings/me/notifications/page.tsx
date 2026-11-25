@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { useCallback, useEffect, useState } from 'react'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
@@ -14,9 +13,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Bell, AlertTriangle, Save, Loader2 } from 'lucide-react'
+import { Bell, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
-import { ErrorState, PageStack } from '@/features/shared'
+import { ErrorState, PageStack, SettingsSaveBar } from '@/features/shared'
 import {
   useNotificationPreferencesApi,
   updateNotificationPreferences,
@@ -60,15 +59,21 @@ export default function NotificationsSettingsPage() {
   const [autoWatch, setAutoWatch] = useState(true)
   const [dirty, setDirty] = useState(false)
 
-  useEffect(() => {
-    if (preferences) {
-      setInAppEnabled(preferences.in_app_enabled)
-      setMutedTypes(preferences.muted_types ?? [])
-      setMinSeverity(preferences.min_severity)
-      setAutoWatch(preferences.auto_watch ?? true)
-      setDirty(false)
-    }
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => {
+    if (!preferences) return
+    setInAppEnabled(preferences.in_app_enabled)
+    setMutedTypes(preferences.muted_types ?? [])
+    // An empty or unknown stored value reads as the lowest threshold.
+    setMinSeverity(
+      SEVERITY_LEVELS.includes(preferences.min_severity as SeverityLevel)
+        ? preferences.min_severity
+        : 'info'
+    )
+    setAutoWatch(preferences.auto_watch ?? true)
+    setDirty(false)
   }, [preferences])
+  useEffect(reset, [reset])
 
   const edit =
     <T,>(set: (v: T) => void) =>
@@ -262,18 +267,12 @@ export default function NotificationsSettingsPage() {
         </CardContent>
       </Card>
 
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={!dirty || isSaving}>
-          {isSaving ? (
-            <Loader2 className="me-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="me-2 h-4 w-4" />
-          )}
-          {isSaving
-            ? t('account.saving', 'Saving...')
-            : t('account.notifications.save', 'Save changes')}
-        </Button>
-      </div>
+      <SettingsSaveBar
+        dirty={dirty}
+        saving={isSaving}
+        onSave={() => void handleSave()}
+        onDiscard={reset}
+      />
     </PageStack>
   )
 }

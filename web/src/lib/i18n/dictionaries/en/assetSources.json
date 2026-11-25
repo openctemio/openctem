@@ -56,7 +56,6 @@
   "assetSources.preview.truncated": "Only the first 5000 assets were checked.",
   "assetSources.remove": "Stop ranking {name} separately",
   "assetSources.reset": "Reset to default",
-  "assetSources.save": "Save changes",
   "assetSources.saveFailed": "Could not save the settings",
   "assetSources.saveHint": "Moving a connector down asks you to confirm your identity. Values on assets update in the background; changes appear in each asset’s timeline.",
   "assetSources.saved": "Asset source settings saved",

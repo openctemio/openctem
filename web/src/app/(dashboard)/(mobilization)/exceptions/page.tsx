@@ -607,7 +607,7 @@ export default function ExceptionsPage() {
             )}
           />
 
-          <MetricStrip loading={isInitialLoading} items={metrics} />
+          <MetricStrip loading={isInitialLoading} items={metrics} listFirst />
 
           <DataTable
             columns={columns}

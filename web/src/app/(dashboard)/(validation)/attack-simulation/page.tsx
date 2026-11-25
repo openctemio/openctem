@@ -310,7 +310,7 @@ export default function AttackSimulationPage() {
           }}
         />
 
-        <MetricStrip items={metrics} />
+        <MetricStrip items={metrics} listFirst />
 
         {simulations.length === 0 && !error ? (
           <EmptyState

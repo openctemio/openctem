@@ -109,6 +109,8 @@
   "common.empty.noResultsHint": "Không có mục nào khớp với tìm kiếm hoặc bộ lọc.",
   "common.export": "Xuất",
   "common.failedToLoad": "Không tải được {title}",
+  "common.filePicker.choose": "Chọn tệp",
+  "common.filePicker.none": "Chưa chọn tệp",
   "common.filter.all": "Tất cả",
   "common.filter.clearNamed": "Bỏ lọc {name}",
   "common.filterButton.active": "{label}, {count} đang áp dụng",

@@ -603,7 +603,7 @@ export default function CrownJewelsPage() {
             label={t('businessContext.sectionsLabel', 'Business context sections')}
           />
 
-          <MetricStrip loading={isLoading} items={metrics} />
+          <MetricStrip loading={isLoading} items={metrics} listFirst />
 
           <div>
             <DataTable

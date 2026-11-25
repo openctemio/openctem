@@ -5,7 +5,7 @@ import { Loader2, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
@@ -68,50 +68,110 @@ export interface SecretFieldProps {
 }
 
 /**
- * A write-only secret: never shown, only replaced or removed. The field says
- * whether one is stored.
+ * A write-only secret: never shown, only replaced or removed. A stored value
+ * reads as a status row ("Stored, never shown") with Replace and Remove, not
+ * as an empty input whose placeholder looks like a value; Replace opens the
+ * masked input. A viewer who cannot change it sees the status as text.
  */
 export function SecretField(p: SecretFieldProps) {
   const { t } = useTranslation()
-  const clearId = useId()
+  const [replacing, setReplacing] = useState(false)
+  const typing = replacing || p.value !== ''
+  const stored = t('admin.settings.secretStored', 'Stored, never shown')
   return (
     <SettingsField label={p.label} hint={p.help}>
-      {(control) => (
-        <div className="flex min-w-0 flex-col gap-2">
-          {/* The kit field: masked, Show value for what was just typed; a
-              stored value is never read back from the server. */}
-          <SecretInput
-            {...control}
-            value={p.value}
-            onChange={(e) => {
-              p.onChange(e.target.value)
-              p.onClear(false)
-            }}
-            disabled={p.disabled || p.clear}
-            autoComplete="new-password"
-            placeholder={
-              p.isSet
-                ? t('admin.settings.secretKeep', 'Stored. Type to replace it.')
-                : (p.placeholder ?? t('admin.settings.secretNone', 'Not set'))
-            }
-          />
-          {p.isSet && !p.disabled && !p.noClear && (
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id={clearId}
-                checked={p.clear}
-                onCheckedChange={(v) => {
-                  p.onClear(v === true)
+      {(control) =>
+        p.disabled ? (
+          <p
+            id={control.id}
+            aria-describedby={control['aria-describedby']}
+            className="flex min-h-9 items-center gap-2 text-body text-muted-foreground"
+          >
+            {p.isSet && <Lock className="size-4 shrink-0" aria-hidden />}
+            {p.isSet ? stored : t('admin.settings.secretNone', 'Not set')}
+          </p>
+        ) : p.isSet && p.clear ? (
+          <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1">
+            <p id={control.id} className="text-body text-destructive">
+              {t('admin.settings.secretRemoving', 'Removed when you save')}
+            </p>
+            <Button type="button" variant="ghost" size="sm" onClick={() => p.onClear(false)}>
+              {t('admin.settings.secretUndo', 'Keep it')}
+            </Button>
+          </div>
+        ) : p.isSet && !typing ? (
+          <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1">
+            <p
+              id={control.id}
+              aria-describedby={control['aria-describedby']}
+              className="flex items-center gap-2 text-body"
+            >
+              <Lock className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              {stored}
+            </p>
+            <span className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-label={t('admin.settings.secretReplaceNamed', 'Replace {name}', {
+                  name: p.label,
+                })}
+                onClick={() => setReplacing(true)}
+              >
+                {t('admin.settings.secretReplace', 'Replace')}
+              </Button>
+              {!p.noClear && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={t('admin.settings.secretRemoveNamed', 'Remove {name}', {
+                    name: p.label,
+                  })}
+                  onClick={() => {
+                    p.onChange('')
+                    p.onClear(true)
+                  }}
+                >
+                  {t('admin.settings.secretRemove', 'Remove')}
+                </Button>
+              )}
+            </span>
+          </div>
+        ) : (
+          <div className="flex min-w-0 items-center gap-2">
+            {/* The kit field: masked, Show value for what was just typed; a
+                stored value is never read back from the server. */}
+            <SecretInput
+              {...control}
+              value={p.value}
+              autoFocus={replacing}
+              onChange={(e) => {
+                p.onChange(e.target.value)
+                p.onClear(false)
+              }}
+              onBlur={() => {
+                if (p.value === '') setReplacing(false)
+              }}
+              autoComplete="new-password"
+              placeholder={p.placeholder}
+            />
+            {p.isSet && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
                   p.onChange('')
+                  setReplacing(false)
                 }}
-              />
-              <Label htmlFor={clearId} className="font-normal text-muted-foreground">
-                {t('admin.settings.secretClear', 'Remove the stored value')}
-              </Label>
-            </div>
-          )}
-        </div>
-      )}
+              >
+                {t('admin.settings.secretKeepStored', 'Keep the stored one')}
+              </Button>
+            )}
+          </div>
+        )
+      }
     </SettingsField>
   )
 }
