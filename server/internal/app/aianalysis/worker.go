@@ -257,7 +257,7 @@ func (w *WorkerExecutor) logAudit(ctx context.Context, p *Principal, run *aidom.
 	if w.audit == nil {
 		return
 	}
-	actx := auditapp.AuditContext{TenantID: run.TenantID.String(), ActorEmail: "system:ai-agent"}
+	actx := auditapp.AuditContext{TenantID: run.TenantID.String(), ActorEmail: systemAIAgentActor}
 	if run.TriggeredBy != nil {
 		actx = auditapp.AuditContext{TenantID: run.TenantID.String(), ActorID: run.TriggeredBy.String()}
 	}

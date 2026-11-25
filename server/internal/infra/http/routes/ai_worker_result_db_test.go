@@ -109,7 +109,7 @@ func (h *aiWorkerHarness) runRow(id shared.ID) *aidom.Run {
 
 func (h *aiWorkerHarness) findingState(id string) (status, severity string) {
 	h.t.Helper()
-	if err := h.db.QueryRow(`SELECT status, severity FROM findings WHERE id = $1`, id).Scan(&status, &severity); err != nil {
+	if err := h.db.QueryRowContext(context.Background(), `SELECT status, severity FROM findings WHERE id = $1`, id).Scan(&status, &severity); err != nil {
 		h.t.Fatal(err)
 	}
 	return status, severity
@@ -166,7 +166,7 @@ func TestAIWorkerResult_AppliedOnceWithProvenance_DB(t *testing.T) {
 	// Every row the AI agent wrote carries who, which model, which worker,
 	// the result and the evidence it cited.
 	var n, full int
-	if err := h.db.QueryRow(`SELECT count(*), count(*) FILTER (WHERE source_metadata->'ai'->>'run_id' = $2
+	if err := h.db.QueryRowContext(context.Background(), `SELECT count(*), count(*) FILTER (WHERE source_metadata->'ai'->>'run_id' = $2
 	        AND source_metadata->'ai'->>'executor' = 'tenant_worker' AND source_metadata->'ai'->>'sensor_id' = $4
 	        AND source_metadata->'ai'->>'model_family' = 'example' AND source_metadata->'ai'->>'result_digest' = $5
 	        AND source_metadata->'ai'->'evidence' ? 'bundle:finding.title')
@@ -212,7 +212,7 @@ func TestAIWorkerResult_FalsePositiveIsOnlyARequest_DB(t *testing.T) {
 		t.Fatalf("an AI false positive changed the status to %s", status)
 	}
 	var status, by string
-	if err := h.db.QueryRow(`SELECT status, requested_by FROM finding_status_approvals WHERE finding_id = $1`, f).Scan(&status, &by); err != nil {
+	if err := h.db.QueryRowContext(context.Background(), `SELECT status, requested_by FROM finding_status_approvals WHERE finding_id = $1`, f).Scan(&status, &by); err != nil {
 		t.Fatal(err)
 	}
 	if status != "pending" || by != a.ID.String() {
@@ -404,7 +404,7 @@ func TestAIWorkerResult_UntrustedTextAndInjection_DB(t *testing.T) {
 	sg := `{"kind":"summary","payload":{"text":"See ![x](https://img.example/p?d=1) and <img src=x onerror=alert(1)>"},"confidence":0.9,"evidence":[{"ref":"bundle:finding.title"}]}`
 	h.deliver(run, worker, resultDoc(run.ID.String(), "completed", "["+sg+"]"))
 	var body string
-	if err := h.db.QueryRow(`SELECT content FROM finding_comments WHERE finding_id = $1`, f).Scan(&body); err != nil {
+	if err := h.db.QueryRowContext(context.Background(), `SELECT content FROM finding_comments WHERE finding_id = $1`, f).Scan(&body); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < len(body); i++ {
@@ -524,7 +524,7 @@ func (h *aiWorkerHarness) cmdState(run *aidom.Run) (string, *string, time.Time) 
 		sensor *string
 		at     time.Time
 	)
-	if err := h.db.QueryRow(`SELECT status, sensor_id::text, created_at FROM commands WHERE id = $1`, run.CommandID.String()).Scan(&status, &sensor, &at); err != nil {
+	if err := h.db.QueryRowContext(context.Background(), `SELECT status, sensor_id::text, created_at FROM commands WHERE id = $1`, run.CommandID.String()).Scan(&status, &sensor, &at); err != nil {
 		h.t.Fatal(err)
 	}
 	return status, sensor, at
