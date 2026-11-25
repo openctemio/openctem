@@ -23,7 +23,7 @@ export const ACCOUNT_NAV: readonly AccountNavItem[] = [
     id: 'profile',
     url: '/account',
     title: 'Profile',
-    description: 'Your name, photo and contact details.',
+    description: 'Your name and contact details.',
     icon: UserRound,
   },
   {
@@ -37,7 +37,7 @@ export const ACCOUNT_NAV: readonly AccountNavItem[] = [
     id: 'preferences',
     url: '/account/preferences',
     title: 'Preferences',
-    description: 'Theme, language, time zone and how findings views open.',
+    description: 'Theme, language and how findings views open.',
     icon: Settings2,
   },
   {

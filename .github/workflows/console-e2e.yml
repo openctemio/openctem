@@ -12,8 +12,8 @@ name: Console E2E
 # and signs in with its authenticator code. Everything listens on 127.0.0.1 of
 # the job and is gone when it ends; the secrets are random per run.
 #
-# When: a pull request that changes the console, the shared page checks or this
-# suite; every night on develop; on demand. It is not a required check: a PR
+# When: a pull request (into develop, next or main) or a push to next that
+# changes the console, the shared page checks or this suite; every night on develop; on demand. It is not a required check: a PR
 # that changes the console runs it, and the nightly run is the net under it.
 
 on:
@@ -22,6 +22,20 @@ on:
   workflow_dispatch:
   pull_request:
     branches: [main, develop, next]
+    paths:
+      - 'web/console/**'
+      - 'web/playwright.console.config.ts'
+      - 'web/e2e/helpers/page-anatomy.ts'
+      - 'web/e2e/helpers/axe.ts'
+      - 'web/src/features/shared/**'
+      - 'web/src/components/ui/**'
+      - 'web/src/components/layout/**'
+      - 'web/src/lib/i18n/dictionaries/**'
+      - '.github/workflows/console-e2e.yml'
+  # A merge into next runs it too, on the same paths, so a console regression
+  # that lands there is reported without waiting for the nightly run.
+  push:
+    branches: [next]
     paths:
       - 'web/console/**'
       - 'web/playwright.console.config.ts'
