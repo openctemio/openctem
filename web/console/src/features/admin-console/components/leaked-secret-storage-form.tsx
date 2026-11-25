@@ -94,7 +94,22 @@ export function LeakedSecretStorageForm({
           'admin.leakedSecrets.description',
           'Applies to every organization that has not chosen. Each organization can change it for itself.'
         )}
-        meta={<SettingChangedLine change={settings} />}
+        meta={
+          <>
+            {settings.source === 'default'
+              ? settings.default
+                ? t(
+                    'admin.leakedSecrets.sourceDefaultKeep',
+                    'Server default: kept (self-managed install).'
+                  )
+                : t(
+                    'admin.leakedSecrets.sourceDefaultDrop',
+                    'Server default: not kept (managed service).'
+                  )
+              : t('admin.leakedSecrets.sourceConsole', 'Set in this console.')}{' '}
+            <SettingChangedLine change={settings} />
+          </>
+        }
       >
         <SettingsBlock>
           <RadioGroup
@@ -123,19 +138,6 @@ export function LeakedSecretStorageForm({
               </div>
             ))}
           </RadioGroup>
-          <p className="text-cap text-muted-foreground">
-            {settings.source === 'default'
-              ? settings.default
-                ? t(
-                    'admin.leakedSecrets.sourceDefaultKeep',
-                    'Server default: kept (self-managed install).'
-                  )
-                : t(
-                    'admin.leakedSecrets.sourceDefaultDrop',
-                    'Server default: not kept (managed service).'
-                  )
-              : t('admin.leakedSecrets.sourceConsole', 'Set in this console.')}
-          </p>
         </SettingsBlock>
       </SettingsSection>
       {canEdit && (

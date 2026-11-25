@@ -78,13 +78,13 @@ describe('EmailSettingsForm', () => {
   it('is read-only for an administrator who is not a super admin', () => {
     render(<EmailSettingsForm settings={stored} canEdit={false} onSaved={() => {}} />)
     expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Send a test e-mail' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Send test' })).toBeNull()
     expect(screen.getByLabelText('SMTP server')).toBeDisabled()
   })
 
   it('sends the test e-mail', async () => {
     render(<EmailSettingsForm settings={stored} canEdit onSaved={() => {}} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Send a test e-mail' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Send test' }))
     await waitFor(() => expect(sendTestEmail).toHaveBeenCalledTimes(1))
   })
 
@@ -121,7 +121,7 @@ describe('EmailSettingsForm', () => {
       new AdminApiError('x', 502, 'EMAIL_TEST_FAILED', { reason: 'unknown_authority' })
     )
     render(<EmailSettingsForm settings={stored} canEdit onSaved={() => {}} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Send a test e-mail' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Send test' }))
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/certificate is not trusted/))
     )
