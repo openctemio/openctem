@@ -73,7 +73,7 @@ describe('SessionsCard', () => {
     revokeAllSessions.mockResolvedValue(true)
     const user = userEvent.setup()
     render(<SessionsCard sessions={sessions} isLoading={false} onChanged={vi.fn()} />)
-    await user.click(screen.getByRole('button', { name: /sign out all others/i }))
+    await user.click(screen.getByRole('button', { name: /^sign out others$/i }))
     await user.click(screen.getAllByRole('button', { name: /sign out all others/i }).at(-1)!)
     expect(revokeAllSessions).toHaveBeenCalledWith(true)
   })
@@ -84,7 +84,7 @@ describe('SessionsCard', () => {
     render(
       <SessionsCard sessions={sessions} isLoading={false} onChanged={vi.fn()} activeApiKeys={3} />
     )
-    await user.click(screen.getByRole('button', { name: /sign out all others/i }))
+    await user.click(screen.getByRole('button', { name: /^sign out others$/i }))
     const box = screen.getByRole('checkbox', { name: /also revoke api keys \(3\)/i })
     expect(box).toBeChecked()
     await user.click(box)
@@ -94,6 +94,6 @@ describe('SessionsCard', () => {
 
   it('hides "sign out all others" when this is the only session', () => {
     render(<SessionsCard sessions={[sessions[1]]} isLoading={false} onChanged={vi.fn()} />)
-    expect(screen.queryByRole('button', { name: /sign out all others/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^sign out others$/i })).not.toBeInTheDocument()
   })
 })

@@ -6,7 +6,7 @@ import { Building2, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { SettingsSection } from '@/features/shared'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StepUpDialog, stepUpProofErrorMessage, type StepUpProofInput } from '@/components/security'
 import { useTranslation } from '@/context/i18n-provider'
@@ -134,7 +134,6 @@ export function OrganizationSignInCard() {
   const unlinkButton = (identity: SSOLinkedIdentity, name: string) => (
     <Button
       variant="ghost"
-      size="sm"
       className="shrink-0 text-destructive hover:text-destructive"
       disabled={!identity.unlinkable}
       onClick={() => setToUnlink({ identity, name })}
@@ -169,67 +168,62 @@ export function OrganizationSignInCard() {
   const otherName = t('account.signInMethods.organization', 'Organization single sign-on')
 
   return (
-    <Card data-testid="organization-sign-in-card">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Building2 className="h-5 w-5" />
-          {t('account.organizationSignIn.title', 'Organization sign-in')}
-        </CardTitle>
-        <CardDescription>
-          {t(
-            'account.organizationSignIn.description',
-            "Sign in through your organization's identity provider. Linking asks you to confirm it is you, then to sign in at your organization."
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <Skeleton className="h-14 w-full" />
-        ) : (
-          <ul className="divide-y rounded-md border">
-            {organizations.map((org) => {
-              const key = `${org.org_slug}/${org.provider}`
-              return (
-                <SignInMethodRow
-                  key={key}
-                  testId={`organization-sign-in-${org.org_slug}-${org.provider}`}
-                  icon={<Building2 className="text-muted-foreground" />}
-                  title={org.org_name}
-                  lines={[org.display_name, ...statusLines(org.identity)]}
-                  action={
-                    org.identity ? (
-                      unlinkButton(org.identity, org.org_name)
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0"
-                        disabled={linking !== null}
-                        onClick={() => setToLink(org)}
-                        aria-label={t('account.signInMethods.linkProvider', 'Link {provider}', {
-                          provider: org.org_name,
-                        })}
-                      >
-                        {linking === key && <Loader2 className="h-4 w-4 animate-spin" />}
-                        {t('account.signInMethods.link', 'Link')}
-                      </Button>
-                    )
-                  }
-                />
-              )
-            })}
-            {other.map((identity) => (
+    <SettingsSection
+      framed
+      id="organization-sign-in"
+      testId="organization-sign-in-card"
+      className="scroll-mt-4"
+      title={t('account.organizationSignIn.title', 'Organization sign-in')}
+      description={t(
+        'account.organizationSignIn.description',
+        "Sign in through your organization's identity provider. Linking asks you to confirm it is you, then to sign in at your organization."
+      )}
+    >
+      {isLoading ? (
+        <Skeleton className="h-14 w-full" />
+      ) : (
+        <ul>
+          {organizations.map((org) => {
+            const key = `${org.org_slug}/${org.provider}`
+            return (
               <SignInMethodRow
-                key={identity.id}
+                key={key}
+                testId={`organization-sign-in-${org.org_slug}-${org.provider}`}
                 icon={<Building2 className="text-muted-foreground" />}
-                title={otherName}
-                lines={statusLines(identity)}
-                action={unlinkButton(identity, otherName)}
+                title={org.org_name}
+                lines={[org.display_name, ...statusLines(org.identity)]}
+                action={
+                  org.identity ? (
+                    unlinkButton(org.identity, org.org_name)
+                  ) : (
+                    <Button
+                      variant="outline"
+                      className="shrink-0"
+                      disabled={linking !== null}
+                      onClick={() => setToLink(org)}
+                      aria-label={t('account.signInMethods.linkProvider', 'Link {provider}', {
+                        provider: org.org_name,
+                      })}
+                    >
+                      {linking === key && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {t('account.signInMethods.link', 'Link')}
+                    </Button>
+                  )
+                }
               />
-            ))}
-          </ul>
-        )}
-      </CardContent>
+            )
+          })}
+          {other.map((identity) => (
+            <SignInMethodRow
+              key={identity.id}
+              icon={<Building2 className="text-muted-foreground" />}
+              title={otherName}
+              lines={statusLines(identity)}
+              action={unlinkButton(identity, otherName)}
+            />
+          ))}
+        </ul>
+      )}
 
       <StepUpDialog
         open={!!toLink}
@@ -269,6 +263,6 @@ export function OrganizationSignInCard() {
         )}
         notice={noProofNotice(() => setToUnlink(null))}
       />
-    </Card>
+    </SettingsSection>
   )
 }

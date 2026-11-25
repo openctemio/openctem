@@ -764,8 +764,8 @@ func (h *AssetHandler) handleServiceError(w http.ResponseWriter, err error) {
 // @Param  expires_lte  query  string  false  "expiry (a certificate's not after, a domain's expiry) at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
 // @Param  expires_gt  query  string  false  "expiry (a certificate's not after, a domain's expiry) greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
 // @Param  expires_lt  query  string  false  "expiry (a certificate's not after, a domain's expiry) less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
-// @Param  attribution  query  []string  false  "attribution: any of (comma list)"  collectionFormat(csv)  Enums(all, unknown, unconfirmed, approved, attributed, confirmed, discovered, needs_review, candidate, dependency, monitor_only, rejected)
-// @Param  attribution_not  query  []string  false  "attribution: none of (comma list)"  collectionFormat(csv)  Enums(all, unknown, unconfirmed, approved, attributed, confirmed, discovered, needs_review, candidate, dependency, monitor_only, rejected)
+// @Param  attribution  query  []string  false  "attribution: any of (comma list)"  collectionFormat(csv)  Enums(all, unknown, unconfirmed, approved, attributed, provider_address, confirmed, discovered, needs_review, candidate, dependency, monitor_only, rejected)
+// @Param  attribution_not  query  []string  false  "attribution: none of (comma list)"  collectionFormat(csv)  Enums(all, unknown, unconfirmed, approved, attributed, provider_address, confirmed, discovered, needs_review, candidate, dependency, monitor_only, rejected)
 // @Param  covered_by  query  []string  false  "scope entry that confirmed the asset: any of (comma list)"  collectionFormat(csv)
 // @Param  scope_status  query  []string  false  "scope status: any of (comma list)"  collectionFormat(csv)  Enums(in_scope, not_covered, excluded, internal)
 // @Param  monitoring_state  query  []string  false  "monitoring state: any of (comma list)"  collectionFormat(csv)  Enums(irrelevant, out_of_scope, inactive, pending_decision, unvalidated, not_monitored, monitored)
@@ -941,8 +941,8 @@ func (h *AssetHandler) Search(w http.ResponseWriter, r *http.Request) {
 // @Param  expires_lte  query  string  false  "expiry (a certificate's not after, a domain's expiry) at most (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
 // @Param  expires_gt  query  string  false  "expiry (a certificate's not after, a domain's expiry) greater than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
 // @Param  expires_lt  query  string  false  "expiry (a certificate's not after, a domain's expiry) less than (RFC 3339, YYYY-MM-DD, -P30D ago or P30D ahead)"
-// @Param  attribution  query  []string  false  "attribution: any of (comma list)"  collectionFormat(csv)  Enums(all, unknown, unconfirmed, approved, attributed, confirmed, discovered, needs_review, candidate, dependency, monitor_only, rejected)
-// @Param  attribution_not  query  []string  false  "attribution: none of (comma list)"  collectionFormat(csv)  Enums(all, unknown, unconfirmed, approved, attributed, confirmed, discovered, needs_review, candidate, dependency, monitor_only, rejected)
+// @Param  attribution  query  []string  false  "attribution: any of (comma list)"  collectionFormat(csv)  Enums(all, unknown, unconfirmed, approved, attributed, provider_address, confirmed, discovered, needs_review, candidate, dependency, monitor_only, rejected)
+// @Param  attribution_not  query  []string  false  "attribution: none of (comma list)"  collectionFormat(csv)  Enums(all, unknown, unconfirmed, approved, attributed, provider_address, confirmed, discovered, needs_review, candidate, dependency, monitor_only, rejected)
 // @Param  covered_by  query  []string  false  "scope entry that confirmed the asset: any of (comma list)"  collectionFormat(csv)
 // @Param  scope_status  query  []string  false  "scope status: any of (comma list)"  collectionFormat(csv)  Enums(in_scope, not_covered, excluded, internal)
 // @Param  monitoring_state  query  []string  false  "monitoring state: any of (comma list)"  collectionFormat(csv)  Enums(irrelevant, out_of_scope, inactive, pending_decision, unvalidated, not_monitored, monitored)
