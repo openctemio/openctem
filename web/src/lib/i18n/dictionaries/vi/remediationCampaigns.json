@@ -17,6 +17,7 @@
   "remediationCampaigns.actions.start": "Bắt đầu",
   "remediationCampaigns.addTasks.aTask": "Một tác vụ",
   "remediationCampaigns.addTasks.cannotMove": "bạn không thể chuyển",
+  "remediationCampaigns.addTasks.chooseOne": "Hãy chọn ít nhất một tác vụ.",
   "remediationCampaigns.addTasks.conflictDescription": "Mỗi tác vụ chỉ thuộc một chiến dịch. Chuyển các tác vụ bạn có quyền sang chiến dịch này, hoặc hủy.",
   "remediationCampaigns.addTasks.conflictTitle": "Một số tác vụ thuộc chiến dịch khác",
   "remediationCampaigns.addTasks.description": "Các tác vụ đang mở chưa thuộc chiến dịch nào. Mỗi tác vụ chỉ thuộc một chiến dịch.",

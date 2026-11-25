@@ -6,6 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 import ForgotPasswordPage from '@/app/(auth)/forgot-password/page'
 import { DeviceCodeView } from '@/features/mcp-oauth/components/device-code-view'
@@ -289,7 +290,7 @@ describe('autofill attributes are as before', () => {
     expect(container.querySelector('#ra-note')).toHaveAttribute('maxlength', '1000')
   })
 
-  it('device code: never offered for autofill, never sent by itself', () => {
+  it('device code: never offered for autofill, never sent by itself', async () => {
     const { container } = render(<DeviceCodeView />)
     const code = container.querySelector('#device-user-code')
     expect(code).toHaveAttribute('autocomplete', 'off')
@@ -298,6 +299,9 @@ describe('autofill attributes are as before', () => {
     expect(code).toHaveAttribute('inputmode', 'text')
     expect(code).toHaveAttribute('maxlength', '9')
     expect(container.querySelector('form')).toHaveAttribute('novalidate')
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
+    // The button stays enabled; an empty code is explained under the field.
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/8 characters/i)
   })
 })

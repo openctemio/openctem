@@ -2,7 +2,7 @@
 
 import { useDisplayUser } from '@/hooks/use-display-user'
 import { useListParams } from '@/hooks/use-list-params'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -72,22 +72,6 @@ export default function ActivityPage() {
     <PageStack>
       {/* Header with Filter */}
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <History className="h-5 w-5" />
-                {t('account.activity.title', 'Activity log')}
-              </CardTitle>
-              <CardDescription>
-                {t(
-                  'account.activity.description',
-                  'View your recent account activity and security events'
-                )}
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="space-y-4">
