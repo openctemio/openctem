@@ -163,7 +163,7 @@ export function PublishAnnouncementDialog({ onPublished }: { onPublished: () => 
             </div>
           </div>
           {problem && message.length > 0 && (
-            <p className="text-sm text-destructive">
+            <p className="text-body text-destructive">
               {problem === 'empty'
                 ? t('admin.ann.problem.empty', 'Write the message.')
                 : problem === 'tooLong'

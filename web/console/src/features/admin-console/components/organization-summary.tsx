@@ -194,7 +194,7 @@ export function OrganizationSummary({
           <CardContent className="px-4">
             <DetailFieldGrid>
               <DetailField label={t('admin.org.summary.slug', 'Short name')}>
-                <code className="text-sm break-all">{org.slug}</code>
+                <code className="text-code break-all">{org.slug}</code>
               </DetailField>
               <DetailField label={t('admin.org.summary.created', 'Created')}>
                 <RelativeTime date={org.created_at} />
