@@ -77,9 +77,11 @@ export function SensorMobileCard({
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <div className="flex w-full items-start gap-2">
           <div data-slot="sensor-card-title" className="flex min-w-0 flex-1 flex-col">
-            <span className="max-w-full truncate font-medium">{sensor.name}</span>
+            <span data-cut-tooltip title={sensor.name} className="max-w-full truncate font-medium">
+              {sensor.name}
+            </span>
             {sensor.ip_address || sensor.hostname ? (
-              <span className="max-w-full truncate font-mono text-xs text-muted-foreground">
+              <span className="max-w-full font-mono text-xs text-muted-foreground [overflow-wrap:anywhere]">
                 {sensor.ip_address || sensor.hostname}
               </span>
             ) : null}

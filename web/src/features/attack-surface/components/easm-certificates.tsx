@@ -128,7 +128,7 @@ export function CertificatePhoneCard({ row }: { row: CertificateRow }) {
         <AssetPeekLink assetId={row.asset_id}>{row.subject_cn || row.name}</AssetPeekLink>
       </div>
       {kind && <p className="text-meta">{kind}</p>}
-      <p className="line-clamp-2 text-meta" title={issuer}>
+      <p className="text-meta break-words">
         {t('attackSurface.certificates.card.issuer', 'Issuer {issuer}', { issuer })}
       </p>
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">

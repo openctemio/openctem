@@ -373,7 +373,7 @@ export function EditGroupDialog({
                           >
                             {t(crit.labelKey)}
                           </div>
-                          <div className="text-xs text-muted-foreground line-clamp-1">
+                          <div className="text-xs text-muted-foreground break-words">
                             {t(crit.descriptionKey)}
                           </div>
                         </div>

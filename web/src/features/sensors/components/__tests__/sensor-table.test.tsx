@@ -112,9 +112,10 @@ describe('SensorTable', () => {
     const reason = document.querySelector('[data-slot="sensor-reason"]') as HTMLElement
     expect(reason).toHaveTextContent('takes no new jobs: storage full')
     expect(reason).toHaveClass('text-destructive')
-    // The reason is the cell's second line: it wraps instead of being cut.
+    // The reason is the cell's second line: it wraps in full, with no clamp.
+    expect(reason).toHaveClass('whitespace-normal')
     const line = reason.closest('[data-slot="stacked-cell-secondary"]')
-    expect(line).toHaveClass('line-clamp-2', 'whitespace-normal')
+    expect(line?.className).not.toMatch(/line-clamp|truncate/)
     const cell = reason.closest('[data-slot="sensor-status"]') as HTMLElement
     expect(cell.getAttribute('title')).toContain('Local storage is full.')
     expect(within(cell).getByText('Degraded')).toBeInTheDocument()

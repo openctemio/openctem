@@ -178,9 +178,12 @@ export function SensorFacetPanel({
               key={o.value}
               label={
                 <span className="flex min-w-0 items-center justify-between gap-2">
-                  {/* A long build version ends in an ellipsis, whole on hover. */}
+                  {/* A long build version wraps at any character, read whole. */}
                   <span
-                    className={cn('min-w-0 truncate', o.value !== 'unknown' && 'font-mono text-xs')}
+                    className={cn(
+                      'min-w-0 whitespace-normal [overflow-wrap:anywhere]',
+                      o.value !== 'unknown' && 'font-mono text-xs'
+                    )}
                     title={o.value === 'unknown' ? undefined : o.value}
                   >
                     {o.value === 'unknown'
