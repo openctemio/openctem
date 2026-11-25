@@ -983,9 +983,11 @@ function AutoMobileCard<TData>({
         <div
           data-slot="mobile-card-status"
           // A line of its own: a long state (vi "Không có sensor phù hợp đang
-          // trực tuyến") wraps inside its chip instead of being cut.
+          // trực tuyến") wraps inside its chip instead of being cut. It sits
+          // at the line's end, where the title line keeps a state, so the
+          // card stays balanced.
           className={cn(
-            'mt-1 flex min-h-5 min-w-0 items-center [&_.truncate]:whitespace-normal [&_[data-slot=badge]]:whitespace-normal',
+            'mt-1 flex min-h-5 min-w-0 items-center justify-end [&_.truncate]:whitespace-normal [&_[data-slot=badge]]:whitespace-normal',
             select && 'ps-7'
           )}
         >

@@ -650,10 +650,12 @@ reference.
     table cell set for itself, then the status chip (the first column of kind
     `status` or `status-edit` the table keeps at every width, i.e. without
     `hideBelow`; else the first one), the row's checkbox and its row menu. Nothing
-    wraps under the title: a status cell too wide for its place gets a line of
-    its own under the title, and an actions cell wider than one icon button
+    wraps under the title: a status cell too wide for its place (or whose chip
+    would cut its label) gets a line of its own under the title, at the line's
+    end, where its chip wraps rather than being cut; an actions cell wider than one icon button
     gets one trailing line at the end of the card;
-  - one muted subtitle line: the first other column the page marked `asset`,
+  - one muted subtitle (up to two lines, then a clamp with its whole text as
+    its title): the first other column the page marked `asset`,
     `owner`, `id` or `text` (an unmarked column is never the subtitle); kept
     empty at its height on a row where it says nothing or repeats the title;
   - one line of at most two label/value fields: the first other columns that
