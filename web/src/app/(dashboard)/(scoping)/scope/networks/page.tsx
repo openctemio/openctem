@@ -20,7 +20,7 @@ export default function ScopeNetworksPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('networkSeeds.tab', 'Networks')}
+          title={t('scope.title', 'Scope')}
           description={t(
             'scope.networksPage.description',
             'Address ranges announced by the AS numbers and organizations that are yours. A network authorizes no scan by itself; add its ranges as scope entries.'

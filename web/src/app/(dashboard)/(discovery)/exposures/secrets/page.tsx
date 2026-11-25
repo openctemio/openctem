@@ -37,7 +37,7 @@ export default function SecretsExposurePage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('exposures.secrets.title', 'Secrets')}
+          title={t('exposures.page.title', 'Exposures')}
           description={t(
             'exposures.secrets.description',
             'Secrets committed to your code (API keys, tokens, passwords), by severity and remediation status.'

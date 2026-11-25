@@ -68,7 +68,8 @@ export default function ThreatIntelPage() {
     <Main>
       <PageStack>
         <PageHeader title={t('threatIntel.title')} description={t('threatIntel.description')}>
-          <CompactSyncStatus statuses={syncStatuses} />
+          {/* Below 640 px the title keeps the row: the Sync tab shows the status. */}
+          <CompactSyncStatus statuses={syncStatuses} className="max-sm:hidden" />
           <Button
             iconOnlyBelow="sm"
             variant="outline"

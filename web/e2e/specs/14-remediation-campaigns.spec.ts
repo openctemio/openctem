@@ -10,7 +10,8 @@ test(
   { tag: ['@remediation', '@smoke'] },
   async ({ page }) => {
     await page.goto('/remediation/campaigns')
-    await expect(page.getByRole('heading', { name: 'Campaigns', level: 1 })).toBeVisible()
+    // The section title stays on every Remediation tab; the tab names the page.
+    await expect(page.getByRole('heading', { name: 'Remediation', level: 1 })).toBeVisible()
 
     await page.getByRole('link', { name: 'E2E remediation campaign' }).first().click()
     await expect(page.getByRole('heading', { name: 'E2E remediation campaign' })).toBeVisible()

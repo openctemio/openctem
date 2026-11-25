@@ -232,7 +232,7 @@ export default function ScopeLettersPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('letters.title', 'Letters of authorization')}
+          title={t('scope.title', 'Scope')}
           description={t(
             'letters.description',
             'Signed letters that authorize testing systems your organization does not own. A letter authorizes nothing by itself: scope entries that name it need approval and stop when it expires or is revoked.'

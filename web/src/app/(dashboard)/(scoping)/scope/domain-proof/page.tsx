@@ -19,7 +19,7 @@ export default function ScopeDomainProofPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('scope.tabs.proof', 'Domain proof')}
+          title={t('scope.title', 'Scope')}
           description={t(
             'scope.proofPage.description',
             'Domains your organization has proved it controls with a DNS TXT record. Proof puts nothing in scope and authorizes no scan by itself; it marks entries at or under the domain as verified, which platform sensors and intrusive checks require.'

@@ -37,6 +37,7 @@ import { ActionMenu } from '@/components/ui/action-menu'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { StatusChip } from '@/features/shared/components/status-chip'
+import { MetaItem, MetaLine } from '@/features/shared/components/text-layout'
 import { useTasks, useRevalidateHub } from '@/features/remediation-hub/api/use-remediation-hub'
 import { useOwnerNames } from '@/features/remediation-hub/api/use-owner-names'
 import { DataTable, RowNameLink } from '@/features/shared'
@@ -266,9 +267,6 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
         chips={
           <>
             <StatusChip domain="remediationCampaign" value={c.status} />
-            <span className="text-meta text-muted-foreground">
-              {t(`remediationCampaigns.priority.${c.priority}`)}
-            </span>
           </>
         }
         facts={
@@ -278,40 +276,41 @@ export function CampaignDetail({ campaignId }: { campaignId: string }) {
                 {c.description}
               </p>
             )}
-            <dl className="text-muted-foreground flex basis-full flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-              <div className="flex gap-1">
-                <dt className="after:content-[':']">{t('remediationCampaigns.detail.owner')}</dt>
-                <dd className="text-foreground">
+            {/* The same facts line as a task: label then value, no colons. */}
+            <MetaLine
+              className="text-sm"
+              items={[
+                <MetaItem key="priority" label={t('remediationCampaigns.detail.priority')}>
+                  {t(`remediationCampaigns.priority.${c.priority}`)}
+                </MetaItem>,
+                <MetaItem key="owner" label={t('remediationCampaigns.detail.owner')}>
                   {ownerName ?? t('remediationCampaigns.owner.unassigned')}
-                </dd>
-              </div>
-              {teamName && (
-                <div className="flex gap-1">
-                  <dt className="after:content-[':']">{t('remediationCampaigns.detail.team')}</dt>
-                  <dd className="text-foreground">{teamName}</dd>
-                </div>
-              )}
-              <div className="flex gap-1">
-                <dt className="after:content-[':']">{t('remediationCampaigns.detail.due')}</dt>
-                <dd className="text-foreground">
+                </MetaItem>,
+                ...(teamName
+                  ? [
+                      <MetaItem key="team" label={t('remediationCampaigns.detail.team')}>
+                        {teamName}
+                      </MetaItem>,
+                    ]
+                  : []),
+                <MetaItem key="due" label={t('remediationCampaigns.detail.due')}>
                   <CampaignDue campaign={c} relative />
-                </dd>
-              </div>
-              {c.ticket && (
-                <div className="flex gap-1">
-                  <dt className="after:content-[':']">{t('remediationCampaigns.detail.jira')}</dt>
-                  <dd>
-                    <SafeExternalLink
-                      href={c.ticket.issue_url}
-                      className="text-foreground inline-flex items-center gap-1 underline"
-                    >
-                      {c.ticket.issue_key}
-                      <ExternalLink className="size-3" aria-hidden />
-                    </SafeExternalLink>
-                  </dd>
-                </div>
-              )}
-            </dl>
+                </MetaItem>,
+                ...(c.ticket
+                  ? [
+                      <MetaItem key="ticket" label={t('remediationCampaigns.detail.jira')}>
+                        <SafeExternalLink
+                          href={c.ticket.issue_url}
+                          className="text-foreground inline-flex items-center gap-1 underline"
+                        >
+                          {c.ticket.issue_key}
+                          <ExternalLink className="size-3" aria-hidden />
+                        </SafeExternalLink>
+                      </MetaItem>,
+                    ]
+                  : []),
+              ]}
+            />
           </>
         }
         primary={
