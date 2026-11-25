@@ -669,8 +669,8 @@ reference.
     A chip value (a badge, chip or tag) is never cut: a field whose chip does
     not fit half the line takes the whole line, and the other field goes on
     the line under it. The fields are chosen on one fixed line each; once
-    shown, neither a label nor its value ends in an ellipsis ("Hoạt động gần
-    n…", "khoảng 2 tháng tr…"): the value sits beside its label when both fit,
+    shown, neither a label nor its value ends in an ellipsis ("Last seen" cut
+    to "Last se…", "about 2 months…"): the value sits beside its label when both fit,
     else under it, and wraps across the field. A text the table cuts on one
     line takes up to three lines here, and a chip with a text beside it wraps
     the text under the chip, never into a sliver beside it. A value longer
