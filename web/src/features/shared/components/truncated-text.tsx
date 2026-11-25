@@ -71,6 +71,8 @@ export function TruncatedText({
           tabIndex={0}
           dir="auto"
           data-slot="truncated-text"
+          // Cut on purpose: the full value is the tooltip and the accessible name.
+          data-cut-tooltip=""
           aria-label={extra ? `${name}, ${detailLabel ? `${detailLabel}: ` : ''}${extra}` : name}
           className={cn(
             'block min-w-0 truncate rounded-sm [unicode-bidi:isolate] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',

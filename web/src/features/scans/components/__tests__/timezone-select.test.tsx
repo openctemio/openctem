@@ -15,7 +15,7 @@ describe('TimezoneSelect', () => {
       'border-input',
       'text-body',
       'max-md:data-[size=default]:text-base',
-      'data-[size=default]:h-control-field',
+      'data-[size=default]:min-h-control-field',
     ]) {
       expect(SELECT_TRIGGER_CLASS).toContain(cls)
       expect(trigger.className).toContain(cls)
