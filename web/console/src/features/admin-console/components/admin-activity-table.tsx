@@ -51,16 +51,16 @@ export function AdminActivityPhoneCard({
   return (
     <div data-slot="activity-card" className="flex w-full min-w-0 flex-col gap-1 px-3 py-3">
       <div className="flex min-w-0 items-center gap-2">
-        <span className="min-w-0 flex-1 truncate font-medium">
+        <span className="min-w-0 flex-1 font-medium break-words">
           {auditActionLabel(t, entry.action)}
         </span>
         <ResultBadge entry={entry} />
       </div>
-      <span className="truncate font-mono text-code text-muted-foreground" title={entry.action}>
+      <span className="font-mono text-code text-muted-foreground [overflow-wrap:anywhere]">
         {entry.action}
       </span>
       {email && (
-        <span className="truncate text-cap" title={email}>
+        <span data-token className="text-cap [overflow-wrap:anywhere]">
           {email}
         </span>
       )}
@@ -113,7 +113,8 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
         label: t('admin.adminActivityTable.administrator', 'Administrator'),
       },
       cell: ({ row }) => (
-        <span className="block truncate" title={toDisplayText(row.original.admin_email)}>
+        // An address wraps at any character rather than lose its domain.
+        <span data-token className="block whitespace-normal [overflow-wrap:anywhere]">
           {toDisplayText(row.original.admin_email)}
         </span>
       ),
@@ -135,7 +136,12 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
       },
       cell: ({ row }) =>
         row.original.ip_address ? (
-          <span className="block truncate tabular-nums">{row.original.ip_address}</span>
+          <span
+            data-token
+            className="block whitespace-normal tabular-nums [overflow-wrap:anywhere]"
+          >
+            {row.original.ip_address}
+          </span>
         ) : (
           <EmptyCell title={t('admin.adminActivityTable.noIp', 'No address recorded')} />
         ),
@@ -145,7 +151,8 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
       header: t('admin.adminActivityTable.when', 'When'),
       meta: {
         kind: 'datetime-recent',
-        width: 136,
+        // "less than a minute ago" whole.
+        width: 176,
         label: t('admin.adminActivityTable.when', 'When'),
       },
       cell: ({ row }) => <RelativeTime date={row.original.created_at} />,
