@@ -233,8 +233,8 @@ export default function SIEMIntegrationPage() {
             'Forward findings, exposures, scans and SLA breaches to Splunk through the HTTP Event Collector (HEC).'
           )}
         >
-          {/* While the list is empty its empty state carries the one Add button. */}
-          {splunkIntegrations.length > 0 && addButton}
+          {/* The create button stays in the header; the empty state only explains. */}
+          {addButton}
         </PageHeader>
 
         <IntegrationList
@@ -251,7 +251,6 @@ export default function SIEMIntegrationPage() {
               'siemIntegration.empty.description',
               'Add a Splunk HTTP Event Collector to start forwarding security events to your SIEM.'
             ),
-            action: addButton,
           }}
         >
           {(visible) => (

@@ -20,9 +20,9 @@ import { useTranslation } from '@/context/i18n-provider'
  *   the "..." row menu (`DataTableRowActions`); a refresh is the toolbar's
  *   icon `RefreshButton`.
  *
- * The page's create button goes in its PageHeader only while the list has
- * rows: when it is empty, the empty state carries the one create button
- * (`action`), so the same button is never shown twice.
+ * The page's create button stays in its PageHeader; the empty state only
+ * explains (the shared rule: an empty state never repeats the header's main
+ * button).
  */
 
 export type IntegrationStatusGroup = 'connected' | 'attention' | 'pending'
@@ -52,7 +52,7 @@ interface IntegrationListProps<T> {
   errorTitle: string
   /** The strip group of a row. Omit for a list without a status strip. */
   groupOf?: (row: T) => IntegrationStatusGroup | null
-  empty: { icon: LucideIcon; title: string; description: string; action?: ReactNode }
+  empty: { icon: LucideIcon; title: string; description: string }
   /** The table of the rows the strip lets through. */
   children: (visible: T[]) => ReactNode
 }
@@ -114,12 +114,7 @@ export function IntegrationList<T>({
       {isLoading ? (
         <TableSkeleton />
       ) : rows.length === 0 ? (
-        <EmptyState
-          icon={empty.icon}
-          title={empty.title}
-          description={empty.description}
-          action={empty.action}
-        />
+        <EmptyState icon={empty.icon} title={empty.title} description={empty.description} />
       ) : (
         <div>{children(visible)}</div>
       )}

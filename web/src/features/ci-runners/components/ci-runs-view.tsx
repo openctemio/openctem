@@ -85,7 +85,7 @@ export function VerdictBadge({
       </Badge>
     )
   if (verdict === 'pass')
-    return <Badge variant="default">{t('scans.ci.verdict.pass', 'Pass')}</Badge>
+    return <Badge variant="outline">{t('scans.ci.verdict.pass', 'Pass')}</Badge>
   if (status === 'running')
     return <Badge variant="secondary">{t('scans.ci.verdict.running', 'Running')}</Badge>
   return <Badge variant="secondary">{t('scans.ci.verdict.none', 'No verdict')}</Badge>

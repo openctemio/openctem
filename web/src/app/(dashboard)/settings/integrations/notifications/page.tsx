@@ -548,17 +548,14 @@ export default function NotificationIntegrationsPage() {
     <>
       <Main>
         <PageStack>
-          {/* While the list is empty its empty state carries the one
-              Add channel button. */}
+          {/* The create button stays in the header; the empty state only explains. */}
           <NotificationSectionHeader>
-            {integrations.length > 0 && (
-              <Can route="POST /api/v1/integrations/notifications">
-                <Button onClick={() => setAddDialogOpen(true)}>
-                  <Plus aria-hidden />
-                  {t('notificationChannels.page.addChannel', 'Add channel')}
-                </Button>
-              </Can>
-            )}
+            <Can route="POST /api/v1/integrations/notifications">
+              <Button onClick={() => setAddDialogOpen(true)}>
+                <Plus aria-hidden />
+                {t('notificationChannels.page.addChannel', 'Add channel')}
+              </Button>
+            </Can>
           </NotificationSectionHeader>
 
           <IntegrationList
@@ -574,14 +571,6 @@ export default function NotificationIntegrationsPage() {
               description: t(
                 'notificationChannels.page.emptyDescription',
                 'Add Slack, Microsoft Teams, Telegram, or webhook integrations to receive security alerts.'
-              ),
-              action: (
-                <Can route="POST /api/v1/integrations/notifications">
-                  <Button onClick={() => setAddDialogOpen(true)}>
-                    <Plus aria-hidden />
-                    {t('notificationChannels.page.addChannel', 'Add channel')}
-                  </Button>
-                </Can>
               ),
             }}
           >

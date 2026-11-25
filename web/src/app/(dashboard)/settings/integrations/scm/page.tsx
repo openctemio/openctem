@@ -334,16 +334,13 @@ export default function SCMConnectionsPage() {
               <GitBranch className="me-2 h-4 w-4" />
               {t('scmIntegration.page.repositories', 'Repositories')}
             </Button>
-            {/* While the list is empty its empty state carries the one
-                Add connection button. */}
-            {connections.length > 0 && (
-              <Can route="POST /api/v1/integrations">
-                <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-                  <Plus className="me-2 h-4 w-4" />
-                  {t('scmIntegration.page.addConnection', 'Add connection')}
-                </Button>
-              </Can>
-            )}
+            {/* The create button stays in the header; the empty state only explains. */}
+            <Can route="POST /api/v1/integrations">
+              <Button size="sm" onClick={() => setAddDialogOpen(true)}>
+                <Plus className="me-2 h-4 w-4" />
+                {t('scmIntegration.page.addConnection', 'Add connection')}
+              </Button>
+            </Can>
           </PageHeader>
 
           <IntegrationList
@@ -359,14 +356,6 @@ export default function SCMConnectionsPage() {
               description: t(
                 'scmIntegration.page.emptyDescription',
                 'Connect your GitHub, GitLab, Bitbucket, or Azure DevOps account to import and scan repositories.'
-              ),
-              action: (
-                <Can route="POST /api/v1/integrations">
-                  <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-                    <Plus className="me-2 h-4 w-4" />
-                    {t('scmIntegration.page.addConnection', 'Add connection')}
-                  </Button>
-                </Can>
               ),
             }}
           >

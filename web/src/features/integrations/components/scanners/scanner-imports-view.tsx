@@ -220,14 +220,6 @@ export function ScannerImportsView() {
               icon={ShieldCheck}
               title="Import scan results"
               description="Upload a .nessus export: hosts become assets and vulnerabilities become findings."
-              action={
-                <Can permission={IMPORT_PERMISSIONS} requireAll mode="hide">
-                  <Button size="sm" onClick={() => setImportOpen(true)}>
-                    <Upload className="me-2 h-4 w-4" />
-                    Import .nessus
-                  </Button>
-                </Can>
-              }
             />
           ) : (
             <>

@@ -1352,8 +1352,8 @@ export default function TicketingIntegrationPage() {
             'Connect ticketing systems to create and track remediation tickets automatically.'
           )}
         >
-          {/* While the list is empty its empty state carries the one Connect button. */}
-          {connections.length > 0 && connectButton}
+          {/* The create button stays in the header; the empty state only explains. */}
+          {connectButton}
         </PageHeader>
 
         <IntegrationList
@@ -1370,7 +1370,6 @@ export default function TicketingIntegrationPage() {
               'ticketingIntegration.page.emptyDescription',
               'Connect a ticketing system to automatically create and track remediation tickets.'
             ),
-            action: connectButton,
           }}
         >
           {(visible) => (

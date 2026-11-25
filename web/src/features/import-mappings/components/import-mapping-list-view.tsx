@@ -39,8 +39,8 @@ export function ImportMappingListView() {
             'Turn any CSV, JSON, JSON Lines or XML export into findings and assets. Choose a mapping as the format when you import results.'
           )}
         >
-          {/* While the list is empty its empty state carries the one New button. */}
-          {items.length > 0 && newButton}
+          {/* The create button stays in the header; the empty state only explains. */}
+          {newButton}
         </PageHeader>
 
         <div>
@@ -64,7 +64,6 @@ export function ImportMappingListView() {
                 'importMappings.list.emptyDescription',
                 'Start from a template for a generic CSV, findings JSON or test-results XML, and check it on a sample before saving.'
               )}
-              action={newButton}
             />
           ) : (
             <div className="grid gap-3">

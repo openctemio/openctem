@@ -69,8 +69,8 @@ export function MappingListView() {
             'Which {product} attribute goes to which Jira field, which Jira field comes back, and how statuses map, per project and issue type.'
           )}
         >
-          {/* While the list is empty its empty state carries the one New button. */}
-          {profiles.length > 0 && newButton}
+          {/* The create button stays in the header; the empty state only explains. */}
+          {newButton}
         </PageHeader>
 
         <div>
@@ -94,7 +94,6 @@ export function MappingListView() {
                 'ticketMapping.list.emptyDescription',
                 'Without a mapping, tickets use the built-in fields: summary, description, priority from severity and labels.'
               )}
-              action={newButton}
             />
           ) : (
             <div className="grid gap-3">
