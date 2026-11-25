@@ -30,6 +30,12 @@ func kevView(ok time.Time) feedstatus.View {
 		LastSyncStatus: "success", LastSuccessAt: ptr(ok), Interval: feedstatus.IntervalKEV}
 }
 
+// withLimit sets the stale limit in force on a view (the console setting).
+func withLimit(v feedstatus.View, d time.Duration) feedstatus.View {
+	v.StaleAfter = d
+	return v
+}
+
 func keys(cs []Condition) []string {
 	out := make([]string, 0, len(cs))
 	for _, c := range cs {
@@ -77,7 +83,13 @@ func TestEvaluate(t *testing.T) {
 		{"bundle 13h old", []feedstatus.View{bundleView(now.Add(-13*time.Hour), now.Add(-5*time.Minute))}, healthy, first,
 			[]string{"data_stale:vulnfeed"}},
 		{"bundle 11h old", []feedstatus.View{bundleView(now.Add(-11*time.Hour), now.Add(-5*time.Minute))}, healthy, first, nil},
-		{"KEV 7h without a success", []feedstatus.View{kevView(now.Add(-7 * time.Hour))}, nil, first, []string{"data_stale:kev"}},
+		{"KEV 7h is inside the bundle limit", []feedstatus.View{kevView(now.Add(-7 * time.Hour))}, nil, first, nil},
+		{"KEV 13h without a success", []feedstatus.View{kevView(now.Add(-13 * time.Hour))}, nil, first, []string{"data_stale:kev"}},
+		{"bundle 20h old under a 48h limit", []feedstatus.View{withLimit(bundleView(now.Add(-20*time.Hour), now.Add(-5*time.Minute)), 48*time.Hour)},
+			&CorpusStats{NewestPublished: ptr(now.Add(-20 * time.Hour)), Published24h: 250, PublishedPrior30d: 8400}, first, nil},
+		{"bundle 50h old under a 48h limit", []feedstatus.View{withLimit(bundleView(now.Add(-50*time.Hour), now.Add(-5*time.Minute)), 48*time.Hour)},
+			&CorpusStats{NewestPublished: ptr(now.Add(-50 * time.Hour)), Published24h: 250, PublishedPrior30d: 8400}, first,
+			[]string{"data_stale:vulnfeed", "newest_record_old"}},
 		{"switched off", []feedstatus.View{off}, nil, first, nil},
 		{"never loaded, inside the grace", []feedstatus.View{never}, nil, now.Add(-time.Hour), nil},
 		{"never loaded, after the grace", []feedstatus.View{never}, nil, now.Add(-3 * time.Hour), []string{"data_stale:vulnfeed"}},
@@ -108,7 +120,7 @@ func TestEvaluateBannerFlag(t *testing.T) {
 	now := t0
 	refused := bundleView(now.Add(-time.Hour), now.Add(-time.Hour))
 	refused.State = feedstatus.StateRefused
-	cs := Evaluate([]feedstatus.View{refused, kevView(now.Add(-8 * time.Hour))},
+	cs := Evaluate([]feedstatus.View{refused, kevView(now.Add(-13 * time.Hour))},
 		&CorpusStats{NewestPublished: ptr(now.Add(-20 * time.Hour)), Published24h: 10, PublishedPrior30d: 8400}, now.Add(-time.Hour*24), now)
 	want := map[string]bool{"import_refused:vulnfeed": false, "data_stale:kev": true, "newest_record_old": true, "volume_low": false}
 	for _, c := range cs {
@@ -236,7 +248,7 @@ func TestCheckRefusedFeedIsLoudAndRecovers(t *testing.T) {
 // alert again for a condition that is already open.
 func TestCheckDoesNotRepeatAfterRestart(t *testing.T) {
 	f := newFixture(t)
-	f.feeds.views = []feedstatus.View{kevView(t0.Add(-7 * time.Hour))}
+	f.feeds.views = []feedstatus.View{kevView(t0.Add(-13 * time.Hour))}
 	f.tick(t, 0)
 	if f.n.Count() != 1 {
 		t.Fatalf("first: %v", f.n.Subjects)

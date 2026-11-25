@@ -21,6 +21,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/adminapproval"
 	"github.com/openctemio/openctem/server/internal/app/consolesetting"
 	"github.com/openctemio/openctem/server/internal/app/deploymentregion"
+	"github.com/openctemio/openctem/server/internal/app/feedlimits"
 	"github.com/openctemio/openctem/server/internal/app/leakedsecretpolicy"
 	"github.com/openctemio/openctem/server/internal/app/orgrelay"
 	"github.com/openctemio/openctem/server/internal/app/platformai"
@@ -85,6 +86,8 @@ type AdminPlatformSettingsHandler struct {
 	PrivateDestinations *privatedestinations.Service
 	// VulnFeedSources is where the vulnerability feed is fetched from.
 	VulnFeedSources *vulnfeedsources.Service
+	// FeedLimits is how old the vulnerability data may be.
+	FeedLimits *feedlimits.Service
 }
 
 // WithApprovals wires the four-eyes gate of the platform AI destination.
@@ -420,6 +423,83 @@ func (h *AdminPlatformSettingsHandler) UpdateStorageQuota(w http.ResponseWriter,
 		return
 	}
 	writeJSON(w, http.StatusOK, h.quotaResponse(r.Context(), s))
+}
+
+// ---- Vulnerability data age limit ----------------------------------------------
+
+// FeedFreshnessLimitsResponse is how old the platform's vulnerability data
+// may be before it counts as out of date.
+type FeedFreshnessLimitsResponse struct {
+	// BundleHours is the limit of the vulnerability bundle and of CISA KEV,
+	// which rides it.
+	BundleHours int `json:"bundle_hours"`
+	// EPSSHours follows from it (a day more, at least 36).
+	EPSSHours int `json:"epss_hours"`
+	// Source: default or console.
+	Source       string `json:"source"`
+	DefaultHours int    `json:"default_hours"`
+	MinHours     int    `json:"min_hours"`
+	MaxHours     int    `json:"max_hours"`
+	Version      int    `json:"version"`
+	SettingChange
+}
+
+// UpdateFeedFreshnessLimitsRequest changes the limit.
+type UpdateFeedFreshnessLimitsRequest struct {
+	BundleHours int `json:"bundle_hours"`
+	Version     int `json:"version"`
+}
+
+func (h *AdminPlatformSettingsHandler) feedLimitsResponse(ctx context.Context, s feedlimits.Settings) FeedFreshnessLimitsResponse {
+	return FeedFreshnessLimitsResponse{BundleHours: s.BundleHours, EPSSHours: s.EPSSHours, Source: s.Source,
+		DefaultHours: feedlimits.DefaultHours, MinHours: feedlimits.MinHours, MaxHours: feedlimits.MaxHours,
+		Version: s.Version, SettingChange: h.change(ctx, s.UpdatedAt, s.UpdatedBy)}
+}
+
+// GetFeedFreshnessLimits returns how old the vulnerability data may be.
+// @Summary      Get the vulnerability data age limit
+// @Description  How old the vulnerability bundle (and CISA KEV, which rides it) may be before the console shows it as stale, the administrators are alerted and every user sees the banner; EPSS follows with a day more. Any administrator.
+// @Tags         Admin System
+// @Produce      json
+// @Success      200  {object}  FeedFreshnessLimitsResponse
+// @Security     AdminAuth
+// @Router       /admin/settings/feed-freshness [get]
+func (h *AdminPlatformSettingsHandler) GetFeedFreshnessLimits(w http.ResponseWriter, r *http.Request) {
+	s, err := h.FeedLimits.Get(r.Context())
+	if err != nil {
+		h.writeSettingError(w, "vulnerability data age limit", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.feedLimitsResponse(r.Context(), s))
+}
+
+// UpdateFeedFreshnessLimits changes how old the vulnerability data may be.
+// @Summary      Change the vulnerability data age limit
+// @Description  Super admin with a step-up. For a site that copies releases by hand: 6 to 168 hours; a release older than 7 days is still refused. Applies at the next check, without a restart. Audited; every administrator is told.
+// @Tags         Admin System
+// @Accept       json
+// @Produce      json
+// @Param        request  body      UpdateFeedFreshnessLimitsRequest  true  "Limit"
+// @Success      200  {object}  FeedFreshnessLimitsResponse
+// @Failure      400  {object}  apierror.Error
+// @Failure      409  {object}  apierror.Error
+// @Security     AdminAuth
+// @Router       /admin/settings/feed-freshness [put]
+func (h *AdminPlatformSettingsHandler) UpdateFeedFreshnessLimits(w http.ResponseWriter, r *http.Request) {
+	actor := requireActor(w, r)
+	if actor == nil {
+		return
+	}
+	var req UpdateFeedFreshnessLimitsRequest
+	if !decodeSetting(w, r, &req) {
+		return
+	}
+	s, err := h.FeedLimits.Update(r.Context(), actor, req.BundleHours, req.Version, middleware.ClientIP(r), r.UserAgent())
+	if err != nil {
+		h.writeSettingError(w, "vulnerability data age limit", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, h.feedLimitsResponse(r.Context(), s))
 }
 
 // ---- Two-factor floor ---------------------------------------------------------

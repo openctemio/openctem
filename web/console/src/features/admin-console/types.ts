@@ -1157,6 +1157,19 @@ export interface StorageQuotaSettings extends SettingChange {
   version: number
 }
 
+/** System > Threat intelligence: how old the vulnerability data may be. */
+export interface FeedFreshnessLimits extends SettingChange {
+  /** The limit of the vulnerability bundle and of CISA KEV, which rides it. */
+  bundle_hours: number
+  /** EPSS follows: a day more, at least 36 hours. */
+  epss_hours: number
+  source: 'default' | 'console'
+  default_hours: number
+  min_hours: number
+  max_hours: number
+  version: number
+}
+
 /** Settings > Alerts: the alert webhook; address and secret never returned. */
 export interface AlertWebhookSettings extends SettingChange {
   enabled: boolean

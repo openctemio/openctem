@@ -123,6 +123,7 @@ var adminWriteInventory = map[string]struct {
 	"PUT /api/v1/admin/settings/captcha/":                                    {stepUpRoute, "abuse controls of sign-up and every sign-in (fresh)"},
 	"POST /api/v1/admin/settings/captcha/verify":                             {routine, "asks Turnstile about a secret; changes nothing"},
 	"PUT /api/v1/admin/settings/region/":                                     {stepUpRoute, "data residency of every new organization, once (fresh)"},
+	"PUT /api/v1/admin/settings/feed-freshness/":                             {stepUpRoute, "how old the vulnerability data may be before every user is told it is out of date"},
 	"PUT /api/v1/admin/settings/storage-quota/":                              {stepUpRoute, "default storage quota of organizations"},
 	"PUT /api/v1/admin/settings/feed-relay/":                                 {stepUpRoute, "whether every feed comes through a platform relay sensor (no outbound feed request), and which sensor relays"},
 	"PUT /api/v1/admin/settings/scan-identification/":                        {stepUpRoute, "the User-Agent and headers every organization's scans send to targets"},
