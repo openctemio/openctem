@@ -297,6 +297,72 @@ export const ROUTE_STATES: Record<string, RouteState> = {
   // A page tab the bare route does not open: /sensors starts on its sensors
   // list, the scan zones (their list and the coverage card) are a tab.
   '/sensors@zones': { path: '/sensors?tab=zones' },
+  // A list in Query mode: the search field is the query editor, one line
+  // (`@query`) and expanded (`@query-open`), the state most of a filter
+  // edit is written in.
+  ...queryStates('/findings'),
+  ...queryStates('/assets'),
+  ...queryStates('/scans'),
+  // A text of its own applied on top of the view (the view then reads as
+  // changed: Modified, Save view and Reset join the title row), then the
+  // editor expanded: the state a filter edit is left in.
+  '/findings@query-applied': {
+    path: '/findings?mode=query',
+    act: async (page) => {
+      const field = page.locator('main [data-slot="list-search-query"] [role="combobox"]')
+      await field.first().waitFor({ state: 'visible', timeout: 20_000 })
+      await page.waitForFunction(
+        () =>
+          !document.querySelector<HTMLInputElement>(
+            'main [data-slot="list-search-query"] [role="combobox"]'
+          )?.disabled,
+        undefined,
+        { timeout: 20_000 }
+      )
+      const before = page.url()
+      await field.first().fill('practice!=compliance state=open severity>=medium')
+      // The run button (Enter would take an open suggestion first).
+      await page.locator('main [data-slot="query-apply"]').first().click()
+      await page.waitForURL((u) => u.toString() !== before, { timeout: 15_000 })
+      await expandQueryEditor(page)
+    },
+  },
+}
+
+/**
+ * Opens the query editor's expanded form: the expand button in the field
+ * from 768 px, or the field's "More" menu on a phone (help, then expand). The
+ * focus leaves the editor after, so the checks see the page and not the
+ * suggestion list.
+ */
+async function expandQueryEditor(page: Page) {
+  const controls = page.locator('main [data-slot="query-field-controls"]').first()
+  await controls.waitFor({ state: 'visible', timeout: 15_000 })
+  const expand = controls.locator('button[aria-pressed]')
+  if (await expand.isVisible()) await expand.click()
+  else {
+    // The More menu's trigger: the only popup button drawn on a phone (help
+    // and expand are inside that menu there).
+    await controls.locator('button[aria-haspopup]:visible').first().click()
+    await page
+      .locator('[data-slot="action-sheet-row"], [role="menuitem"]')
+      .nth(1)
+      .click({ timeout: 5_000 })
+  }
+  await page
+    .locator('main [data-slot="query-editor-expanded"] textarea')
+    .waitFor({ state: 'visible', timeout: 5_000 })
+  // Past its open animation.
+  await page.waitForTimeout(400)
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+}
+
+function queryStates(route: string): Record<string, RouteState> {
+  const path = `${route}?mode=query`
+  return {
+    [`${route}@query`]: { path },
+    [`${route}@query-open`]: { path, act: expandQueryEditor },
+  }
 }
 
 /** The page a matrix route opens: its state's path, or the route itself. */
