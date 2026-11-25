@@ -62,6 +62,16 @@ type TransitionInput struct {
 	// LeaseEpoch is the lease epoch the sensor holds the command under, when
 	// it says (complete, fail): a command claimed again since is refused.
 	LeaseEpoch *int
+	// KeyBound: the request was signed with the sensor's own registered key
+	// (RFC 9421, its body covered by the signature), not a bearer key.
+	KeyBound bool
+}
+
+// signedOnly reports a transition that only a signed request under a stated
+// lease epoch may make: ending an analysis job, whose result an AI agent
+// acts on (docs/architecture/ai-analysis.md, "Applying a worker's result").
+func signedOnly(t Transition, cmd *commanddom.Command) bool {
+	return cmd.Type == commanddom.CommandTypeAnalyze && (t == TransitionComplete || t == TransitionFail)
 }
 
 // TransitionResult is the command after the transition. Replayed is true when
@@ -101,6 +111,13 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 	}
 	if err := ensureSensorOwnsCommand(cmd, in.SensorID); err != nil {
 		return nil, err
+	}
+	// An analysis job ends only by a request its worker signed, under the
+	// lease epoch it holds the job: a bearer key, an unsigned request or a
+	// request that does not state its epoch is told the job does not exist,
+	// replays included.
+	if signedOnly(t, cmd) && (!in.KeyBound || in.LeaseEpoch == nil) {
+		return nil, fmt.Errorf("%w: command not found", shared.ErrNotFound)
 	}
 
 	mine := cmd.SensorID != nil && cmd.SensorID.String() == in.SensorID

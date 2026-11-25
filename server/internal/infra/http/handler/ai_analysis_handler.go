@@ -112,10 +112,28 @@ type AIRunResponse struct {
 	LegacyOutput         map[string]any    `json:"legacy_output,omitempty"`
 	CreatedAt            time.Time         `json:"created_at"`
 	CompletedAt          *time.Time        `json:"completed_at,omitempty"`
+	// ModelFamily is the model family an AI worker reported.
+	ModelFamily string `json:"model_family,omitempty"`
+	// ResultDigest is the sha256 of the result an AI worker returned.
+	ResultDigest string `json:"result_digest,omitempty"`
+	// Outcome is what the finished run did to its subject: applied,
+	// proposed, no_change or abstained.
+	Outcome string `json:"outcome,omitempty"`
+	// ActionLog is each suggestion and what became of it (codes only).
+	ActionLog []AIRunActionResponse `json:"action_log,omitempty"`
 	// RetrievalMode is how the run retrieved knowledge (none, lexical, ...);
 	// Knowledge the excerpts it saw (run detail only).
 	RetrievalMode string                   `json:"retrieval_mode,omitempty"`
 	Knowledge     []AIRunKnowledgeResponse `json:"knowledge,omitempty"`
+}
+
+// AIRunActionResponse is one suggestion of a run and what became of it:
+// kind (verdict, severity, summary, remediation_steps), outcome (applied,
+// requested, commented, skipped) and the reason code it was held or skipped.
+type AIRunActionResponse struct {
+	Kind    string `json:"kind"`
+	Outcome string `json:"outcome"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 // AIRunKnowledgeResponse is one knowledge excerpt a run saw. Names are
@@ -192,8 +210,20 @@ func toAIRun(run *aidom.Run) AIRunResponse {
 		TokensIn: run.TokensIn, TokensOut: run.TokensOut, CostMicroUSD: run.CostMicroUSD, DurationMS: run.DurationMS,
 		ErrorCode: run.ErrorCode, Trigger: string(run.Trigger), TriggeredBy: idStr(run.TriggeredBy),
 		Accountable: toAIOwners(run.Accountable), LegacyOutput: run.LegacyOutput, CreatedAt: run.CreatedAt,
-		CompletedAt: run.CompletedAt,
+		CompletedAt: run.CompletedAt, ModelFamily: run.ModelFamily, ResultDigest: run.ResultDigest,
+		Outcome: string(run.Outcome), ActionLog: toAIRunActions(run.ActionLog),
 	}
+}
+
+func toAIRunActions(log []aidom.ActionLogEntry) []AIRunActionResponse {
+	if len(log) == 0 {
+		return nil
+	}
+	out := make([]AIRunActionResponse, 0, len(log))
+	for _, e := range log {
+		out = append(out, AIRunActionResponse{Kind: e.Kind, Outcome: e.Outcome, Reason: e.Reason})
+	}
+	return out
 }
 
 func (h *AIAnalysisHandler) actx(r *http.Request) auditapp.AuditContext {

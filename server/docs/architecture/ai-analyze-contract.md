@@ -66,6 +66,13 @@ job. `job_id` is the run id; the platform reads it back from its own stored
 payload, never from a worker's result. See
 [ai-analysis.md](ai-analysis.md), "Runs on an AI worker".
 
+A worker returns the result as the job's output (`{"result": {"output": <result>}}`
+on completion). `usage.model_family` (optional, lower case,
+`^[a-z0-9][a-z0-9._-]{0,63}$`) names the model's family, so the platform can tell
+independent checks apart; it is recorded on the run and in the provenance of every
+change. How the platform takes a result: [ai-analysis.md](ai-analysis.md), "Applying
+a worker's result".
+
 ## Rules every output meets
 
 - closed objects: no field outside the schema, so a model cannot add a
