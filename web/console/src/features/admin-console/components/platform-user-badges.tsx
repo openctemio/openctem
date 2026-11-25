@@ -156,15 +156,21 @@ export function PlatformUserBadges({
 function markBadge(m: Mark) {
   return m.tone === 'warning' ? (
     <Badge key={m.key} variant="outline" className="border-warning/50 text-warning">
-      <span className="truncate">{m.label}</span>
+      <span data-cut-tooltip title={m.label} className="truncate">
+        {m.label}
+      </span>
     </Badge>
   ) : m.tone === 'success' ? (
     <Badge key={m.key} variant="outline" className="border-success/50 text-success">
-      <span className="truncate">{m.label}</span>
+      <span data-cut-tooltip title={m.label} className="truncate">
+        {m.label}
+      </span>
     </Badge>
   ) : (
     <Badge key={m.key} variant={m.variant}>
-      <span className="truncate">{m.label}</span>
+      <span data-cut-tooltip title={m.label} className="truncate">
+        {m.label}
+      </span>
     </Badge>
   )
 }

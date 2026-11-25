@@ -145,7 +145,13 @@ export default function AdminSessionsPage() {
           label: t('admin.sessions.col.ip', 'IP address'),
         },
         cell: ({ row }) => (
-          <span className="block truncate tabular-nums" title={row.original.user_agent}>
+          // An address is read whole (IPv6 wraps at any character); the
+          // browser is in the hover text.
+          <span
+            data-token
+            className="block whitespace-normal tabular-nums [overflow-wrap:anywhere]"
+            title={row.original.user_agent}
+          >
             {row.original.ip_address || (
               <EmptyCell title={t('admin.sessions.noIp', 'No address recorded')} />
             )}
