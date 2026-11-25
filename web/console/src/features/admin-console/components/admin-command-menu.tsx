@@ -102,7 +102,7 @@ export function AdminCommandMenu() {
               >
                 <Building2 className="text-muted-foreground" />
                 <span className="truncate">{org.name}</span>
-                <span className="ms-auto truncate text-xs text-muted-foreground">{org.slug}</span>
+                <span className="ms-auto truncate text-cap text-muted-foreground">{org.slug}</span>
               </CommandItem>
             ))}
           </CommandGroup>

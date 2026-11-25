@@ -39,9 +39,9 @@ function Command({ className, ...props }: React.ComponentProps<typeof CommandPri
  * From `sm`: 640 px wide, 15% from the top, at most 70% of the screen tall.
  */
 const PALETTE_SURFACE = cn(
-  'bg-popover text-popover-foreground flex flex-col gap-0 overflow-hidden p-0 sm:p-0 pb-[env(safe-area-inset-bottom)] shadow-[var(--shadow-overlay)]',
+  'bg-popover text-popover-foreground flex flex-col gap-0 overflow-hidden p-0 sm:p-0 pb-[env(safe-area-inset-bottom)] shadow-overlay',
   'top-0 max-h-none rounded-none border-0 pt-[env(safe-area-inset-top)]',
-  'sm:top-[15dvh] sm:translate-y-0 sm:max-h-[min(70dvh,36rem)] sm:max-w-[40rem] sm:rounded-xl sm:border sm:pt-0 sm:pb-0',
+  'sm:top-[15dvh] sm:translate-y-0 sm:max-h-[min(70dvh,36rem)] sm:max-w-[40rem] sm:rounded-dialog sm:border sm:pt-0 sm:pb-0',
   'data-[state=open]:slide-in-from-top-2! data-[state=closed]:slide-out-to-top-2!'
 )
 
@@ -115,7 +115,7 @@ function CommandFooter({ className, ...props }: React.ComponentProps<'div'>) {
     <div
       data-slot="command-footer"
       className={cn(
-        'text-muted-foreground border-border-subtle hidden h-10 shrink-0 items-center gap-4 border-t px-4 text-xs sm:flex',
+        'text-muted-foreground border-border-subtle hidden h-10 shrink-0 items-center gap-4 border-t px-4 text-cap sm:flex',
         className
       )}
       {...props}
@@ -194,8 +194,8 @@ function CommandInput({
         value={current}
         onValueChange={change}
         className={cn(
-          'placeholder:text-muted-foreground flex h-10 w-full min-w-0 rounded-md bg-transparent py-3 text-base outline-hidden disabled:cursor-not-allowed disabled:opacity-50',
-          !inDialog && 'md:text-sm',
+          'placeholder:text-muted-foreground flex h-10 w-full min-w-0 rounded-md bg-transparent py-3 text-base outline-hidden disabled:cursor-not-allowed disabled:opacity-50', // design-ok: text-base (16px) keeps phones from zooming into the field on focus, and is the palette's search size
+          !inDialog && 'md:text-body',
           className
         )}
         {...props}
@@ -221,10 +221,12 @@ function CommandInput({
         <>
           <DialogClose
             data-slot="command-close"
-            className="text-muted-foreground hover:text-foreground focus-visible:ring-ring hidden h-6 shrink-0 items-center rounded border bg-muted px-1.5 font-sans text-xs font-medium focus-visible:ring-2 focus-visible:outline-none sm:inline-flex"
+            className="focus-visible:ring-ring hidden shrink-0 rounded focus-visible:ring-2 focus-visible:outline-none sm:inline-flex"
           >
-            {/* The key cap is its label; the name says what it does too. */}
-            Esc<span className="sr-only"> {t('common.close', 'Close')}</span>
+            {/* The key cap (the same cap as every shortcut hint) is its
+                label; the name says what it does too. */}
+            <ShortcutKeys keys={['esc']} />
+            <span className="sr-only">{t('common.close', 'Close')}</span>
           </DialogClose>
           <DialogClose asChild>
             <Button data-slot="command-close-touch" variant="ghost" className="shrink-0 sm:hidden">
