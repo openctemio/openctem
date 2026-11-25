@@ -1034,9 +1034,12 @@ export async function findMatrixBreaks(
       let p = a.tagName.toLowerCase()
       const slot = a.getAttribute('data-slot')
       const col = a.getAttribute('data-column')
+      const kind = a.getAttribute('data-column-kind')
       const role = a.getAttribute('role')
       if (slot) p += `[data-slot="${slot}"]`
       if (col) p += `[data-column="${col}"]`
+      // A table cell names its column's kind (the cells carry no id).
+      else if (kind && /^(td|th)$/i.test(a.tagName)) p += `[data-column-kind="${kind}"]`
       if (role && !slot) p += `[role=${role}]`
       if (a.id && /^[a-z][\w-]*$/i.test(a.id) && !/^radix/.test(a.id)) p += `#${a.id}`
       const cls = Array.from(a.classList).filter((c) => /^(truncate|line-clamp-\d+)$/.test(c))
