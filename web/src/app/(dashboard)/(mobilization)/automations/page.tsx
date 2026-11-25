@@ -63,6 +63,7 @@ import { cn } from '@/lib/utils'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { get, put, csrfFetch } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { FieldError, fieldErrorProps } from '@/features/shared/components/forms/field-error'
 import { workflowEndpoints } from '@/lib/api/endpoints'
 import {
   useWorkflows,
@@ -224,6 +225,8 @@ export default function WorkflowsPage() {
   const triggerOf = (w: Workflow) => getTriggerDisplay(w, t, labels.trigger)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [newWorkflowName, setNewWorkflowName] = useState('')
+  const [createNameError, setCreateNameError] = useState<string | null>(null)
+  const createNameField = fieldErrorProps('workflow-name', createNameError)
   const [newWorkflowDescription, setNewWorkflowDescription] = useState('')
 
   // Visual Builder state
@@ -491,7 +494,8 @@ export default function WorkflowsPage() {
 
   const handleCreateWorkflow = async () => {
     if (!newWorkflowName.trim()) {
-      toast.error(t('automations.toast.enterName', 'Please enter a workflow name'))
+      setCreateNameError(t('automations.toast.enterName', 'Please enter a workflow name'))
+      document.getElementById('workflow-name')?.focus()
       return
     }
 
@@ -1237,8 +1241,13 @@ export default function WorkflowsPage() {
                     'e.g., Critical Finding Response'
                   )}
                   value={newWorkflowName}
-                  onChange={(e) => setNewWorkflowName(e.target.value)}
+                  onChange={(e) => {
+                    setNewWorkflowName(e.target.value)
+                    setCreateNameError(null)
+                  }}
+                  {...createNameField.control}
                 />
+                <FieldError {...createNameField.message} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="workflow-description">
@@ -1261,7 +1270,7 @@ export default function WorkflowsPage() {
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
               {t('automations.create.cancel', 'Cancel')}
             </Button>
-            <Button onClick={handleCreateWorkflow} disabled={isCreating || !newWorkflowName.trim()}>
+            <Button onClick={handleCreateWorkflow} disabled={isCreating}>
               {isCreating
                 ? t('automations.create.creating', 'Creating...')
                 : t('automations.create.submit', 'Create workflow')}

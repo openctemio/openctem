@@ -179,13 +179,15 @@ describe('create remediation task', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('finding already in a task')
   })
 
-  it('is disabled when there is nothing to add', () => {
+  it('is not drawn as a dead button when there is nothing to add', () => {
     wrap(
       <AlertActions
         alert={detail({ assets: [asset({ task_id: 't1' }), asset({ finding_id: '' })] })}
       />
     )
-    expect(screen.getByRole('button', { name: /Create remediation task/ })).toBeDisabled()
+    expect(
+      screen.queryByRole('button', { name: /Create remediation task/ })
+    ).not.toBeInTheDocument()
     expect(api.post).not.toHaveBeenCalled()
   })
 })
@@ -208,13 +210,8 @@ describe('scan affected assets', () => {
     expect(scanCandidates(d).map((c) => c.id)).toEqual(['d1', 'i1'])
   })
 
-  it('shows the scan button disabled with a reason when nothing can be scanned', () => {
+  it('leaves out the scan button when nothing can be scanned (no greyed button)', () => {
     wrap(<AlertActions alert={detail({ assets: [asset({ asset_type: 'host' })] })} />)
-    const btn = screen.getByRole('button', { name: /Scan affected assets/ })
-    expect(btn).toBeDisabled()
-    expect(btn).toHaveAttribute(
-      'title',
-      'No affected asset is a domain or IP address that can be scanned.'
-    )
+    expect(screen.queryByRole('button', { name: /Scan affected assets/ })).toBeNull()
   })
 })
