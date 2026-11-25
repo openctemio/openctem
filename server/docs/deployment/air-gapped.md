@@ -197,15 +197,27 @@ points.
 | Content catalog, content packs, scanner templates | admin import endpoints (content catalog needs `CONTENT_TRUST_ROOT_KEY_IDS`); template sources in internal git/S3 | |
 | Sensor scanner content (nuclei, trivy, opengrep) | sensor-side local mirror or directory | sensor health shows stale content |
 | Release feed / version check | admin import (`POST /api/v1/admin/version-check/import`) | newest versions not learned |
-| CISA KEV, EPSS | carried as a signed side manifest of each vulnerability release: with the bundle source (Console > Threat intelligence) and the direct fetch off, they arrive with the bundles from `VULNFEED_BUNDLE_DIR` or a mirror | no KEV flags, no EPSS scores |
+| CISA KEV, EPSS | carried as a signed side manifest of each vulnerability release, never fetched on their own: they arrive with the bundles from whatever delivers the release (the feed relay sensor, a mirror, or `VULNFEED_BUNDLE_DIR`) | no KEV flags, no EPSS scores |
 | AI triage | none (provider URLs fixed) | AI triage unavailable |
 | SMTP, Jira, chat, webhooks | internal targets work (private-range allowlist) | |
 | Certificate transparency, RIPEstat (EASM) | none, internet-facing by nature | those EASM checks stop |
 
 Gaps, planned as follow-ups: an OpenAI-compatible base URL for an on-premises model;
 serving the API reference page's script locally;
-release-feed and content-root keys pinned in the release; platform alerts when
-KEV, EPSS or vulnfeed go stale.
+release-feed and content-root keys pinned in the release.
+
+A stale KEV, EPSS or vulnfeed is not a gap: the freshness watch
+(`internal/app/feedwatch`) e-mails the administrators and calls the alert
+webhook, and every user sees a banner.
+
+Docker Compose passes the feed settings of `.env` to the API container
+(`VULNFEED_BASE_URL`, `VULNFEED_MIRRORS`, `VULNFEED_BUNDLE_DIR`,
+`VULNFEED_ROOT_KEY_ID`, `OPENCTEM_HTTPSEC_FEED_PROXY`,
+`OPENCTEM_HTTPSEC_FEED_NO_PROXY`, `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`);
+empty means the defaults. `VULNFEED_BUNDLE_DIR` also needs the folder mounted
+read-only into the API container, in an extra compose file listed in
+`COMPOSE_FILE`. Keep a verified release in it and replace it regularly: a
+release older than 7 days is refused.
 
 ## Sensors
 
