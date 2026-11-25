@@ -643,8 +643,8 @@ reference.
   On a phone a title row given no `start` and no actions at all (not even
   ones a page draws only on wide screens) is read to assistive technology only (the footer says "25 of 200").
 - **An automatic phone card is compact.** A table without `mobileRow` draws
-  short lines of 20 px each, whatever its cells draw (one line, cut with an
-  ellipsis); only the title may take two:
+  short lines of 20 px: the title takes up to two, the subtitle and a status
+  line one each, and the fields wrap (below):
   - the title line: the row's name (the column of kind `name`, else the first
     column; never guessed from the values), up to two lines whatever width the
     table cell set for itself, then the status chip (the first column of kind
@@ -666,7 +666,14 @@ reference.
     fields are still shown in column order.
     A chip value (a badge, chip or tag) is never cut: a field whose chip does
     not fit half the line takes the whole line, and the other field goes on
-    the line under it.
+    the line under it. The fields are chosen on one fixed line each; once
+    shown, neither a label nor its value ends in an ellipsis ("Hoạt động gần
+    n…", "khoảng 2 tháng tr…"): the value sits beside its label when both fit,
+    else under it, and wraps across the field. A text the table cuts on one
+    line takes up to three lines here, and a chip with a text beside it wraps
+    the text under the chip, never into a sliver beside it. A value longer
+    than three lines ends in a clamp, its whole text the field's title
+    (`data-cut-tooltip`).
     A list whose card needs more than that passes its own `mobileRow`. Such a
     card keeps the same rule for its title: the name shares its line only
     with the checkbox, a small mark and the row menu; a state with words
@@ -684,9 +691,8 @@ reference.
   (`isPhonePageSize` in `lib/page-size-options.ts`, already in
   `useListParams`), and the desktop keeps Rows per page 25 / 50 / 100. A
   list with one fixed size (`pageSizeOptions` of one) keeps the pager.
-- **A phone card label is never cut against its value**: the value gives way
-  first, at the card's edge. A switch in the card's title line keeps its own
-  box.
+- **A phone card label is never cut against its value**: it wraps, and the
+  value goes under it. A switch in the card's title line keeps its own box.
 - **A switch is a value on a phone card.** A field of the automatic phone card
   whose cell is only a switch (an "Enabled" column) reads "On" or "Off"
   beside it, kept in step with the switch, so no card shows a label over a

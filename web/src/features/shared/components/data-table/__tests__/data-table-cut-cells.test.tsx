@@ -80,6 +80,13 @@ describe('DataTable cut cells', () => {
     expect(seen.className).not.toContain('whitespace-nowrap')
   })
 
+  it('lets an owner wrap ("Chưa có chủ sở hữu") instead of ending in an ellipsis', () => {
+    renderTable()
+    const owner = screen.getAllByText('Sam')[0].closest('td')!
+    expect(owner).toHaveAttribute('data-column-kind', 'owner')
+    expect(owner.className).toContain('whitespace-normal')
+  })
+
   it('leaves a pinned cell unclipped so its edge shadow stays visible', () => {
     const pinned: ColumnDef<Row>[] = [
       { accessorKey: 'name', header: 'Name', meta: { kind: 'asset', pin: 'start', label: 'Name' } },

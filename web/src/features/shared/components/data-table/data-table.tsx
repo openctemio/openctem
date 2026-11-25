@@ -1708,6 +1708,9 @@ export function DataTable<TData, TValue>({
         // relative time ("khoảng 2 giờ trước") wraps between its words in a
         // narrow column rather than being cut.
         !head && layout.kind === 'date' && 'whitespace-nowrap',
+        // An owner (a person, a team, or "No owner" / "Chưa có chủ sở hữu")
+        // wraps between its words rather than being cut.
+        !head && layout.kind === 'owner' && 'whitespace-normal',
         // A column header is never cut: a long label wraps onto a second line.
         head &&
           layout.kind !== 'select' &&
