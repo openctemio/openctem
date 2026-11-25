@@ -9,6 +9,7 @@ import {
   DataTableColumnHeader,
   RelativeTime,
   SettingsPage,
+  CellText,
 } from '@/features/shared'
 import { PersonPhoneCard } from '@/features/organization/components/person-phone-card'
 import { Badge } from '@/components/ui/badge'
@@ -267,9 +268,7 @@ export default function APIKeysPage() {
         enableSorting: false,
         header: scopesLabel,
         cell: ({ row }) => (
-          <span className="block truncate font-mono text-cap" title={row.original.scopes.join(' ')}>
-            {row.original.scopes.join(' ')}
-          </span>
+          <CellText className="font-mono text-cap">{row.original.scopes.join(' ')}</CellText>
         ),
       },
       {

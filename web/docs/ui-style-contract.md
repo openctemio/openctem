@@ -181,6 +181,15 @@ cut beside it. A cell shows one status chip at most (the worst of what it knows,
 text), a list of names shows the first ones then "+N" with all of them on hover, and a value no row
 reports is a quiet dash with the words in its hover text.
 
+Only the row's name may end in an ellipsis on one line: mark its column `kind: 'name'` (a column with
+no kind is `text`, even when it holds the name), and render it with `RowNameLink`, whose plain-text
+name is its title. Any other value (a description, an owner, an e-mail, a source, a list of scopes, a
+duration) goes in `CellText`: it wraps (an address at its separators), and past two lines it ends in an
+ellipsis with its full text as the title. `StackedCell truncate` holds each line to two lines the same
+way. A column header never ends in an ellipsis: it wraps. A date stays on one line (the `date` kind is
+as wide as "25 thg 11, 2026"); a relative time wraps between its words in a column narrower than its
+kind.
+
 ### Radii
 
 | Role                      | Token             | px  |

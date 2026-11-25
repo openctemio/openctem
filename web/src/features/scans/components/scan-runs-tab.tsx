@@ -29,6 +29,7 @@ import {
   FilterSheet,
   MetricStrip,
   type MetricStripItem,
+  CellText,
 } from '@/features/shared'
 import { AddFilterPanel } from '@/features/shared/components/add-filter-panel'
 import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
@@ -120,7 +121,8 @@ const RUNS_WIDTH = {
   tasks: 152,
   findings: 88,
   duration: 104,
-  started: 132,
+  // "Nov 25, 09:58 AM" whole at 14px, plus the cell padding.
+  started: 152,
   trigger: 136,
 }
 const RUNS_HIDE_BELOW = { intensity: 1100, trigger: 1000, tasks: 900, duration: 780 } as const
@@ -342,15 +344,9 @@ function ScanRunsTable() {
         cell: ({ row }) => {
           const d = runDurationText(row.original, t)
           if (!d || d.state === 'waiting')
-            return (
-              <span className="block truncate text-xs text-muted-foreground">
-                {d ? d.text : '-'}
-              </span>
-            )
+            return <CellText className="text-xs text-muted-foreground">{d ? d.text : '-'}</CellText>
           return d.state === 'live' ? (
-            <span className="block truncate text-sm text-muted-foreground tabular-nums">
-              {d.text}
-            </span>
+            <CellText className="text-sm text-muted-foreground tabular-nums">{d.text}</CellText>
           ) : (
             <span className="text-sm tabular-nums">{d.text}</span>
           )

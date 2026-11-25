@@ -5,6 +5,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { SeverityBadge } from '@/components/ui/severity-badge'
 import type { DataTableColumnMeta } from '@/features/shared/components/data-table/column-meta'
 import { TonePill } from '@/features/shared/components/tone-pill'
+import { CellText } from '@/features/shared/components/cell-text'
 import { ApprovalFindingLink } from '@/features/findings/components/approval-finding-link'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatLocalized, formatRelative } from '@/lib/format-date'
@@ -137,9 +138,7 @@ export function closureColumns<T extends ClosureRow>(
       cell: ({ row }) =>
         row.original.asset_name ? (
           <div className="w-0 min-w-full">
-            <span className="block truncate" dir="auto">
-              {toDisplayText(row.original.asset_name, 120)}
-            </span>
+            <CellText dir="auto">{toDisplayText(row.original.asset_name, 120)}</CellText>
           </div>
         ) : (
           <span className="text-muted-foreground">-</span>

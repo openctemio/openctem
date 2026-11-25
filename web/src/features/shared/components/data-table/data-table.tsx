@@ -1656,13 +1656,21 @@ export function DataTable<TData, TValue>({
         pin.className,
         ALIGN_CLASS[layout.align],
         layout.kind === 'name' && NAME_SIZED_BY_FLOOR,
-        // A date is one line: it never breaks between day, month and year.
-        (layout.kind === 'date' || layout.kind === 'datetime-recent') && 'whitespace-nowrap',
-        // A cell still too wide for its column ends in an ellipsis (its full
-        // text in the title, set below), never a hard clip.
+        // A date is one line: it never breaks between day, month and year. A
+        // relative time ("khoảng 2 giờ trước") wraps between its words in a
+        // narrow column rather than being cut.
+        !head && layout.kind === 'date' && 'whitespace-nowrap',
+        // A column header is never cut: a long label wraps onto a second line.
+        head &&
+          layout.kind !== 'select' &&
+          layout.kind !== 'actions' &&
+          'whitespace-normal break-words',
+        // A body cell still too wide for its column ends in an ellipsis (its
+        // full text in the title, set below), never a hard clip.
         // A pinned cell is left alone: its edge shadow (`after:-end-3`) sits
         // outside the cell, and a clip would hide it.
-        !pin.className &&
+        !head &&
+          !pin.className &&
           layout.kind !== 'name' &&
           layout.kind !== 'select' &&
           layout.kind !== 'actions' &&
