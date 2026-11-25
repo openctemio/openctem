@@ -85,11 +85,11 @@ describe('ExecutiveSummaryPage', () => {
     }
     render(<ExecutiveSummaryPage />)
     const card = screen
-      .getByText('MTTR by severity')
+      .getByText('Average time to fix by severity')
       .closest('[data-slot="card"], div.rounded-xl, div')!
     const sev = card.parentElement!.parentElement!
     expect(sev.textContent).toMatch(/critical/i)
-    const prio = screen.getByText('MTTR by priority class').closest('div')!.parentElement!
+    const prio = screen.getByText('Average time to fix by priority').closest('div')!.parentElement!
       .parentElement!
     const order = within(prio)
       .getAllByText(/^P[0-3]$/)

@@ -516,7 +516,7 @@ export default function CompensatingControlsPage() {
               <p className="text-muted-foreground text-xs">
                 {t(
                   'validation.controls.capHint',
-                  'Findings on the linked assets are held at P2 rather than P1. The percentage is shown as the rationale only.'
+                  'Findings on the linked assets rank one step lower. The percentage is shown for reference only.'
                 )}
               </p>
             </div>

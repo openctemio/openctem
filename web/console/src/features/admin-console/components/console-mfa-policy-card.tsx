@@ -152,7 +152,7 @@ export function ConsoleMfaPolicyCard() {
           <li>
             {t(
               'admin.mfaPolicy.ruleBreakGlass',
-              'Break-glass (emergency) administrators keep the authenticator app.'
+              'Emergency access administrators keep the authenticator app.'
             )}
           </li>
         </ul>

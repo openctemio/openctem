@@ -50,7 +50,7 @@ beforeEach(() => {
 describe('SharedFleetPanel', () => {
   it('is a named table, the sensor and its region on one line, no action for a read-only administrator', () => {
     render(<SharedFleetPanel />)
-    const table = screen.getByRole('table', { name: 'Fleet' })
+    const table = screen.getByRole('table', { name: 'Sensors' })
     const row = within(table).getAllByRole('row')[1]
     expect(within(row).getByText('shared-eu-1')).toBeInTheDocument()
     expect(within(row).getByText('eu')).toBeInTheDocument()

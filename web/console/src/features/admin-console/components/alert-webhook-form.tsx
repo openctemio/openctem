@@ -109,7 +109,7 @@ export function AlertWebhookForm({ settings, canEdit, onSaved }: AlertWebhookFor
         title={t('admin.alerts.title', 'Chat or paging webhook')}
         description={t(
           'admin.alerts.description',
-          'Sends the alerts administrators get by e-mail to a chat or paging tool too: low disk space, stale backups, expiring certificates and changes to these settings. Checks that must run while the API is down stay with the server monitoring.'
+          'Sends the alerts administrators get by email to a chat or paging tool too: low disk space, stale backups, expiring certificates and changes to these settings. Checks that must run while the API is down stay with the server monitoring.'
         )}
         meta={<SettingChangedLine change={settings} />}
       >
@@ -151,7 +151,7 @@ export function AlertWebhookForm({ settings, canEdit, onSaved }: AlertWebhookFor
               disabled={!canEdit}
               help={t(
                 'admin.alerts.secretHelp',
-                'With a secret, each request carries X-OpenCTEM-Timestamp and X-OpenCTEM-Signature (sha256 HMAC of the timestamp, a dot and the body).'
+                'With a secret, each request is signed so you can check it came from this platform. The signature and the time are sent in the request headers.'
               )}
             />
           </SettingsFieldGrid>

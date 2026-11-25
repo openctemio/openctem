@@ -204,7 +204,7 @@ export function AdminConsoleShell({ children }: { children: ReactNode }) {
                     <Alert variant="destructive">
                       <Siren className="size-4" />
                       <AlertTitle>
-                        {t('admin.shell.breakGlassTitle', 'Break-glass session')}
+                        {t('admin.shell.breakGlassTitle', 'Emergency session')}
                       </AlertTitle>
                       <AlertDescription>
                         {t(

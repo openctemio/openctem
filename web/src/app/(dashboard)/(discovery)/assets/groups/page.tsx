@@ -41,7 +41,6 @@ import {
   Pencil,
   Trash2,
   FolderKanban,
-  Copy,
   Link,
   ExternalLink,
   SearchX,
@@ -347,11 +346,6 @@ export default function AssetGroupsPage() {
     }
   }
 
-  const handleCopyId = (id: string) => {
-    copyToClipboard(id)
-    toast.success(t('assetGroups.idCopied', 'Group ID copied'))
-  }
-
   const handleCopyLink = (id: string) => {
     copyToClipboard(shareableLink(assetGroupHref(id)))
     toast.success(t('assetGroups.linkCopied', 'Link copied'))
@@ -523,15 +517,10 @@ export default function AssetGroupsPage() {
                 permission: Permission.AssetGroupsWrite,
               },
               {
-                label: t('assetGroups.action.copyId', 'Copy ID'),
-                icon: Copy,
-                onClick: () => handleCopyId(group.id),
-                separatorBefore: true,
-              },
-              {
                 label: t('assetGroups.action.copyLink', 'Copy link'),
                 icon: Link,
                 onClick: () => handleCopyLink(group.id),
+                separatorBefore: true,
               },
               {
                 label: t('assetGroups.action.delete', 'Delete'),

@@ -122,7 +122,7 @@ describe('ScopingOverview', () => {
     expect(screen.getByRole('link', { name: 'test' })).toHaveAttribute('href', '/cycles/c1')
     const map = screen.getByRole('link', { name: 'Map: Assets mapped to a business unit' })
     expect(map).toHaveAttribute('href', '/assets')
-    expect(screen.getByText(/3 exclusions\s+enforced on scans/)).toBeInTheDocument()
+    expect(screen.getByText(/3 exclusions\s+applied to scans/)).toBeInTheDocument()
   })
 
   it('hides rows and the cycle card for modules that are off', async () => {

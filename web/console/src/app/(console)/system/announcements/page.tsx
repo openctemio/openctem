@@ -47,7 +47,7 @@ export default function AdminAnnouncementsPage() {
       },
       {
         accessorKey: 'severity',
-        header: t('admin.ann.severity', 'Kind'),
+        header: t('admin.ann.severity', 'Type'),
         cell: ({ row }) => (
           <Badge variant={row.original.severity === 'info' ? 'secondary' : 'outline'}>
             {t(`admin.ann.sev.${row.original.severity}`, row.original.severity)}

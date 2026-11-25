@@ -57,7 +57,7 @@ describe('CreateAdminDialog', () => {
       invitation_failed: true,
     } as never)
     await submitInvitation()
-    expect(await screen.findByText(/invitation e-mail could not be sent/)).toBeInTheDocument()
+    expect(await screen.findByText(/invitation email could not be sent/)).toBeInTheDocument()
     expect(screen.queryByText('Invitation link')).not.toBeInTheDocument()
   })
 })

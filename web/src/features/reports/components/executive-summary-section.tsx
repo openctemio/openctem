@@ -54,7 +54,7 @@ export function ExecutiveSummarySection() {
           <p className="text-sm text-muted-foreground">
             {t(
               'reports.executiveHint',
-              'Program-level risk, findings, SLA and MTTR for the selected window.'
+              'Risk, findings, time limits and average time to fix for the selected period.'
             )}
           </p>
         </div>
@@ -102,7 +102,7 @@ export function ExecutiveSummarySection() {
             },
             {
               key: 'p0',
-              label: t('reports.executive.p0', 'P0 open'),
+              label: t('reports.executive.p0', 'Highest priority open (P0)'),
               value: summary ? summary.p0_open : '—',
               tone: 'danger',
               href: DRILL.p0Open,

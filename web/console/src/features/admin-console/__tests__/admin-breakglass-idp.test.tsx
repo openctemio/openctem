@@ -120,7 +120,7 @@ describe('admin sign-in (platform IdP) form', () => {
     render(<PlatformIdPForm idp={configured} hasBreakGlass={false} onSaved={vi.fn()} />)
     expect(screen.getByRole('switch', { name: 'Require the identity provider' })).toBeDisabled()
     expect(
-      screen.getByText('Add an active break-glass super admin first (Administrators).')
+      screen.getByText('Add an active emergency access super admin first (Administrators).')
     ).toBeInTheDocument()
   })
 

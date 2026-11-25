@@ -24,7 +24,7 @@ export function OverviewAnswer({
   children,
   className,
 }: {
-  /** The question the page answers ("P0 fixed within target"). */
+  /** The question the page answers ("Highest priority (P0) fixed within target"). */
   question: string
   /** The answer, already formatted ("86%"). Ignored when `notMeasured` is set. */
   value?: string

@@ -34,7 +34,7 @@ describe('LeakedSecretField', () => {
     expect(screen.getByText('079f2870')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /reveal/i })).not.toBeInTheDocument()
     expect(
-      screen.getByText(/requires the Reveal Credential Secrets permission/i)
+      screen.getByText(/requires the permission to reveal credential secrets/i)
     ).toBeInTheDocument()
     expect(mockReveal).not.toHaveBeenCalled()
   })

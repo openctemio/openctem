@@ -323,7 +323,7 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
           title={t('dashboards.manage.title', 'Dashboards')}
           description={t(
             'dashboards.manage.description',
-            'Start from a template or build your own. Your dashboards are computed for your own access.'
+            'Start from a template or build your own.'
           )}
         >
           <Button

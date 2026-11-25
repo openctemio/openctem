@@ -83,7 +83,6 @@ export function ImportMappingListView() {
                         </p>
                       )}
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <code className="break-all">{`mapping:${m.name}`}</code>
                         <span>
                           {t('importMappings.list.updated', 'Updated')}{' '}
                           <RelativeTime date={m.updated_at} />

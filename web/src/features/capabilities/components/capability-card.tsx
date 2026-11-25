@@ -4,6 +4,7 @@ import { capabilitySwatch } from '@/lib/capability-colors'
 import { TAG_SWATCH_CLASS } from '@/lib/tag-colors'
 import { memo } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
+import { useCategoryLabel } from '../lib/use-category-label'
 import { Pencil, Trash2, Globe, Sparkles, Wrench, Bot, Eye } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -32,6 +33,7 @@ export const CapabilityCard = memo(function CapabilityCard({
   readOnly = false,
 }: CapabilityCardProps) {
   const { t } = useTranslation()
+  const categoryLabel = useCategoryLabel()
   const showActions = !readOnly && (onEdit || onDelete)
 
   return (
@@ -102,9 +104,7 @@ export const CapabilityCard = memo(function CapabilityCard({
         )}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {capability.category && (
-            <Badge variant="outline" className="capitalize">
-              {capability.category}
-            </Badge>
+            <Badge variant="outline">{categoryLabel(capability.category)}</Badge>
           )}
           <Badge variant="secondary" className="gap-1">
             {capability.is_builtin ? (

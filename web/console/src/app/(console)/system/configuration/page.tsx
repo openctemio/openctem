@@ -1,5 +1,6 @@
 'use client'
 
+import { humanizeIdentifier } from '@/lib/humanize-identifier'
 import { useMemo, useState } from 'react'
 import { ArrowRight } from 'lucide-react'
 import Link from '@/components/link'
@@ -95,7 +96,10 @@ export default function ConfigurationPage() {
 
 function ConfigRow({ item }: { item: ConfigurationItem }) {
   const { t } = useTranslation()
-  const name = t(configItemKey(item.key), CONFIG_ITEM_LABELS[item.key] ?? item.key)
+  const name = t(
+    configItemKey(item.key),
+    CONFIG_ITEM_LABELS[item.key] ?? humanizeIdentifier(item.key)
+  )
   const source =
     item.source === 'console'
       ? t('admin.config.source.console', 'Set in this console')
@@ -109,7 +113,11 @@ function ConfigRow({ item }: { item: ConfigurationItem }) {
       ? t('admin.config.secret.set', 'Set')
       : t('admin.config.secret.notSet', 'Not set')
   } else if (item.managed === 'server') {
-    value = item.value ? item.value : t('admin.config.empty', '(empty)')
+    value = item.value
+      ? item.value === 'true' || item.value === 'false'
+        ? t(`admin.config.value.${item.value}`, item.value === 'true' ? 'On' : 'Off')
+        : item.value
+      : t('admin.config.empty', '(empty)')
   }
 
   return (
@@ -117,13 +125,8 @@ function ConfigRow({ item }: { item: ConfigurationItem }) {
       <div className="min-w-0 space-y-1">
         <p className="text-sm font-medium">{name}</p>
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          {item.env_var && <code className="break-all">{item.env_var}</code>}
           {item.locked_by && (
-            <span>
-              {t('admin.config.lockedBy', 'locked by the server configuration ({name})', {
-                name: item.locked_by,
-              })}
-            </span>
+            <span>{t('admin.config.lockedBy', 'locked by the server configuration')}</span>
           )}
           {item.ceiling && (
             <span>

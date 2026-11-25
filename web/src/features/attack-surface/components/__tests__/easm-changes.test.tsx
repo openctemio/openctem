@@ -115,7 +115,11 @@ describe('EASMChanges', () => {
     })
     wrap(<EASMChanges />)
     await screen.findByText('x.example.com')
-    expect(screen.getByText('brand new kind')).toBeInTheDocument()
+    // A kind this build does not know is shown as a neutral "Other change", never as the raw
+    // enum value (the wording pass hides codes on purpose).
+    expect(screen.getByText('Other change')).toBeInTheDocument()
+    expect(screen.queryByText('brand new kind')).not.toBeInTheDocument()
+    expect(screen.queryByText('brand_new_kind')).not.toBeInTheDocument()
     expect(within(screen.getByRole('list')).queryByText('New exposure')).not.toBeInTheDocument()
   })
 

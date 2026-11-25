@@ -49,10 +49,10 @@ export interface LegalValues {
 export type LegalDoc = 'terms' | 'acceptable-use' | 'privacy' | 'dpa' | 'subprocessors'
 
 export const LEGAL_DOCS: readonly { doc: LegalDoc; path: string; title: string }[] = [
-  { doc: 'terms', path: '/terms', title: 'Terms of Service' },
-  { doc: 'acceptable-use', path: '/acceptable-use', title: 'Acceptable Use Policy' },
-  { doc: 'privacy', path: '/privacy', title: 'Privacy Policy' },
-  { doc: 'dpa', path: '/dpa', title: 'Data Processing Addendum' },
+  { doc: 'terms', path: '/terms', title: 'Terms of service' },
+  { doc: 'acceptable-use', path: '/acceptable-use', title: 'Acceptable use policy' },
+  { doc: 'privacy', path: '/privacy', title: 'Privacy policy' },
+  { doc: 'dpa', path: '/dpa', title: 'Data processing addendum' },
   { doc: 'subprocessors', path: '/subprocessors', title: 'Subprocessors' },
 ]
 

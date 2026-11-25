@@ -68,7 +68,7 @@ describe('Platform sensors page', () => {
     expect(screen.getByRole('button', { name: 'Enroll a sensor' })).toBeInTheDocument()
     // No enrollment form on the page itself: its fields open in a dialog.
     expect(screen.queryByLabelText('Sensor name (optional)')).not.toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Fleet' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Sensors' })).toBeInTheDocument()
     expect(screen.getAllByText('relay-01').length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: 'About shared scanning' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Pause/ })).not.toBeInTheDocument()

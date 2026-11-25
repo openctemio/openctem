@@ -219,7 +219,7 @@ export function CreateOrganizationDialog({
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="org-slug">
-                    {t('admin.createOrganizationDialog.slug', 'Slug')}
+                    {t('admin.createOrganizationDialog.slug', 'Short name')}
                   </Label>
                   <Input
                     id="org-slug"

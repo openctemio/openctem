@@ -193,7 +193,7 @@ describe('PlatformUserBadges', () => {
     )
     expect(screen.getByText('Locked')).toBeInTheDocument()
     expect(screen.getByText('Email not verified')).toBeInTheDocument()
-    expect(screen.getByText('MFA')).toBeInTheDocument()
+    expect(screen.getByText('Two-factor on')).toBeInTheDocument()
   })
 
   it('in a list row shows the state first and names what does not fit in "+n"', () => {
@@ -207,14 +207,14 @@ describe('PlatformUserBadges', () => {
     // A phone card's chip: the state and how many more.
     expect([...phone.children].map((c) => c.textContent)).toEqual([
       'Blocked',
-      '+3Locked, Email not verified, MFA',
+      '+3Locked, Email not verified, Two-factor on',
     ])
     // A desktop row: the marks that fit, then "+n" naming the others.
     const shown = [...desktop.children].map((c) => c.textContent)
     expect(shown[0]).toBe('Blocked')
     const more = shown[shown.length - 1]!
     expect(more).toMatch(/^\+\d/)
-    expect(more).toContain('MFA')
+    expect(more).toContain('Two-factor on')
     expect(shown.length).toBeLessThan(5)
   })
 })

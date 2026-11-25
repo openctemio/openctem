@@ -106,7 +106,7 @@ function slaBasis(
     {
       priority: priorityClass,
       window: formatSlaDays(days, t),
-      severity: severity ?? '',
+      severity: severity ? t(`severity.${severity}`, severity) : '',
       severityWindow: formatSlaDays(sevDays, t),
     }
   )

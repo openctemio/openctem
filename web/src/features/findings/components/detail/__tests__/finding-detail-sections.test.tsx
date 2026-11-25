@@ -162,7 +162,7 @@ describe('FindingWhyItMatters', () => {
     } as never)
     render(<FindingWhyItMatters finding={finding({ priorityClass: 'P2', severity: 'critical' })} />)
     expect(document.querySelector('[data-slot="sla-basis"]')).toHaveTextContent(
-      'The deadline follows the priority (P2: 15 days), not the severity (critical: 2 days).'
+      'The deadline follows the priority (P2: 15 days), not the severity (Critical: 2 days).'
     )
   })
 

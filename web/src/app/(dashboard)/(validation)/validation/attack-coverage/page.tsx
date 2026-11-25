@@ -674,17 +674,18 @@ export default function MitreCoveragePage() {
 // ============================================
 
 function TacticHeader({ tactic }: { tactic: MitreTactic }) {
+  const { t } = useTranslation()
+  const label = t(`validation.attackCoverage.tactic.${tactic.slug}`, tactic.name)
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
         <TooltipTrigger asChild>
           <div className="bg-primary/10 rounded px-1 py-1.5 text-center">
-            <p className="text-primary truncate text-xs font-semibold">{tactic.shortName}</p>
-            <p className="text-muted-foreground font-mono text-xs">{tactic.id}</p>
+            <p className="text-primary truncate text-xs font-semibold">{label}</p>
           </div>
         </TooltipTrigger>
         <TooltipContent>
-          <p className="font-semibold">{tactic.name}</p>
+          <p className="font-semibold">{label}</p>
           <p className="text-muted-foreground text-xs">{tactic.description}</p>
         </TooltipContent>
       </Tooltip>

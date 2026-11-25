@@ -37,7 +37,7 @@ export default function ReadyToClosePage() {
           title={t('findings.closureReview.title', 'Ready to close')}
           description={t(
             'findings.closureReview.description',
-            'Findings a covered scan no longer finds. Blocked, unreachable or partial scans never put a finding here.'
+            'Findings that a scan which checked the asset no longer finds. Blocked, unreachable or partial scans never put a finding here.'
           )}
         />
         <Tabs value={view} onValueChange={changeView}>

@@ -1,5 +1,6 @@
 'use client'
 
+import { humanizeIdentifier } from '@/lib/humanize-identifier'
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { ChevronRight, Copy, Download, Info } from 'lucide-react'
@@ -66,9 +67,28 @@ function formatBytes(n?: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MiB`
 }
 
+/** Plain labels for a pack's kind, trust tier and channel (unknown values read as words). */
+function usePackLabels() {
+  const { t } = useTranslation()
+  const missing = '\u0000'
+  return useMemo(() => {
+    const word = (ns: string, v?: string) => {
+      if (!v) return ''
+      const found = t(`${ns}.${v}`, missing)
+      return found !== missing ? found : humanizeIdentifier(v)
+    }
+    return {
+      kindLabel: (v?: string) => word('admin.cp.kindName', v),
+      tierLabel: (v?: string) => word('admin.cp.tierName', v),
+      channelLabel: (v?: string) => word('admin.cp.channelName', v),
+    }
+  }, [t])
+}
+
 export default function ContentPacksPage() {
   const admin = useAdmin()
   const { t } = useTranslation()
+  const { kindLabel, tierLabel, channelLabel } = usePackLabels()
   const canWrite = adminHas(admin, 'platform.content.manage')
   const list = useListParams({ defaultPageSize: 25, filters: { kind: '', status: '' } })
   const name = list.searchTerm
@@ -104,11 +124,17 @@ export default function ContentPacksPage() {
           <StackedCell primary={row.original.name} secondary={row.original.version} />
         ),
       },
-      { accessorKey: 'kind', header: t('admin.cp.kind', 'Kind') },
+      {
+        accessorKey: 'kind',
+        header: t('admin.cp.kind', 'Type'),
+        cell: ({ row }) => kindLabel(row.original.kind),
+      },
       {
         accessorKey: 'tier',
         header: t('admin.cp.col.tier', 'Tier'),
-        cell: ({ row }) => <Badge variant="outline">{row.original.tier}</Badge>,
+        // The tier is on the pack's sheet too: it gives way on a tablet.
+        meta: { hideBelow: 900 },
+        cell: ({ row }) => <Badge variant="outline">{tierLabel(row.original.tier)}</Badge>,
       },
       {
         id: 'content',
@@ -142,7 +168,7 @@ export default function ContentPacksPage() {
         cell: ({ row }) => <RelativeTime date={row.original.created_at} className="text-sm" />,
       },
     ],
-    [t]
+    [t, kindLabel, tierLabel]
   )
 
   const channelRows: ContentChannelResponse[] = channels.data?.data ?? []
@@ -162,7 +188,7 @@ export default function ContentPacksPage() {
         meta: { kind: 'status' },
         cell: ({ row }) => (
           <Badge variant={row.original.channel === 'stable' ? 'secondary' : 'outline'}>
-            {row.original.channel}
+            {channelLabel(row.original.channel)}
           </Badge>
         ),
       },
@@ -191,7 +217,7 @@ export default function ContentPacksPage() {
         cell: ({ row }) => <RelativeTime date={row.original.updated_at} />,
       },
     ],
-    [t]
+    [t, channelLabel]
   )
 
   return (
@@ -201,7 +227,7 @@ export default function ContentPacksPage() {
           title={t('admin.nav.contentPacks', 'Content packs')}
           description={t(
             'admin.cp.description',
-            'Templates, rules and wordlists the platform ships to sensors: linted, signed, and pinned to a channel.'
+            'Templates, rules and wordlists the platform sends to sensors. Each one is checked, signed and assigned to a channel.'
           )}
         >
           {canWrite && <AddContentPackDialog onAdded={refresh} />}
@@ -237,14 +263,14 @@ export default function ContentPacksPage() {
                   value={list.filters.kind || ANY}
                   onValueChange={(v) => list.setFilter('kind', v === ANY ? '' : v)}
                 >
-                  <SelectTrigger className="sm:w-48" aria-label={t('admin.cp.kind', 'Kind')}>
+                  <SelectTrigger className="sm:w-48" aria-label={t('admin.cp.kind', 'Type')}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={ANY}>{t('admin.cp.anyKind', 'Any kind')}</SelectItem>
                     {KNOWN_KINDS.map((k) => (
                       <SelectItem key={k} value={k}>
-                        {k}
+                        {kindLabel(k)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -280,7 +306,7 @@ export default function ContentPacksPage() {
           <span>
             {t(
               'admin.cp.notDelivered',
-              'Not active yet: sensors do not download content packs. A stored pack is not used by any scan, and revoking one stops nothing. Custom templates still travel inside each scan job.'
+              'Not active yet: sensors do not download content packs. A stored pack is not used by any scan, and revoking one stops nothing. Custom templates still travel inside each scan task.'
             )}
           </span>
         </p>
@@ -375,7 +401,7 @@ export default function ContentPacksPage() {
                   </Badge>
                 ))
               }
-              meta={opened ? [opened.kind, `tier ${opened.tier}`] : []}
+              meta={opened ? [kindLabel(opened.kind), tierLabel(opened.tier)] : []}
               onClose={() => setOpenId(null)}
             />
           }
@@ -516,6 +542,7 @@ export default function ContentPacksPage() {
  */
 function PackPhoneCard({ pack }: { pack: PlatformContentPackResponse }) {
   const { t } = useTranslation()
+  const { kindLabel, tierLabel } = usePackLabels()
   const revoked = pack.status === 'revoked'
   return (
     <div data-slot="pack-card" className="flex w-full min-w-0 items-center gap-2 px-3 py-3">
@@ -531,10 +558,10 @@ function PackPhoneCard({ pack }: { pack: PlatformContentPackResponse }) {
         <MetaLine
           className="items-center"
           items={[
-            pack.kind ? <span key="kind">{pack.kind}</span> : null,
+            pack.kind ? <span key="kind">{kindLabel(pack.kind)}</span> : null,
             pack.tier ? (
               <Badge key="tier" variant="outline">
-                {pack.tier}
+                {tierLabel(pack.tier)}
               </Badge>
             ) : null,
             <Badge key="status" variant={revoked ? 'destructive' : 'secondary'}>

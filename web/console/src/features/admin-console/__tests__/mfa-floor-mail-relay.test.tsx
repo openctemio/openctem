@@ -74,7 +74,7 @@ describe('two-factor floor', () => {
     await userEvent.clear(screen.getByLabelText('Days to set it up: current members'))
     await userEvent.type(screen.getByLabelText('Days to set it up: current members'), '30')
     const dialog = await confirmWithReason('audit finding 12')
-    expect(dialog).toHaveTextContent('Change the two-factor floor?')
+    expect(dialog).toHaveTextContent('Change the minimum two-factor rule?')
     await waitFor(() =>
       expect(saveMFAFloor).toHaveBeenCalledWith({
         floor: 'everyone',
@@ -88,9 +88,9 @@ describe('two-factor floor', () => {
 
   it('warns before lowering it', async () => {
     render(<MFAFloorForm settings={floor} canEdit onSaved={() => {}} />)
-    await userEvent.click(screen.getByLabelText('No floor'))
+    await userEvent.click(screen.getByLabelText('No minimum'))
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
-    expect(screen.getByRole('alertdialog')).toHaveTextContent('Lower the two-factor floor?')
+    expect(screen.getByRole('alertdialog')).toHaveTextContent('Lower the minimum two-factor rule?')
   })
 
   it('refuses grace days outside 0 to 90', async () => {

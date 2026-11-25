@@ -515,13 +515,10 @@ export default function AssetDetailPage() {
                   <PropertyRow label={t('assetDetail.type', 'Type')}>{typeLabel}</PropertyRow>
                 </PropertyGroup>
                 <PropertyFold
-                  label={t('assetDetail.moreProperties', 'ID, description and tags')}
+                  label={t('assetDetail.moreProperties', 'Description and tags')}
                   openLabel={t('assetDetail.fewerProperties', 'Fewer details')}
                 >
                   <PropertyGroup>
-                    <PropertyRow label={t('assetDetail.id', 'ID')}>
-                      <code className="font-mono text-xs break-all">{asset.id}</code>
-                    </PropertyRow>
                     <PropertyRow label={t('assetDetail.description', 'Description')} top>
                       {asset.description}
                     </PropertyRow>
