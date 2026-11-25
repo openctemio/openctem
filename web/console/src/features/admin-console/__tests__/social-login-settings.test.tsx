@@ -151,7 +151,9 @@ describe('Social login settings', () => {
 
   it('is read-only for an administrator who is not a super admin', () => {
     render(<SocialLoginSettingsForm settings={settings()} canEdit={false} onSaved={() => {}} />)
-    expect(screen.getAllByText('Only a super admin can change this setting.')).toHaveLength(3)
+    // The page says why once (SettingsPage readOnly); each provider's fields are locked.
+    for (const field of screen.getAllByLabelText('Client ID')) expect(field).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Test configuration' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
   })
 })

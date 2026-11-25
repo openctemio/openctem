@@ -53,7 +53,7 @@ describe('business-units page header', () => {
 
   it('renders the Vietnamese title, description and Export label', async () => {
     renderPage('vi')
-    expect(await screen.findByRole('heading', { name: 'Đơn vị kinh doanh' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Bối cảnh kinh doanh' })).toBeTruthy()
     expect(screen.getByText(/Cơ cấu tổ chức của bạn/)).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Xuất' }) ?? null).toBeTruthy()
     expect(screen.queryByText('Business units')).toBeNull()

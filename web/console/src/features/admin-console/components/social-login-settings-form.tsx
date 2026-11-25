@@ -5,12 +5,18 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
+import {
+  SETTINGS_SECTION_FRAME,
+  SettingsBlock,
+  SettingsField,
+  SettingsFieldGrid,
+  SettingsRow,
+  SettingsSaveBar,
+  SettingsSection,
+  SettingsSwitchRow,
+} from '@/features/shared'
 import { TonePill } from '@/features/shared/components/tone-pill'
 import { saveSocialProvider, testSocialProvider } from '../api/use-platform-settings'
 import type { SocialLoginSettings, SocialProvider } from '../types'
@@ -29,15 +35,12 @@ const NAMES: Record<SocialProvider['provider'], string> = {
   microsoft: 'Microsoft',
 }
 
-/**
- * A read-only value to paste into the provider's console: plain text that
- * wraps (never an input box that cuts it), with a copy button.
- */
+/** A read-only value to paste into the provider's console, with a copy button. */
 function CopyField({ label, value }: { label: string; value: string }) {
   const { t } = useTranslation()
   const id = useId()
   return (
-    <div className="grid gap-1.5">
+    <div className="grid min-w-0 gap-1.5">
       <p id={id} className="text-dense font-medium">
         {label}
       </p>
@@ -196,123 +199,134 @@ function ProviderCard({ settings, provider: p, canEdit, onSaved }: CardProps) {
 
   return (
     <>
-      <Card data-testid={`social-${p.provider}`}>
-        <CardHeader>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle>{name}</CardTitle>
-            <TonePill tone={pill.tone} label={pill.label} />
-          </div>
-          <CardDescription>{t(`admin.socialLogin.note.${p.provider}`)}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {locked && <LockedByEnvironment envVar={p.env_var} />}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <CopyField
-              label={t('admin.socialLogin.redirectUri', 'Redirect URI to register')}
-              value={p.redirect_uri}
-            />
-            {p.provider === 'google' && (
+      {/* The frame is on this wrapper (a hairline between providers), so
+          the test id holds the whole provider; the section inside is its
+          first child and draws no second line. */}
+      <div data-testid={`social-${p.provider}`} className={SETTINGS_SECTION_FRAME}>
+        <SettingsSection
+          framed
+          id={`social-${p.provider}-title`}
+          title={name}
+          description={
+            <>
+              <TonePill className="me-2 align-middle" tone={pill.tone} label={pill.label} />
+              {t(`admin.socialLogin.note.${p.provider}`)}
+            </>
+          }
+          meta={<SettingChangedLine change={settings} />}
+        >
+          {locked && (
+            <SettingsBlock>
+              <LockedByEnvironment envVar={p.env_var} />
+            </SettingsBlock>
+          )}
+          <SettingsSwitchRow
+            id={`${id}-enabled`}
+            label={t('admin.socialLogin.offer', 'Offer on the sign-in page')}
+            hint={
+              !settings.master_enabled
+                ? t(
+                    'admin.socialLogin.masterOff',
+                    'Social sign-in is switched off for the whole server (OAUTH_ENABLED). Nothing is offered until the server setting is changed.'
+                  )
+                : undefined
+            }
+            checked={enabled}
+            onCheckedChange={setEnabled}
+            disabled={!editable}
+          />
+          {enabled && (
+            <SettingsBlock>
+              <Alert>
+                <AlertDescription>{impact}</AlertDescription>
+              </Alert>
+            </SettingsBlock>
+          )}
+          <SettingsBlock>
+            <SettingsFieldGrid>
               <CopyField
-                label={t('admin.socialLogin.jsOrigin', 'Authorized JavaScript origin')}
-                value={settings.javascript_origin}
+                label={t('admin.socialLogin.redirectUri', 'Redirect URI to register')}
+                value={p.redirect_uri}
               />
-            )}
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-1.5">
-              <Label htmlFor={`${id}-client`}>{t('admin.socialLogin.clientId', 'Client ID')}</Label>
-              <Input
-                id={`${id}-client`}
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                disabled={!editable}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </div>
-            <SecretField
-              label={t('admin.socialLogin.clientSecret', 'Client secret')}
-              isSet={p.secret_set}
-              value={secret}
-              onChange={setSecret}
-              clear={clearSecret}
-              onClear={setClearSecret}
-              disabled={!editable}
-              help={t(
-                'admin.socialLogin.secretHelp',
-                'Write-only: it is encrypted on the server and never shown again.'
+              {p.provider === 'google' && (
+                <CopyField
+                  label={t('admin.socialLogin.jsOrigin', 'Authorized JavaScript origin')}
+                  value={settings.javascript_origin}
+                />
               )}
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor={`${id}-scopes`}>{t('admin.socialLogin.scopes', 'Scopes')}</Label>
-            <Input
+            </SettingsFieldGrid>
+            <SettingsFieldGrid>
+              <SettingsField
+                id={`${id}-client`}
+                label={t('admin.socialLogin.clientId', 'Client ID')}
+              >
+                {(control) => (
+                  <Input
+                    {...control}
+                    value={clientId}
+                    onChange={(e) => setClientId(e.target.value)}
+                    disabled={!editable}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                )}
+              </SettingsField>
+              <SecretField
+                label={t('admin.socialLogin.clientSecret', 'Client secret')}
+                isSet={p.secret_set}
+                value={secret}
+                onChange={setSecret}
+                clear={clearSecret}
+                onClear={setClearSecret}
+                disabled={!editable}
+                help={t(
+                  'admin.socialLogin.secretHelp',
+                  'Write-only: it is encrypted on the server and never shown again.'
+                )}
+              />
+            </SettingsFieldGrid>
+            <SettingsField
               id={`${id}-scopes`}
-              value={scopes}
-              onChange={(e) => setScopes(e.target.value)}
-              disabled={!editable}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={p.default_scopes.join(' ')}
-            />
-            <p className="text-xs text-muted-foreground">
-              {t(
+              label={t('admin.socialLogin.scopes', 'Scopes')}
+              hint={t(
                 'admin.socialLogin.scopesHelp',
                 'Separated by spaces. Leave empty to use the defaults shown. The scopes that identify the person cannot be removed.'
               )}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Switch
-              id={`${id}-enabled`}
-              checked={enabled}
-              onCheckedChange={setEnabled}
-              disabled={!editable}
-            />
-            <Label htmlFor={`${id}-enabled`}>
-              {t('admin.socialLogin.offer', 'Offer on the sign-in page')}
-            </Label>
-          </div>
-          {enabled && (
-            <Alert>
-              <AlertDescription>{impact}</AlertDescription>
-            </Alert>
-          )}
-          {!settings.master_enabled && (
-            <p className="text-sm text-muted-foreground">
-              {t(
-                'admin.socialLogin.masterOff',
-                'Social sign-in is switched off for the whole server (OAUTH_ENABLED). Nothing is offered until the server setting is changed.'
-              )}
-            </p>
-          )}
-          <SettingChangedLine change={settings} />
-          {canEdit && (
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              {/* Shown once there is something to test: no idle, disabled button. */}
-              {(p.secret_set || (clientId.trim() !== '' && secret.trim() !== '')) && (
-                <Button variant="outline" onClick={() => void check()} disabled={checking}>
-                  {checking && <Loader2 className="me-1.5 size-4 animate-spin" />}
-                  {t('admin.socialLogin.check', 'Test configuration')}
-                </Button>
-              )}
-              {!locked && (
-                <SettingsSaveBar
-                  className="basis-full"
-                  dirty={dirty}
-                  onSave={() => setConfirmOpen(true)}
-                  onDiscard={reset}
+            >
+              {(control) => (
+                <Input
+                  {...control}
+                  value={scopes}
+                  onChange={(e) => setScopes(e.target.value)}
+                  disabled={!editable}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={p.default_scopes.join(' ')}
                 />
               )}
-            </div>
+            </SettingsField>
+          </SettingsBlock>
+          {/* Shown once there is something to test: no idle, disabled button. */}
+          {canEdit && (p.secret_set || (clientId.trim() !== '' && secret.trim() !== '')) && (
+            <SettingsRow
+              label={t('admin.socialLogin.checkLabel', 'Check the configuration')}
+              hint={t(
+                'admin.socialLogin.checkHint',
+                'Asks {name} whether it accepts the client ID and secret.',
+                { name }
+              )}
+            >
+              <Button variant="outline" onClick={() => void check()} disabled={checking}>
+                {checking && <Loader2 className="animate-spin" aria-hidden />}
+                {t('admin.socialLogin.check', 'Test configuration')}
+              </Button>
+            </SettingsRow>
           )}
-          {!canEdit && (
-            <p className="text-sm text-muted-foreground">
-              {t('admin.settings.superAdminOnly', 'Only a super admin can change this setting.')}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+        </SettingsSection>
+        {canEdit && !locked && (
+          <SettingsSaveBar dirty={dirty} onSave={() => setConfirmOpen(true)} onDiscard={reset} />
+        )}
+      </div>
       <ReasonConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
@@ -352,7 +366,7 @@ export function SocialLoginSettingsForm({
   onSaved,
 }: SocialLoginSettingsFormProps) {
   return (
-    <div className="space-y-6">
+    <>
       {settings.providers.map((p) => (
         <ProviderCard
           key={p.provider}
@@ -362,6 +376,6 @@ export function SocialLoginSettingsForm({
           onSaved={onSaved}
         />
       ))}
-    </div>
+    </>
   )
 }

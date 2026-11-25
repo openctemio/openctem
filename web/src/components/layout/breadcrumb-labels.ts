@@ -92,6 +92,9 @@ const PATH_LABELS: Record<string, Named> = {
   '/insights/ctem-maturity': { label: 'CTEM maturity', key: 'insights.maturity.title' },
   '/notifications': { label: 'Notifications', key: 'settings.notifications.title' },
   '/programs/new': { label: 'Import program', key: 'programs.new.title' },
+  // The section's root names the section, as its heading does on every tab
+  // ("Remediation"), not its first tab ("Fix plan").
+  '/remediation': { label: 'Remediation', key: 'remediationHub.plan.title' },
   '/scoping': { label: 'Scoping', key: 'scoping.overview.title' },
   '/settings/asset-sources': { label: 'Asset sources', key: 'assetSources.title' },
   '/settings/integrations/notifications/history': {
@@ -107,12 +110,17 @@ const PATH_LABELS: Record<string, Named> = {
     label: 'Ticketing',
     key: 'ticketingIntegration.page.title',
   },
-  '/settings/pentest/checklists': { label: 'Checklists', key: 'pentestChecklists.page.title' },
+  // The methodology tabs keep the section title as their heading: each crumb
+  // is its tab ("Pentest methodology > Finding library"), never the title twice.
+  '/settings/pentest/checklists': { label: 'Checklists', key: 'pentestChecklists.tabLabel' },
   '/settings/pentest/report-templates': {
     label: 'Report templates',
-    key: 'pentest.reportTemplates.title',
+    key: 'pentest.methodologyTabs.reportTemplates',
   },
-  '/settings/pentest/templates': { label: 'Pentest methodology', key: 'settings.pentest.title' },
+  '/settings/pentest/templates': {
+    label: 'Finding library',
+    key: 'pentest.methodologyTabs.findingLibrary',
+  },
   '/settings/tenant/create': { label: 'Create organization', key: 'settings.createTeam.title' },
   '/threat-intel': { label: 'Threat intelligence', key: 'threatIntel.title' },
   '/validation': { label: 'Validation', key: 'validation.overview.title' },
@@ -143,7 +151,6 @@ const FALLBACK_LABELS: Record<string, string> = {
   scanning: 'Scanning',
   account: 'Account',
   insights: 'Insights',
-  pentest: 'Penetration testing',
   new: 'New',
   edit: 'Edit',
   builder: 'Builder',
@@ -166,6 +173,26 @@ const FALLBACK_LABELS: Record<string, string> = {
 function humanize(segment: string): string {
   const words = segment.replace(/[-_]+/g, ' ').trim()
   return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+/**
+ * Whether a crumb at `path` has a name of its own (a heading, tab, nav item or
+ * section name). A folder with no page and no name (`/settings/tenant`,
+ * `/pentest`) is left out of the trail rather than shown as a humanised slug
+ * ("Tenant") that no menu uses.
+ */
+export function breadcrumbIsNamed(path: string, segment: string): boolean {
+  return breadcrumbLabelKey(path, segment) !== undefined
+}
+
+/**
+ * A page that lives under another level than its URL says: its trail goes
+ * through that parent (the review queues of Assets › Needs attention keep their
+ * older URLs, but read "Inventory › Needs attention › Possible duplicates").
+ */
+export const CRUMB_PARENTS: Readonly<Record<string, string>> = {
+  '/assets/duplicates': '/assets/attention',
+  '/assets/suggestions': '/assets/attention',
 }
 
 /** Label for the breadcrumb item at `path` whose last segment is `segment`. */

@@ -51,7 +51,6 @@ const NOT_YET_MIGRATED = new Set([
   'features/pentest/components/template-editor/template-summary.tsx',
   'features/platform/components/platform-scanning-card.tsx',
   'features/programs/components/program-source.tsx',
-  'features/remediation/components/campaign-detail.tsx',
   'features/remediation-hub/components/query-preview-panel.tsx',
   'features/scans/components/new-scan/review-step.tsx',
   'features/scans/components/run-task-logs-dialog.tsx',

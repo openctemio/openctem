@@ -1155,16 +1155,10 @@ function VulnerabilitiesListBody() {
       <PageStack>
         <PageHeader
           title={t('vulnPage.list.title', 'Vulnerabilities')}
-          // On a phone the list comes first: the description is read out but
-          // not drawn, and the tiles follow the list.
-          description={
-            <span className="max-md:sr-only">
-              {t(
-                'vulnPage.list.description',
-                'One row per vulnerability across the assets you can see, sorted by risk: priority, known exploitation, emerging threats, EPSS, CVSS and reach.'
-              )}
-            </span>
-          }
+          description={t(
+            'vulnPage.list.description',
+            'One row per vulnerability across the assets you can see, sorted by risk: priority, known exploitation, emerging threats, EPSS, CVSS and reach.'
+          )}
         />
         <MetricStrip items={strip} loading={!data && !error} listFirst />
         {titleRow}

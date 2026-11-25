@@ -345,7 +345,7 @@
   "remediationHub.suggestions.urgent": "P0 or KEV",
   "remediationHub.tabsLabel": "Remediation sections",
   "remediationHub.tasks.board": "Board",
-  "remediationHub.tasks.columns.deadline": "Deadline",
+  "remediationHub.tasks.columns.deadline": "Due",
   "remediationHub.tasks.columns.owner": "Owner",
   "remediationHub.tasks.columns.progress": "Progress",
   "remediationHub.tasks.columns.risk": "Risk points",

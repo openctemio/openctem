@@ -59,13 +59,16 @@ export function PageHeader({
         className
       )}
     >
-      {/* On a phone the title gives way to the actions down to its longest
-          word: a 96 px basis, and no min-w-0, so the content minimum (the
-          longest word) still holds. A title like "Event forwarding" wraps to
-          two lines beside "Add Splunk HEC" instead of leaving the button alone
-          on the row under it; only actions wider than the rest of the row
-          wrap. With a view switcher the title yields (basis-32) so the switcher
-          stays beside it. From sm the title keeps 240 px. */}
+      {/* One header on every page, at every width: the title and the actions
+          share one row, and the description is the row under it. Below 640 px
+          every action with an icon is a square icon button there (the kit's
+          Button, inside `page-header-actions`): its label stays its accessible
+          name and returns from sm. So a phone never gets an action row of its
+          own between the title and the description, the title keeps the row,
+          and a create button is the same square "+" on every page. The title
+          keeps a 96 px basis and its longest word; from sm it keeps 240 px.
+          With a view switcher the title yields (basis-32) so the switcher
+          stays beside it. */}
       <div
         className={cn(
           'flex-1 sm:min-w-0 sm:basis-60',
@@ -113,6 +116,7 @@ export function PageHeader({
           // which does not wrap and pushed the last button off-screen on narrow
           // widths. Direct child groups wrap too, so the actions always fit.
           <div
+            data-slot="page-header-actions"
             className={cn(
               'flex max-w-full shrink-0 flex-wrap items-center gap-2 [&>div]:max-w-full [&>div]:flex-wrap',
               // With a switcher: full row under the title on a phone, left of it from sm.
@@ -124,7 +128,9 @@ export function PageHeader({
           </div>
         )}
       </div>
-      {/* The description is a row of its own under the title row at every
+      {/* The description is shown at every width on every page (a page never
+          hides it on a phone: page-header-guard.test.ts), so sibling tabs keep
+          one header height. It is a row of its own under the title row at every
           width (order-last, full basis), never a column inside the title
           block: on a phone that column was squeezed into a few words a line
           beside the header's action. The negative margin takes the row gap
