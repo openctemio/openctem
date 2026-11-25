@@ -1811,7 +1811,7 @@
   "admin.privateNetworks.confirmTitle": "Change the private networks?",
   "admin.privateNetworks.consoleNone": "No range is opened here.",
   "admin.privateNetworks.consoleTitle": "Opened here",
-  "admin.privateNetworks.description": "Private addresses the platform may connect to, such as a self-managed GitLab or a mail relay on your network. Every organization’s webhooks, integrations and CI connections can reach an address opened here, so open only the hosts the platform needs.",
+  "admin.privateNetworks.description": "For example a self-managed GitLab or a mail relay. Every organization’s webhooks, integrations and CI connections can reach an address opened here, so open only the hosts the platform needs.",
   "admin.privateNetworks.errorSubject": "the private network setting",
   "admin.privateNetworks.explain.allPrivate": "Opened by the development switch that opens every private range.",
   "admin.privateNetworks.explain.allowed": "A public address.",

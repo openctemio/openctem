@@ -263,7 +263,7 @@ export function PrivateDestinationsPanel({
           <CardDescription>
             {t(
               'admin.privateNetworks.description',
-              'Private addresses the platform may connect to, such as a self-managed GitLab or a mail relay on your network. Every organization’s webhooks, integrations and CI connections can reach an address opened here, so open only the hosts the platform needs.'
+              'For example a self-managed GitLab or a mail relay. Every organization’s webhooks, integrations and CI connections can reach an address opened here, so open only the hosts the platform needs.'
             )}
           </CardDescription>
         </CardHeader>
@@ -316,7 +316,7 @@ export function PrivateDestinationsPanel({
                 ))}
               </ul>
             )}
-            <p className="text-cap text-muted-foreground">
+            <p className="text-cap text-muted-foreground break-words [overflow-wrap:anywhere]">
               {t(
                 'admin.privateNetworks.serverHint',
                 'Changed only in the server’s environment (OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS) and a restart.'

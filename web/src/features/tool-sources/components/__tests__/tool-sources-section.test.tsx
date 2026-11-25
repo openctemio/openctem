@@ -69,10 +69,11 @@ beforeEach(() => {
 })
 
 describe('Tool source keys', () => {
-  it('shows only the last four of a set key and Not set otherwise', () => {
+  it('shows only the last four of a set key and offers Set key otherwise', () => {
     render(<ToolSourcesSection />)
     expect(screen.getByText('•••• ab12')).toBeInTheDocument()
-    expect(screen.getByText('Not set')).toBeInTheDocument()
+    // A writer sees Set key where the key would show; a reader sees Not set.
+    expect(screen.getAllByRole('button', { name: /^Set the key for / }).length).toBeGreaterThan(0)
     expect(screen.getByText('Set')).toBeInTheDocument()
   })
 

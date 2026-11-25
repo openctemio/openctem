@@ -1811,7 +1811,7 @@
   "admin.privateNetworks.confirmTitle": "Thay đổi mạng riêng?",
   "admin.privateNetworks.consoleNone": "Chưa mở dải nào ở đây.",
   "admin.privateNetworks.consoleTitle": "Mở tại đây",
-  "admin.privateNetworks.description": "Các địa chỉ riêng mà nền tảng được phép kết nối tới, ví dụ GitLab tự quản lý hoặc máy chủ chuyển tiếp thư trong mạng của bạn. Webhook, tích hợp và kết nối CI của mọi tổ chức đều tới được địa chỉ mở ở đây, vì vậy chỉ mở những máy mà nền tảng cần.",
+  "admin.privateNetworks.description": "Ví dụ GitLab tự quản lý hoặc máy chủ chuyển tiếp thư. Webhook, tích hợp và kết nối CI của mọi tổ chức đều tới được địa chỉ mở ở đây, vì vậy chỉ mở những máy mà nền tảng cần.",
   "admin.privateNetworks.errorSubject": "thiết lập mạng riêng",
   "admin.privateNetworks.explain.allPrivate": "Được mở bởi công tắc môi trường phát triển, mở mọi dải địa chỉ riêng.",
   "admin.privateNetworks.explain.allowed": "Địa chỉ công khai.",

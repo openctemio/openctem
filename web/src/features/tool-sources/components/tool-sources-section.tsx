@@ -76,6 +76,16 @@ export function ToolSourcesSection() {
         <HealthStatus state="ok" label={t('toolSources.keySet', 'Set')} />
         <span className="font-mono text-cap text-muted-foreground">{`•••• ${s.key.last4 ?? ''}`}</span>
       </span>
+    ) : canWrite ? (
+      // No key yet: the cell offers to set one where the key would show.
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setEditing(s)}
+        aria-label={t('toolSources.setNamed', 'Set the key for {name}', { name: s.name })}
+      >
+        {t('toolSources.set', 'Set key')}
+      </Button>
     ) : (
       <HealthStatus state="off" label={t('toolSources.notSet', 'Not set')} />
     )
@@ -87,8 +97,8 @@ export function ToolSourcesSection() {
       <span className="text-muted-foreground">{t('toolSources.neverUsed', 'Never')}</span>
     )
 
-  // Without a key there is nothing to switch on: the cell offers to set one
-  // (or stays empty for a reader) instead of a greyed, dead switch.
+  // Without a key there is nothing to switch on: the cell stays empty (the
+  // Key cell offers to set one) instead of a greyed, dead switch.
   const enableSwitch = (s: ToolSource) =>
     s.key?.set ? (
       <Switch
@@ -97,15 +107,6 @@ export function ToolSourcesSection() {
         onCheckedChange={(v) => void toggle(s, v)}
         aria-label={t('toolSources.enableAria', 'Use the key for {name}', { name: s.name })}
       />
-    ) : canWrite ? (
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setEditing(s)}
-        aria-label={t('toolSources.setNamed', 'Set the key for {name}', { name: s.name })}
-      >
-        {t('toolSources.set', 'Set key')}
-      </Button>
     ) : (
       <span className="text-muted-foreground">-</span>
     )
@@ -209,7 +210,7 @@ export function ToolSourcesSection() {
       },
       {
         id: 'enabled',
-        meta: { kind: 'status', width: 112, label: enabledLabel },
+        meta: { kind: 'status', width: 80, label: enabledLabel },
         enableSorting: false,
         header: enabledLabel,
         cell: ({ row }) => enableSwitch(row.original),
@@ -270,7 +271,7 @@ export function ToolSourcesSection() {
               address={t('toolSources.usedBy', 'Used by {tools}', { tools })}
               menu={
                 <div className="flex items-center gap-1">
-                  {enableSwitch(s)}
+                  {s.key?.set && enableSwitch(s)}
                   {rowMenu(s)}
                 </div>
               }
