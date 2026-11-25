@@ -137,8 +137,8 @@ type BuiltinExecutor struct {
 	// worker sends the runs of AI agents that run on the organization's
 	// AI workers (nil: such runs are refused).
 	worker *WorkerExecutor
-	// autonomy caps and pauses changes without a person (nil: only the use
-	// case setting decides).
+	// autonomy caps and pauses changes without a person (nil: every such
+	// change is held, fail closed).
 	autonomy AutonomyGate
 	// sanitizer flags injection patterns in model output.
 	sanitizer *aiprompt.Sanitizer
@@ -781,10 +781,13 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 				// A change without a person: within the organization's
 				// switch and limits, asked at this moment so a pause stops
 				// runs already in flight.
-				if a.e.autonomy != nil {
-					if ok, why := a.e.autonomy.AllowAutomaticChange(ctx, a.run.TenantID); !ok {
-						return ActionSkipped, heldError{reason: why}
-					}
+				// Without the gate wired, nothing changes on its own (fail
+				// closed).
+				if a.e.autonomy == nil {
+					return ActionSkipped, heldError{reason: aidom.HoldAutonomyPaused}
+				}
+				if ok, why := a.e.autonomy.AllowAutomaticChange(ctx, a.run.TenantID); !ok {
+					return ActionSkipped, heldError{reason: why}
 				}
 				return ActionApplied, a.e.commands.SetStatus(ctx, a.run.TenantID, a.finding, a.p.AIAgent.ID,
 					string(vulnerability.FindingStatusConfirmed))

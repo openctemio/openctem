@@ -394,6 +394,28 @@ func nonNilOwners(o []aianalysis.OwnerRef) []aianalysis.OwnerRef {
 
 // UpdateRun stores the outcome and provenance of a run.
 func (r *AIAnalysisRepository) UpdateRun(ctx context.Context, run *aianalysis.Run) error {
+	n, err := r.updateRun(ctx, run, "")
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return aianalysis.ErrRunNotFound
+	}
+	return nil
+}
+
+// FinishClaimedRun stores the outcome of a worker run that took a result,
+// only while the run is still the claim this caller made (running, with
+// this result digest): a run the deadline sweep ended meanwhile is left as
+// the sweep wrote it. False when it was not written.
+func (r *AIAnalysisRepository) FinishClaimedRun(ctx context.Context, run *aianalysis.Run) (bool, error) {
+	n, err := r.updateRun(ctx, run, ` AND status = 'running' AND result_digest = $24`)
+	return n == 1, err
+}
+
+// updateRun writes the run's fields where guard also holds; it returns the
+// rows written.
+func (r *AIAnalysisRepository) updateRun(ctx context.Context, run *aianalysis.Run, guard string) (int64, error) {
 	var actionLog any
 	if len(run.ActionLog) > 0 {
 		entries := run.ActionLog
@@ -402,7 +424,7 @@ func (r *AIAnalysisRepository) UpdateRun(ctx context.Context, run *aianalysis.Ru
 		}
 		b, err := json.Marshal(entries)
 		if err != nil {
-			return fmt.Errorf("encode ai run action log: %w", err)
+			return 0, fmt.Errorf("encode ai run action log: %w", err)
 		}
 		actionLog = b
 	}
@@ -414,7 +436,7 @@ func (r *AIAnalysisRepository) UpdateRun(ctx context.Context, run *aianalysis.Ru
 			started_at = $21, completed_at = $22, sensor_id = $23, result_digest = $24,
 			injection_suspected = $25, subject_row_version = $26, model_family = $27, outcome = $28,
 			action_log = $29, updated_at = now()
-		WHERE tenant_id = $1 AND id = $2`,
+		WHERE tenant_id = $1 AND id = $2`+guard,
 		run.TenantID, run.ID, run.Status, run.DataClass, pq.Array(nonNil(run.FieldsSent)),
 		pq.Array(nonNil(run.FieldsWithheld)), nullStr(run.BundleDigest), nullStr(run.PromptTemplateID),
 		nullStr(run.PromptTemplateDigest), nullStr(run.OutputSchema), nullStr(run.Provider), nullStr(run.Model),
@@ -424,12 +446,10 @@ func (r *AIAnalysisRepository) UpdateRun(ctx context.Context, run *aianalysis.Ru
 		run.InjectionSuspected, nullInt64Ptr(run.SubjectRowVersion), nullStr(run.ModelFamily), nullStr(string(run.Outcome)),
 		actionLog)
 	if err != nil {
-		return fmt.Errorf("update ai run: %w", err)
+		return 0, fmt.Errorf("update ai run: %w", err)
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return aianalysis.ErrRunNotFound
-	}
-	return nil
+	n, _ := res.RowsAffected()
+	return n, nil
 }
 
 // BindRunCommand records the analysis job of a queued worker run.
