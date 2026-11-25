@@ -1,15 +1,14 @@
 import { test, expect } from '../fixtures/authenticated-page'
 
 /**
- * Attack surface Review (research/274): the count on the Discovery view
- * (whose Decisions lens is this page, research/353) is the number of
- * decisions the page shows. Provider addresses are never a decision.
+ * Attack surface Review (research/274): the count on the Review tab is the
+ * number of decisions the page shows. Provider addresses are never a decision.
  */
 
 const REVIEW = '/attack-surface/review'
 
 test(
-  'the Discovery count and the decisions page agree',
+  'the Review count and the decisions page agree',
   { tag: ['@attack-surface'] },
   async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -17,7 +16,7 @@ test(
     const tabs = page.getByRole('navigation', { name: 'Attack surface sections' })
     await expect(tabs).toBeVisible({ timeout: 30_000 })
     await page.waitForLoadState('networkidle')
-    const review = tabs.getByRole('link', { name: /^Discovery/ })
+    const review = tabs.getByRole('link', { name: /^Review/ })
     const label = (await review.innerText()).replace(/\s+/g, ' ').trim()
     const badge = Number(label.match(/(\d+)$/)?.[1] ?? '0')
     const nothing = page.getByText('Nothing to decide')

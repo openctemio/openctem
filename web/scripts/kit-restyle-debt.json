@@ -213,7 +213,7 @@
   "src/features/scan-zones/components/run-dispatch-panel.tsx": 1,
   "src/features/scan-zones/components/scan-zone-table.tsx": 2,
   "src/features/scan-zones/components/sensor-zones-section.tsx": 1,
-  "src/features/scan-zones/components/zone-coverage-card.tsx": 3,
+  "src/features/scan-zones/components/zone-coverage-card.tsx": 1,
   "src/features/scan-zones/components/zone-sensors-dialog.tsx": 1,
   "src/features/scanner-templates/components/scanner-templates-section.tsx": 1,
   "src/features/scans/components/approval/approval-rule-editor.tsx": 1,
