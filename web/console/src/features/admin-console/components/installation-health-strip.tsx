@@ -31,7 +31,7 @@ export function InstallationHealthStrip({
     ),
     detail: tile.detailKey ? (
       // Wraps: a schema version ("Version 20261120094038") is read whole.
-      <span className="block text-xs text-muted-foreground [overflow-wrap:anywhere]">
+      <span className="block text-cap text-muted-foreground [overflow-wrap:anywhere]">
         {t(tile.detailKey, tile.detail, tile.vars)}
       </span>
     ) : undefined,
