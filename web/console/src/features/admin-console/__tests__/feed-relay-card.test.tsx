@@ -49,6 +49,17 @@ function status(patch: Partial<FeedRelayStatus> = {}): FeedRelayStatus {
       { id: 's4', name: 'edge-4', status: 'active', eligible: true },
       { id: 's5', name: 'scanner-old', status: 'active', eligible: false, reason: 'no_capability' },
       { id: 's6', name: 'parked', status: 'disabled', eligible: false, reason: 'inactive' },
+      {
+        id: 's7',
+        name: 'legacy',
+        status: 'active',
+        eligible: false,
+        reason: 'version_too_old',
+        version: 'v0.30.0',
+        min_version: 'v0.36.0',
+      },
+      { id: 's8', name: 'unpaired', status: 'active', eligible: false, reason: 'no_signing_key' },
+      { id: 's9', name: 'quiet', status: 'active', eligible: false, reason: 'relay_off' },
     ],
     alerts: [],
     ...patch,
@@ -114,9 +125,13 @@ describe('FeedRelayCard', () => {
     }
     expect(screen.queryByLabelText('scanner-old')).toBeNull()
     const why = screen.getByTestId('feed-relay-ineligible')
-    expect(why).toHaveTextContent('scanner-old (cannot relay)')
-    expect(why).toHaveTextContent('parked (not active)')
-    expect(why).toHaveTextContent(/SENSOR_FEED_RELAY=0/)
+    expect(why).toHaveTextContent('scanner-old: it does not report that it can relay')
+    expect(why).toHaveTextContent('parked: not active')
+    expect(why).toHaveTextContent('legacy: its release is too old. Upgrade it to v0.36.0 or later.')
+    expect(why).toHaveTextContent('unpaired: it has no pinned job-signing key')
+    expect(why).toHaveTextContent(
+      'quiet: the feed relay is turned off on its host (SENSOR_FEED_RELAY=0)'
+    )
 
     const save = screen.getByRole('button', { name: 'Save' })
     expect(save).toBeDisabled() // relay needs at least one sensor
