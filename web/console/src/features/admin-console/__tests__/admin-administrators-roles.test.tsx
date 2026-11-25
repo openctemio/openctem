@@ -231,17 +231,15 @@ describe('Roles page', () => {
     expect(screen.getByText('Fewer than two platform owners')).toBeInTheDocument()
     expect(document.querySelectorAll('[data-slot="list-count"]')).toHaveLength(2)
 
-    // One "Take" button (the other holder's additional role), one row menu.
+    // One "Take" button (the other holder's additional role). The one row
+    // action is the button itself, never a menu of one item.
     expect(screen.getAllByRole('button', { name: /^Take / })).toHaveLength(1)
-    const menus = screen.getAllByRole('button', { name: /^Actions for the administrator/ })
-    expect(menus).toHaveLength(1)
-    expect(menus[0]).toHaveAccessibleName('Actions for the administrator ops@op.test')
+    expect(screen.queryByRole('button', { name: /^Actions for the administrator/ })).toBeNull()
+    const give = screen.getAllByRole('button', { name: 'Give a role' })
+    expect(give).toHaveLength(1)
 
     const user = userEvent.setup()
-    await user.click(menus[0])
-    const items = await screen.findAllByRole('menuitem')
-    expect(items.map((i) => i.textContent)).toEqual(['Give a role'])
-    await user.click(items[0])
+    await user.click(give[0])
     expect(assignPlatformRole).not.toHaveBeenCalled()
     expect(await screen.findByText('Give a platform role')).toBeInTheDocument()
     expect(revokePlatformRole).not.toHaveBeenCalled()

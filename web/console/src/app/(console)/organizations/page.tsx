@@ -14,7 +14,7 @@ import {
   PageStack,
   RelativeTime,
 } from '@/features/shared'
-import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { ListCount, ListToolbarTitle } from '@/features/shared/components/list-title-row'
 import { RowNameLink } from '@/features/shared/components/row-name-link'
 import { useTranslation } from '@/context/i18n-provider'
 import { useListParams } from '@/hooks/use-list-params'
@@ -222,21 +222,24 @@ export default function AdminOrganizationsPage() {
             <CreateOrganizationDialog onCreated={(org) => router.push(organizationHref(org.id))} />
           )}
         </PageHeader>
-        <ListTitleRow
-          title={t('admin.org.viewAll', 'All organizations')}
-          count={
-            <ListCount
-              total={total}
-              loading={!data}
-              label={t(
-                'admin.org.total',
-                '{count, plural, one {# organization} other {# organizations}}',
-                { count: total }
-              )}
+        <DataTable
+          // The list's name and count start the toolbar row (no row of their own).
+          toolbarTitle={
+            <ListToolbarTitle
+              title={t('admin.org.viewAll', 'All organizations')}
+              count={
+                <ListCount
+                  total={total}
+                  loading={!data}
+                  label={t(
+                    'admin.org.total',
+                    '{count, plural, one {# organization} other {# organizations}}',
+                    { count: total }
+                  )}
+                />
+              }
             />
           }
-        />
-        <DataTable
           columns={columns}
           data={data?.data ?? []}
           caption={t('admin.nav.organizations', 'Organizations')}

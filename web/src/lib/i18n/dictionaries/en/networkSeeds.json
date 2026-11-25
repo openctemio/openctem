@@ -9,11 +9,12 @@
   "networkSeeds.emptyTitle": "No network starting points",
   "networkSeeds.errorTitle": "network starting points",
   "networkSeeds.expanding": "Looking it up in public routing data…",
-  "networkSeeds.intro": "AS numbers and organization names that are yours. Each is looked up in public routing data (the value is sent to a public routing service): an AS number lists the address ranges it advertises, which you can add as scope entries; an organization name lists the AS numbers registered to it. A starting point never lets a scan reach anything by itself, scope entries do.",
+  "networkSeeds.intro": "AS numbers and organization names that are yours. Each is looked up in public routing data (the value is sent to a public routing service): an AS number lists the address ranges it advertises, which you can add as scope entries; an organization name lists the AS numbers registered to it.",
   "networkSeeds.kind": "Kind",
   "networkSeeds.kindAsn": "AS number",
   "networkSeeds.kindOrg": "Organization",
   "networkSeeds.lastLookup": "Looked up",
+  "networkSeeds.limitReached": "You have reached the limit of {max, plural, one {# starting point} other {# starting points}}. Remove one to add another.",
   "networkSeeds.lookupFailed": "The last lookup failed; it is retried later.",
   "networkSeeds.lookups.description": "Your AS numbers and organization names are sent to a public routing service to find your address ranges. Turn this off to keep them private; network starting points are then not looked up.",
   "networkSeeds.lookups.title": "Network lookups",
@@ -35,5 +36,6 @@
   "networkSeeds.showFewer": "Show fewer",
   "networkSeeds.tab": "Networks",
   "networkSeeds.tooLarge": "Larger than the platform allows",
-  "networkSeeds.value": "Value"
+  "networkSeeds.value": "Value",
+  "networkSeeds.valueRequired": "Enter an AS number or an organization name."
 }

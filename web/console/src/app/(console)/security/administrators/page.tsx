@@ -15,7 +15,7 @@ import {
   PageStack,
   RelativeTime,
 } from '@/features/shared'
-import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { ListCount, ListToolbarTitle } from '@/features/shared/components/list-title-row'
 import { toDisplayText } from '@/lib/untrusted-text'
 import {
   confirmBreakGlassTest,
@@ -541,21 +541,24 @@ export default function AdministratorsPage() {
         >
           <CreateAdminDialog onCreated={() => void mutate()} />
         </PageHeader>
-        <ListTitleRow
-          title={t('admin.securityAdministratorsPage.viewAll', 'All administrators')}
-          count={
-            <ListCount
-              total={admins.length}
-              loading={!data && !error}
-              label={t(
-                'admin.securityAdministratorsPage.total',
-                '{count, plural, one {# administrator} other {# administrators}}',
-                { count: admins.length }
-              )}
+        <DataTable
+          // The list's name and count start the toolbar row (no row of their own).
+          toolbarTitle={
+            <ListToolbarTitle
+              title={t('admin.securityAdministratorsPage.viewAll', 'All administrators')}
+              count={
+                <ListCount
+                  total={admins.length}
+                  loading={!data && !error}
+                  label={t(
+                    'admin.securityAdministratorsPage.total',
+                    '{count, plural, one {# administrator} other {# administrators}}',
+                    { count: admins.length }
+                  )}
+                />
+              }
             />
           }
-        />
-        <DataTable
           // When the table scrolls sideways the row menu stays in view.
           pinActions
           columns={columns}

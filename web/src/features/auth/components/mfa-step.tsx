@@ -322,6 +322,11 @@ function EnrollStep({
 
   function confirm(e: React.FormEvent) {
     e.preventDefault()
+    if (code.length !== TOTP_CODE_LENGTH) {
+      // Say what is missing instead of greying the button out at rest.
+      setError(t('auth.mfa.codeIncomplete', 'Enter the 6-digit code from your authenticator app.'))
+      return
+    }
     sendCode(code)
   }
 
@@ -429,11 +434,7 @@ function EnrollStep({
         error={error}
       />
 
-      <Button
-        type="submit"
-        variant="signal"
-        disabled={!setup || code.length !== TOTP_CODE_LENGTH || isPending}
-      >
+      <Button type="submit" variant="signal" disabled={!setup || isPending}>
         {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
         {t('auth.mfa.turnOn', 'Turn on and continue')}
       </Button>

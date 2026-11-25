@@ -226,21 +226,23 @@ function StageCard({ index, row, canRun, blockedReason, busy, onRun }: StageCard
               </li>
             ))}
         </ul>
-        <GatedButton
-          allowed={canRun && !blockedReason && !limited}
-          reason={runReason ?? ''}
-          variant="outline"
-          size="sm"
-          className="self-start"
-          disabled={busy}
-          onClick={() => onRun(row.stage)}
-          aria-label={t('attackSurface.discovery.run.stageAria', 'Run {stage}', {
-            stage: text.label(row.stage),
-          })}
-        >
-          <Play className="me-2 h-4 w-4" aria-hidden />
-          {t('attackSurface.discovery.run.stage', 'Run')}
-        </GatedButton>
+        {canRun && !blockedReason && (
+          <GatedButton
+            allowed={!limited}
+            reason={runReason ?? ''}
+            variant="outline"
+            size="sm"
+            className="self-start"
+            disabled={busy}
+            onClick={() => onRun(row.stage)}
+            aria-label={t('attackSurface.discovery.run.stageAria', 'Run {stage}', {
+              stage: text.label(row.stage),
+            })}
+          >
+            <Play className="me-2 h-4 w-4" aria-hidden />
+            {t('attackSurface.discovery.run.stage', 'Run')}
+          </GatedButton>
+        )}
       </CardContent>
     </Card>
   )
@@ -254,6 +256,11 @@ export function EASMDiscovery() {
   const [busy, setBusy] = useState(false)
   const [confirmAbort, setConfirmAbort] = useState(false)
   const canRun = can(Permission.ScansWrite) && can(Permission.ScansExecute)
+  const noRunPermission = t(
+    'attackSurface.discovery.run.noPermission', // anatomy-ok: why Run is absent, one status line beside the page actions; the page itself stays readable
+
+    'Running a stage needs the scan execute permission.'
+  )
   const canAbort = can(Permission.ScansWrite)
 
   const blockedReason = !overview
@@ -409,15 +416,15 @@ export function EASMDiscovery() {
           tooltip; each stage card says it too), then the actions. The
           freshness line is the caption under the stages. */}
       <div className="flex flex-wrap items-center gap-2">
-        {blockedReason ? (
+        {blockedReason || !canRun ? (
           <p
             role="status"
             data-testid="discovery-blocked"
-            title={blockedReason}
-            className="flex min-w-0 flex-1 basis-0 items-center gap-2 text-sm text-muted-foreground max-sm:sr-only"
+            title={blockedReason ?? noRunPermission}
+            className="flex min-w-0 flex-1 basis-0 items-center gap-2 text-sm text-muted-foreground"
           >
             <Info className="size-4 shrink-0" aria-hidden />
-            <span className="truncate">{blockedReason}</span>
+            <span className="truncate">{blockedReason ?? noRunPermission}</span>
           </p>
         ) : (
           <span className="flex-1" aria-hidden />
@@ -437,38 +444,18 @@ export function EASMDiscovery() {
               {t('attackSurface.discovery.export', 'Export CSV')}
             </span>
           </Button>
-          <GatedButton
-            allowed={canAbort && running}
-            reason={
-              !canAbort
-                ? t(
-                    'attackSurface.discovery.abort.noPermission',
-                    'Aborting runs needs the scan manage permission.'
-                  )
-                : t('attackSurface.discovery.abort.nothing', 'No coverage run is active.')
-            }
-            variant="outline"
-            onClick={() => setConfirmAbort(true)}
-          >
-            <Square className="me-2 h-4 w-4" aria-hidden />
-            {t('attackSurface.discovery.abort.button', 'Abort all')}
-          </GatedButton>
-          <GatedButton
-            allowed={canRun && !blockedReason}
-            reason={
-              !canRun
-                ? t(
-                    'attackSurface.discovery.run.noPermission',
-                    'Running a stage needs the scan execute permission.'
-                  )
-                : (blockedReason ?? '')
-            }
-            disabled={busy || !overview}
-            onClick={runAll}
-          >
-            <Play className="me-2 h-4 w-4" aria-hidden />
-            {t('attackSurface.discovery.runAll', 'Run all')}
-          </GatedButton>
+          {canAbort && running && (
+            <Button variant="outline" onClick={() => setConfirmAbort(true)}>
+              <Square className="me-2 h-4 w-4" aria-hidden />
+              {t('attackSurface.discovery.abort.button', 'Abort all')}
+            </Button>
+          )}
+          {canRun && !blockedReason && (
+            <Button disabled={busy || !overview} onClick={runAll}>
+              <Play className="me-2 h-4 w-4" aria-hidden />
+              {t('attackSurface.discovery.runAll', 'Run all')}
+            </Button>
+          )}
         </div>
       </div>
       <MetricStrip loading={isLoading && !overview} items={metrics} />

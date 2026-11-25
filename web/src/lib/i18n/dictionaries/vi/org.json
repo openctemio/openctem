@@ -382,7 +382,6 @@
   "org.leave.desc": "Bạn mất quyền truy cập tổ chức này ngay lập tức. Tài khoản và các tổ chức khác của bạn vẫn được giữ. Chủ sở hữu duy nhất không thể rời đi.",
   "org.leave.done": "Bạn đã rời {name}",
   "org.leave.failed": "Không rời được tổ chức",
-  "org.leave.section": "Tư cách thành viên tổ chức",
   "org.leave.soleOwner": "Hãy chuyển quyền sở hữu cho thành viên khác trước khi rời đi.",
   "org.leave.title": "Rời tổ chức này",
   "org.lifecycle.chooseOwner": "Chọn người phụ trách mới",

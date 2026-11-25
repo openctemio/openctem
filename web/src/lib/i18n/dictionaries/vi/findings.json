@@ -144,7 +144,7 @@
   "findings.approvalDialog.reason": "Lý do",
   "findings.approvalDialog.reasonLabel": "Lý do:",
   "findings.approvalDialog.reasonPlaceholder": "Chọn lý do",
-  "findings.approvalDialog.reasonRequired": "Hãy chọn lý do",
+  "findings.approvalDialog.reasonRequired": "Hãy chọn một lý do.",
   "findings.approvalDialog.review": "Xem lại",
   "findings.approvalDialog.status": "Trạng thái:",
   "findings.approvalDialog.submit": "Gửi để phê duyệt",

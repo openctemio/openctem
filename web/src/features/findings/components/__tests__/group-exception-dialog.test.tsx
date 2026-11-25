@@ -88,11 +88,15 @@ describe('GroupExceptionDialog', () => {
     api.preview.mockResolvedValue(preview)
   })
 
-  it('asks for a reason before previewing', () => {
+  it('asks for a reason before previewing', async () => {
+    const user = userEvent.setup()
     renderDialog()
     expect(screen.getByText(/Choose a reason to see who decides/)).toBeInTheDocument()
     expect(api.preview).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'Request exception' })).toBeDisabled()
+    // The button stays enabled; pressing it names the missing reason and sends nothing.
+    await user.click(screen.getByRole('button', { name: 'Request exception' }))
+    expect(await screen.findByText('Choose a reason.')).toBeInTheDocument()
+    expect(api.request).not.toHaveBeenCalled()
   })
 
   it('previews the group: tier and why, members with shortened and skipped markers', async () => {
@@ -129,7 +133,9 @@ describe('GroupExceptionDialog', () => {
     const note = screen.getByLabelText('Note')
     await user.type(note, 'too short')
     expect(screen.getByRole('alert')).toHaveTextContent('Write at least 20 characters')
-    expect(screen.getByRole('button', { name: 'Request exception' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Request exception' }))
+    expect(api.request).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent('Write at least 20 characters')
 
     await user.type(note, ' but now it is long enough')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()

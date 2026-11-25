@@ -273,6 +273,7 @@
   "attackSurface.domainProof.col.domain": "Domain",
   "attackSurface.domainProof.col.proof": "Proof",
   "attackSurface.domainProof.domainLabel": "Domain to prove",
+  "attackSurface.domainProof.domainRequired": "Enter the domain you own.",
   "attackSurface.domainProof.empty": "No domain proved yet",
   "attackSurface.domainProof.loadTitle": "domain proof",
   "attackSurface.domainProof.loading": "Loading…",

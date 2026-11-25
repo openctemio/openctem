@@ -23,6 +23,11 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DataTable, ErrorState } from '@/features/shared'
+import {
+  FieldError,
+  fieldErrorProps,
+  focusFirstInvalid,
+} from '@/features/shared/components/forms/field-error'
 import type { EASMVerifiedDomain } from '@/lib/api/generated'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { usePermissions, Permission } from '@/lib/permissions'
@@ -37,6 +42,8 @@ export function EASMDomainProofPanel() {
   const canDelete = can(Permission.ScopeDelete)
   const { domains, error, isLoading, mutate } = useEASMVerifiedDomains()
   const [draft, setDraft] = useState('')
+  const [draftError, setDraftError] = useState<string | null>(null)
+  const draftField = fieldErrorProps('proof-domain', draftError)
   // The list's own search (a few rows, filtered in the browser).
   const [query, setQuery] = useState('')
   const shown = useMemo(() => {
@@ -150,33 +157,38 @@ export function EASMDomainProofPanel() {
           header says what proof is. */}
       {canWrite && (
         <form
-          className="flex gap-2"
+          className="flex flex-wrap items-start gap-2"
           onSubmit={(e) => {
             e.preventDefault()
             const v = draft.trim().toLowerCase()
-            if (v) setVerifying(v)
+            if (!v) {
+              setDraftError(
+                t('attackSurface.domainProof.domainRequired', 'Enter the domain you own.')
+              )
+              focusFirstInvalid(e.currentTarget)
+              return
+            }
+            setVerifying(v)
           }}
         >
-          <Input
-            id="proof-domain"
-            className="min-w-0 flex-1"
-            aria-label={t('attackSurface.domainProof.domainLabel', 'Domain to prove')}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="example.com"
-            autoComplete="off"
-          />
-          {/* An icon on a phone, so the field keeps the row's width. */}
-          <Button
-            iconOnlyBelow="sm"
-            type="submit"
-            disabled={!draft.trim()}
-            title={t('attackSurface.domainProof.prove', 'Prove a domain')}
-          >
-            <Plus className="h-4 w-4 sm:me-2" aria-hidden />
-            <span className="sr-only sm:not-sr-only">
-              {t('attackSurface.domainProof.prove', 'Prove a domain')}
-            </span>
+          <div className="min-w-0 flex-1 space-y-1">
+            <Input
+              id="proof-domain"
+              aria-label={t('attackSurface.domainProof.domainLabel', 'Domain to prove')}
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value)
+                setDraftError(null)
+              }}
+              placeholder="example.com"
+              autoComplete="off"
+              {...draftField.control}
+            />
+            <FieldError {...draftField.message} />
+          </div>
+          <Button type="submit">
+            <Plus className="me-2 h-4 w-4" aria-hidden />
+            {t('attackSurface.domainProof.prove', 'Prove a domain')}
           </Button>
         </form>
       )}

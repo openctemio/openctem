@@ -1065,7 +1065,6 @@
   "settings.pentest.templateForm.remediation": "Remediation",
   "settings.pentest.templateForm.remediationRequired": "Remediation guidance is required",
   "settings.pentest.templateForm.saveChanges": "Save changes",
-  "settings.pentest.templateForm.sectionTemplate": "Template",
   "settings.pentest.templateForm.severity": "Severity",
   "settings.pentest.templateForm.steps": "Steps to reproduce",
   "settings.pentest.templateForm.tabEdit": "Edit",

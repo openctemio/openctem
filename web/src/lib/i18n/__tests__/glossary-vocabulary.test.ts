@@ -154,7 +154,7 @@ const RULES: Rule[] = [
   {
     lang: 'vi',
     pattern: /\b(passkeys?|heartbeats?|terminal|seeds?|break-glass|ticketing|e-mail)\b/i,
-    use: 'the words in web/.claude/i18n.md, Vietnamese glossary (khóa truy cập, tín hiệu kết nối, cửa sổ dòng lệnh, điểm khởi đầu, tài khoản khẩn cấp, quản lý phiếu, email)',
+    use: 'the words in server/docs/glossary.md, Vietnamese words (khóa truy cập, tín hiệu kết nối, cửa sổ dòng lệnh, điểm khởi đầu, tài khoản khẩn cấp, quản lý phiếu, email)',
     allowKeys: [],
     catches: 'Dùng khóa bảo mật hoặc passkey',
     spares: 'Dùng khóa bảo mật hoặc khóa truy cập',

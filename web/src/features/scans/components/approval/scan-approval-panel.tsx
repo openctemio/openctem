@@ -44,6 +44,7 @@ import {
 } from '@/lib/api/scan-approval-hooks'
 import { formatDateSafe } from '@/lib/format-date'
 import { Can, Permission, usePermissions } from '@/lib/permissions'
+import { FieldError, fieldErrorProps } from '@/features/shared/components/forms/field-error'
 import { ApprovalRequirement, approversText, missingEvidence } from './approval-requirement'
 
 const HOURS = [1, 2, 4, 8, 12, 24]
@@ -66,15 +67,22 @@ export function ScanApprovalPanel({ scanId, onRan }: ScanApprovalPanelProps) {
   const [reason, setReason] = useState('')
   const [hours, setHours] = useState('4')
   const [busy, setBusy] = useState(false)
+  const [tried, setTried] = useState(false)
+  const [reasonError, setReasonError] = useState<string | null>(null)
 
   if (!data || data.mode === 'off') return null
   const ev = data.evaluation
   const current = data.current
   const pending = current?.status === 'pending'
   const canEmergency = (isOwner() || isAdmin()) && data.required && !data.approved
+  const reasonField = fieldErrorProps(`${id}-reason`, reasonError)
   const lacking = missingEvidence(t, ev, justification, ticket)
 
   const submit = async () => {
+    if (lacking) {
+      setTried(true)
+      return
+    }
     setBusy(true)
     try {
       await submitScanApproval(scanId, { justification, ticket, run_on_approval: runOnApproval })
@@ -89,6 +97,13 @@ export function ScanApprovalPanel({ scanId, onRan }: ScanApprovalPanelProps) {
   }
 
   const emergency = async () => {
+    if (!reason.trim()) {
+      setReasonError(
+        t('scans.approvalPanel.reasonRequired', 'Say why this cannot wait for approval.')
+      )
+      document.getElementById(`${id}-reason`)?.focus()
+      return
+    }
     setBusy(true)
     try {
       await emergencyRunScan(scanId, reason.trim(), Number(hours))
@@ -210,13 +225,17 @@ export function ScanApprovalPanel({ scanId, onRan }: ScanApprovalPanelProps) {
               <Switch checked={runOnApproval} onCheckedChange={setRunOnApproval} />
               {t('scans.approvalPanel.runOnApproval', 'Run as soon as it is approved')}
             </label>
-            {lacking && <p className="text-sm text-destructive">{lacking}</p>}
+            {lacking && tried && (
+              <p role="alert" className="text-sm text-destructive">
+                {lacking}
+              </p>
+            )}
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSubmitOpen(false)} disabled={busy}>
               {t('common.cancel')}
             </Button>
-            <Button onClick={() => void submit()} disabled={busy || !!lacking}>
+            <Button onClick={() => void submit()} disabled={busy}>
               {busy && <Loader2 className="me-1.5 size-4 animate-spin" />}
               {t('scans.approvalPanel.submit', 'Submit for approval')}
             </Button>
@@ -245,8 +264,13 @@ export function ScanApprovalPanel({ scanId, onRan }: ScanApprovalPanelProps) {
                 rows={3}
                 maxLength={1000}
                 value={reason}
-                onChange={(e) => setReason(e.target.value)}
+                onChange={(e) => {
+                  setReason(e.target.value)
+                  setReasonError(null)
+                }}
+                {...reasonField.control}
               />
+              <FieldError {...reasonField.message} />
             </div>
             <div className="space-y-1">
               <Label htmlFor={`${id}-hours`}>{t('scans.approvalPanel.window', 'Window')}</Label>
@@ -268,11 +292,7 @@ export function ScanApprovalPanel({ scanId, onRan }: ScanApprovalPanelProps) {
             <Button variant="outline" onClick={() => setEmergencyOpen(false)} disabled={busy}>
               {t('common.cancel')}
             </Button>
-            <Button
-              variant="destructive"
-              onClick={() => void emergency()}
-              disabled={busy || !reason.trim()}
-            >
+            <Button variant="destructive" onClick={() => void emergency()} disabled={busy}>
               {busy && <Loader2 className="me-1.5 size-4 animate-spin" />}
               {t('scans.approvalPanel.emergencyConfirm', 'Run now')}
             </Button>

@@ -1,12 +1,10 @@
 {
-  "account.activity.description": "Xem hoạt động tài khoản và các sự kiện bảo mật gần đây của bạn",
   "account.activity.empty": "Không có hoạt động nào",
   "account.activity.loadFailed": "hoạt động của bạn",
   "account.activity.next": "Trang sau",
   "account.activity.pageOf": "Trang {page} / {total}",
   "account.activity.prev": "Trang trước",
   "account.activity.showing": "Hiển thị {from} đến {to} trong {total} hoạt động",
-  "account.activity.title": "Nhật ký hoạt động",
   "account.area.back": "Quay lại",
   "account.area.backTo": "Quay lại {name}",
   "account.area.backToOrganization": "Quay lại tổ chức của bạn",

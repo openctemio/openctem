@@ -1,7 +1,7 @@
 'use client'
 
 import { useTranslation } from '@/context/i18n-provider'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import {
   revokeMyConnection,
   scopeMyConnection,
@@ -20,7 +20,6 @@ export default function ConnectedAppsPage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t('mcp.myConnections.title', 'Your AI applications')}</CardTitle>
         <CardDescription>
           {t(
             'mcp.myConnections.description',

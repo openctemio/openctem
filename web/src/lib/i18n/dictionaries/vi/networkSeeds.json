@@ -9,11 +9,12 @@
   "networkSeeds.emptyTitle": "Chưa có điểm khởi đầu mạng",
   "networkSeeds.errorTitle": "điểm khởi đầu mạng",
   "networkSeeds.expanding": "Đang tra cứu trong dữ liệu định tuyến công khai…",
-  "networkSeeds.intro": "Số AS và tên tổ chức thuộc về bạn. Mỗi giá trị được tra cứu trong dữ liệu định tuyến công khai (RIPEstat; giá trị được gửi tới đó): số AS liệt kê các dải địa chỉ nó công bố, bạn có thể thêm chúng làm mục phạm vi; tên tổ chức liệt kê các số AS đăng ký cho tên đó. Bản thân điểm khởi đầu không cho phép lượt quét nào chạm tới mục tiêu, chỉ mục phạm vi mới làm được.",
+  "networkSeeds.intro": "Số AS và tên tổ chức thuộc về bạn. Mỗi giá trị được tra cứu trong dữ liệu định tuyến công khai (RIPEstat; giá trị được gửi tới đó): số AS liệt kê các dải địa chỉ nó công bố, bạn có thể thêm chúng làm mục phạm vi; tên tổ chức liệt kê các số AS đăng ký cho tên đó.",
   "networkSeeds.kind": "Loại",
   "networkSeeds.kindAsn": "Số AS",
   "networkSeeds.kindOrg": "Tổ chức",
   "networkSeeds.lastLookup": "Đã tra cứu",
+  "networkSeeds.limitReached": "Bạn đã đạt giới hạn {max, plural, other {# điểm khởi đầu}}. Hãy xóa một điểm khởi đầu để thêm điểm khác.",
   "networkSeeds.lookupFailed": "Lần tra cứu gần nhất thất bại; sẽ thử lại sau.",
   "networkSeeds.lookups.description": "Số AS và tên tổ chức của bạn được gửi tới RIPEstat để tìm các dải địa chỉ của bạn. Tắt tính năng này để giữ kín; khi đó điểm khởi đầu mạng sẽ không được tra cứu.",
   "networkSeeds.lookups.title": "Tra cứu điểm khởi đầu mạng",
@@ -35,5 +36,6 @@
   "networkSeeds.showFewer": "Hiện ít hơn",
   "networkSeeds.tab": "Mạng",
   "networkSeeds.tooLarge": "Lớn hơn mức nền tảng cho phép",
-  "networkSeeds.value": "Giá trị"
+  "networkSeeds.value": "Giá trị",
+  "networkSeeds.valueRequired": "Nhập số AS hoặc tên tổ chức."
 }

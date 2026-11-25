@@ -37,6 +37,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Loader2, Check, ChevronsUpDown, AlertCircle, Code, Globe, Box, Cloud } from 'lucide-react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import {
+  FieldError,
+  fieldErrorProps,
+  focusFirstInvalid,
+} from '@/features/shared/components/forms/field-error'
 import { cn } from '@/lib/utils'
 import { useAssets } from '@/features/assets/hooks/use-assets'
 import { useCreateFindingApi, invalidateFindingsCache } from '../api/use-findings-api'
@@ -87,6 +92,14 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
   const [source, setSource] = useState<FindingSource>('manual')
   const [severity, setSeverity] = useState<Severity>('medium')
   const [title, setTitle] = useState('')
+  const [errors, setErrors] = useState<{
+    asset: string | null
+    title: string | null
+    description: string | null
+  }>({ asset: null, title: null, description: null })
+  const assetField = fieldErrorProps('asset', errors.asset)
+  const titleField = fieldErrorProps('title', errors.title)
+  const descriptionField = fieldErrorProps('description', errors.description)
   const [description, setDescription] = useState('')
   const [toolName, setToolName] = useState('Manual Entry')
 
@@ -180,18 +193,19 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!assetId) {
-      toast.error(t('findings.createFinding.assetRequired', 'Please select an asset'))
-      return
+    // The button stays enabled: say what is missing under each field, focus the first.
+    const next = {
+      asset: assetId ? null : t('findings.createFinding.assetRequired', 'Please select an asset'),
+      title: title.trim()
+        ? null
+        : t('findings.createFinding.titleRequired', 'Please enter a title'),
+      description: description.trim()
+        ? null
+        : t('findings.createFinding.descriptionRequired', 'Please enter a description'),
     }
-
-    if (!title.trim()) {
-      toast.error(t('findings.createFinding.titleRequired', 'Please enter a title'))
-      return
-    }
-
-    if (!description.trim()) {
-      toast.error(t('findings.createFinding.descriptionRequired', 'Please enter a description'))
+    setErrors(next)
+    if (next.asset || next.title || next.description) {
+      focusFirstInvalid(e.currentTarget as HTMLElement)
       return
     }
 
@@ -259,6 +273,8 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
               <Popover open={assetPopoverOpen} onOpenChange={setAssetPopoverOpen}>
                 <PopoverTrigger asChild>
                   <Button
+                    id="asset"
+                    {...assetField.control}
                     variant="outline"
                     role="combobox"
                     aria-expanded={assetPopoverOpen}
@@ -300,6 +316,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                               value={asset.id}
                               onSelect={() => {
                                 setAssetId(asset.id)
+                                setErrors((x) => ({ ...x, asset: null }))
                                 setAssetPopoverOpen(false)
                               }}
                             >
@@ -323,6 +340,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                   </Command>
                 </PopoverContent>
               </Popover>
+              <FieldError {...assetField.message} />
             </div>
 
             {/* Source & Severity Row */}
@@ -397,8 +415,13 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                   'e.g., SQL Injection in login form'
                 )}
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  setTitle(e.target.value)
+                  setErrors((x) => ({ ...x, title: null }))
+                }}
+                {...titleField.control}
               />
+              <FieldError {...titleField.message} />
             </div>
 
             {/* Description */}
@@ -413,9 +436,14 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                   'Describe the security finding...'
                 )}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => {
+                  setDescription(e.target.value)
+                  setErrors((x) => ({ ...x, description: null }))
+                }}
                 rows={3}
+                {...descriptionField.control}
               />
+              <FieldError {...descriptionField.message} />
             </div>
 
             {/* Type-specific fields - shown based on selected asset type */}
@@ -621,7 +649,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
             >
               {t('common.cancel', 'Cancel')}
             </Button>
-            <Button type="submit" disabled={isCreating || !assetId || !title.trim()}>
+            <Button type="submit" disabled={isCreating}>
               {isCreating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
               {t('findings.createFinding.submit', 'Create finding')}
             </Button>

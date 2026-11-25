@@ -238,7 +238,12 @@ export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       {primary && <AlertActionButton action={primary} />}
-      {!compact && rest.map((a) => <AlertActionButton key={a.id} action={a} variant="outline" />)}
+      {/* An action that cannot run is not drawn as a greyed button: it waits in
+          the menu below xl with its reason, and is left out from xl. */}
+      {!compact &&
+        rest
+          .filter((a) => !a.disabledReason)
+          .map((a) => <AlertActionButton key={a.id} action={a} variant="outline" />)}
       {compact && menuItems.length > 0 && (
         <ActionMenu
           title={alert.vuln_id}

@@ -120,8 +120,16 @@ export function AddTasksDialog({
       else next.delete(task.id)
       return next
     })
+  const toggleAndClear = (task: RemediationTask, on: boolean) => {
+    toggle(task, on)
+    setError(null)
+  }
 
   const send = async (ids: string[], move: boolean) => {
+    if (ids.length === 0) {
+      setError(t('remediationCampaigns.addTasks.chooseOne'))
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -224,7 +232,7 @@ export function AddTasksDialog({
                           id={boxId}
                           className="mt-0.5"
                           checked={picked.has(task.id)}
-                          onCheckedChange={(v) => toggle(task, v === true)}
+                          onCheckedChange={(v) => toggleAndClear(task, v === true)}
                         />
                         <Label
                           htmlFor={boxId}
@@ -294,13 +302,15 @@ export function AddTasksDialog({
               </Button>
             )
           ) : (
-            <Button onClick={() => void send(ids, anyInOther)} disabled={busy || ids.length === 0}>
+            <Button onClick={() => void send(ids, anyInOther)} disabled={busy}>
               {busy && <Loader2 className="me-2 size-4 animate-spin" aria-hidden />}
-              {t(
-                `remediationCampaigns.addTasks.submit.${ids.length === 1 ? 'one' : 'other'}`,
-                undefined,
-                { count: ids.length }
-              )}
+              {ids.length === 0
+                ? t('remediationCampaigns.actions.addTasks')
+                : t(
+                    `remediationCampaigns.addTasks.submit.${ids.length === 1 ? 'one' : 'other'}`,
+                    undefined,
+                    { count: ids.length }
+                  )}
             </Button>
           )}
         </DialogFooter>

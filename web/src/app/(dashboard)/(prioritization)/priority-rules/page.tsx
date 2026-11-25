@@ -18,6 +18,8 @@ import {
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
+import { FieldError, fieldErrorProps } from '@/features/shared/components/forms/field-error'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
@@ -191,12 +193,14 @@ export default function PriorityRulesPage() {
   // Switching a rule on reprioritizes findings across the organization: ask first.
   const [activatingRule, setActivatingRule] = useState<PriorityRule | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm)
+  const [attempted, setAttempted] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [dryRunRule, setDryRunRule] = useState<DryRunRule | null>(null)
 
   function openCreate() {
     setEditingRule(null)
     setForm(emptyForm)
+    setAttempted(false)
     setIsDialogOpen(true)
   }
 
@@ -210,6 +214,7 @@ export default function PriorityRulesPage() {
       is_active: rule.is_active,
       conditions: (rule.conditions ?? []).map((c) => ({ ...c })),
     })
+    setAttempted(false)
     setIsDialogOpen(true)
   }
 
@@ -283,21 +288,22 @@ export default function PriorityRulesPage() {
   )
 
   async function handleSave() {
-    if (!form.name.trim()) {
-      toast.error(t('prioritization.rules.toast.nameRequired', 'Name is required'))
+    // The button stays enabled: the missing field says so, under itself.
+    const nameMissing = !form.name.trim()
+    const conditionsMissing = form.conditions.length === 0
+    setAttempted(true)
+    if (nameMissing || conditionsMissing) {
+      requestAnimationFrame(() =>
+        document
+          .querySelector<HTMLElement>('[aria-invalid="true"], [data-conditions-missing="true"]')
+          ?.focus()
+      )
       return
     }
 
     const orderNum = Number(form.evaluation_order)
     if (!Number.isFinite(orderNum)) {
       toast.error(t('prioritization.rules.toast.orderNumber', 'Rule order must be a number'))
-      return
-    }
-
-    // The API refuses a rule without conditions: it would re-class every
-    // finding in the organization.
-    if (form.conditions.length === 0) {
-      toast.error(t('prioritization.rules.toast.needCondition', 'Add at least one condition'))
       return
     }
 
@@ -689,6 +695,20 @@ export default function PriorityRulesPage() {
                     'prioritization.rules.form.namePlaceholder',
                     'e.g., Known exploited on a crown jewel: highest priority'
                   )}
+                  {...fieldErrorProps(
+                    'name',
+                    attempted && !form.name.trim()
+                      ? t('prioritization.rules.toast.nameRequired', 'Name is required')
+                      : null
+                  ).control}
+                />
+                <FieldError
+                  id="name-error"
+                  error={
+                    attempted && !form.name.trim()
+                      ? t('prioritization.rules.toast.nameRequired', 'Name is required')
+                      : null
+                  }
                 />
               </div>
 
@@ -770,7 +790,15 @@ export default function PriorityRulesPage() {
                   </Button>
                 </div>
                 {form.conditions.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
+                  <p
+                    className={cn(
+                      'text-xs',
+                      attempted ? 'font-medium text-destructive' : 'text-muted-foreground'
+                    )}
+                    role={attempted ? 'alert' : undefined}
+                    data-conditions-missing={attempted ? 'true' : undefined}
+                    tabIndex={attempted ? -1 : undefined}
+                  >
                     {t(
                       'prioritization.rules.form.conditionsHelp',
                       'Add at least one condition. A rule applies only to findings that match all of its conditions.'
@@ -878,21 +906,22 @@ export default function PriorityRulesPage() {
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
               {t('common.cancel', 'Cancel')}
             </Button>
-            <Button
-              variant="outline"
-              disabled={form.conditions.length === 0}
-              onClick={() =>
-                setDryRunRule({
-                  name: form.name,
-                  priority_class: form.priority_class,
-                  conditions: form.conditions,
-                })
-              }
-            >
-              <FlaskConical className="me-1 h-4 w-4" />
-              {t('prioritization.rules.action.dryRun', 'Test run')}
-            </Button>
-            <Button onClick={handleSave} disabled={isSaving || form.conditions.length === 0}>
+            {form.conditions.length > 0 && (
+              <Button
+                variant="outline"
+                onClick={() =>
+                  setDryRunRule({
+                    name: form.name,
+                    priority_class: form.priority_class,
+                    conditions: form.conditions,
+                  })
+                }
+              >
+                <FlaskConical className="me-1 h-4 w-4" />
+                {t('prioritization.rules.action.dryRun', 'Test run')}
+              </Button>
+            )}
+            <Button onClick={handleSave} disabled={isSaving}>
               {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
               {editingRule
                 ? t('prioritization.rules.form.update', 'Update')
