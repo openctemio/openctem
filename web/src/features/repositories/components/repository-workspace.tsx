@@ -2285,7 +2285,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
                 <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                   <h1 className="min-w-0 text-page break-words">{repository.name}</h1>
                   <Tag variant="plain" label={SCM_PROVIDER_LABELS[repository.scm_provider]} />
-                  <Badge variant={repository.status === 'active' ? 'default' : 'secondary'}>
+                  <Badge variant={repository.status === 'active' ? 'outline' : 'secondary'}>
                     {STATUS_LABELS[repository.status]}
                   </Badge>
                 </div>

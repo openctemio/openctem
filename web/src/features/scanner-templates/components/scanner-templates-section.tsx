@@ -518,14 +518,6 @@ export function ScannerTemplatesSection() {
           'scans.templates.empty.description',
           'Upload custom templates for Nuclei, Semgrep, or Betterleaks scanners.'
         )}
-        action={
-          <Can permission={Permission.ScannerTemplatesWrite}>
-            <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-              <Plus className="h-4 w-4" />
-              {t('scans.templates.upload', 'Upload template')}
-            </Button>
-          </Can>
-        }
       />
     )
   } else {

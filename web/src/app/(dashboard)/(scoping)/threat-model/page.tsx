@@ -237,9 +237,11 @@ export default function ThreatModelPage() {
                 ))}
               </CardContent>
             </Card>
-          ) : (
+          ) : models.length > 0 ? (
             <ExistingModels models={models} selectedId={selectedModelId} onOpen={openModel} />
-          )}
+          ) : null}
+          {/* With no model yet the picker above is the one next step: no
+              second empty card repeating it. */}
           <MitreFooter />
         </PageStack>
       </PageStack>

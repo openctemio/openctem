@@ -957,13 +957,6 @@ export default function AssetGroupsPage() {
                       'assetGroups.empty.none',
                       'Create a group to organize your assets'
                     )}
-                    action={
-                      canWrite ? (
-                        <Button size="sm" onClick={() => setIsCreateOpen(true)}>
-                          {t('assetGroups.newGroup', 'New group')}
-                        </Button>
-                      ) : undefined
-                    }
                   />
                 ),
                 noMatch: (

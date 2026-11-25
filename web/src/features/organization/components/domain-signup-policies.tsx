@@ -195,7 +195,7 @@ function DomainCard({
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2 text-base">
           {domain.domain}
-          <Badge variant={domain.effective ? 'default' : 'secondary'}>
+          <Badge variant={domain.effective ? 'outline' : 'secondary'}>
             {domain.effective ? t('settings.domains.verified') : t('settings.domains.notEffective')}
           </Badge>
         </CardTitle>

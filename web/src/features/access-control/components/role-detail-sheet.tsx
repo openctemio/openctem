@@ -655,18 +655,6 @@ export function RoleDetailSheet({
                     : t('org.roleDetail.noMembers', 'No members with this role')
                 }
                 card={false}
-                action={
-                  !memberSearchQuery && !isTeamRole ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setAddMemberDialogOpen(true)}
-                    >
-                      <UserPlus className="h-4 w-4" />
-                      {t('org.roleDetail.addFirstMember', 'Add first member')}
-                    </Button>
-                  ) : undefined
-                }
               />
             ) : (
               <ul className="divide-y rounded-lg border">

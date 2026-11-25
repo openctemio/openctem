@@ -192,13 +192,13 @@ function LeadRow({
 function emptyText(t: ReturnType<typeof useTranslation>['t'], group: LeadGroup): string {
   switch (group) {
     case 'waiting':
-      return t('exploration.empty.waiting', 'Nothing is waiting for you.')
+      return t('exploration.empty.waiting', 'Nothing is waiting for you')
     case 'next':
-      return t('exploration.empty.next', 'No next steps planned.')
+      return t('exploration.empty.next', 'No next steps planned')
     case 'running':
-      return t('exploration.empty.running', 'Nothing is running.')
+      return t('exploration.empty.running', 'Nothing is running')
     default:
-      return t('exploration.empty.done', 'No step has finished yet.')
+      return t('exploration.empty.done', 'No step has finished yet')
   }
 }
 
@@ -294,7 +294,14 @@ export function ExplorationPage() {
           onRetry={() => void mutate()}
         />
       ) : leads.length === 0 ? (
-        <EmptyState icon={Compass} title={emptyText(t, group)} />
+        <EmptyState
+          icon={Compass}
+          title={emptyText(t, group)}
+          description={t(
+            'exploration.empty.hint',
+            'Next steps appear here when a scan finds something worth a closer look.'
+          )}
+        />
       ) : (
         <div className="space-y-3">
           <ul

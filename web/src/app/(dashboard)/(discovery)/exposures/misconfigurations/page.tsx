@@ -3,6 +3,8 @@
 import { useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { Main } from '@/components/layout'
+import Link from '@/components/link'
+import { Button } from '@/components/ui/button'
 import { PageHeader, PageStack, EmptyState, ErrorState } from '@/features/shared'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDashboardStats } from '@/features/dashboard/hooks/use-dashboard-stats'
@@ -92,8 +94,13 @@ export default function MisconfigurationsPage() {
             title={t('exposures.misconfigurations.emptyTitle', 'No misconfigurations yet')}
             description={t(
               'exposures.misconfigurations.emptyDescription',
-              'Run IaC or cloud posture scans to identify infrastructure and cloud misconfigurations.'
+              'Scan your infrastructure code and cloud accounts to find unsafe settings.'
             )}
+            action={
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/scans">{t('exposures.empty.setUpScan', 'Set up a scan')}</Link>
+              </Button>
+            }
           />
         ) : !typeStats.scoped ? (
           <TypeBreakdownUnavailable

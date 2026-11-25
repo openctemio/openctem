@@ -1640,6 +1640,7 @@
   "sensors.toolDefaults.emptyTitle": "No tools with settings yet",
   "sensors.toolDefaults.layersNote": "Order: tool default, then these organization defaults, then a sensor's overrides. A scan or workflow step can only lower rate, concurrency and retries, and each sensor's local policy can always narrow further. Shared platform sensors never use these defaults.",
   "sensors.toolDefaults.noSchema": "No sensor reports this tool any more. Reset its defaults to remove them.",
+  "sensors.toolDefaults.openSensors": "Open sensors",
   "sensors.toolDefaults.problemItem": "{sensor}: {key}: {message}",
   "sensors.toolDefaults.problemsTitle": "These sensors' tool versions refuse the defaults, so their scan jobs of this tool fail:",
   "sensors.toolDefaults.readOnly": "Owners and administrators change these defaults.",

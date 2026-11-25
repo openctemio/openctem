@@ -396,7 +396,11 @@ export default function ExecutiveSummaryPage() {
                   card={false}
                   className="py-8"
                   icon={Timer}
-                  title={t('insights.executive.priorityEmpty', 'No priority class data yet')}
+                  title={t('insights.executive.mttrEmptyTitle', 'Not enough data yet')}
+                  description={t(
+                    'insights.executive.priorityEmptyDescription',
+                    'Times per priority class appear once enough prioritized findings have been resolved.'
+                  )}
                 />
               )}
             </CardContent>

@@ -10,7 +10,8 @@ globalThis.ResizeObserver ??= class {
 Element.prototype.scrollIntoView ??= vi.fn()
 
 const push = vi.fn()
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
+let pathname = '/'
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push }), usePathname: () => pathname }))
 vi.mock('next-themes', () => ({ useTheme: () => ({ setTheme: vi.fn() }) }))
 vi.mock('@/context/search-provider', () => ({
   useSearch: () => ({ open: true, setOpen: vi.fn() }),
@@ -50,12 +51,15 @@ vi.mock('@/features/command-palette/use-palette-search', () => ({
 }))
 
 import { CommandMenu } from '../command-menu'
+import { recordRecentPage } from '@/features/command-palette/recent-pages'
 
 beforeEach(() => {
   push.mockReset()
   searchState.results = []
   searchState.cve = null
   sidebarItems = [{ title: 'Dashboard', url: '/' }]
+  pathname = '/'
+  window.localStorage.clear()
 })
 
 describe('CommandMenu', () => {
@@ -115,5 +119,81 @@ describe('CommandMenu', () => {
     render(<CommandMenu />)
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'CVE-2026-41187' } })
     expect(screen.queryByText('Open CVE-2026-41187')).toBeNull()
+  })
+
+  it('an empty search shows Recent, Go to and Create, and keeps the full index for typing', () => {
+    perms = new Set(['scans:write'])
+    sidebarItems = [
+      { title: 'Dashboard', url: '/' },
+      { title: 'Findings', url: '/findings' },
+      { title: 'Assets', url: '/assets' },
+      { title: 'Audit log', url: '/audit' },
+    ]
+    recordRecentPage('/audit')
+    recordRecentPage('/assets')
+    render(<CommandMenu />)
+    const headings = [...document.querySelectorAll('[cmdk-group-heading]')].map(
+      (h) => h.textContent
+    )
+    expect(headings).toEqual(['Recent', 'Go to', 'Create'])
+    // Assets is recent, so Go to does not repeat it; Audit log is not a main section.
+    expect(screen.getAllByText('Assets')).toHaveLength(1)
+    expect(screen.getByText('Audit log')).toBeTruthy()
+    expect(screen.queryByText('Light theme')).toBeNull()
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'theme' } })
+    expect(screen.getByText('Light theme')).toBeTruthy()
+    expect(screen.queryByText('Recent')).toBeNull()
+  })
+
+  it('Recent never offers a page the caller can no longer open, nor the page they are on', () => {
+    perms = new Set()
+    sidebarItems = [
+      { title: 'Dashboard', url: '/' },
+      { title: 'Findings', url: '/findings' },
+    ]
+    pathname = '/findings'
+    recordRecentPage('/sensors')
+    recordRecentPage('/findings')
+    render(<CommandMenu />)
+    expect(screen.queryByText('Recent')).toBeNull()
+    expect(screen.queryByText('Sensors')).toBeNull()
+  })
+
+  it('a recent page opens on select', () => {
+    perms = new Set()
+    sidebarItems = [{ title: 'Findings', url: '/findings' }]
+    recordRecentPage('/findings')
+    render(<CommandMenu />)
+    fireEvent.click(screen.getByText('Findings'))
+    expect(push).toHaveBeenCalledWith('/findings')
+  })
+
+  it('each create command has its own icon, not one shared plus', () => {
+    perms = new Set(['scans:write', 'assets:write', 'findings:write'])
+    render(<CommandMenu />)
+    const icons = ['New scan', 'Add asset', 'New finding'].map(
+      (label) =>
+        screen
+          .getByText(label)
+          .closest('[cmdk-item]')
+          ?.querySelector('svg')
+          ?.getAttribute('class') ?? ''
+    )
+    expect(new Set(icons).size).toBe(3)
+    expect(icons.some((c) => c.includes('lucide-plus'))).toBe(false)
+  })
+
+  it('closes from the search row (Esc key cap, Close on a phone) and shows key hints', () => {
+    perms = new Set()
+    render(<CommandMenu />)
+    expect(screen.getByRole('button', { name: /^Esc ?Close$/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy()
+    const footer = document.querySelector('[data-slot="command-footer"]')
+    expect(footer?.textContent).toContain('Move')
+    expect(footer?.textContent).toContain('Open')
+    expect(footer?.textContent).toContain('Close')
+    expect(
+      screen.getByPlaceholderText('Search pages, findings, assets… or type > for commands')
+    ).toBeTruthy()
   })
 })

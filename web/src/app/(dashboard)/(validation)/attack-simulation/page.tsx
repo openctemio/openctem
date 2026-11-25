@@ -48,7 +48,7 @@ function StatusBadge({ status }: { status: string }) {
   const { t } = useTranslation()
   const value = status || 'draft'
   return (
-    <Badge variant={status === 'active' ? 'default' : 'secondary'} className="capitalize">
+    <Badge variant={status === 'active' ? 'outline' : 'secondary'} className="capitalize">
       {t(`validation.simulation.status.${value}`, value)}
     </Badge>
   )

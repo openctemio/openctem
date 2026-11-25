@@ -2,6 +2,7 @@
 
 import * as React from 'react'
 import { Button } from '@/components/ui/button'
+import { GatedButton } from './gated-button'
 
 /**
  * One filled button per screen. An empty state's action is filled only when
@@ -12,8 +13,8 @@ import { Button } from '@/components/ui/button'
  *
  * The check runs before paint and again when the page around it changes
  * (a header action that appears once permissions load). It reaches kit
- * `Button`s written in the action's own tree (directly or inside wrappers
- * such as `Can`); a filled button it cannot reach is reported by a warning
+ * `Button`s and `GatedButton`s written in the action's own tree (directly or
+ * inside wrappers such as `Can`); a filled button it cannot reach is reported by a warning
  * outside production builds.
  */
 
@@ -45,7 +46,7 @@ function subdue(node: React.ReactNode): React.ReactNode {
     if (!React.isValidElement<{ variant?: unknown; children?: React.ReactNode }>(child)) {
       return child
     }
-    if (child.type === Button) {
+    if (child.type === Button || child.type === GatedButton) {
       return isFilledVariant(child.props.variant)
         ? React.cloneElement(child, { variant: 'outline' })
         : child
