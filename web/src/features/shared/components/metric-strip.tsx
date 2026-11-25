@@ -174,7 +174,9 @@ export function MetricStrip({
   // tile counts zero: a row of zeros above an empty state is not drawn.
   const allZero =
     items.length > 0 && items.every((item) => typeof item.value === 'number' && item.value === 0)
-  if (!loading && !error && (listEmpty || (listFirst && allZero))) return null
+  // A strip whose tile is the filter in use stays: it is the way back.
+  const filtering = items.some((item) => item.active)
+  if (!loading && !error && (listEmpty || (listFirst && allZero && !filtering))) return null
   const detailed = items.some(
     (item) => (item.detail != null && item.detail !== false) || item.delta != null
   )

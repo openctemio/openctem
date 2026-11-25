@@ -410,7 +410,8 @@ reference.
   out) are not tiles: they stay values of the list's status filter.
 - A zero is a muted `0`; an error is `—` with the reason as the tooltip; red
   or amber only for a positive count of a problem state. A strip over a list
-  (`listFirst`) whose tiles all count zero is not drawn, nor one whose list is
+  (`listFirst`) whose tiles all count zero is not drawn (unless one of its
+  tiles is the filter in use: it is the way back), nor one whose list is
   empty with no filter (`listEmpty`): the empty state says it, and figures
   counted elsewhere never contradict it.
 - No corner icons, no default trend arrows, no `StatsCard` tile walls.
