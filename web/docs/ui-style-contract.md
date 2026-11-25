@@ -1181,7 +1181,10 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
     (right drawer from `md`, bottom sheet on phones, header pinned while the
     body scrolls, `width` token), `<DetailHeader>` (the title **wraps**, never
     truncates: it is often the only identifier; `badges` after it, `meta`
-    parts joined with `·`, an `actions` row, a `menu` of items for `⋯`) and
+    parts on one wrapping line, `actions` ending the line under the title
+    beside the meta line (or the badges, moved there when there is no meta
+    line; beside the header icons when there is neither), never a row of
+    their own, a `menu` of items for `⋯`) and
     `<DetailTabs>` (underline tabs; `useDetailTab(param, values)` keeps the
     tab in the URL when the page wants it, with a parameter the page does not
     already use).
