@@ -226,7 +226,7 @@ test('Cmd+K finds settings pages', { tag: ['@settings', '@smoke'] }, async ({ pa
   // search button is interactive, and retry the key press until the palette
   // opens rather than pressing once into a page that is not ready yet.
   await expect(page.getByRole('button', { name: /^Search/ })).toBeEnabled({ timeout: 30_000 })
-  const input = page.getByPlaceholder('Search or go to, > for commands')
+  const input = page.getByPlaceholder('Search pages, findings, assets… or type > for commands')
   for (const [query, label] of [
     ['api keys', 'API keys'],
     ['audit', 'Audit log'],
