@@ -1186,6 +1186,7 @@
   "findings.importResults.endpoints": "Endpoint",
   "findings.importResults.failed": "Nhập dữ liệu thất bại",
   "findings.importResults.file": "Tệp",
+  "findings.importResults.fileRequired": "Hãy chọn tệp cần nhập trước.",
   "findings.importResults.findings": "Phát hiện",
   "findings.importResults.format": "Định dạng",
   "findings.importResults.formatDetect": "Nhận biết từ tệp",

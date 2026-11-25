@@ -19,14 +19,7 @@ import { checkScrollEnd } from './scroll-end'
  * SettingsSaveBar (research/391). The list only shrinks: a page that moves is
  * removed, and a new page is never added.
  */
-const SAVE_EXCEPTIONS = new Set<string>([
-  '/settings/me/notifications',
-  '/settings/ai',
-  '/settings/asset-sources',
-  '/settings/finding-lifecycle',
-  '/settings/mcp',
-  '/settings/pentest',
-])
+const SAVE_EXCEPTIONS = new Set<string>(['/settings/mcp'])
 
 const NAME_MIN_1440 = 160
 
@@ -581,7 +574,8 @@ export async function checkAt(
   }
   expect.soft(r.rawTemplates, `${at}: no raw {{placeholder}} text`).toBe(false)
   const path = route.split('?')[0]
-  if (/^\/(settings|account)(\/|$)/.test(path) && !SAVE_EXCEPTIONS.has(path)) {
+  // Tenant settings and account pages, and the console's System settings pages.
+  if (/^\/(settings|account|system)(\/|$)/.test(path) && !SAVE_EXCEPTIONS.has(path)) {
     expect.soft(r.restingSave, `${at}: a settings form saves through SettingsSaveBar`).toEqual([])
   }
   expect.soft(r.handDenied, `${at}: a refusal is the shared access notice`).toBe(false)

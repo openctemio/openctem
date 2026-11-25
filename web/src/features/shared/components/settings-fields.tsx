@@ -3,6 +3,7 @@
 import { useId, type ReactNode } from 'react'
 import { Lock } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
+import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 
 /**
@@ -259,5 +260,41 @@ export function SettingsField({
         </p>
       )}
     </div>
+  )
+}
+
+export interface SettingsValueProps extends Partial<SettingsFieldControl> {
+  /** The saved value; empty shows "Not set". */
+  value?: ReactNode
+  /** Monospaced (an address, a key, a slug). */
+  mono?: boolean
+}
+
+/**
+ * A setting this user cannot change, shown as text in its field (the
+ * `SettingsField` child for a reader): never a disabled input, which reads as
+ * a control that is broken rather than a value.
+ */
+export function SettingsValue({
+  value,
+  mono,
+  id,
+  'aria-describedby': describedBy,
+}: SettingsValueProps) {
+  const { t } = useTranslation()
+  const empty = value === undefined || value === null || value === ''
+  return (
+    <p
+      id={id}
+      aria-describedby={describedBy}
+      data-slot="settings-value"
+      className={cn(
+        'flex min-h-9 min-w-0 items-center break-words text-body',
+        mono && 'font-mono',
+        empty && 'text-muted-foreground'
+      )}
+    >
+      {empty ? t('settings.value.notSet', 'Not set') : value}
+    </p>
   )
 }
