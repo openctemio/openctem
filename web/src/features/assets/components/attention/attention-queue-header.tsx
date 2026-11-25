@@ -176,13 +176,13 @@ export function AttentionQueueHeader({
       />
       {/* A sentence, read whole and never hidden behind a menu where there is
           room for it: from 768 px it wraps in what the heading row has left
-          (at least 10rem, so the inventory link keeps its place beside it).
+          (at least 8rem, so the inventory link keeps its place beside it).
           Where the row has less, it starts the next line and the inventory
           link follows it there, so neither takes a row of its own above the
           list. On a phone it is read at the top of the reason menu. */}
       <p
         data-slot="attention-why"
-        className="min-w-40 flex-1 basis-0 text-sm text-muted-foreground max-md:hidden"
+        className="min-w-32 flex-1 basis-0 text-sm text-muted-foreground max-md:hidden"
       >
         {why}
       </p>

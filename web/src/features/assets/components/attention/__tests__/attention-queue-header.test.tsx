@@ -70,7 +70,7 @@ describe('AttentionQueueHeader', () => {
     render(<AttentionQueueHeader reason="no_owner" count={549} />)
     const why = document.querySelector('[data-slot="attention-why"]')
     // Hidden only on a phone (read at the top of the reason menu there).
-    expect(why).toHaveClass('max-md:hidden', 'flex-1', 'basis-0', 'min-w-40')
+    expect(why).toHaveClass('max-md:hidden', 'flex-1', 'basis-0', 'min-w-32')
     expect(why).not.toHaveClass('max-xl:hidden')
     // Never forced onto a line of its own above the list.
     expect(why?.className).not.toMatch(/basis-full|order-last/)
