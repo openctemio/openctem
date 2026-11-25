@@ -14,6 +14,7 @@ import {
   syncThreatIntel,
   useThreatIntelFeeds,
 } from '@console/features/admin-console/api/use-system'
+import { FeedFreshnessLimitsCard } from '@console/features/admin-console/components/feed-freshness-limits-card'
 import { FeedRelayCard } from '@console/features/admin-console/components/feed-relay-card'
 import {
   FEED_SOURCES_PERMISSION,
@@ -192,6 +193,7 @@ export default function ThreatIntelFeedsPage() {
         )}
         <FeedRelayCard canEdit={adminHas(admin, 'platform.settings.general.write')} />
         <VulnFeedSourcesCard canEdit={adminHas(admin, FEED_SOURCES_PERMISSION)} />
+        <FeedFreshnessLimitsCard canEdit={adminHas(admin, 'platform.settings.general.write')} />
       </PageStack>
     </Main>
   )
