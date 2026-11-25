@@ -6,9 +6,8 @@
  * the whole plan; the Overview's posture section the first few.
  */
 
-import Link from '@/components/link'
 import { PostureGrade } from '@/components/dashboard-kit'
-import { assetDetailHref, isLinkableAssetId } from '@/features/findings/lib/asset-link'
+import { AssetPeekLink } from '@/features/assets/components/asset-peek'
 import { useTranslation } from '@/context/i18n-provider'
 import type { PosturePlanStep } from '../lib/posture'
 
@@ -24,13 +23,15 @@ export function PosturePlanList({ steps }: { steps: readonly PosturePlanStep[] }
           <span className="flex min-w-0 items-baseline gap-2">
             <span className="w-5 shrink-0 text-xs text-muted-foreground tabular-nums">{i + 1}</span>
             <span className="flex min-w-0 flex-col">
-              {s.asset_id && isLinkableAssetId(s.asset_id) ? (
-                <Link href={assetDetailHref(s.asset_id)} className="truncate hover:underline">
+              {s.asset_name ? (
+                // A row opens its asset the one way every attack surface view
+                // does; an id that is not an asset's stays plain text.
+                <AssetPeekLink assetId={s.asset_id} className="truncate">
                   {s.asset_name}
-                </Link>
+                </AssetPeekLink>
               ) : (
                 <span className="truncate">
-                  {s.asset_name || t('attackSurface.posture.noAsset', 'Issues without an asset')}
+                  {t('attackSurface.posture.noAsset', 'Issues without an asset')}
                 </span>
               )}
               <span className="flex gap-2 text-xs text-muted-foreground">
