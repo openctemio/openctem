@@ -51,3 +51,22 @@ var _ = registerActions("ai_use_case", map[Action]Severity{
 	ActionAIUseCaseUpdated:    SeverityMedium,
 	ActionAIUseCaseDowngraded: SeverityHigh,
 })
+
+// The organization's switch and limits on changes AI agents make without a
+// person (docs/architecture/ai-autonomy.md).
+const (
+	// ActionAIAutonomyUpdated records a change of the limits. A loosening
+	// (a limit raised or removed) is audited critical.
+	ActionAIAutonomyUpdated Action = "ai_autonomy.updated"
+	// ActionAIAutonomyPaused records that automatic changes were stopped.
+	ActionAIAutonomyPaused Action = "ai_autonomy.paused"
+	// ActionAIAutonomyResumed records that automatic changes were allowed
+	// again (a loosening, audited critical).
+	ActionAIAutonomyResumed Action = "ai_autonomy.resumed"
+)
+
+var _ = registerActions("ai_autonomy", map[Action]Severity{
+	ActionAIAutonomyUpdated: SeverityMedium,
+	ActionAIAutonomyPaused:  SeverityHigh,
+	ActionAIAutonomyResumed: SeverityCritical,
+})

@@ -325,6 +325,10 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	// Map completed validation jobs into finding evidence.
 	commandHandler.SetValidationIngest(svc.ValidationEvidence)
 	commandHandler.SetSimulationFinalizer(svc.Simulation)
+	if svc.AIWorker != nil {
+		// A completed analysis job's result is applied for its run.
+		commandHandler.SetAnalysisResults(svc.AIWorker)
+	}
 	// Continuous retest (RFC-039): a retest check's evidence is recorded
 	// advisory-only and its retest settled when the sensor completes or fails it.
 	commandHandler.SetRetestHooks(svc.ValidationEvidence, svc.Retest)

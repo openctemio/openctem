@@ -21,6 +21,15 @@ type JobCanceler interface {
 // jobs of overdue runs in (nil: jobs are left to expire on their own).
 func (s *Service) SetJobCanceler(c JobCanceler) { s.jobs = c }
 
+// PendingResultApplier takes the results of completed analysis jobs whose
+// runs still wait (WorkerExecutor.ApplyPendingResults).
+type PendingResultApplier interface {
+	ApplyPendingResults(ctx context.Context) (int, error)
+}
+
+// SetResultApplier wires the taking of pending results into the sweep.
+func (s *Service) SetResultApplier(r PendingResultApplier) { s.results = r }
+
 // ChangeExecutor sets where an AI agent's runs execute: built in (the
 // platform calls the model) or on the organization's AI workers. Other
 // executors are not available. The change is audited with the executor
@@ -79,8 +88,18 @@ const settleBatch = 200
 // deadline_exceeded, one whose job failed fails worker_error, one whose job
 // was canceled ends canceled, and one whose job is gone fails
 // worker_unavailable. A result that arrives later is not applied (the run is
-// no longer live). It returns how many runs it ended.
+// no longer live). A completed job whose result was not taken yet is taken
+// first. It returns how many runs it ended.
 func (s *Service) EndStaleWorkerRuns(ctx context.Context) (int, error) {
+	// A result that came in but was not taken (the request that completed
+	// the job ended first) is taken before anything is ended for lack of one.
+	if s.results != nil {
+		if n, err := s.results.ApplyPendingResults(ctx); err != nil {
+			s.logger.Warn("pending AI worker results not taken", "error", logger.SanitizeError(err))
+		} else if n > 0 {
+			s.logger.Info("pending AI worker results taken", "count", n)
+		}
+	}
 	settled, err := s.runs.SettleWorkerRuns(ctx, settleBatch)
 	if err != nil {
 		return 0, err
