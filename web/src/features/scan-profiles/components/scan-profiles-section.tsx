@@ -289,14 +289,6 @@ export function ScanProfilesSection() {
         icon={Settings2}
         title={t('scans.profiles.empty')}
         description={t('scans.profiles.emptyDesc')}
-        action={
-          <Can permission={Permission.ScanProfilesWrite}>
-            <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-              <Plus className="h-4 w-4" />
-              {t('scans.profiles.create')}
-            </Button>
-          </Can>
-        }
       />
     )
   } else {

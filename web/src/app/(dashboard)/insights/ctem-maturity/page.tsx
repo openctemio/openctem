@@ -127,6 +127,11 @@ export default function CTEMMaturityPage() {
             'insights.maturity.empty',
             'Maturity is measured from closed CTEM cycles. Close a cycle to see it here.'
           )}
+          action={
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/cycles">{t('insights.maturity.openCycles', 'Open cycles')}</Link>
+            </Button>
+          }
         />
       )
     }

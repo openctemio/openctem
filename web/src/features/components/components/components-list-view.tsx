@@ -629,19 +629,11 @@ export function ComponentsListView() {
                     'Components appear when a sensor runs an SCA tool, a CI job uploads a report, or you import an SBOM (CycloneDX or SPDX JSON).'
                   )}
                   action={
-                    <div className="flex flex-wrap justify-center gap-2">
-                      {canImport && (
-                        <Button size="sm" onClick={() => setImportOpen(true)}>
-                          <Upload aria-hidden />
-                          {t('components.import', 'Import SBOM')}
-                        </Button>
-                      )}
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href="/sensors">
-                          {t('components.empty.sensors', 'Set up a sensor')}
-                        </Link>
-                      </Button>
-                    </div>
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href="/sensors">
+                        {t('components.empty.sensors', 'Set up a sensor')}
+                      </Link>
+                    </Button>
                   }
                 />
               ),

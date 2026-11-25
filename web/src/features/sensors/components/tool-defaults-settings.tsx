@@ -11,7 +11,9 @@
 import { useMemo } from 'react'
 import { Info, SlidersHorizontal } from 'lucide-react'
 
+import Link from '@/components/link'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { EmptyState, SettingsPage } from '@/features/shared'
 import {
@@ -100,6 +102,11 @@ export function ToolDefaultsSettings() {
           icon={SlidersHorizontal}
           title={t('sensors.toolDefaults.emptyTitle')}
           description={t('sensors.toolDefaults.empty')}
+          action={
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/sensors">{t('sensors.toolDefaults.openSensors', 'Open sensors')}</Link>
+            </Button>
+          }
         />
       ) : (
         <ToolSettingsList

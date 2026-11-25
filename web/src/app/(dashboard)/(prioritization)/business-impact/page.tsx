@@ -4,6 +4,8 @@ import { useMemo } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
+import Link from '@/components/link'
+import { Button } from '@/components/ui/button'
 import { ErrorState } from '@/features/shared/components/error-state'
 import {
   PageHeader,
@@ -323,8 +325,15 @@ export default function BusinessImpactPage() {
                   title={t('prioritization.businessImpact.crown.emptyTitle', 'No crown jewels yet')}
                   description={t(
                     'prioritization.businessImpact.crown.emptyDescription',
-                    'Mark assets as crown jewels from the Crown jewels page.'
+                    'Mark the assets your business depends on most as crown jewels.'
                   )}
+                  action={
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href="/crown-jewels">
+                        {t('prioritization.businessImpact.crown.open', 'Open crown jewels')}
+                      </Link>
+                    </Button>
+                  }
                   card={false}
                 />
               ) : (
@@ -381,8 +390,15 @@ export default function BusinessImpactPage() {
               title={t('prioritization.businessImpact.units.emptyTitle', 'No business units yet')}
               description={t(
                 'prioritization.businessImpact.units.emptyDescription',
-                'Create business units from the Scoping section.'
+                'Group assets by the part of the business that owns them.'
               )}
+              action={
+                <Button variant="outline" size="sm" asChild>
+                  <Link href="/business-units">
+                    {t('prioritization.businessImpact.units.open', 'Open business units')}
+                  </Link>
+                </Button>
+              }
             />
           ) : (
             <DataTable

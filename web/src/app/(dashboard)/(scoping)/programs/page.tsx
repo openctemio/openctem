@@ -101,7 +101,7 @@ export default function ProgramsPage() {
         meta: { kind: 'status', label: t('programs.col.status', 'Status') },
         header: t('programs.col.status', 'Status'),
         cell: ({ row }) => (
-          <Badge variant={row.original.status === 'active' ? 'default' : 'secondary'}>
+          <Badge variant={row.original.status === 'active' ? 'outline' : 'secondary'}>
             {t(`programs.status.${row.original.status}`, PROGRAM_STATUS_LABEL[row.original.status])}
           </Badge>
         ),
@@ -165,16 +165,6 @@ export default function ProgramsPage() {
               'programs.empty.description',
               'Import a program by pasting its scope; its in-scope targets become scope entries and its out-of-scope items program exclusions.'
             )}
-            action={
-              canWrite ? (
-                <Button asChild size="sm">
-                  <Link href="/programs/new">
-                    <Plus className="me-2 h-4 w-4" />
-                    {t('programs.import', 'Import program')}
-                  </Link>
-                </Button>
-              ) : undefined
-            }
           />
         ) : (
           <DataTable

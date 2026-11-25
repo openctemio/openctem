@@ -444,7 +444,7 @@ export default function ScanWorkflowsPage() {
           {row.original.is_retired ? (
             <RetiredBadge workflow={row.original} />
           ) : (
-            <Badge variant={row.original.is_active ? 'default' : 'secondary'}>
+            <Badge variant={row.original.is_active ? 'outline' : 'secondary'}>
               {row.original.is_active
                 ? t('scans.workflows.statusActive', 'Active')
                 : t('scans.workflows.statusInactive', 'Inactive')}
@@ -793,13 +793,6 @@ export default function ScanWorkflowsPage() {
                     icon={Workflow}
                     title={t('scans.workflows.emptyTitle')}
                     description={t('scans.workflows.emptyDescription')}
-                    action={
-                      <NewScanWorkflowButton
-                        label={t('scans.workflows.createWorkflow')}
-                        variant="outline"
-                        onClick={handleOpenCreateForm}
-                      />
-                    }
                   />
                 ),
                 // "My workflows" with none yet says how to get one.
