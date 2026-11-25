@@ -121,7 +121,6 @@ import { ToolbarSlot } from '@/features/shared/components/toolbar-slot'
 import {
   ListCount,
   ListTitleRow,
-  useTitleRowFit,
   ListViewChanged,
 } from '@/features/shared/components/list-title-row'
 import {
@@ -2666,17 +2665,8 @@ function FindingsContent() {
       : []),
   ]
   // The title row's actions are buttons from a 42rem row (the `@2xl/actions`
-  // container query, right from the first paint) while they fit beside the
-  // view's name: a changed view (Modified, Save view, Reset) or a long name in
-  // Vietnamese folds them into the row's More instead of cutting the name.
-  // The same reading places Copy link.
-  const [actionsWide, actionsFit, actionsRowRef] = useTitleRowFit(
-    672,
-    `${viewTitle}|${viewModified}|${awaitingVerification > 0}|${groupBy ?? ''}`
-  )
-  // Classes of the row's wide and narrow parts once they do not fit.
-  const wideOnly = cn('hidden @2xl/actions:flex', !actionsFit && '@2xl/actions:hidden')
-  const narrowOnly = cn('@2xl/actions:hidden', !actionsFit && '@2xl/actions:block')
+  // container query): read the same width here to place Copy link.
+  const [actionsWide, actionsRowRef] = useWideRow(672)
   const copyLinkItem: ActionMenuEntry = {
     id: 'copy-link',
     label: t('findings.toolbar.copyLink', 'Copy link'),
@@ -2916,9 +2906,8 @@ function FindingsContent() {
           <ListViewChanged
             changed={viewModified}
             summary={changeList?.length ? summarizeChanges(changeList, t) : undefined}
-            // On a row under 42rem, or where they do not fit, the two
-            // buttons are in the row's More.
-            actionsClassName={wideOnly}
+            // On a row under 42rem the two buttons are in the row's More.
+            actionsClassName="hidden @2xl/actions:flex"
             onSave={openSaveView}
             save={
               canUpdateView ? (
@@ -2972,11 +2961,11 @@ function FindingsContent() {
       )}
       {refreshButton}
       {/* Export and the task act on the filter, grouped or not: they stay. */}
-      <div className={cn('items-center gap-2', wideOnly)}>
+      <div className="hidden items-center gap-2 @2xl/actions:flex">
         {exportMenu}
         {taskFromFiltersButton}
       </div>
-      <div className={narrowOnly}>{narrowMoreMenu}</div>
+      <div className="@2xl/actions:hidden">{narrowMoreMenu}</div>
     </ListTitleRow>
   )
 
@@ -3670,4 +3659,24 @@ function FindingsContent() {
       </ConfirmDialog>
     </>
   )
+}
+
+/** Whether an element is at least `min` px wide, kept current (false until measured). */
+function useWideRow(min: number): [boolean, (el: HTMLElement | null) => void] {
+  const [wide, setWide] = useState(false)
+  const observer = useRef<ResizeObserver | null>(null)
+  const ref = useCallback(
+    (el: HTMLElement | null) => {
+      observer.current?.disconnect()
+      observer.current = null
+      if (!el) return
+      const read = () => setWide(el.getBoundingClientRect().width >= min)
+      read()
+      if (typeof ResizeObserver === 'undefined') return
+      observer.current = new ResizeObserver(read)
+      observer.current.observe(el)
+    },
+    [min]
+  )
+  return [wide, ref]
 }

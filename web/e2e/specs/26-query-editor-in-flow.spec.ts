@@ -132,18 +132,20 @@ test.describe('Expanded query editor height', { tag: ['@findings'] }, () => {
       .click()
     const field = page.locator('[data-slot="list-search-query"] [role="combobox"]')
     await expect(field).toBeEnabled({ timeout: 20_000 })
+    // The one-line field is one line plus the editor's frame (paddings, borders).
+    const oneLine = (await box(field)).height
     await page.getByRole('button', { name: /expand the editor/i }).click()
     const editor = page.locator('[data-slot="query-editor-expanded"] textarea')
     await settled(page)
     const lineH = await editor.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight))
-    // Two lines for a short text (20 px lines, 6 px paddings, 1 px borders).
+    // Two lines for a short text.
     await editor.fill('state=open')
     await settled(page)
-    expect(Math.round((await box(editor)).height)).toBe(2 * lineH + 14)
+    expect(Math.round((await box(editor)).height)).toBe(Math.round(oneLine + lineH))
     // A long text: eight lines at most, then it scrolls inside.
     await editor.fill(Array(40).fill('severity>=high state=open').join(' '))
     await settled(page)
-    expect(Math.round((await box(editor)).height)).toBe(8 * lineH + 14)
+    expect(Math.round((await box(editor)).height)).toBe(Math.round(oneLine + 7 * lineH))
     expect(
       await editor.evaluate((el: HTMLTextAreaElement) => el.scrollHeight > el.clientHeight)
     ).toBe(true)

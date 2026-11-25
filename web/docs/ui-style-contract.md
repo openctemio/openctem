@@ -628,10 +628,6 @@ reference.
   the toolbar's `title` (`DataTable` `toolbarTitle`), before the search box.
   On a phone a title row given no `start` and no actions at all (not even
   ones a page draws only on wide screens) is read to assistive technology only (the footer says "25 of 200").
-  A title row whose actions are buttons on a wide row and folded into its
-  More on a narrow one reads its fit with `useTitleRowFit`: the buttons show
-  only while they fit beside the name, so a changed view (Modified, Save view,
-  Reset) or a long name never cuts the name to a few letters (findings).
 - **An automatic phone card is compact.** A table without `mobileRow` draws
   short lines of 20 px each, whatever its cells draw (one line, cut with an
   ellipsis); only the title may take two:
