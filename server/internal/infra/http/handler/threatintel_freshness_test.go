@@ -53,6 +53,10 @@ func TestGetFreshness_TenantSeesStateOnly(t *testing.T) {
 		got.StaleSince == nil || *got.StaleSince != "2026-11-15T12:00:00Z" || got.DataAsOf == nil {
 		t.Fatalf("response: %s", body)
 	}
+	// Which data is out of date, in feed names only.
+	if len(got.Sources) != 1 || got.Sources[0] != feedstatus.SourceVulnfeed {
+		t.Fatalf("sources: %s", body)
+	}
 	for _, leak := range []string{"expired", "refused", "detail", "conditions", "import_"} {
 		if strings.Contains(body, leak) {
 			t.Fatalf("tenant response carries %q: %s", leak, body)
@@ -73,6 +77,18 @@ func TestGetFreshnessAdmin_ListsConditions(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "the last import was refused (expired)") {
 		t.Fatalf("no detail: %s", rec.Body.String())
+	}
+	for _, c := range got.Conditions {
+		switch c.Code {
+		case feedwatch.CodeImportRefused:
+			if c.ErrorCode != feedstatus.CodeExpired || c.Source != feedstatus.SourceVulnfeed {
+				t.Fatalf("refused condition: %+v", c)
+			}
+		case feedwatch.CodeDataStale:
+			if c.LimitSeconds <= 0 || c.AsOf == nil {
+				t.Fatalf("stale condition: %+v", c)
+			}
+		}
 	}
 }
 

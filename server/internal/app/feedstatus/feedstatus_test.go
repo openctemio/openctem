@@ -12,6 +12,7 @@ import (
 
 	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
 	"github.com/openctemio/openctem/server/pkg/feedsign"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 func ptr(t time.Time) *time.Time { return &t }
@@ -63,6 +64,10 @@ func TestClassify(t *testing.T) {
 		{"expired", fmt.Errorf("x: %w", bundle.ErrExpired), CodeExpired},
 		{"disabled", threatintel.ErrSyncDisabled, CodeDisabled},
 		{"other", errors.New("boom"), CodeFailed},
+		{"blocked address", &url.Error{Op: "Get", URL: "https://mirror.example.com/x", Err: fmt.Errorf("ssrf guard: %w", httpsec.ErrBlockedDestination)}, CodeBlockedAddress},
+		{"blocked at start", fmt.Errorf("vulnfeed: VULNFEED_BASE_URL: %w", httpsec.ErrBlockedDestination), CodeBlockedAddress},
+		{"proxy refused", &url.Error{Op: "Get", URL: "https://github.com/x", Err: &httpsec.ProxyRefusedError{Status: 407}}, CodeProxyRefused},
+		{"proxy unreachable", &url.Error{Op: "Get", URL: "https://github.com/x", Err: &httpsec.ProxyUnreachableError{Err: errors.New("dial tcp: refused")}}, CodeProxyUnreachable},
 		{"tagged", Tag(CodePublisherEmpty, map[string]string{"host": "h"}, errors.New("404")), CodePublisherEmpty},
 		{"verify expired", TagVerify(errors.New("latest: expired or valid too long")), CodeExpired},
 		{"verify signature", TagVerify(errors.New("key set: bad root signature")), CodeSignatureInvalid},
@@ -75,6 +80,12 @@ func TestClassify(t *testing.T) {
 	}
 	if p := Classify(&HTTPError{Host: "h", Status: 503}).Params; p["host"] != "h" || p["status"] != "503" {
 		t.Errorf("params %v", p)
+	}
+	if p := Classify(&url.Error{Op: "Get", URL: "https://github.com/x", Err: &httpsec.ProxyRefusedError{Status: 407}}).Params; p["host"] != "github.com" || p["status"] != "407" {
+		t.Errorf("proxy params %v", p)
+	}
+	if p := Classify(&url.Error{Op: "Get", URL: "https://mirror.example.com/x", Err: httpsec.ErrBlockedDestination}).Params; p["host"] != "mirror.example.com" {
+		t.Errorf("blocked params %v", p)
 	}
 	if Classify(nil).Code != "" {
 		t.Error("nil classified")
