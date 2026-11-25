@@ -4,7 +4,6 @@ import * as React from 'react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
-import { drawsSomething } from './draws-something'
 
 /**
  * The list's one count: the results of the view as the list shows it (its
@@ -218,47 +217,12 @@ export function ListTitleRow({
   ref?: React.Ref<HTMLDivElement>
   'data-testid'?: string
 }) {
-  // On a phone a row that draws only the name and the count (its actions
-  // folded into the toolbar's More, nothing after the count) is a wasted row
-  // above the toolbar: it is read to assistive technology only, and the
-  // list's footer says how many rows there are ("25 of 200").
-  const rowRef = React.useRef<HTMLDivElement | null>(null)
-  const extraRef = React.useRef<HTMLSpanElement | null>(null)
-  const endRef = React.useRef<HTMLDivElement | null>(null)
-  const setRow = React.useCallback(
-    (el: HTMLDivElement | null) => {
-      rowRef.current = el
-      if (typeof ref === 'function') ref(el)
-      else if (ref) (ref as React.MutableRefObject<HTMLDivElement | null>).current = el
-    },
-    [ref]
-  )
-  React.useLayoutEffect(() => {
-    const row = rowRef.current
-    if (!row) return
-    const mark = () => {
-      const groups = [extraRef.current, endRef.current].filter((g): g is HTMLElement => !!g)
-      // A row with a `start` slot (the view's Modified mark, Save view) keeps its
-      // place: the mark can appear at any time, and the toolbar must not move.
-      const bare = !start && !groups.some((g) => drawsSomething(g))
-      if (bare !== row.hasAttribute('data-bare')) row.toggleAttribute('data-bare', bare)
-    }
-    mark()
-    if (typeof ResizeObserver === 'undefined' || typeof MutationObserver === 'undefined') return
-    const resize = new ResizeObserver(mark)
-    resize.observe(row)
-    const mutation = new MutationObserver(mark)
-    mutation.observe(row, {
-      subtree: true,
-      childList: true,
-      attributes: true,
-      attributeFilter: ['class', 'hidden', 'style'],
-    })
-    return () => {
-      resize.disconnect()
-      mutation.disconnect()
-    }
-  })
+  // On a phone a row that can only ever draw the name and the count (no
+  // `start`, no actions) is a wasted row above the toolbar: it is read to
+  // assistive technology only, and the list's footer says how many rows
+  // there are ("25 of 200"). Decided from the props, never from what is drawn,
+  // so nothing appearing later (a Modified mark) moves the toolbar.
+  const metaOnly = !start && React.Children.toArray(children).length === 0
   // Nothing to draw (a hidden name, no count, nothing after it, no actions):
   // the heading stays for assistive technology and the row takes no room, so
   // the page never shows an empty line.
@@ -271,10 +235,15 @@ export function ListTitleRow({
   }
   return (
     <div
-      ref={setRow}
+      ref={ref}
       data-slot="list-title-row"
       data-testid={testId}
-      className={cn('flex min-h-control items-center gap-2 max-md:data-[bare]:sr-only', className)}
+      data-meta-only={metaOnly || undefined}
+      className={cn(
+        'flex min-h-control items-center gap-2',
+        metaOnly && 'max-md:sr-only',
+        className
+      )}
     >
       <div data-slot="list-title-start" className="flex min-w-0 items-center gap-3">
         {/* The name gives way first: what follows it keeps its width. */}
@@ -286,16 +255,10 @@ export function ListTitleRow({
           {title}
         </h2>
         {count}
-        <span ref={extraRef} data-slot="list-title-extra" className="contents">
-          {start}
-        </span>
+        {start}
       </div>
       {children ? (
-        <div
-          ref={endRef}
-          data-slot="list-title-end"
-          className="ms-auto flex shrink-0 items-center gap-2"
-        >
+        <div data-slot="list-title-end" className="ms-auto flex shrink-0 items-center gap-2">
           {children}
         </div>
       ) : null}

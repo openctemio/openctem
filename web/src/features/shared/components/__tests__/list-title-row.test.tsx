@@ -62,6 +62,20 @@ describe('ListCount', () => {
 })
 
 describe('ListTitleRow', () => {
+  it('is read to assistive technology only on a phone when it can only show the name and count', () => {
+    const { container, rerender } = render(<ListTitleRow title="All" count={<span>5</span>} />)
+    const row = container.querySelector('[data-slot="list-title-row"]')!
+    expect(row).toHaveClass('max-md:sr-only')
+    // Actions or a start slot (a Modified mark can appear there): the row keeps its place.
+    rerender(
+      <ListTitleRow title="All" count={<span>5</span>} start={null}>
+        <button type="button">Refresh</button>
+      </ListTitleRow>
+    )
+    expect(container.querySelector('[data-slot="list-title-row"]')).not.toHaveClass(
+      'max-md:sr-only'
+    )
+  })
   it('puts the name and the count first, the list actions at the end', () => {
     render(
       <ListTitleRow title="All assets" count={<ListCount total={3} />}>
