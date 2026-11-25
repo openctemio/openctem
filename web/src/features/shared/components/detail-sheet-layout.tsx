@@ -382,8 +382,10 @@ export interface DetailHeaderProps {
   /** What it is and where: short parts on one wrapping line under the title (MetaLine, no glyph). */
   meta?: React.ReactNode[]
   /**
-   * The row under the title: at most one primary and one outline button
-   * (style contract §8), plus a muted note when the viewer cannot act.
+   * At most one primary and one outline button (style contract §8), plus a
+   * muted note when the viewer cannot act. They end the line under the title,
+   * beside the meta line (or the badges, moved there when there is no meta
+   * line), so a control never takes a row alone.
    */
   actions?: React.ReactNode
   /**
@@ -447,6 +449,27 @@ export function DetailHeader({
     })
   })
   const parts = (meta ?? []).filter((p) => p !== null && p !== undefined && p !== false && p !== '')
+  const hasActions = actions !== null && actions !== undefined && actions !== false
+  // Separated by space, not a glyph, and wrapping instead of cut off: on a
+  // phone the last part (often the address) stays visible. text-meta here
+  // too: the description's own text-sm would win.
+  const metaLine =
+    parts.length > 0 ? (
+      <SheetDescription asChild className="text-meta">
+        <MetaLine items={parts} className={cn('tabular-nums', !hasActions && 'mt-1')} />
+      </SheetDescription>
+    ) : null
+  // The actions never take a row alone: they end the line under the title,
+  // beside its facts (the meta line, or the badges when there is no meta
+  // line). Only a header with neither puts them beside the header icons.
+  const badgesBelow = hasActions && parts.length === 0 && !!badges
+  const factsBelow = hasActions ? (metaLine ?? (badgesBelow ? badges : null)) : null
+  const actionsOnTop = hasActions && !factsBelow
+  const actionsGroup = (
+    <div data-slot="detail-header-actions" className="flex flex-wrap items-center gap-2">
+      {actions}
+    </div>
+  )
   return (
     <div data-slot="detail-header">
       <div className="flex items-start justify-between gap-3">
@@ -455,16 +478,10 @@ export function DetailHeader({
             <SheetTitle className="min-w-0 text-lg leading-tight font-semibold break-words">
               {title}
             </SheetTitle>
-            {badges}
+            {!badgesBelow && badges}
           </div>
-          {parts.length > 0 ? (
-            // Separated by space, not a glyph, and wrapping instead of cut
-            // off: on a phone the last part (often the address) stays visible.
-            // text-meta here too: the description's own text-sm would win.
-            <SheetDescription asChild className="text-meta">
-              <MetaLine items={parts} className="mt-1 tabular-nums" />
-            </SheetDescription>
-          ) : (
+          {!hasActions && metaLine}
+          {parts.length === 0 && (
             // Radix wants a description; keep it for screen readers only.
             <SheetDescription className="sr-only">
               {t('common.detailSheet.description', 'Details')}
@@ -472,6 +489,7 @@ export function DetailHeader({
           )}
         </div>
         <div className="-me-2 flex shrink-0 items-center gap-3">
+          {actionsOnTop && actionsGroup}
           {fullPageHref && (
             <TooltipProvider>
               <Tooltip>
@@ -514,7 +532,21 @@ export function DetailHeader({
           </Button>
         </div>
       </div>
-      {actions && <div className="mt-3 flex flex-wrap items-center gap-2">{actions}</div>}
+      {factsBelow && (
+        // One line: the facts take what is left (at least 8rem, wrapping
+        // inside it) and the actions end it. Only actions wider than the
+        // rest (a toolbar of several controls) drop to the next line, as a
+        // group, never one control alone.
+        <div
+          data-slot="detail-header-line"
+          className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2"
+        >
+          <div className="flex min-w-0 flex-[1_1_8rem] flex-wrap items-center gap-2">
+            {factsBelow}
+          </div>
+          <div className="ms-auto">{actionsGroup}</div>
+        </div>
+      )}
     </div>
   )
 }
