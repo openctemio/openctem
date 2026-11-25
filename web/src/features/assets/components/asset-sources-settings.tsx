@@ -194,10 +194,13 @@ function PreviewPanel({
       )}
     >
       <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1">
+        {/* Wide enough for its longest value on one line: on a phone the
+            whole line (Preview goes under it), 18rem from 640 px. A value that
+            wraps makes the field taller than the button beside it. */}
+        <div className="w-full space-y-1 sm:w-auto">
           <Label htmlFor="preview-mode">{t('assetSources.preview.on', 'Preview on')}</Label>
           <Select value={mode} onValueChange={(v) => setMode(v as 'sample' | 'asset')}>
-            <SelectTrigger id="preview-mode" className="w-56">
+            <SelectTrigger id="preview-mode" className="w-full sm:w-72">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

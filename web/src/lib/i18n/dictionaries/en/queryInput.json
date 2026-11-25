@@ -44,6 +44,7 @@
   "queryInput.pending": "Edited, not applied yet: press Enter or apply the query.",
   "queryInput.placeholder.assets": "Search, or e.g. ip=10.0.0.0/16 type=ip_address last_seen<7d",
   "queryInput.placeholder.findings": "Search, or e.g. severity>=high kev=true -status:accepted",
+  "queryInput.placeholder.scans": "Search, or e.g. status=active scan_type=workflow last_run_at<7d",
   "queryInput.problem.bad_value": "This value does not fit the field.",
   "queryInput.problem.invalid": "The filter is not valid.",
   "queryInput.problem.not_on_list": "The list cannot run this filter: keep word searches outside OR and negations.",
