@@ -352,7 +352,12 @@ function dpa(v: LegalValues): LegalSection[] {
     },
     {
       heading: 'Governing law',
-      body: <P>This addendum is governed by {v.jurisdiction}.</P>,
+      body: (
+        <P>
+          This addendum is governed by {v.jurisdiction}. Questions:{' '}
+          <LegalMail to={v.contactEmail} />.
+        </P>
+      ),
     },
   ]
 }

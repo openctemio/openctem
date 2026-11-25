@@ -80,7 +80,7 @@ describe('request access', () => {
   it('a link without a token fails without calling the API', async () => {
     window.history.replaceState(null, '', '/request-access/confirm')
     render(<RequestAccessConfirm />)
-    expect(await screen.findByText(/invalid or has expired/i)).toBeInTheDocument()
+    expect(await screen.findByText(/confirmation link does not work/i)).toBeInTheDocument()
     expect(confirmAccessRequestAction).not.toHaveBeenCalled()
   })
 })

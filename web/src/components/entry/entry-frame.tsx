@@ -39,6 +39,12 @@ export interface EntryFrameProps {
   className?: string
 }
 
+/**
+ * The footer's legal links step aside while the page itself shows them in its
+ * consent line ("By clicking sign in, you agree to ..."): one place per screen.
+ */
+const LEGAL_LINK_CLASS = 'group-has-[[data-slot=legal-notice]]/entry:hidden'
+
 export function EntryFrame({
   children,
   termsUrl = '',
@@ -52,7 +58,7 @@ export function EntryFrame({
       data-control-scale="entry"
       data-slot="entry-frame"
       className={cn(
-        'flex min-h-svh flex-col items-center gap-4 px-4 pb-6 pt-[max(3rem,env(safe-area-inset-top))] sm:gap-5 sm:pt-8',
+        'group/entry flex min-h-svh flex-col items-center gap-4 px-4 pb-6 pt-[max(3rem,env(safe-area-inset-top))] sm:gap-5 sm:pt-8',
         className
       )}
     >
@@ -80,12 +86,20 @@ export function EntryFrame({
         className="text-cap text-muted-foreground mt-auto flex w-full flex-wrap items-center justify-center gap-x-4 gap-y-1 sm:mt-0"
       >
         {termsUrl && (
-          <TextLink href={safeHref(termsUrl)} external={!termsUrl.startsWith('/')}>
+          <TextLink
+            href={safeHref(termsUrl)}
+            external={!termsUrl.startsWith('/')}
+            className={LEGAL_LINK_CLASS}
+          >
             {t('auth.legal.terms', 'Terms of Service')}
           </TextLink>
         )}
         {privacyUrl && (
-          <TextLink href={safeHref(privacyUrl)} external={!privacyUrl.startsWith('/')}>
+          <TextLink
+            href={safeHref(privacyUrl)}
+            external={!privacyUrl.startsWith('/')}
+            className={LEGAL_LINK_CLASS}
+          >
             {t('auth.legal.privacy', 'Privacy Policy')}
           </TextLink>
         )}

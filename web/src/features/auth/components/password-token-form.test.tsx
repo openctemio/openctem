@@ -19,7 +19,10 @@ const policy = vi.hoisted(() => ({
     reset_link_valid_minutes: 60,
   } as Record<string, unknown> | undefined,
 }))
-vi.mock('../api/use-auth-providers', () => ({ usePasswordPolicy: () => policy.current }))
+vi.mock('../api/use-auth-providers', () => ({
+  usePasswordPolicy: () => policy.current,
+  useEmailUnavailable: () => false,
+}))
 
 // The checkbox measures itself with ResizeObserver, which jsdom lacks.
 vi.stubGlobal(
@@ -92,7 +95,7 @@ describe('PasswordTokenForm', () => {
 
   it('setup mode without a token says to ask the administrator (no self-service reset link)', () => {
     render(<PasswordTokenForm mode="setup" token="" />)
-    expect(screen.getByText('Invalid setup link')).toBeInTheDocument()
+    expect(screen.getByText('This setup link does not work')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /request a new reset link/i })).toBeNull()
     expect(screen.getByRole('link', { name: /back to sign in/i })).toHaveAttribute('href', '/login')
   })
@@ -114,7 +117,7 @@ describe('PasswordTokenForm', () => {
     render(<PasswordTokenForm mode="setup" token="tok-3" />)
     await fillAndSubmit(/^set password$/i)
     const banner = await screen.findByRole('alert')
-    expect(banner).toHaveTextContent('Invalid setup link')
+    expect(banner).toHaveTextContent('This setup link does not work')
     expect(banner).toHaveTextContent(/ask your administrator for a new one/i)
     // No self-service advice: a setup link only comes from an administrator.
     expect(banner).not.toHaveTextContent(/request a new one/i)

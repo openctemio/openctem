@@ -15,9 +15,16 @@ import { useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import Link from '@/components/link'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 
-import { EntryActions, EntryBanner, EntryCard, EntryHeader } from '@/components/entry'
+import {
+  EntryActions,
+  EntryBackLink,
+  EntryBanner,
+  EntryCard,
+  EntryHeader,
+  EntryLinkProblem,
+} from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import { TextLink } from '@/components/ui/text-link'
 import {
@@ -37,7 +44,7 @@ import { authErrorText } from '../lib/auth-error-codes'
 import { translatingResolver } from '../lib/translating-resolver'
 import { RevokeApiKeysOption } from './revoke-api-keys-option'
 import { resetPasswordAction } from '../actions/local-auth-actions'
-import { usePasswordPolicy } from '../api/use-auth-providers'
+import { useEmailUnavailable, usePasswordPolicy } from '../api/use-auth-providers'
 import { passwordPolicyIssue } from '../lib/password-policy'
 import { PasswordPolicyHint } from './password-policy-hint'
 
@@ -51,8 +58,13 @@ interface ModeCopy {
   successDescription: string
   invalidTitle: string
   invalidDescription: string
-  /** Where to get a new link; null when only an administrator can issue one. */
+  /**
+   * Where to get a new link; null when only an administrator can issue one.
+   * A reset link on a server that cannot send email is also null (useModeCopy),
+   * so the page never sends the visitor to a form that cannot help.
+   */
   newLink: { href: string; label: string } | null
+  /** Who issues a new link when the visitor cannot request one here. */
   newLinkHint: string
 }
 
@@ -64,11 +76,10 @@ export const PASSWORD_TOKEN_COPY: Record<PasswordTokenMode, ModeCopy> = {
     successTitle: 'Password reset',
     successDescription:
       'Your password has been updated. Your sessions were signed out and connected apps were revoked. You can now sign in with your new password.',
-    invalidTitle: 'Invalid reset link',
-    invalidDescription:
-      'This password reset link is invalid or missing a token. Request a new one.',
+    invalidTitle: 'This reset link does not work',
+    invalidDescription: 'The link is incomplete or no longer works. Request a new one.',
     newLink: { href: '/forgot-password', label: 'Request a new reset link' },
-    newLinkHint: '',
+    newLinkHint: 'This server cannot send email. Ask your administrator for a new reset link.',
   },
   setup: {
     title: 'Set your password',
@@ -76,9 +87,9 @@ export const PASSWORD_TOKEN_COPY: Record<PasswordTokenMode, ModeCopy> = {
     submit: 'Set password',
     successTitle: 'Password set',
     successDescription: 'Your password is set. Sign in to continue.',
-    invalidTitle: 'Invalid setup link',
+    invalidTitle: 'This setup link does not work',
     invalidDescription:
-      'This setup link is invalid or missing a token. Ask your administrator for a new setup link.',
+      'The link is incomplete or no longer works. Ask your administrator for a new one.',
     newLink: null,
     newLinkHint: 'Setup links work once and expire. Ask your administrator for a new one.',
   },
@@ -87,7 +98,10 @@ export const PASSWORD_TOKEN_COPY: Record<PasswordTokenMode, ModeCopy> = {
 /** Translates a mode's copy; the English text in PASSWORD_TOKEN_COPY is the fallback. */
 function useModeCopy(mode: PasswordTokenMode): ModeCopy {
   const { t } = useTranslation()
+  const emailUnavailable = useEmailUnavailable()
   const c = PASSWORD_TOKEN_COPY[mode]
+  // No email on this server: a new reset link only comes from an administrator.
+  const newLink = emailUnavailable ? null : c.newLink
   const k = (field: string, fallback: string) =>
     fallback ? t(`auth.passwordToken.${mode}.${field}`, fallback) : fallback
   return {
@@ -97,8 +111,11 @@ function useModeCopy(mode: PasswordTokenMode): ModeCopy {
     successTitle: k('successTitle', c.successTitle),
     successDescription: k('successDescription', c.successDescription),
     invalidTitle: k('invalidTitle', c.invalidTitle),
-    invalidDescription: k('invalidDescription', c.invalidDescription),
-    newLink: c.newLink ? { href: c.newLink.href, label: k('newLinkLabel', c.newLink.label) } : null,
+    invalidDescription:
+      c.newLink && !newLink
+        ? k('newLinkHint', c.newLinkHint)
+        : k('invalidDescription', c.invalidDescription),
+    newLink: newLink ? { href: newLink.href, label: k('newLinkLabel', newLink.label) } : null,
     newLinkHint: k('newLinkHint', c.newLinkHint),
   }
 }
@@ -116,23 +133,20 @@ function isStaleLinkError(code: string | null) {
 
 export function PasswordTokenForm({ mode, token }: { mode: PasswordTokenMode; token: string }) {
   const copy = useModeCopy(mode)
-  const { t } = useTranslation()
 
   if (!token) {
     return (
-      <EntryCard>
-        <EntryHeader title={copy.invalidTitle} description={copy.invalidDescription} />
-        <EntryActions>
-          {/* The one way on is the card's main action. */}
-          <Button variant="signal" asChild>
-            {copy.newLink ? (
+      <EntryLinkProblem
+        title={copy.invalidTitle}
+        description={copy.invalidDescription}
+        action={
+          copy.newLink && (
+            <Button variant="signal" asChild>
               <Link href={copy.newLink.href}>{copy.newLink.label}</Link>
-            ) : (
-              <Link href="/login">{t('auth.common.backToSignIn', 'Back to sign in')}</Link>
-            )}
-          </Button>
-        </EntryActions>
-      </EntryCard>
+            </Button>
+          )
+        }
+      />
     )
   }
 
@@ -197,11 +211,8 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
         <EntryBanner tone="ok">{copy.successDescription}</EntryBanner>
         <EntryActions>
           <Button variant="signal" asChild>
-            <Link href="/login">
-              {mode === 'setup'
-                ? t('auth.passwordToken.signIn', 'Sign in')
-                : t('auth.common.backToSignIn', 'Back to sign in')}
-            </Link>
+            {/* Signing in is the next step, not a way back. */}
+            <Link href="/login">{t('auth.passwordToken.signIn', 'Sign in')}</Link>
           </Button>
         </EntryActions>
       </EntryCard>
@@ -296,12 +307,7 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
               {isPending ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
               {copy.submit}
             </Button>
-            <Button variant="outline" asChild>
-              <Link href="/login">
-                <ArrowLeft aria-hidden className="size-4" />
-                {t('auth.common.backToSignIn', 'Back to sign in')}
-              </Link>
-            </Button>
+            <EntryBackLink />
           </EntryActions>
         </form>
       </Form>

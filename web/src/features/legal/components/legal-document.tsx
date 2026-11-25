@@ -27,7 +27,6 @@ export function LegalDocument({
   documents = LEGAL_DOCS.map((d) => ({ label: d.title, href: d.path })),
   effective,
   sections,
-  contactLine,
   languageNote,
   labels,
 }: {
@@ -37,9 +36,8 @@ export function LegalDocument({
   documents?: SectionTab[]
   /** "Effective <date>", translated. */
   effective: string
+  /** Each document names its own contacts in its text, so the frame adds no contact footer. */
   sections: LegalSection[]
-  /** "Contact: ... Documentation: ...", translated. */
-  contactLine: ReactNode
   /** Shown under the date when the reader's language is not the text's (English). */
   languageNote?: string
   labels: StaticPageLabels
@@ -55,7 +53,6 @@ export function LegalDocument({
         meta={effective}
         note={languageNote}
         contents={{ toc, label: labels.onThisPage, print: labels.print }}
-        footer={<p>{contactLine}</p>}
         textLang="en"
       >
         {sections.map((s, i) => (

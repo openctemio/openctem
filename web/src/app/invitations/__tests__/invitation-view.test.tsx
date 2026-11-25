@@ -626,7 +626,10 @@ describe('InvitationView', () => {
 
     it('signed out: offers sign in, not "Open"', async () => {
       render(<InvitationView hasSession={false} />)
-      expect(await screen.findByRole('button', { name: /go to sign in/i })).toBeInTheDocument()
+      expect(await screen.findByRole('link', { name: /back to sign in/i })).toHaveAttribute(
+        'href',
+        '/login'
+      )
       expect(screen.queryByRole('button', { name: /^open /i })).toBeNull()
     })
 
