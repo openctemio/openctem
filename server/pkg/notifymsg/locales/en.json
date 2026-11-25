@@ -44,6 +44,7 @@
   "event.ci.schedule_missed": "CI scheduled scan missed",
   "event.ci.token_refusals": "CI token refusals",
   "event.ci.ungated_merge": "CI ungated merge",
+  "event.ci.gate_reopened": "CI gate reopened by a decision",
   "event.coverage_gap": "Coverage gap",
   "event.emerging_threat": "Emerging threat",
   "event.emerging_threat_digest": "Emerging threats daily digest",

@@ -125,6 +125,7 @@ func TestSeverityFilter_EveryEventTypeIsClassified(t *testing.T) {
 		EventTypeCIRunnerOutdated:     true,
 		EventTypeCIBreakGlass:         true,
 		EventTypeCIUngatedMerge:       true,
+		EventTypeCIGateReopened:       true,
 		EventTypeCINewRepositoryGroup: true,
 		EventTypeCITokenRefusals:      true,
 	}

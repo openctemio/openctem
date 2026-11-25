@@ -71,7 +71,7 @@ type InstallationFinder interface {
 // DecorationRepository queues runs to post.
 type DecorationRepository interface {
 	ClaimDecorations(ctx context.Context, limit int) ([]cirun.Run, error)
-	FinishDecoration(ctx context.Context, tenantID, runID shared.ID, state, detail string) error
+	FinishDecoration(ctx context.Context, tenantID, runID shared.ID, revision int, state, detail string) error
 	// CommitVerdicts returns the latest evaluated verdict of each pipeline
 	// on any of the commits of the repository.
 	CommitVerdicts(ctx context.Context, tenantID, assetID shared.ID, shas []string) ([]cirun.CommitVerdict, error)
@@ -124,7 +124,7 @@ func (j *DecorationJob) Run(ctx context.Context) (int, error) {
 	for i := range runs {
 		run := &runs[i]
 		state, detail := j.decorate(ctx, run)
-		if err := j.repo.FinishDecoration(ctx, run.TenantID, run.ID, state, detail); err != nil {
+		if err := j.repo.FinishDecoration(ctx, run.TenantID, run.ID, run.VerdictRevision, state, detail); err != nil {
 			j.log.Warn("ci decoration state not saved", "run_id", run.ID.String(), "error", logger.SanitizeError(err))
 		}
 	}

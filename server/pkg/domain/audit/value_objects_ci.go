@@ -29,6 +29,12 @@ const (
 	ActionCIRunResultsUploaded Action = "ci_run.results_uploaded"
 	// ActionCIRunEvaluated records a gate verdict.
 	ActionCIRunEvaluated Action = "ci_run.evaluated"
+	// ActionCIRunRejudged records a decision in the platform re-judging a
+	// stored run into a new verdict revision.
+	ActionCIRunRejudged Action = "ci_run.rejudged"
+	// ActionCIReopenPaused records the circuit breaker pausing one person's
+	// reopens.
+	ActionCIReopenPaused Action = "ci_settings.reopen_paused"
 	// ActionCIRepoExceptionsRequested records suppression requests a
 	// repository's .openctem.yml made (pending approval).
 	ActionCIRepoExceptionsRequested Action = "ci_run.exceptions_requested"
@@ -105,6 +111,8 @@ var _ = registerActions("ci", map[Action]Severity{
 	ActionCIRunTokenRefused:           SeverityMedium,
 	ActionCIRunResultsUploaded:        SeverityLow,
 	ActionCIRunEvaluated:              SeverityLow,
+	ActionCIRunRejudged:               SeverityHigh,
+	ActionCIReopenPaused:              SeverityHigh,
 	ActionCIRepoExceptionsRequested:   SeverityMedium,
 	ActionCIGatePolicyCreated:         SeverityMedium,
 	ActionCIGatePolicyUpdated:         SeverityMedium,

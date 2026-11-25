@@ -127,8 +127,32 @@ type Run struct {
 	// a short fixed explanation (never raw code-host text).
 	DecorationState  string
 	DecorationDetail string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// VerdictRevision is the revision Verdict holds (1 is the first verdict;
+	// 0 means judged before revisions existed, read as 1). A decision made
+	// in the platform can append later revisions (VerdictRevision type).
+	VerdictRevision int
+	// VerdictRevisedAt is when a decision last revised the verdict.
+	VerdictRevisedAt *time.Time
+	// GateJobID is the CI job that asked for the verdict, from the signed
+	// token it exchanged ("" when unknown); GateJobRetriedRevision the
+	// highest revision whose gate job the platform retried (GitLab).
+	GateJobID              string
+	GateJobRetriedRevision int
+	// TokenJobID is the CI job of the upload token that authenticated this
+	// request (verified claim; filled by GetRunByTokenHash, never stored on
+	// the run row).
+	TokenJobID string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
+// CurrentRevision is the revision the run's verdict holds (a run judged
+// before revisions existed holds revision 1).
+func (r *Run) CurrentRevision() int {
+	if r.VerdictRevision < 1 {
+		return 1
+	}
+	return r.VerdictRevision
 }
 
 // NewToken returns a fresh upload token and its hash. Only the hash is

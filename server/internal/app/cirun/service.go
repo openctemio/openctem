@@ -195,6 +195,9 @@ type Service struct {
 	vex       VEXApplier
 	kev       KEVChecker
 	mappings  MappingResolver
+	// heads and ruleReader serve re-judging after a decision (rejudge.go).
+	heads      HeadChecker
+	ruleReader SuppressionRuleReader
 
 	renameMu   sync.Mutex
 	renameSeen map[string]time.Time
