@@ -17,6 +17,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import type { ActionMenuSubmenu } from '@/components/ui/action-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { EmptyState } from '@/features/shared/components/empty-state'
 import { MetaLine } from '@/features/shared/components/text-layout'
 import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError } from '@/lib/api/error-handler'
@@ -149,6 +150,36 @@ export function DashboardFreshness({ kind, data }: DashboardFreshnessProps) {
 /** Whether the figures need a notice: still being built, or stale. */
 export function hasDataNotice(data?: DashboardData): boolean {
   return !!data && (!data.facts_built_at || !!data.stale)
+}
+
+/**
+ * The organization's figures are being counted for the first time and no
+ * widget has a figure yet: the page shows one notice instead of a box per
+ * widget that each says the same.
+ */
+export function isFirstBuild(data?: DashboardData): boolean {
+  return !!data && !data.facts_built_at && data.widgets.every((w) => w.state !== 'ready')
+}
+
+/**
+ * One notice for the first count of the figures: what is happening and
+ * when the figures come (the page reads them again every 15 s while it
+ * runs, so they appear without a reload).
+ */
+export function DashboardFirstBuild() {
+  const { t } = useTranslation()
+  return (
+    <div role="status" data-testid="dashboard-first-build">
+      <EmptyState
+        icon={Clock}
+        title={t('dashboards.firstBuild.title', 'Your figures are being prepared')}
+        description={t(
+          'dashboards.firstBuild.description',
+          'The first count of your data usually takes a few minutes. The figures appear here by themselves when they are ready.'
+        )}
+      />
+    </div>
+  )
 }
 
 /**

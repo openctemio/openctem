@@ -164,6 +164,8 @@
   "dashboards.editor.width": "{name}: rộng {span} trên {cols} cột",
   "dashboards.empty.import": "Nhập kết quả",
   "dashboards.empty.scan": "Thiết lập quét",
+  "dashboards.firstBuild.description": "Lần đếm dữ liệu đầu tiên thường mất vài phút. Số liệu sẽ tự hiện ở đây khi xong.",
+  "dashboards.firstBuild.title": "Đang chuẩn bị số liệu",
   "dashboards.flow.fixed": "Đã khắc phục",
   "dashboards.flow.opened": "Mới",
   "dashboards.flowPanel.added": "Đã thêm luồng phơi nhiễm lên đầu bảng điều khiển",

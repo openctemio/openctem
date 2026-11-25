@@ -45,6 +45,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { type ActionMenuEntry } from '@/components/ui/action-menu'
 import {
+  DETAIL_GRID,
+  DETAIL_RAIL,
+  DETAIL_STRIP,
   DetailPageHeader,
   DetailSectionList,
   PropertyFold,
@@ -196,10 +199,10 @@ const TAB_ICON: Record<TabKey, LucideIcon> = {
   activity: History,
 }
 
-/** The page's grid: the tab strip across, then the panel beside the properties rail. */
-const GRID = 'grid min-w-0 gap-page xl:grid-cols-[minmax(0,1fr)_19rem]'
-const RAIL = 'min-w-0 max-xl:order-2 xl:sticky xl:top-4 xl:col-start-2 xl:row-start-2 xl:self-start'
-const STRIP = 'min-w-0 max-xl:order-3 xl:col-span-2 xl:row-start-1'
+/** The shared detail grid: the tab strip across, then the panel beside the properties rail. */
+const GRID = cn(DETAIL_GRID, 'gap-page')
+const RAIL = DETAIL_RAIL
+const STRIP = DETAIL_STRIP
 const PANEL = 'min-w-0 max-xl:order-4 xl:col-start-1 xl:row-start-2'
 /**
  * Tabs that hold a wide table or a tree beside a table. From 1280 px their

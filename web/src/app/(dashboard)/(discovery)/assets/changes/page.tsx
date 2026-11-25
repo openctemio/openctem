@@ -144,6 +144,7 @@ function valueLabel(t: T, field: string | undefined, value: string | undefined):
 }
 
 function ChangeDetail({ change, t }: { change: StateChangeResponse; t: T }) {
+  const { locale } = useTranslation()
   if (change.field && (change.old_value || change.new_value)) {
     return (
       <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm">
@@ -161,7 +162,7 @@ function ChangeDetail({ change, t }: { change: StateChangeResponse; t: T }) {
   // reason never makes every row of the list five lines tall.
   return (
     <CellText className="text-sm text-muted-foreground">
-      {changeReasonLabel(change.reason, t)}
+      {changeReasonLabel(change.reason, t, locale)}
     </CellText>
   )
 }

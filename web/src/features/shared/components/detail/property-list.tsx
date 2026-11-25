@@ -16,7 +16,8 @@
  *
  * No card: groups are separated by a rule. The list follows the width it is
  * given (a container query): one column in a rail, two columns when it sits
- * under the header on a narrower page. Below 768 px every row is a 44 px
+ * under the header on a narrower page. A value that does not fit beside its
+ * label goes under it, on the row's whole width, instead of being cut. Below 768 px every row is a 44 px
  * line with the value at the end (also with a 36 px control in it), and a
  * `PropertyFold` keeps the long tail one tap away; from 768 px a fold is
  * always open.
@@ -108,19 +109,31 @@ export function PropertyRow({ label, children, top, className }: PropertyRowProp
     <div
       data-slot="property-row"
       className={cn(
-        'grid min-h-control min-w-0 grid-cols-[6.75rem_minmax(0,1fr)] gap-x-3',
-        top ? 'items-start' : 'items-center',
+        // From 768 px the label has a 6.75rem column and the value the rest
+        // of the line; a value wider than that place (an e-mail beside its
+        // avatar, "2 watchers" in Vietnamese, a long name) goes on a line of
+        // its own under the label, with the whole width, instead of being
+        // cut. A short value stays beside its label.
+        'min-h-control min-w-0 gap-x-3 md:flex md:flex-wrap',
+        top ? 'md:items-start' : 'md:items-center',
         // Phone: a full-width 44 px line, the value at the end. The padding is
         // small enough that a 36 px control keeps the line at 44 px (2 + 36 +
         // 2 + the 1 px rule, then the minimum); a value of several lines
         // (`top`) keeps more air above and below.
-        'max-md:min-h-touch-target max-md:grid-cols-[auto_minmax(0,1fr)] max-md:items-center max-md:border-b max-md:border-border-subtle',
+        'max-md:grid max-md:min-h-touch-target max-md:grid-cols-[auto_minmax(0,1fr)] max-md:items-center max-md:border-b max-md:border-border-subtle',
         top ? 'max-md:py-1.5' : 'max-md:py-0.5',
         className
       )}
     >
-      <dt className={cn('text-dense text-muted-foreground', top && 'md:pt-1.5')}>{label}</dt>
-      <dd className="min-w-0 text-dense break-words max-md:flex max-md:flex-col max-md:items-end max-md:text-end">
+      <dt
+        className={cn(
+          'text-dense text-muted-foreground md:w-[6.75rem] md:shrink-0',
+          top && 'md:pt-1.5'
+        )}
+      >
+        {label}
+      </dt>
+      <dd className="min-w-0 text-dense break-words max-md:flex max-md:flex-col max-md:items-end max-md:text-end md:flex-[1_1_auto]">
         {children}
       </dd>
     </div>
