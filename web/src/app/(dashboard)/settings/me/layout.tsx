@@ -1,8 +1,7 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
-import { Main } from '@/components/layout'
-import { PageHeader, PageStack } from '@/features/shared'
+import { SettingsPage } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { activeSettingsItem } from '@/config/settings-nav'
 
@@ -14,6 +13,8 @@ import { activeSettingsItem } from '@/config/settings-nav'
  * own account (profile, security, preferences) is the account area. The
  * settings rail ("Your membership" group) is the navigation; the header is the
  * current item's title and description from src/config/settings-nav.ts.
+ * It is the shared settings frame (SettingsPage): the header and one column
+ * at the settings reading width, sections divided by hairlines.
  */
 export default function MembershipLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -21,18 +22,15 @@ export default function MembershipLayout({ children }: { children: React.ReactNo
   const item = activeSettingsItem(pathname)
 
   return (
-    <Main>
-      <PageStack>
-        <PageHeader
-          title={
-            item
-              ? t(`settings.item.${item.id}`, item.title)
-              : t('settings.group.membership', 'Your membership')
-          }
-          description={item ? t(`settings.desc.${item.id}`, item.description) : undefined}
-        />
-        {children}
-      </PageStack>
-    </Main>
+    <SettingsPage
+      title={
+        item
+          ? t(`settings.item.${item.id}`, item.title)
+          : t('settings.group.membership', 'Your membership')
+      }
+      description={item ? t(`settings.desc.${item.id}`, item.description) : undefined}
+    >
+      {children}
+    </SettingsPage>
   )
 }

@@ -452,7 +452,7 @@ function HolderPhoneCard({
     <div data-slot="holder-card" className="flex w-full min-w-0 items-start gap-2 px-3 py-3">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 flex-1 truncate font-medium" title={name}>
+          <span data-cut-tooltip className="min-w-0 flex-1 truncate font-medium" title={name}>
             {name}
           </span>
           <span className="flex shrink-0 flex-wrap justify-end gap-1">
@@ -464,7 +464,7 @@ function HolderPhoneCard({
           </span>
         </div>
         {email && (
-          <span className="truncate text-cap text-muted-foreground" title={email}>
+          <span data-token className="text-cap text-muted-foreground [overflow-wrap:anywhere]">
             {email}
           </span>
         )}
@@ -508,7 +508,7 @@ function RolePhoneCard({ role }: { role: PlatformRoleInfo }) {
             : t('admin.roles.kind.additional', 'Additional')}
         </Badge>
       </div>
-      {desc && <p className="line-clamp-2 text-cap text-muted-foreground">{desc}</p>}
+      {desc && <p className="text-cap text-muted-foreground">{desc}</p>}
       <MetaLine
         items={[
           <span key="permissions" className="tabular-nums">
