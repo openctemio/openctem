@@ -315,6 +315,13 @@ export const isSignedOutRoute = (route: string) =>
 /** Widths that also get the empty and one-row data and the main overlays. */
 export const OVERLAY_WIDTHS = [390, 1440]
 
+/**
+ * Widths that also open a list row's quick-view sheet (overlay `detail`)
+ * with the sidebar expanded: a tablet in landscape, where the sheet covers
+ * most of a narrow list (owner report 2026-11-24, the emerging-threat sheet).
+ */
+export const DETAIL_OVERLAY_WIDTHS = [1024]
+
 export function matrixWidths(mode: string | undefined): { width: number; height: number }[] {
   if (mode === 'ci') return MATRIX_V2.filter((w) => MATRIX_CI.includes(w.width))
   const only = process.env.LAYOUT_WIDTHS?.split(',').map(Number).filter(Boolean)

@@ -1168,7 +1168,10 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
   `src/features/shared/components/detail-sheet.tsx`: a `<DetailCallout>`
   first when something is wrong (the problem in plain words, the fix as a
   button; nothing when all is well), a `<DetailStatGrid>` of 2–4
-  `<DetailStat>`s (leave out a number the data does not have), then
+  `<DetailStat>`s (leave out a number the data does not have; its columns
+  follow its own width by a container query, not the viewport, so a drawer
+  keeps two per row and one row needs about 10rem a cell; labels and
+  captions wrap, never cut), then
   `<DetailSections>` (dividers, not cards) ending with identity and trivia
   (IDs, legacy fields) behind a "More details" disclosure. Header: at most one
   primary and one outline button; security and lifecycle actions (rotate key,

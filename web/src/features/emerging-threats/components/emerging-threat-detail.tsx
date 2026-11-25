@@ -20,10 +20,17 @@ import { PageStack } from '@/features/shared/components/page-stack'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { formatEpssScore } from '@/lib/epss'
 import { useEmergingThreat } from '../api'
-import type { EmergingThreatDetail, EtsBreakdown } from '../types'
+import type { EmergingThreatDetail } from '../types'
 import { AffectedAssets } from './affected-assets'
 import { AlertActions, OutOfScopeHint, TaskCoverageNote } from './alert-actions'
-import { EtsCell, LevelBadge, StateBadge, useEventDetail, useEventKindLabel } from './bits'
+import {
+  EtsBreakdownBars,
+  EtsCell,
+  LevelBadge,
+  StateBadge,
+  useEventDetail,
+  useEventKindLabel,
+} from './bits'
 import { formatDate } from '@/lib/app-locale'
 
 export function EmergingThreatDetailView({ id }: { id: string }) {
@@ -129,16 +136,8 @@ function DetailBody({ alert }: { alert: EmergingThreatDetail }) {
   )
 }
 
-const PARTS: (keyof Omit<EtsBreakdown, 'total' | 'confidence'>)[] = [
-  'exploitation',
-  'severity',
-  'exposure',
-  'freshness',
-]
-
 function ScoreCard({ alert }: { alert: EmergingThreatDetail }) {
   const { t } = useTranslation()
-  const b = alert.ets_breakdown
   return (
     <Card>
       <CardHeader>
@@ -147,22 +146,7 @@ function ScoreCard({ alert }: { alert: EmergingThreatDetail }) {
       </CardHeader>
       <CardContent className="space-y-3">
         <EtsCell ets={alert.ets} />
-        <dl className="grid max-w-sm grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm">
-          {PARTS.map((k) => (
-            <div key={k} className="contents">
-              <dt className="text-muted-foreground">{t(`emergingThreats.breakdown.${k}`)}</dt>
-              <dd className="text-end tabular-nums">{b[k]}</dd>
-            </div>
-          ))}
-          <dt className="text-muted-foreground">{t('emergingThreats.breakdown.confidence')}</dt>
-          <dd className="text-end tabular-nums">
-            {t('emergingThreats.breakdown.multiplier', undefined, {
-              value: Number(b.confidence.toFixed(2)),
-            })}
-          </dd>
-          <dt className="font-medium">{t('emergingThreats.breakdown.total')}</dt>
-          <dd className="text-end font-semibold tabular-nums">{b.total}</dd>
-        </dl>
+        <EtsBreakdownBars breakdown={alert.ets_breakdown} />
       </CardContent>
     </Card>
   )
