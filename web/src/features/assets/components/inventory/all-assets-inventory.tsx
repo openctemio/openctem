@@ -96,7 +96,7 @@ import {
 } from '@/features/query/components/query-mode'
 import { formatTotal } from '../../lib/capped-count'
 import { TABS_LENS, openTab, tabCounts, withTab } from '../../lib/inventory-tabs'
-import { InventoryTypeTabs } from './inventory-type-tabs'
+import { InventoryTypeSelect } from './inventory-type-select'
 import { InventoryNetworks } from './inventory-networks'
 import {
   FilterGroupActions,
@@ -949,15 +949,6 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
         </PageHeader>
         <AssetsSectionTabs />
 
-        {inTabsLens && (
-          <InventoryTypeTabs
-            value={tab?.id}
-            counts={tabTotals}
-            total={lensStats.total}
-            onChange={selectTab}
-          />
-        )}
-
         {/* The view's title row: its name and its one count (the results the
             list shows, filters and search applied), then the list's actions.
             The page header keeps the page-level ones (Add, the view switch). */}
@@ -1077,15 +1068,27 @@ export function AllAssetsInventory({ viewSwitcher }: { viewSwitcher?: ReactNode 
                 filterToggle={filterToggle}
                 toolbarStart={
                   // Kept in Query mode (dimmed and inert), so the switch moves nothing.
-                  <InventoryAddFilter
-                    groups={facetGroups}
-                    attributeFacets={attributeFacets}
-                    tagTypes={typeView ? [typeView.type] : undefined}
-                    filters={filters}
-                    stats={scopeLabel ? typeStats : stats}
-                    onChange={setFilters}
-                    onOpenChange={(open) => open && setFacetsWanted(true)}
-                  />
+                  // In the External surface lens the type comes first: a token,
+                  // not a second tab row under the Assets tabs.
+                  <>
+                    {inTabsLens && (
+                      <InventoryTypeSelect
+                        value={tab?.id}
+                        counts={tabTotals}
+                        total={lensStats.total}
+                        onChange={selectTab}
+                      />
+                    )}
+                    <InventoryAddFilter
+                      groups={facetGroups}
+                      attributeFacets={attributeFacets}
+                      tagTypes={typeView ? [typeView.type] : undefined}
+                      filters={filters}
+                      stats={scopeLabel ? typeStats : stats}
+                      onChange={setFilters}
+                      onOpenChange={(open) => open && setFacetsWanted(true)}
+                    />
+                  </>
                 }
                 toolbarEnd={
                   <>

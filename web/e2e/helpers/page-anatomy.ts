@@ -156,10 +156,11 @@ export async function probe(page: Page, allTables = false): Promise<Probe> {
       }
     })
     // A SegmentedLens on a page (the control that used to filter rows); radio
-    // and toggle groups in forms and wizards are inputs, not row filters, and a
-    // lens in a route-lens wrapper switches between routes (navigation).
+    // and toggle groups in forms and wizards are inputs, not row filters. No
+    // lens is exempt: a lens that switches between routes is a second tab
+    // level (owner rule 2026-11-24: one tab level per screen).
     const rowFilterSegmented = Array.from(main.querySelectorAll('[data-testid="segmented-lens"]'))
-      .filter((n) => shown(n) && !overlay(n) && !n.closest('[data-slot="route-lens"]'))
+      .filter((n) => shown(n) && !overlay(n))
       .map((n) => n.getAttribute('aria-label') ?? '')
 
     const metricStrips = Array.from(main.querySelectorAll('[data-slot="metric-strip"]'))
@@ -540,7 +541,10 @@ export async function checkAt(
   }
   expect.soft(r.tabRows, `${at}: one tab row per page`).toBeLessThanOrEqual(1)
   expect
-    .soft(r.rowFilterSegmented, `${at}: a row filter is a filter token, not a segmented control`)
+    .soft(
+      r.rowFilterSegmented,
+      `${at}: one tab level per screen: no segmented control switches routes or rows under the tabs (a row filter is a filter token)`
+    )
     .toEqual([])
   for (const s of r.tabStrips) {
     expect.soft([0, s.count], `${at}: every tab has an icon or none has`).toContain(s.icons)

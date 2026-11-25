@@ -27,9 +27,12 @@ Grouped by CTEM stage in `src/config/sidebar-data.ts`:
   `/cycles/[id]`), Business context (tabs Crown jewels · Services · Units),
   Scope (`/scope`: Targets · Exclusions · Seeds), Threat model (tabs
   Threats · Attacker profiles).
-- **Discovery** — Scans, Sensors, Attack surface (one row; tabs Overview ·
-  Review · Lookalikes · Changes · Web surface, + external), Assets (one row;
-  tabs Inventory · Needs attention · Groups · Activity), Exposures (one row; its
+- **Discovery** — Scans, Sensors, Attack surface (one row, one tab level: tabs
+  Overview, Technologies, Certificates, Web surface, Exposures, Lookalikes,
+  Changes, Page changes, Discovery, Review; Posture opens from the Overview's
+  posture section, not as a tab; + external), Assets (one row;
+  tabs Inventory · Needs attention · Groups · Activity; in the External surface
+  view the asset type is a "Type" filter token, not a second tab row), Exposures (one row; its
   Overview, Vulnerabilities, Secrets, Code weaknesses and Misconfigurations
   views are in-page section tabs), Credential leaks, Components.
   `/attack-surface/internal` and `/cloud` were retired; they redirect to the
