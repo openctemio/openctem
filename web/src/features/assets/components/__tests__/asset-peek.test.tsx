@@ -84,7 +84,7 @@ describe('AssetPeekLink', () => {
  */
 // Views still in open pull requests when this gate landed; each moves to
 // AssetPeekLink after it merges (research/353 migration plan). Never add one.
-const PENDING = new Set(['easm-posture.tsx', 'easm-exposure-items.tsx'])
+const PENDING = new Set(['easm-exposure-items.tsx'])
 
 describe('attack surface rows', () => {
   it('open assets through AssetPeekLink', () => {

@@ -294,6 +294,9 @@ export const ROUTE_STATES: Record<string, RouteState> = {
       await shown(page, 'main [role="alert"]')
     },
   },
+  // A page tab the bare route does not open: /sensors starts on its sensors
+  // list, the scan zones (their list and the coverage card) are a tab.
+  '/sensors@zones': { path: '/sensors?tab=zones' },
 }
 
 /** The page a matrix route opens: its state's path, or the route itself. */
@@ -314,6 +317,13 @@ export const isSignedOutRoute = (route: string) =>
 
 /** Widths that also get the empty and one-row data and the main overlays. */
 export const OVERLAY_WIDTHS = [390, 1440]
+
+/**
+ * Widths that also open a list row's quick-view sheet (overlay `detail`)
+ * with the sidebar expanded: a tablet in landscape, where the sheet covers
+ * most of a narrow list (owner report 2026-11-24, the emerging-threat sheet).
+ */
+export const DETAIL_OVERLAY_WIDTHS = [1024]
 
 export function matrixWidths(mode: string | undefined): { width: number; height: number }[] {
   if (mode === 'ci') return MATRIX_V2.filter((w) => MATRIX_CI.includes(w.width))

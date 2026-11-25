@@ -16,7 +16,7 @@
 # ==============================================================================
 # BASE STAGE - Common dependencies
 # ==============================================================================
-FROM node:26-alpine@sha256:6f08a523443ddedf52941874c203475b0ad503e859ad70cb26ab8be9a517dbd5 AS base
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS base
 
 # Add libc6-compat for Alpine compatibility with some npm packages
 RUN apk add --no-cache libc6-compat
@@ -139,7 +139,15 @@ ENV NEXT_PUBLIC_APP_COMMIT=$NEXT_PUBLIC_APP_COMMIT
 
 RUN npm run build:console
 
-FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS console
+# Alpine 3.24 ships OpenSSL 3.5.9-r0 in the pinned digest; 3.5.9-r1 fixes the open CVEs.
+# The upgrade runs in its own stage and the patched root filesystem is copied
+# into one layer: a RUN on top of the base would keep the old OpenSSL in the
+# base layer and add the new one beside it (+12 MB per image).
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS alpine-patched
+RUN apk upgrade --no-cache libssl3 libcrypto3
+
+FROM scratch AS console
+COPY --from=alpine-patched / /
 
 RUN apk add --no-cache libstdc++ libgcc libatomic
 COPY --from=base /usr/local/bin/node /usr/local/bin/node
@@ -192,7 +200,15 @@ CMD ["node", "console/server.js"]
 # the one the node image is built on (node:26-alpine), so node finds the C++
 # runtime it was linked against; `node --version` below fails the build
 # otherwise.
-FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS production
+# Alpine 3.24 ships OpenSSL 3.5.9-r0 in the pinned digest; 3.5.9-r1 fixes the open CVEs.
+# The upgrade runs in its own stage and the patched root filesystem is copied
+# into one layer: a RUN on top of the base would keep the old OpenSSL in the
+# base layer and add the new one beside it (+12 MB per image).
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS alpine-patched-prod
+RUN apk upgrade --no-cache libssl3 libcrypto3
+
+FROM scratch AS production
+COPY --from=alpine-patched-prod / /
 
 # node's shared libraries (see `ldd /usr/local/bin/node` in the node image).
 RUN apk add --no-cache libstdc++ libgcc libatomic && apk upgrade --no-cache zlib

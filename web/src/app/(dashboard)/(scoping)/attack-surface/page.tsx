@@ -204,8 +204,6 @@ export default function AttackSurfacePage() {
             </Alert>
           )}
 
-          <EASMPostureCard />
-
           <MetricStrip
             loading={isLoading || summaryLoading}
             items={[
@@ -263,6 +261,10 @@ export default function AttackSurfacePage() {
               },
             ]}
           />
+
+          {/* The numbers first (the strip right under the tabs), then the grade
+              and what to fix to raise it. */}
+          <EASMPostureCard />
 
           <EASMOverview />
 
