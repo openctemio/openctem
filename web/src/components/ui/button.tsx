@@ -85,7 +85,7 @@ const ICON_ONLY_BELOW = {
  * choosing iconOnlyBelow; a text-only button keeps its label.
  */
 const IN_PAGE_HEADER =
-  'max-sm:in-data-[slot=page-header-actions]:has-[>svg]:aspect-square max-sm:in-data-[slot=page-header-actions]:has-[>svg]:gap-0 max-sm:in-data-[slot=page-header-actions]:has-[>svg]:px-0 max-sm:in-data-[slot=page-header-actions]:has-[>svg]:!text-[0px] max-sm:in-data-[slot=page-header-actions]:[&>svg~svg]:hidden max-sm:in-data-[slot=page-header-actions]:has-[>svg]:[&>span]:!text-[0px]'
+  'max-sm:in-data-[slot=page-header-actions]:has-[>svg]:aspect-square max-sm:in-data-[slot=page-header-actions]:has-[>svg]:gap-0 max-sm:in-data-[slot=page-header-actions]:has-[>svg]:px-0 max-sm:in-data-[slot=page-header-actions]:has-[>svg]:!text-[0px] max-sm:in-data-[slot=page-header-actions]:[&>svg~svg]:hidden max-sm:in-data-[slot=page-header-actions]:has-[>svg]:[&>span]:!text-[0px]' // anatomy-ok: hides the label visually on a phone, keeps it as the accessible name
 
 function Button({
   className,
