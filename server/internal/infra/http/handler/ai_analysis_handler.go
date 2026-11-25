@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -80,8 +81,10 @@ type AIAgentListResponse struct {
 
 // AIRunResponse is one run with its provenance.
 type AIRunResponse struct {
-	ID          string `json:"id"`
-	AIAgentID   string `json:"ai_agent_id,omitempty"`
+	ID        string `json:"id"`
+	AIAgentID string `json:"ai_agent_id,omitempty"`
+	// AIAgentName is the AI agent's name now (empty once it is deleted).
+	AIAgentName string `json:"ai_agent_name,omitempty"`
 	UseCase     string `json:"use_case"`
 	Kind        string `json:"kind"`
 	SubjectType string `json:"subject_type"`
@@ -212,6 +215,28 @@ func toAIRun(run *aidom.Run) AIRunResponse {
 		Accountable: toAIOwners(run.Accountable), LegacyOutput: run.LegacyOutput, CreatedAt: run.CreatedAt,
 		CompletedAt: run.CompletedAt, ModelFamily: run.ModelFamily, ResultDigest: run.ResultDigest,
 		Outcome: string(run.Outcome), ActionLog: toAIRunActions(run.ActionLog),
+	}
+}
+
+// nameAIAgents puts each run's AI agent name on it (read once per AI agent,
+// in the caller's tenant). An AI agent that cannot be read leaves the name
+// empty; the run still shows.
+func (h *AIAnalysisHandler) nameAIAgents(ctx context.Context, tenantID shared.ID, runs []*AIRunResponse) {
+	names := map[string]string{}
+	for _, run := range runs {
+		if run.AIAgentID == "" {
+			continue
+		}
+		name, ok := names[run.AIAgentID]
+		if !ok {
+			if id, err := shared.IDFromString(run.AIAgentID); err == nil {
+				if a, err := h.svc.Get(ctx, tenantID, id); err == nil {
+					name = a.Name
+				}
+			}
+			names[run.AIAgentID] = name
+		}
+		run.AIAgentName = name
 	}
 }
 
@@ -609,6 +634,7 @@ func (h *AIAnalysisHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := toAIRun(run)
+	h.nameAIAgents(r.Context(), tenantID, []*AIRunResponse{&out})
 	if h.knowledge != nil {
 		// The run's subject is in the viewer's scope (checked above); team
 		// document names follow the viewer's own teams.
@@ -660,6 +686,11 @@ func (h *AIAnalysisHandler) ListFindingRuns(w http.ResponseWriter, r *http.Reque
 	for _, run := range runs {
 		out.Data = append(out.Data, toAIRun(run))
 	}
+	refs := make([]*AIRunResponse, 0, len(out.Data))
+	for i := range out.Data {
+		refs = append(refs, &out.Data[i])
+	}
+	h.nameAIAgents(r.Context(), tenantID, refs)
 	writeAIJSON(w, http.StatusOK, out)
 }
 
