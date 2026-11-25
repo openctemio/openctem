@@ -4,6 +4,7 @@ import type { MouseEvent, ReactNode } from 'react'
 import Link from '@/components/link'
 import { safeInternalHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
+import { plainText } from './cell-text'
 
 /**
  * Whether a click is the plain one (primary button, no modifier key). A
@@ -27,7 +28,10 @@ export interface RowNameLinkProps {
   onOpen: () => void
   /** Accessible name; it must contain the visible name. Default: the content. */
   label?: string
-  /** The full text, shown on pointer hover when the cell cuts the name. */
+  /**
+   * The full text, shown on pointer hover when the cell cuts the name.
+   * Default: the content, when it is plain text.
+   */
   title?: string
   /** Lines before the name is cut: 1 in a table (default), 2 on a card. */
   lines?: 1 | 2
@@ -56,6 +60,7 @@ export function RowNameLink({
   className,
   children,
 }: RowNameLinkProps) {
+  const full = title ?? plainText(children)
   return (
     <Link
       // A page of this app only: anything else leads nowhere.
@@ -63,7 +68,9 @@ export function RowNameLink({
       prefetch={false}
       dir="auto"
       data-slot={slot}
-      title={title}
+      title={full}
+      // The row's name may end in an ellipsis: its full text is the title.
+      data-cut-tooltip={full !== undefined ? '' : undefined}
       aria-label={label}
       className={cn(
         'min-w-0 rounded-sm text-start font-medium [unicode-bidi:isolate] hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset',

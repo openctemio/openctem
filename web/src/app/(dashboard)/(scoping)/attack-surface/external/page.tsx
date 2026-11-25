@@ -515,6 +515,9 @@ export default function ExternalSurfacePage() {
     () => [
       {
         id: 'name',
+        // The row's name: a long one ends in an ellipsis, its full text the
+        // cell's title.
+        meta: { kind: 'name', label: t('attackSurface.external.col.asset', 'Asset') },
         header: t('attackSurface.external.col.asset', 'Asset'),
         enableSorting: false,
         cell: ({ row }) => (
