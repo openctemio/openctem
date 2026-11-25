@@ -3,7 +3,7 @@
 import type { ColumnDef } from '@tanstack/react-table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
-import { DataTableRowActions, RelativeTime } from '@/features/shared'
+import { CellText, DataTableRowActions, RelativeTime } from '@/features/shared'
 import { ExposureThreatPills } from './exposure-enrichment'
 import { APPROVE_REQUIRED_REASON } from './exposure-state-actions'
 import { ExposureStateBadge } from './exposure-state-badge'
@@ -253,9 +253,7 @@ export function getExposureColumns(
       },
       enableSorting: false,
       cell: ({ row }) => (
-        <span className="block truncate text-muted-foreground" title={row.original.source}>
-          {row.original.source}
-        </span>
+        <CellText className="text-muted-foreground">{row.original.source}</CellText>
       ),
     },
     {

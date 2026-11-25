@@ -208,6 +208,9 @@ export function ScanProfilesSection() {
     () => [
       {
         id: 'name',
+        // The row's name: its description may end in an ellipsis, the full
+        // text in the cell's title.
+        meta: { kind: 'name', label: t('scans.profiles.name') },
         accessorFn: (p) => `${p.name} ${p.description ?? ''}`,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('scans.profiles.name')} />

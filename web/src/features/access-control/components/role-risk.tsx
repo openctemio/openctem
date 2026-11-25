@@ -104,11 +104,14 @@ export function RoleSummaryLine({
   max = 4,
   className,
   id,
+  clamp,
 }: {
   summary: RoleSummary | undefined
   max?: number
   className?: string
   id?: string
+  /** Two lines at most (a table cell): a longer line ends in an ellipsis, its full text the title. */
+  clamp?: boolean
 }) {
   const { t } = useTranslation()
   const words = useRoleWords()
@@ -137,7 +140,16 @@ export function RoleSummaryLine({
   // Sentences, not a dotted list: each part starts a new sentence.
   const line = parts.map((p) => `${p.charAt(0).toUpperCase()}${p.slice(1)}.`).join(' ')
   return (
-    <p id={id} className={cn('text-xs text-muted-foreground', className)}>
+    <p
+      id={id}
+      title={clamp ? line : undefined}
+      data-cut-tooltip={clamp ? '' : undefined}
+      className={cn(
+        'text-xs text-muted-foreground',
+        clamp && 'line-clamp-2 break-words',
+        className
+      )}
+    >
       {line}
     </p>
   )

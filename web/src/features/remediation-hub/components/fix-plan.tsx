@@ -23,6 +23,7 @@ import {
   MetricStrip,
   RowNameLink,
   type MetricStripItem,
+  CellText,
 } from '@/features/shared'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { MetaLine } from '@/features/shared/components/text-layout'
@@ -272,11 +273,7 @@ export function FixPlan() {
           label: t('remediationHub.tasks.columns.owner'),
           hideBelow: PLAN_HIDE_BELOW.owner,
         },
-        cell: ({ row }) => (
-          <span className="block truncate text-sm" title={ownerOf(row.original.task)}>
-            {ownerOf(row.original.task)}
-          </span>
-        ),
+        cell: ({ row }) => <CellText className="text-sm">{ownerOf(row.original.task)}</CellText>,
       },
       {
         id: 'deadline',
