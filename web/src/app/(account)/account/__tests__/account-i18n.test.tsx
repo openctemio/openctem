@@ -102,7 +102,7 @@ describe('account pages in Vietnamese', () => {
 
   it('activity page', () => {
     inVi(<ActivityPage />)
-    expect(screen.getByText('Nhật ký hoạt động')).toBeInTheDocument()
+    // No card title repeating the page header: the empty state speaks for the list.
     expect(screen.getByText('Không có hoạt động nào')).toBeInTheDocument()
     expect(screen.queryByText('No activity found')).toBeNull()
   })
