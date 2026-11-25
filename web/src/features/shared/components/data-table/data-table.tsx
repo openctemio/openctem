@@ -944,7 +944,7 @@ function AutoMobileCard<TData>({
             // Two fields on one line: the first at its own width, at most half
             // the line; the second takes the rest, so its value ends at the
             // card's edge rather than at a fixed middle.
-            'mt-1 grid grid-cols-[fit-content(50%)_minmax(0,1fr)] gap-x-3 overflow-hidden',
+            '@container mt-1 grid grid-cols-[fit-content(50%)_minmax(0,1fr)] gap-x-3 overflow-hidden',
             pick?.wide.length ? 'auto-rows-[1.25rem] gap-y-1' : 'h-5',
             select && 'ps-7'
           )}
@@ -962,10 +962,11 @@ function AutoMobileCard<TData>({
               }
               className={cn('flex min-w-0 items-baseline gap-1.5', fullLine && 'col-span-2')}
             >
-              {/* The label keeps at least 6rem ("Assets" beside "12" is never
-                  "As…"), at most half the field beyond that, so a chip value
-                  keeps its room. */}
-              <dt className="max-w-[max(50%,6rem)] shrink-0 truncate text-xs text-muted-foreground">
+              {/* At most half its field, but never less than a quarter of the
+                  line (cqw: the field list is the size container): a short
+                  value no longer cuts its label ("As…" beside "12"), and a
+                  half-line field keeps the half of it its chip needs. */}
+              <dt className="max-w-[max(50%,25cqw)] shrink-0 truncate text-xs text-muted-foreground">
                 {labels.get(cell.column.id)}
               </dt>
               <CardFieldValue wide={pick?.wide.includes(cell.column.id)}>
