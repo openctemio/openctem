@@ -658,6 +658,13 @@ const CARD_WRAP_VALUE_CLASS =
   'min-w-0 max-w-full text-sm leading-5 [overflow-wrap:anywhere] [&_.flex]:flex-wrap [&_.truncate]:whitespace-normal [&_.truncate]:line-clamp-3'
 
 /**
+ * The card's shown subtitle: up to two lines (a reason or a sentence reads in
+ * full), then a clamp with its whole text as the title.
+ */
+const CARD_SUBTITLE_WRAP_CLASS =
+  'line-clamp-2 min-w-0 [overflow-wrap:anywhere] [&_.flex]:flex-wrap [&_.truncate]:whitespace-normal'
+
+/**
  * A field label: while measuring, one line beside its value; once shown, it
  * wraps between its words and is never cut ("Hoạt động gần n…").
  */
@@ -818,6 +825,9 @@ function AutoMobileCard<TData>({
   React.useLayoutEffect(() => {
     const el = titleRef.current
     if (el) syncCutTitle(el, isTextCut(el))
+    // The subtitle too, once shown on its two lines.
+    const sub = subtitleRef.current
+    if (sub) syncCutTitle(sub, isTextCut(sub))
   })
   const subtitleRef = React.useRef<HTMLDivElement>(null)
   const fieldsRef = React.useRef<HTMLDListElement>(null)
@@ -885,7 +895,16 @@ function AutoMobileCard<TData>({
       fields,
       wide,
       subtitle: valueSays(subtitleRef.current, titleText),
-      statusLine: !!statusEl && statusEl.scrollWidth > statusEl.clientWidth + 1,
+      // A status that overflows its place, or whose chip cuts its own label
+      // ("Không có sensor phù hợp đang trự…"), gets a line of its own.
+      statusLine:
+        !!statusEl &&
+        (statusEl.scrollWidth > statusEl.clientWidth + 1 ||
+          Array.from(statusEl.querySelectorAll('*')).some(
+            (el) =>
+              el.scrollWidth > el.clientWidth + 1 &&
+              getComputedStyle(el).textOverflow === 'ellipsis'
+          )),
       actionsLine:
         (actionsRef.current?.getBoundingClientRect().width ?? 0) > CARD_INLINE_ACTIONS_MAX,
     })
@@ -963,7 +982,12 @@ function AutoMobileCard<TData>({
       {status && pick?.statusLine && (
         <div
           data-slot="mobile-card-status"
-          className={cn('mt-1 flex h-5 items-center', CARD_LINE_CLASS, select && 'ps-7')}
+          // A line of its own: a long state (vi "Không có sensor phù hợp đang
+          // trực tuyến") wraps inside its chip instead of being cut.
+          className={cn(
+            'mt-1 flex min-h-5 min-w-0 items-center [&_.truncate]:whitespace-normal [&_[data-slot=badge]]:whitespace-normal',
+            select && 'ps-7'
+          )}
         >
           {flexRender(status.column.columnDef.cell, status.getContext())}
         </div>
@@ -973,9 +997,13 @@ function AutoMobileCard<TData>({
           ref={subtitleRef}
           data-slot="mobile-card-subtitle"
           data-column-kind={kindOf(subtitle)}
+          // Shown, it takes up to two lines, then a clamp with its whole text
+          // as the title; while measuring, and when it says nothing (kept for
+          // the height), one line.
+          data-cut-tooltip={pick?.subtitle ? '' : undefined}
           className={cn(
-            'mt-1 h-5 truncate text-sm leading-5 text-muted-foreground',
-            CARD_LINE_CLASS,
+            'mt-1 text-sm leading-5 text-muted-foreground',
+            pick?.subtitle ? CARD_SUBTITLE_WRAP_CLASS : cn('h-5 truncate', CARD_LINE_CLASS),
             select && 'ps-7',
             pick && !pick.subtitle && 'invisible'
           )}

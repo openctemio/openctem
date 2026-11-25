@@ -195,7 +195,7 @@ export function FacetOption({
     >
       <Checkbox id={id} checked={checked} onCheckedChange={(v) => onCheckedChange(v === true)} />
       {adornment}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="min-w-0 flex-1 break-words">{label}</span>
     </label>
   )
 }

@@ -399,8 +399,8 @@ export function EASMDiscovery() {
   return (
     <>
       {/* One toolbar row (MVP v2: no row of its own above the stages): what
-          holds the stages back (cut with an ellipsis, whole in its
-          tooltip; each stage card says it too), then the actions. The
+          holds the stages back, in full (it wraps; with less than 16rem of
+          room it takes the line above the actions), then the actions. The
           freshness line is the caption under the stages. */}
       <div className="flex flex-wrap items-center gap-2">
         {blockedReason || !canRun ? (
@@ -408,10 +408,10 @@ export function EASMDiscovery() {
             role="status"
             data-testid="discovery-blocked"
             title={blockedReason ?? noRunPermission}
-            className="flex min-w-0 flex-1 basis-0 items-center gap-2 text-sm text-muted-foreground"
+            className="flex min-w-[min(100%,16rem)] flex-1 items-start gap-2 text-sm text-muted-foreground"
           >
-            <Info className="size-4 shrink-0" aria-hidden />
-            <span className="truncate">{blockedReason ?? noRunPermission}</span>
+            <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span className="min-w-0">{blockedReason ?? noRunPermission}</span>
           </p>
         ) : (
           <span className="flex-1" aria-hidden />

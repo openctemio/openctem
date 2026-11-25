@@ -180,14 +180,22 @@ export function ItemsViz({
                 ))}
               {r.kev && <KevBadge label={t('dashboardKit.items.kev', 'KEV')} />}
               {r.title?.trim() ? (
-                <span className="min-w-0 flex-1 truncate">{r.title}</span>
+                // A finding's title and its asset are names: one line each,
+                // whole in their titles (the row opens the finding).
+                <span className="min-w-0 flex-1 truncate" title={r.title} data-cut-tooltip="">
+                  {r.title}
+                </span>
               ) : (
                 <span className="min-w-0 flex-1 truncate text-muted-foreground">
                   {t('dashboardKit.items.untitled', 'Untitled finding')}
                 </span>
               )}
               {r.asset && (
-                <span className="hidden max-w-[10rem] truncate text-xs text-muted-foreground sm:inline">
+                <span
+                  className="hidden max-w-[10rem] truncate text-xs text-muted-foreground sm:inline"
+                  title={r.asset}
+                  data-cut-tooltip=""
+                >
                   {r.asset}
                 </span>
               )}

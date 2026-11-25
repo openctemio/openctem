@@ -219,6 +219,10 @@ export function AssigneeSelect({
                   <AvatarFallback className="text-xs">{getInitials(value.name)}</AvatarFallback>
                 </Avatar>
                 <span
+                  // A person's name (often an e-mail) may be cut in the trigger:
+                  // the whole name is its title.
+                  title={value.name}
+                  data-cut-tooltip=""
                   className={field ? 'min-w-0 flex-1 truncate text-start' : 'max-w-[80px] truncate'}
                 >
                   {showFullName || field ? value.name : value.name.split(' ')[0]}

@@ -249,10 +249,11 @@ export function ListTitleRow({
       )}
     >
       <div data-slot="list-title-start" className="flex min-w-0 items-center gap-3">
-        {/* The name gives way first: what follows it keeps its width. */}
+        {/* The name gives way first: what follows it keeps its width, and a
+            long name wraps rather than being cut ("Tất cả rò rỉ thông tin đăng…"). */}
         <h2
           data-testid={titleTestId}
-          className={titleHidden ? 'sr-only' : 'min-w-0 truncate text-sm font-medium'}
+          className={titleHidden ? 'sr-only' : 'min-w-0 text-sm font-medium break-words'}
           title={!titleHidden && typeof title === 'string' ? title : undefined}
         >
           {title}

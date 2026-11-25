@@ -433,7 +433,11 @@ export function DetailCopyId({
         toast.success(copiedMessage ?? `${label} copied`)
       }}
     >
-      <span className="truncate">{id}</span>
+      {/* An ID is copied, not read: it may end in an ellipsis, whole in the
+          title, the accessible name and the clipboard. */}
+      <span className="truncate" data-cut-tooltip="">
+        {id}
+      </span>
       <Copy className="h-3 w-3 shrink-0" aria-hidden />
     </button>
   )
@@ -492,9 +496,11 @@ export function DetailChipList({ chips, label, empty = 'none', className }: Deta
                 aria-label={c.iconLabel}
               />
             )}
+            {/* A chip holds a name (a tool, a role): one line, whole in its title. */}
             <span
               className={cn('min-w-0 truncate', c.muted && 'text-muted-foreground')}
               title={typeof c.label === 'string' ? c.label : undefined}
+              data-cut-tooltip=""
             >
               {c.label}
             </span>

@@ -99,7 +99,7 @@ export function PostureCategoryList({
         return (
           <li key={c.category} className="flex flex-col gap-1" data-category={c.category}>
             <div className="flex items-baseline justify-between gap-3 text-sm">
-              <span className="truncate">{name}</span>
+              <span className="min-w-0 break-words">{name}</span>
               <span className="flex shrink-0 items-baseline gap-3 tabular-nums">
                 <span className="text-xs text-muted-foreground">
                   {t('dashboardKit.posture.issues', '{count} issues', { count: c.issues })}

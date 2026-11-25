@@ -107,7 +107,7 @@ export function ScannerAddressesCard({ enabled = true }: { enabled?: boolean }) 
                         </Badge>
                       )}
                     </div>
-                    <p className="truncate text-xs text-muted-foreground">{sourceText(a, t)}</p>
+                    <p className="text-xs text-muted-foreground">{sourceText(a, t)}</p>
                   </div>
                   <Button
                     type="button"
