@@ -80,7 +80,7 @@ export function staleReasonText(code: string, t: Translate): { message: string; 
       return k(
         'upstream_missing',
         'The relay could not find a file at the feed origin.',
-        'Check the feed address (VULNFEED_BASE_URL).'
+        'Check the release address in Vulnerability feed address below.'
       )
     case 'nothing_delivered':
       return k(

@@ -55,6 +55,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/server/internal/app/sensorpairing"
 	"github.com/openctemio/openctem/server/internal/app/ticketbridge"
+	"github.com/openctemio/openctem/server/internal/app/vulnfeedsources"
 
 	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
 	sourceretireapp "github.com/openctemio/openctem/server/internal/app/sourceretire"
@@ -1081,7 +1082,10 @@ type Services struct {
 	LeakedSecretPolicy *leakedsecretpolicy.Service
 	// PrivateDestinations: the console's private ranges for outbound requests.
 	PrivateDestinations *privatedestinations.Service
-	PlatformMFA         *platformmfa.Service
+	// VulnFeedSources is where the vulnerability feed is fetched from (the
+	// console setting over the environment); nil without the settings store.
+	VulnFeedSources *vulnfeedsources.Service
+	PlatformMFA     *platformmfa.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
 	TenantAI *tenantai.Service
 	// AIMasking is the organization's AI masking policy and its preview.
@@ -1246,6 +1250,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Every replica applies the console ranges now and keeps them current.
 		s.PrivateDestinations.Start(context.Background())
 	}
+	s.initVulnFeedSources(cfg, repos, log)
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
 	// Suspended organizations: one access gate every credential path asks,
 	// in front of a shared Redis cache so a change reaches every replica on

@@ -39,13 +39,23 @@ type VulnFeed struct {
 	// Mirrors of direct mode are not relay origins: a relay origin must be
 	// in the job signer's allowlist too.
 	URLs []string
+	// Origin, when set, answers the release origin in force at each round
+	// (the console setting of the feed address); it replaces URLs.
+	Origin func() string
 }
 
 // Name implements Feed.
 func (v *VulnFeed) Name() string { return dom.FeedVulnFeed }
 
 // Origins implements Feed.
-func (v *VulnFeed) Origins() []string { return Origins(v.URLs...) }
+func (v *VulnFeed) Origins() []string {
+	if v.Origin != nil {
+		if o := v.Origin(); o != "" {
+			return Origins(o)
+		}
+	}
+	return Origins(v.URLs...)
+}
 
 // Interval implements Feed: the collector publishes hourly; the importer
 // runs every 20 minutes.
