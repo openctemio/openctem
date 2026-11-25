@@ -31,6 +31,7 @@ import {
   saveFeedRelay,
   useFeedRelay,
   type FeedRelayFeed,
+  type FeedRelayIneligibleReason,
   type FeedRelayMode,
   type FeedRelayStatus,
 } from '../api/use-feed-relay'
@@ -44,6 +45,39 @@ export const MAX_RELAYS = 3
 const AIRGAP_GUIDE = 'https://docs.openctem.io/airgap/feeds/'
 
 type Translate = (key: string, fallback: string, vars?: Record<string, string | number>) => string
+
+/** Why a platform sensor cannot relay, with the fix, in one plain sentence. */
+export function ineligibleReasonText(
+  reason: FeedRelayIneligibleReason | undefined,
+  minVersion: string | undefined,
+  t: Translate
+): string {
+  switch (reason) {
+    case 'inactive':
+      return t('admin.feedRelay.why.inactive', 'not active. Enable it on the Sensors page.')
+    case 'version_too_old':
+      return t(
+        'admin.feedRelay.why.version_too_old',
+        'its release is too old. Upgrade it to {version} or later.',
+        { version: minVersion ?? '' }
+      )
+    case 'no_signing_key':
+      return t(
+        'admin.feedRelay.why.no_signing_key',
+        'it has no pinned job-signing key. Pair it again, or set SENSOR_JOB_SIGNING_ROOT on its host.'
+      )
+    case 'relay_off':
+      return t(
+        'admin.feedRelay.why.relay_off',
+        'the feed relay is turned off on its host (SENSOR_FEED_RELAY=0). Remove the setting, or set it to auto.'
+      )
+    default:
+      return t(
+        'admin.feedRelay.why.no_capability',
+        'it does not report that it can relay. Its log says why (Feed relay off: ...).'
+      )
+  }
+}
 
 /** One plain sentence for a stale reason, and the fix to take. */
 export function staleReasonText(code: string, t: Translate): { message: string; fix: string } {
@@ -403,6 +437,11 @@ export function FeedRelayCard({ canEdit }: { canEdit: boolean }) {
                               : t('admin.feedRelay.cannotRelay', 'Cannot relay')
                         }
                       />
+                      {!s.can_relay && s.reason && (
+                        <span className="text-muted-foreground" data-reason={s.reason}>
+                          {ineligibleReasonText(s.reason, s.min_version, t)}
+                        </span>
+                      )}
                       <span className="text-muted-foreground">
                         {s.last_served_at ? (
                           <>
@@ -499,25 +538,23 @@ export function FeedRelayCard({ canEdit }: { canEdit: boolean }) {
                   </ul>
                 )}
                 {ineligible.length > 0 && (
-                  <p className="text-muted-foreground" data-testid="feed-relay-ineligible">
-                    {t(
-                      'admin.feedRelay.ineligible',
-                      'Not offered: {list}. Only active platform sensors that report they can relay are listed; a sensor cannot relay when its host sets SENSOR_FEED_RELAY=0, it has no pinned job-signing key, or its release is too old. Organizations’ sensors never relay.',
-                      {
-                        list: ineligible
-                          .map((c) =>
-                            c.reason === 'inactive'
-                              ? t('admin.feedRelay.whyInactive', '{name} (not active)', {
-                                  name: c.name,
-                                })
-                              : t('admin.feedRelay.whyNoCap', '{name} (cannot relay)', {
-                                  name: c.name,
-                                })
-                          )
-                          .join(', '),
-                      }
-                    )}
-                  </p>
+                  <div className="space-y-1" data-testid="feed-relay-ineligible">
+                    <p className="text-muted-foreground">
+                      {t(
+                        'admin.feedRelay.ineligibleIntro',
+                        'Not offered (organizations’ sensors never relay):'
+                      )}
+                    </p>
+                    <ul className="list-disc space-y-0.5 ps-5 text-muted-foreground">
+                      {ineligible.map((c) => (
+                        <li key={c.id} data-reason={c.reason}>
+                          <span className="font-medium text-foreground">{c.name}</span>
+                          {': '}
+                          {ineligibleReasonText(c.reason, c.min_version, t)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </fieldset>
             )}

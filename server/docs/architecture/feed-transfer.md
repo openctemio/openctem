@@ -292,8 +292,14 @@ designated sensor seen for 10 min), `signer_refused`, `sensor_refused`,
 `verify_failed`, `rollback_refused`, `plan_failed`, `import_failed`,
 `round_expired`, `spool_full`. It also lists the platform's shared sensors
 that may be designated (`candidates`: eligible when active and reporting
-`feed.relay@1`, else reason `inactive` or `no_capability`; never an
-organization's sensor) and the open alerts.
+`feed.relay@1`, else a reason read from the sensor's own report:
+`inactive`, `version_too_old` with `min_version` (v0.36.0, the first release
+with the relay), `no_signing_key` (its signed-job posture is off),
+`relay_off` (a recent sensor with a pinned key that does not relay:
+`SENSOR_FEED_RELAY=0` on its host) or `no_capability` (it reports too little
+to tell); the reason only explains and never makes a sensor eligible; never
+an organization's sensor; a designated sensor that cannot relay carries the
+same `reason`) and the open alerts.
 
 **Alerts** (RFC-142 §2.5): in relay mode the controller tells the platform
 administrators (e-mail and the alert webhook, as the system checks) when no

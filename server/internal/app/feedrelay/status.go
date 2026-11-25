@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"golang.org/x/mod/semver"
+
 	dom "github.com/openctemio/openctem/server/pkg/domain/feedrelay"
 	"github.com/openctemio/openctem/server/pkg/domain/sensor"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
@@ -12,9 +14,11 @@ import (
 
 // RelaySensor is a designated sensor as the console shows it.
 type RelaySensor struct {
-	ID         string
-	Sensor     *sensor.Sensor // nil: gone or no longer a platform sensor
-	CanRelay   bool
+	ID       string
+	Sensor   *sensor.Sensor // nil: gone or no longer a platform sensor
+	CanRelay bool
+	// Reason is why it cannot relay (a Candidate* code, "" when it can).
+	Reason     string
 	Online     bool
 	LastServed *time.Time
 	BytesToday int64
@@ -35,22 +39,65 @@ type FeedStatus struct {
 }
 
 // Candidate is a platform sensor the console may offer as a relay. Reason
-// says why one cannot relay ("" when it can): CandidateInactive or
-// CandidateNoCapability (SENSOR_FEED_RELAY=0 on the host, no pinned
-// job-signing key, or a sensor release without the relay).
+// says why one cannot relay ("" when it can), one of the Candidate* codes.
 type Candidate struct {
 	Sensor *sensor.Sensor
 	Reason string
 }
 
-// Why a platform sensor cannot relay.
+// Why a platform sensor cannot relay. The sensor reports the capability
+// feed.relay@1 only when it can relay; when it does not, the reason is
+// read from what it reports about itself (version, signed-job posture).
 const (
-	CandidateInactive     = "inactive"
+	CandidateInactive = "inactive"
+	// CandidateVersionTooOld: the sensor release has no feed relay
+	// (MinRelaySensorVersion is the first that has).
+	CandidateVersionTooOld = "version_too_old"
+	// CandidateNoSigningKey: the sensor pins no job-signing key, so it
+	// cannot check the platform's relay requests.
+	CandidateNoSigningKey = "no_signing_key"
+	// CandidateRelayOff: a recent sensor with a pinned key that does not
+	// relay: the feed relay is turned off on its host (SENSOR_FEED_RELAY=0).
+	CandidateRelayOff = "relay_off"
+	// CandidateNoCapability: the sensor does not relay and reports too
+	// little to say why (an older SDK without a posture report).
 	CandidateNoCapability = "no_capability"
 )
 
+// MinRelaySensorVersion is the first sensor release with the feed relay.
+const MinRelaySensorVersion = "v0.36.0"
+
 // maxCandidates bounds the platform sensors listed.
 const maxCandidates = 100
+
+// CandidateReason says why a platform sensor cannot relay ("" when it can).
+// Everything here is the sensor's own claim: it only explains, and never
+// makes a sensor eligible (eligible decides that).
+func CandidateReason(sn *sensor.Sensor) string {
+	switch {
+	case sn == nil:
+		return CandidateNoCapability
+	case sn.Status != sensor.SensorStatusActive:
+		return CandidateInactive
+	case sn.HasCapability(Capability):
+		return ""
+	}
+	v := sensor.NormalizeVersion(sn.Version)
+	if semver.IsValid(v) && semver.Compare(v, MinRelaySensorVersion) < 0 {
+		return CandidateVersionTooOld
+	}
+	signed := ""
+	if sn.Posture != nil && sn.Posture.Jobs != nil {
+		signed = sn.Posture.Jobs.Signed
+	}
+	switch {
+	case signed == sensor.SignedJobsOff:
+		return CandidateNoSigningKey
+	case semver.IsValid(v) && (signed == sensor.SignedJobsRequired || signed == sensor.SignedJobsVerifiedWhenPresent):
+		return CandidateRelayOff
+	}
+	return CandidateNoCapability
+}
 
 // Candidates lists the platform's shared sensors and whether each can
 // relay (never an organization's sensor).
@@ -64,14 +111,7 @@ func (s *Service) Candidates(ctx context.Context) ([]Candidate, error) {
 		if sn == nil || !sn.IsShared() || sn.TenantID != nil {
 			continue
 		}
-		c := Candidate{Sensor: sn}
-		switch {
-		case sn.Status != sensor.SensorStatusActive:
-			c.Reason = CandidateInactive
-		case !sn.HasCapability(Capability):
-			c.Reason = CandidateNoCapability
-		}
-		out = append(out, c)
+		out = append(out, Candidate{Sensor: sn, Reason: CandidateReason(sn)})
 	}
 	return out, nil
 }
@@ -108,6 +148,9 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 		if sn, err := s.sensors.GetByID(ctx, id); err == nil && sn != nil && sn.IsShared() && sn.TenantID == nil {
 			rs.Sensor = sn
 			rs.CanRelay = eligible(sn)
+			if !rs.CanRelay {
+				rs.Reason = CandidateReason(sn)
+			}
 			rs.Online = rs.CanRelay && sn.LastSeenAt != nil && now.Sub(*sn.LastSeenAt) < relayOffline
 		}
 		if a, ok := activity[id]; ok {
