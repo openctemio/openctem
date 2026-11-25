@@ -9,6 +9,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import {
   DataTable,
   DataTableColumnHeader,
+  StackedCell,
   type DataTableRowGroups,
   type DataTableSelectMode,
   type FilterPanelToggleProps,
@@ -37,7 +38,6 @@ import { normalizeSensorVersion } from '../lib/sensor-version'
 import { sensorState, SENSOR_STATES, type FleetThresholds } from '../lib/sensor-state'
 import { sensorPolicyOf, type ReleaseChannel } from '../lib/fleet'
 import { sensorFacts, sensorReason, VERSION_FACT_KEYS } from '../lib/sensor-facts'
-import { cn } from '@/lib/utils'
 import { SensorLocalPolicyBadge } from './sensor-local-policy-section'
 import { TABLE_PAGE_SIZES } from '@/lib/page-size-options'
 
@@ -120,8 +120,8 @@ const HIDDEN_BY_DEFAULT = {
  */
 const SENSORS_WIDTH = {
   host: 152,
-  status: 200,
-  version: 232,
+  status: 240,
+  version: 192,
   jobs: 104,
   tools: 128,
   outbox: 152,
@@ -189,7 +189,9 @@ export function SensorTable({
   )
   const columns = useMemo<ColumnDef<Sensor>[]>(
     () => [
-      // Rows are one line. The checkbox column is the table's own (`bulk`).
+      // A cell's second fact goes on a line under its first (a mark under
+      // the name, a reason under the state) rather than cut beside it. The
+      // checkbox column is the table's own (`bulk`).
       {
         id: 'name',
         // The row's identity: frozen at the start while the table scrolls sideways.
@@ -241,29 +243,30 @@ export function SensorTable({
             ...(reasons.length ? reasons.map((r) => r.message) : reason ? [reason.text] : []),
             ...(detail ? [detail] : []),
           ].join('\n')
+          // Two lines: the state, then the reason (or the heartbeat age)
+          // under it with the column's whole width, wrapping rather than cut.
           return (
-            <span className="flex min-w-0 items-center gap-2" title={hover || undefined}>
-              <SensorStateBadge sensor={row.original} now={now} thresholds={thresholds} />
-              {reason ? (
-                <span
-                  data-slot="sensor-reason"
-                  className={cn(
-                    'min-w-0 truncate text-xs',
-                    reason.tone === 'destructive' ? 'text-destructive' : 'text-warning'
-                  )}
-                >
-                  {reason.text}
-                </span>
-              ) : (
-                detail && (
-                  <span
-                    data-slot="sensor-state-detail"
-                    className="min-w-0 truncate text-xs text-muted-foreground"
-                  >
-                    {detail}
-                  </span>
-                )
-              )}
+            <span className="block min-w-0" title={hover || undefined} data-slot="sensor-status">
+              <StackedCell
+                primary={
+                  <SensorStateBadge sensor={row.original} now={now} thresholds={thresholds} />
+                }
+                secondaryLines={2}
+                secondary={
+                  reason ? (
+                    <span
+                      data-slot="sensor-reason"
+                      className={
+                        reason.tone === 'destructive' ? 'text-destructive' : 'text-warning'
+                      }
+                    >
+                      {reason.text}
+                    </span>
+                  ) : (
+                    detail && <span data-slot="sensor-state-detail">{detail}</span>
+                  )
+                }
+              />
             </span>
           )
         },
@@ -331,11 +334,7 @@ export function SensorTable({
         accessorFn: (a) => dispatchTools(a).join(', '),
         enableSorting: false,
         header: t('sensors.table.col.tools'),
-        cell: ({ row }) => (
-          <span className="block truncate">
-            <SensorToolsCell tools={dispatchTools(row.original)} />
-          </span>
-        ),
+        cell: ({ row }) => <SensorToolsCell tools={dispatchTools(row.original)} />,
       },
       {
         id: 'policy',

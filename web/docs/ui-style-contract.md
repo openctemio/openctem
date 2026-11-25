@@ -175,6 +175,11 @@ its ellipsis). Widths hold the cell padding, so the visible columns' widths add 
 A second label beside the name in the same cell (an asset's type) is shown only when the cell has
 room for both (the cell is a size container): at the floor the name gets the width, and the label moves
 into the name's tooltip.
+A cell's second fact (a reason or a time under a state, marks under a name) goes on a line under its
+first (`StackedCell`; `secondaryLines={2}` lets a reason wrap rather than end in an ellipsis), never
+cut beside it. A cell shows one status chip at most (the worst of what it knows, the rest in its hover
+text), a list of names shows the first ones then "+N" with all of them on hover, and a value no row
+reports is a quiet dash with the words in its hover text.
 
 ### Radii
 
