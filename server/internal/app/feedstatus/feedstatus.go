@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/url"
 	"strings"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
 	"github.com/openctemio/openctem/server/pkg/feedsign"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // Sources.
@@ -115,6 +117,18 @@ const (
 	// CodeSourceStale: a signed release carried a feed (KEV, EPSS) the
 	// collector last read longer ago than the feed's stale limit.
 	CodeSourceStale = "source_stale"
+	// CodeBlockedAddress: the feed host (or a mirror) resolves to an address
+	// the outbound guard blocks, usually a private range that is not allowed.
+	CodeBlockedAddress = "blocked_address"
+	// CodeProxyRefused: the feed proxy answered with a refusal (param
+	// status: 403 a rule, 407 a sign-in it wants).
+	CodeProxyRefused = "proxy_refused"
+	// CodeProxyUnreachable: the feed proxy itself cannot be reached.
+	CodeProxyUnreachable = "proxy_unreachable"
+	// CodeConfigInvalid: the server setting of the feed address is refused
+	// at start-up, so the import is off until it is fixed and the API
+	// restarted.
+	CodeConfigInvalid = "config_invalid"
 )
 
 // refused codes: a feed that verified and then refused what it was offered.
@@ -233,9 +247,26 @@ func Classify(err error) Classified {
 	case errors.Is(err, ErrNotConfigured):
 		return Classified{Code: CodeNotConfigured}
 	}
-	var ne net.Error
+	var host map[string]string
 	var ue *url.Error
 	if errors.As(err, &ue) {
+		host = hostParam(ue.URL)
+	}
+	var refused *httpsec.ProxyRefusedError
+	switch {
+	case errors.As(err, &refused):
+		p := map[string]string{"status": fmt.Sprint(refused.Status)}
+		maps.Copy(p, host)
+		return Classified{Code: CodeProxyRefused, Params: p}
+	case errors.Is(err, httpsec.ErrBlockedDestination):
+		return Classified{Code: CodeBlockedAddress, Params: host}
+	}
+	var unreachable *httpsec.ProxyUnreachableError
+	if errors.As(err, &unreachable) {
+		return Classified{Code: CodeProxyUnreachable, Params: host}
+	}
+	var ne net.Error
+	if ue != nil {
 		return Classified{Code: CodeUnreachable, Params: hostParam(ue.URL)}
 	}
 	if errors.As(err, &ne) || errors.Is(err, context.DeadlineExceeded) {
