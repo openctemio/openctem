@@ -129,42 +129,47 @@ export function EtsBreakdownBars({ breakdown }: { breakdown: EtsBreakdown }) {
   const { t } = useTranslation()
   return (
     <div className="space-y-2" data-slot="ets-breakdown">
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 text-sm">
+      {/* A bar chart, not a key-value list: each row is a labelled meter
+          (its accessible name carries the part, its points and the most it
+          can give), with the points beside it for sighted readers. */}
+      <ul className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 text-sm">
         {ETS_PARTS.map((k) => {
           const label = t(`emergingThreats.breakdown.${k}`)
           return (
-            <div key={k} className="contents">
-              <dt className="text-muted-foreground">{label}</dt>
-              <dd>
-                <Meter
-                  value={breakdown[k]}
-                  max={ETS_PART_MAX[k]}
-                  label={t('emergingThreats.breakdown.meter', undefined, {
-                    part: label,
-                    n: breakdown[k],
-                    max: ETS_PART_MAX[k],
-                  })}
-                />
-              </dd>
-              <dd className="text-end tabular-nums">{breakdown[k]}</dd>
-            </div>
+            <li key={k} className="contents">
+              <span className="text-muted-foreground" aria-hidden>
+                {label}
+              </span>
+              <Meter
+                value={breakdown[k]}
+                max={ETS_PART_MAX[k]}
+                label={t('emergingThreats.breakdown.meter', undefined, {
+                  part: label,
+                  n: breakdown[k],
+                  max: ETS_PART_MAX[k],
+                })}
+              />
+              <span className="text-end tabular-nums" aria-hidden>
+                {breakdown[k]}
+              </span>
+            </li>
           )
         })}
-      </dl>
-      <dl className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t pt-2 text-sm">
-        <div className="flex items-baseline gap-2">
-          <dt className="text-muted-foreground">{t('emergingThreats.breakdown.confidence')}</dt>
-          <dd className="tabular-nums">
+      </ul>
+      <p className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t pt-2 text-sm">
+        <span className="flex items-baseline gap-2">
+          <span className="text-muted-foreground">{t('emergingThreats.breakdown.confidence')}</span>
+          <span className="tabular-nums">
             {t('emergingThreats.breakdown.multiplier', undefined, {
               value: Number(breakdown.confidence.toFixed(2)),
             })}
-          </dd>
-        </div>
-        <div className="flex items-baseline gap-2">
-          <dt className="font-medium">{t('emergingThreats.breakdown.total')}</dt>
-          <dd className="font-semibold tabular-nums">{breakdown.total}</dd>
-        </div>
-      </dl>
+          </span>
+        </span>
+        <span className="flex items-baseline gap-2">
+          <span className="font-medium">{t('emergingThreats.breakdown.total')}</span>
+          <span className="font-semibold tabular-nums">{breakdown.total}</span>
+        </span>
+      </p>
     </div>
   )
 }
