@@ -373,6 +373,20 @@ services:
       # file in the console instead). The URL must be https.
       VERSION_CHECK_ENABLED: ${VERSION_CHECK_ENABLED:-true}
       VERSION_CHECK_URL: ${VERSION_CHECK_URL:-}
+      # Vulnerability feed (docs.openctem.io/operations/vulnerability-feed-setup).
+      # All empty = the defaults: the official signed releases, fetched
+      # directly or through the bundled sensor. Set them in .env for an
+      # internal mirror, a proxy or an offline folder. VULNFEED_BUNDLE_DIR also
+      # needs a read-only volume in an extra compose file. The proxy value may
+      # hold a password: keep .env at mode 0600. A mirror on a private address
+      # needs its range in OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS.
+      VULNFEED_BASE_URL: ${VULNFEED_BASE_URL:-}
+      VULNFEED_MIRRORS: ${VULNFEED_MIRRORS:-}
+      VULNFEED_BUNDLE_DIR: ${VULNFEED_BUNDLE_DIR:-}
+      VULNFEED_ROOT_KEY_ID: ${VULNFEED_ROOT_KEY_ID:-}
+      OPENCTEM_HTTPSEC_FEED_PROXY: ${OPENCTEM_HTTPSEC_FEED_PROXY:-}
+      OPENCTEM_HTTPSEC_FEED_NO_PROXY: ${OPENCTEM_HTTPSEC_FEED_NO_PROXY:-}
+      OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS: ${OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS:-}
       AUTH_COOKIE_SECURE: "true"
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}
