@@ -174,9 +174,11 @@ export function ListSearch({
         // keep one line on a 720 px toolbar. A phone's field takes what its
         // line leaves after the toggle.
         query && 'min-w-44 flex-[1_1_11rem] @max-md/toolbar:min-w-0',
-        // Query mode: the editor takes the whole free width of the row (no
-        // 28rem cap), so a query is read on one long line, not wrapped.
-        queryActive && 'flex-[1_1_16rem] sm:max-w-none',
+        // Query mode: the editor takes the row's free width (not the 28rem
+        // search cap), so a query is read on one long line, not wrapped; at
+        // most a long text field's width (60rem), so it never stretches
+        // across a wide screen.
+        queryActive && 'flex-[1_1_16rem] sm:max-w-(--field-max-multiline)',
         filter && '[&_[data-slot=filter-button]]:z-10 [&_[data-slot=filter-button]]:rounded-e-none',
         className
       )}

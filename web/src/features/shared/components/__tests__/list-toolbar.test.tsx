@@ -223,8 +223,9 @@ describe('ListToolbar slots', () => {
     // Out of the row (and out of the tab order), never dimmed in place.
     expect(tokens().className).toMatch(/(^|\s)hidden(\s|$)/)
     expect(tokens()).toHaveAttribute('inert')
-    // No 28rem cap and no held width: the field grows into the room.
-    expect(field().className).toContain('sm:max-w-none')
+    // No 28rem cap and no held width: the field grows into the room, up to
+    // a long text field's width on a wide screen.
+    expect(field().className).toContain('sm:max-w-(--field-max-multiline)')
     expect(field().className).not.toContain('sm:max-w-md')
     expect(field().style.width).toBe('')
     // The end group keeps its place at the row's end.

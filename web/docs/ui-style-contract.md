@@ -589,7 +589,8 @@ reference.
     In Query mode the text owns the filter and the tokens are not drawn (their
     values are in the text). From a 28rem toolbar the field takes the row's
     whole free width, up to the end actions, which keep their place (no 28rem
-    cap), so a query reads on one long line. On a phone the field takes the
+    cap; 60rem at most, a long text field's width, so it never stretches across
+    a wide screen), so a query reads on one long line. On a phone the field takes the
     whole first line (its text keeps at least 55 % of the field at 375 px) and
     the end actions step down to the second line's end. The expanded editor
     stays in the field's place and follows its text: two lines at least, eight

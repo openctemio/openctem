@@ -87,6 +87,9 @@ const EDITOR_KEEP_BELOW = 104
 // 2 x 28 px; from 768: help, expand, run, 3 x 24 px).
 const FIELD_CONTROLS_ROOM =
   'pe-[calc(var(--list-search-end,0.5rem)+3.75rem)] md:pe-[calc(var(--list-search-end,0.5rem)+4.75rem)]'
+// The expanded editor on a phone draws help, collapse and run (3 x 28 px).
+const EDITOR_CONTROLS_ROOM =
+  'pe-[calc(var(--list-search-end,0.5rem)+5.5rem)] md:pe-[calc(var(--list-search-end,0.5rem)+4.75rem)]'
 
 function reducedMotion(): boolean {
   return (
@@ -705,7 +708,7 @@ export function QueryInput({
                 className={cn(
                   'min-h-0 resize-none py-1.5 font-mono',
                   inputClassName,
-                  FIELD_CONTROLS_ROOM,
+                  EDITOR_CONTROLS_ROOM,
                   animating &&
                     'transition-[height] duration-200 ease-out motion-reduce:transition-none'
                 )}

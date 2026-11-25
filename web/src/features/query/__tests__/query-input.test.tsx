@@ -541,6 +541,9 @@ describe('QueryInput', () => {
     // Its height follows the text, not a dragged size: no resize handle,
     // nothing kept in the browser.
     expect(big.className).toContain('resize-none')
+    // Its text stops before the three controls on its first line (help,
+    // collapse, run: 3 x 28 px on a phone).
+    expect(big.className).toContain('+5.5rem)]')
     expect(window.localStorage.getItem('query-editor-height')).toBeNull()
     // 8 lines of 20 px at most (plus the frame), 2 at least.
     const max = parseFloat(big.style.maxHeight)
