@@ -2,9 +2,7 @@
 
 import { use } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from '@/components/link'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
