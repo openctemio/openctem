@@ -294,6 +294,9 @@ export const ROUTE_STATES: Record<string, RouteState> = {
       await shown(page, 'main [role="alert"]')
     },
   },
+  // A page tab the bare route does not open: /sensors starts on its sensors
+  // list, the scan zones (their list and the coverage card) are a tab.
+  '/sensors@zones': { path: '/sensors?tab=zones' },
 }
 
 /** The page a matrix route opens: its state's path, or the route itself. */

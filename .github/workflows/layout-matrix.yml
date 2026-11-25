@@ -33,7 +33,7 @@ on:
   workflow_dispatch:
     inputs:
       routes:
-        description: "Routes, space-separated (e.g. /scans /findings '/findings/[id]')"
+        description: "Routes, space-separated (e.g. /scans /findings '/findings/[id]' /sensors@zones)"
         required: true
         type: string
       console:
@@ -73,7 +73,8 @@ jobs:
           [[ "$WIDTHS" =~ ^[0-9,]*$ ]] || { echo "::error::widths: digits and commas only"; exit 1; }
           read -r -a routes <<< "$ROUTE_LIST"
           [ "${#routes[@]}" -ge 1 ] || { echo "::error::no route given"; exit 1; }
-          re='^/[][A-Za-z0-9._~/-]*$'
+          # A route, or a route state of helpers/layout-matrix.ts (/sensors@zones).
+          re='^/[][A-Za-z0-9._~/-]*(@[a-z0-9-]+)?$'
           for r in "${routes[@]}"; do
             [[ "$r" =~ $re ]] || { echo "::error::not a route path: $r"; exit 1; }
           done
