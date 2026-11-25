@@ -889,7 +889,13 @@ export function InventoryTable({
                     className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 break-words text-sm font-medium">
+                    {/* The card's title: a name past two lines ends in an
+                        ellipsis, whole in its title. */}
+                    <p
+                      data-cut-tooltip
+                      title={toDisplayText(a.name)}
+                      className="line-clamp-2 break-words text-sm font-medium"
+                    >
                       <BreakText>{a.name}</BreakText>
                     </p>
                     <MetaLine className="mt-0.5" oneLine items={[typeLabel, context]} />

@@ -246,7 +246,7 @@ export function CredentialPhoneCard({
     >
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex min-w-0 items-center justify-between gap-3">
-          <span className="min-w-0 truncate font-medium" title={name}>
+          <span data-cut-tooltip className="min-w-0 truncate font-medium" title={name}>
             {name || <span className="text-muted-foreground">—</span>}
           </span>
           <SeverityBadge severity={asSeverity(item.metadata.severity)} className="shrink-0" />
