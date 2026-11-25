@@ -282,6 +282,12 @@ describe('MetricStrip over a list', () => {
     const { container } = render(<MetricStrip items={zeros} listFirst />)
     expect(container.querySelector('[data-slot="metric-strip"]')).toBeNull()
   })
+  it('keeps an all-zero strip whose tile is the filter in use (the way back)', () => {
+    const { container } = render(
+      <MetricStrip items={[{ ...zeros[0], active: true, onClick: () => {} }, zeros[1]]} listFirst />
+    )
+    expect(container.querySelector('[data-slot="metric-strip"]')).not.toBeNull()
+  })
   it('keeps zeros away from a list (a dashboard strip of zeros stays)', () => {
     const { container } = render(<MetricStrip items={zeros} />)
     expect(container.querySelector('[data-slot="metric-strip"]')).not.toBeNull()
