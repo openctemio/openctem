@@ -468,8 +468,13 @@ export function ExposureTypeSummary({
                 n === 0 && !pressed && 'text-muted-foreground'
               )}
             >
+              {/* A label: it wraps rather than end in an ellipsis. */}
               <span className="min-w-0 break-words">{labels.category(k)}</span>
-              <span className="shrink-0 font-semibold tabular-nums">{loading ? '' : n}</span>
+              {/* The count keeps its width while it loads, so the label wraps
+                  the same before and after it arrives (the header holds still). */}
+              <span className="min-w-[3ch] shrink-0 text-end font-semibold tabular-nums">
+                {loading ? '' : n}
+              </span>
             </button>
           )
         })}

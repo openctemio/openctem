@@ -75,7 +75,8 @@ export function FilePicker({
         </Button>
         <span
           id={nameId}
-          // A long file name wraps at any character, never cut.
+          // Wraps rather than end in an ellipsis: "No file chosen" or a long
+          // file name is read whole beside the button.
           className="min-w-0 text-body text-muted-foreground [overflow-wrap:anywhere]"
           aria-live="polite"
         >

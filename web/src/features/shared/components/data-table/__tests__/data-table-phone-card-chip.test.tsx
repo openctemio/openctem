@@ -60,7 +60,8 @@ beforeEach(() => {
   Object.defineProperty(proto, 'clientWidth', {
     configurable: true,
     get(this: HTMLElement) {
-      return this.tagName === 'DD' ? 72 : 0
+      // A label (DT) has a box of its own too: it fits it.
+      return this.tagName === 'DD' || this.tagName === 'DT' ? 72 : 0
     },
   })
 })

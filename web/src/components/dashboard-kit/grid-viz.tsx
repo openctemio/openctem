@@ -179,10 +179,10 @@ export function ItemsViz({
                   </Badge>
                 ))}
               {r.kev && <KevBadge label={t('dashboardKit.items.kev', 'KEV')} />}
+              {/* The finding's title and its asset are names: they may end in
+                  an ellipsis, with the whole name as their title. */}
               {r.title?.trim() ? (
-                // A finding's title and its asset are names: one line each,
-                // whole in their titles (the row opens the finding).
-                <span className="min-w-0 flex-1 truncate" title={r.title} data-cut-tooltip="">
+                <span data-cut-tooltip title={r.title} className="min-w-0 flex-1 truncate">
                   {r.title}
                 </span>
               ) : (
@@ -192,9 +192,9 @@ export function ItemsViz({
               )}
               {r.asset && (
                 <span
-                  className="hidden max-w-[10rem] truncate text-xs text-muted-foreground sm:inline"
+                  data-cut-tooltip
                   title={r.asset}
-                  data-cut-tooltip=""
+                  className="hidden max-w-[10rem] truncate text-xs text-muted-foreground sm:inline"
                 >
                   {r.asset}
                 </span>

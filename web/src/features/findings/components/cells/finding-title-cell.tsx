@@ -114,9 +114,6 @@ export function FindingTitleCell({
           <button
             type="button"
             dir="auto"
-            // A title cut to one or two lines keeps its whole text reachable.
-            title={shownTitle}
-            data-cut-tooltip=""
             className={cn(
               titleClass,
               'rounded-sm text-start hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
@@ -130,7 +127,8 @@ export function FindingTitleCell({
             {shownTitle}
           </button>
         ) : (
-          <p dir="auto" title={shownTitle} data-cut-tooltip="" className={titleClass}>
+          // A name: it may end in an ellipsis, the whole title held by its title.
+          <p dir="auto" data-cut-tooltip title={shownTitle} className={titleClass}>
             {shownTitle}
           </p>
         )}
@@ -142,9 +140,8 @@ export function FindingTitleCell({
             <span
               dir="auto"
               data-slot="finding-target"
+              data-cut-tooltip
               title={full}
-              // Cut in the middle on purpose (its end stays): the whole target is the title.
-              data-cut-tooltip=""
               className="min-w-0 truncate text-xs text-muted-foreground [unicode-bidi:isolate]"
             >
               {shown.length > TARGET_TAIL + 8 ? (

@@ -140,7 +140,9 @@ function SourceRow({
         </button>
       )}
       <Icon className="h-4 w-4 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-[1_1_10rem] font-medium break-words">{label}</span>
+      {/* At least 10rem for the source's name: on a phone its controls wrap
+          under it rather than cut it to "Conn…". */}
+      <span className="min-w-0 flex-1 basis-40 font-medium break-words">{label}</span>
       <span className="text-xs text-muted-foreground">
         {lastSeen
           ? t('assetSources.lastSeen', 'Last seen {when}', { when: formatRelative(lastSeen) })
