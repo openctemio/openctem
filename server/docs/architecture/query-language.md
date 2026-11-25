@@ -189,7 +189,10 @@ recalls the last query, Esc closes then leaves. The remediation hub's
 printed).
 
 The findings, assets and scans lists draw it in their search field's Query
-mode (the Basic | Query switch right before the field). The mode is part of the page URL:
+mode (the Basic | Query switch right before the field). In that mode the field
+takes the toolbar row's free width (the filter tokens step aside, since their
+values are in the text), and its expanded form grows with the text from two to
+eight lines, wrapping at spaces only. The mode is part of the page URL:
 `mode=query` opens the list in Query mode with the filter as text in the
 field; without the param the list opens in Basic mode, where a filter the
 chips cannot show (`fq=<text>`) is one Advanced chip. `mode` is page state,

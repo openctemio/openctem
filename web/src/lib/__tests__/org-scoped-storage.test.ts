@@ -60,8 +60,6 @@ const CLASSIFIED: Record<string, Reason> = {
   'src/features/findings/components/compliance-benchmarks-panel.tsx': 'not-org-data',
   // The reason last chosen in a dismiss form (a reason code, a convenience).
   'src/features/findings/lib/approval-note.ts': 'not-org-data',
-  // The expanded query editor's height (a UI preference).
-  'src/features/query/components/query-input.tsx': 'not-org-data',
   'src/features/remediation-hub/components/task-detail.tsx': 'not-org-data',
   'src/features/sensors/components/tool-settings-list.tsx': 'not-org-data',
   // How many placeholder rows a list draws while it loads: a number capped at

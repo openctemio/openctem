@@ -529,8 +529,7 @@ describe('QueryInput', () => {
     expect(more.parentElement).toHaveClass('md:hidden')
   })
 
-  it('the expanded editor grows in place from the field height, within 4 to 16 lines, and keeps a dragged height', () => {
-    window.localStorage.setItem('query-editor-height', '9999')
+  it('the expanded editor grows in place with its text, within 2 to 8 lines, and wraps at spaces only', () => {
     const { container } = render(<ListField onSubmit={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: /expand the editor/i }))
     const big = container.querySelector<HTMLTextAreaElement>(
@@ -539,11 +538,27 @@ describe('QueryInput', () => {
     // In the flow: no overlay box, no stand-in field keeping the row one line high.
     expect(container.querySelector('input[aria-hidden]')).toBeNull()
     expect(big.closest('.absolute')).toBeNull()
-    // A stored height is held to the largest the editor may take (16 lines of 20 px).
+    // Its height follows the text, not a dragged size: no resize handle,
+    // nothing kept in the browser.
+    expect(big.className).toContain('resize-none')
+    // On a phone its three controls (3 x 28 px) get a strip above the text,
+    // which then has the field's whole width; from 768 px they end its first line.
+    expect(big.className).toContain('max-md:pt-(--spacing-control-touch)')
+    expect(big.className).toContain('max-md:pe-3')
+    expect(big.className).toContain('md:pe-[calc(var(--list-search-end,0.5rem)+4.75rem)]')
+    expect(window.localStorage.getItem('query-editor-height')).toBeNull()
+    // 8 lines of 20 px at most (plus the frame), 2 at least.
     const max = parseFloat(big.style.maxHeight)
+    expect(max).toBeLessThanOrEqual(12 + 8 * 20)
     expect(parseFloat(big.style.height)).toBeLessThanOrEqual(max)
-    expect(max).toBeLessThanOrEqual(12 + 16 * 20 + 1000)
-    expect(big.className).toContain('resize-y')
+    // Lines break at spaces, never inside a condition; the coloured copy
+    // behind it wraps the same way.
+    const copy = big.previousElementSibling as HTMLElement
+    for (const el of [big, copy]) {
+      expect(el.className).toContain('break-normal')
+      expect(el.className).toContain('whitespace-pre-wrap')
+      expect(el.className).not.toContain('break-words')
+    }
   })
 
   it("the help lists the syntax and the person's own fields with their operators", async () => {
