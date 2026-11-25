@@ -15,7 +15,8 @@ import {
   DetailSection,
 } from '@/features/shared/components/detail-sheet'
 import { toDisplayText } from '@/lib/untrusted-text'
-import { Permission, useHasPermission } from '@/lib/permissions'
+import { usePermissionsSafe } from '@/context/permission-provider'
+import { Permission } from '@/lib/permissions'
 
 const STATE_FALLBACK: Record<AIReviewState, string> = {
   waiting: 'Waiting for AI',
@@ -51,7 +52,9 @@ const KIND_FALLBACK: Record<string, string> = {
  */
 export function FindingAIReviewSection({ findingId }: { findingId: string }) {
   const { t } = useTranslation()
-  const canRead = useHasPermission(Permission.AITriageRead)
+  // Safe outside a permission provider (no permission: no request).
+  const { hasPermission } = usePermissionsSafe()
+  const canRead = hasPermission(Permission.AITriageRead)
   const { data: runs } = useFindingAIRuns(findingId, canRead)
   const { data: agents } = useAIAgents(canRead)
   const review = useMemo(() => aiReviewOf(runs), [runs])

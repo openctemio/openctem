@@ -8,9 +8,8 @@ let runs: AIRun[] = []
 let canRead = true
 const runsHook = vi.fn()
 
-vi.mock('@/lib/permissions', async (orig) => ({
-  ...(await orig<typeof import('@/lib/permissions')>()),
-  useHasPermission: () => canRead,
+vi.mock('@/context/permission-provider', () => ({
+  usePermissionsSafe: () => ({ hasPermission: () => canRead }),
 }))
 vi.mock('@/features/ai-triage/api/use-ai-agents', async (orig) => ({
   ...(await orig<typeof import('@/features/ai-triage/api/use-ai-agents')>()),
