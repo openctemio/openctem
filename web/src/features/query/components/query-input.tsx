@@ -680,7 +680,16 @@ export function QueryInput({
           the expanded editor while it is open. */}
       <PopoverAnchor virtualRef={listAnchor} />
       <div ref={anchorRef} className={cn('min-w-0', !quietStatus && 'space-y-1', className)}>
-        <div className="relative">
+        <div
+          className={cn(
+            'relative',
+            // A list's field is as wide as its toolbar gives it: the form
+            // fields' caps (40rem, 60rem for a text area) do not apply, and
+            // the controls drawn at its end stay inside it.
+            (inline || big) &&
+              'max-w-none [&_.relative]:max-w-none [&_input]:max-w-none [&_textarea]:max-w-none'
+          )}
+        >
           {multiline ? (
             <HighlightedTextarea
               textareaRef={ref}

@@ -167,7 +167,7 @@ describe('ListToolbar slots', () => {
     expect(lead.className).toMatch(/(^|\s)contents(\s|$)/)
   })
 
-  it('on a phone in Query mode gives the field the whole line: the end actions step down, the inert tokens go', () => {
+  it('on a phone in Query mode gives the field the whole line: the end actions step down, the inert tokens go, the chips start line 3', () => {
     render(
       <ListToolbar
         search={{
@@ -178,8 +178,13 @@ describe('ListToolbar slots', () => {
         }}
         start={<button type="button">Status: Open</button>}
         end={<button type="button">Views</button>}
+        below={<span>Hiding 8 names</span>}
       />
     )
+    // The chips never share line 2 with the end actions stepped down there.
+    const below = screen.getByTestId('data-table-toolbar-below')
+    expect(below.className).toContain('@max-md/toolbar:row-start-3')
+    expect(below.className).not.toMatch(/(^|\s)@max-md\/toolbar:row-start-2(\s|$)/)
     const lead = document.querySelector('[data-slot="list-toolbar-lead"]') as HTMLElement
     expect(lead.className).toContain('@max-md/toolbar:col-end-4')
     expect(lead.className).not.toContain('@max-md/toolbar:col-end-3')

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 
-import { ListCount, ListTitleRow, ListViewChanged } from '../list-title-row'
+import { ListCount, ListTitleRow, ListViewChanged, useTitleRowFit } from '../list-title-row'
 
 describe('ListCount', () => {
   it('is one polite, atomic region read as the sentence the page gives', () => {
@@ -181,5 +181,90 @@ describe('ListViewChanged', () => {
     )
     expect(screen.queryByRole('button', { name: 'Save view' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Save menu' }).parentElement).toHaveClass('hidden')
+  })
+})
+
+describe('useTitleRowFit', () => {
+  // jsdom does not lay out: the row's width and the name's widths are set here.
+  function Probe({ content, onFit }: { content: string; onFit: (f: boolean, w: boolean) => void }) {
+    const [wide, fits, setRow] = useTitleRowFit(672, content)
+    onFit(fits, wide)
+    return (
+      <ListTitleRow ref={setRow} title="Đang hoạt động" count={<span>200</span>}>
+        <button type="button">Export</button>
+      </ListTitleRow>
+    )
+  }
+
+  function layout(row: number, nameCut: boolean) {
+    const rect = HTMLElement.prototype.getBoundingClientRect
+    const sw = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollWidth')
+    const cw = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      return {
+        width: row,
+        height: 32,
+        top: 0,
+        left: 0,
+        right: row,
+        bottom: 32,
+        x: 0,
+        y: 0,
+      } as DOMRect
+    }
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.tagName === 'H2' && nameCut ? 120 : 40
+      },
+    })
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get() {
+        return 40
+      },
+    })
+    return () => {
+      HTMLElement.prototype.getBoundingClientRect = rect
+      if (sw) Object.defineProperty(HTMLElement.prototype, 'scrollWidth', sw)
+      if (cw) Object.defineProperty(HTMLElement.prototype, 'clientWidth', cw)
+    }
+  }
+
+  it('shows the buttons on a wide row while the name is whole', () => {
+    const restore = layout(700, false)
+    try {
+      const onFit = vi.fn()
+      render(<Probe content="a" onFit={onFit} />)
+      expect(onFit).toHaveBeenLastCalledWith(true, true)
+    } finally {
+      restore()
+    }
+  })
+
+  it('folds the buttons on a wide row once they cut the name short, and tries again for new content', () => {
+    const restore = layout(700, true)
+    try {
+      const onFit = vi.fn()
+      const { rerender } = render(<Probe content="a" onFit={onFit} />)
+      expect(onFit).toHaveBeenLastCalledWith(false, false)
+      // Another view: tried again (and folded again, the name is still cut).
+      rerender(<Probe content="b" onFit={onFit} />)
+      expect(onFit.mock.calls.some(([f]) => f === true)).toBe(true)
+      expect(onFit).toHaveBeenLastCalledWith(false, false)
+    } finally {
+      restore()
+    }
+  })
+
+  it('is narrow below the width the buttons need, whatever the name', () => {
+    const restore = layout(600, false)
+    try {
+      const onFit = vi.fn()
+      render(<Probe content="a" onFit={onFit} />)
+      expect(onFit).toHaveBeenLastCalledWith(true, false)
+    } finally {
+      restore()
+    }
   })
 })

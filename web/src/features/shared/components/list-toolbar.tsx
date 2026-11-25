@@ -286,10 +286,12 @@ const PHONE = {
   below:
     '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-2 @max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens]:not([data-empty])]/toolbar:row-start-3',
   // Query mode: the field takes the whole first line; the end group steps
-  // down to the second line's end (the tokens, inert in this mode, are out).
+  // down to the second line's end (the tokens, inert in this mode, are out)
+  // and the chips row moves to the third line, under it.
   leadQuery: '@max-md/toolbar:col-end-4',
   endQuery:
     '@max-md/toolbar:row-start-2 @max-md/toolbar:mt-2 @max-md/toolbar:ms-0 @max-md/toolbar:justify-self-end',
+  belowQuery: '@max-md/toolbar:row-start-3',
   status:
     '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-4 @max-md/toolbar:mt-2',
 }
@@ -554,8 +556,10 @@ export function ListToolbar({
               // whose only (leading) chip renders nothing.
               'flex min-w-0 basis-full flex-wrap items-center gap-2 empty:hidden has-[>[data-bare]_[data-slot=filter-chips-lead]:empty]:hidden',
               // A phone: the start of the second line; the whole line when no
-              // token is drawn there.
+              // token is drawn there. In Query mode the end actions take the
+              // second line's end, so the chips start the third.
               PHONE.below,
+              top && end && PHONE.belowQuery,
               // With a problem shown the row is as wide as what it holds (the
               // leading chip, at most half the line as before) and the problem
               // takes the rest of the line: the list does not move.
