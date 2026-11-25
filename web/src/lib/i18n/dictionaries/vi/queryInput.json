@@ -44,6 +44,7 @@
   "queryInput.pending": "Đã sửa, chưa áp dụng: nhấn Enter hoặc áp dụng truy vấn.",
   "queryInput.placeholder.assets": "Tìm, hoặc ví dụ ip=10.0.0.0/16 type=ip_address last_seen<7d",
   "queryInput.placeholder.findings": "Tìm, hoặc ví dụ severity>=high kev=true -status:accepted",
+  "queryInput.placeholder.scans": "Tìm, hoặc ví dụ status=active scan_type=workflow last_run_at<7d",
   "queryInput.problem.bad_value": "Giá trị này không hợp với trường.",
   "queryInput.problem.invalid": "Bộ lọc không hợp lệ.",
   "queryInput.problem.not_on_list": "Danh sách không chạy được bộ lọc này: để từ khóa tìm kiếm ngoài OR và phép phủ định.",

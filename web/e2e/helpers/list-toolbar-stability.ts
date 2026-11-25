@@ -29,8 +29,9 @@ import { test, expect } from '../fixtures/authenticated-page'
  * Allowed, and only these:
  * - the table moves down once when the chips row first appears, and back up
  *   when it goes, by exactly the row's height plus its gap;
- * - in Query mode the filter tokens (Add filter, Practice, State) stay in
- *   place, inert (checked);
+ * - in Query mode the filter tokens (Add filter, Practice, State) step aside
+ *   (not drawn, inert: checked) and the search field grows into their room;
+ *   nothing else in the row moves;
  * - a refused query text says its problem in the status row under the
  *   toolbar: the table moves down by at most that row's height plus its gap
  *   (not at all beside a chips row that is already there), and back when the
@@ -359,14 +360,16 @@ async function snap(page: Page): Promise<Snap> {
   })
 }
 
-function compare(step: string, a: Snap, b: Snap, phoneModeSwitch = false) {
+function compare(step: string, a: Snap, b: Snap, modeSwitch: false | 'phone' | 'wide' = false) {
   const problems: string[] = []
-  // On a phone the Query field takes the whole first line: the field grows and
-  // the end actions step down one row (44 px, the list with them) and the
-  // inert tokens are not drawn. Nothing else moves.
+  // Query mode: the tokens step aside and the field grows into their room. On
+  // a phone the Query field takes the whole first line: the end actions step
+  // down one row too (44 px, the list with them). Nothing else moves.
   const ROW = 44
+  const phoneModeSwitch = modeSwitch === 'phone'
   const stepsDown = (k: string) =>
-    phoneModeSwitch && (k === 'search field' || k.startsWith('end') || k.startsWith('token'))
+    (!!modeSwitch && (k === 'search field' || k.startsWith('token'))) ||
+    (phoneModeSwitch && k.startsWith('end'))
   // On a phone the tokens that filter are drawn on lines below the Query field
   // and wrap: a token may come or go, and the list moves with the lowest edge of
   // the field and its tokens, plus the chips row that came, went or wrapped.
@@ -685,7 +688,7 @@ export function headerHoldsStill(route: Route) {
               `${route} ${width} ${locale}: ${name}`,
               last,
               now,
-              width < 448 && /^switch (to Query|back to Basic)/.test(name)
+              /^switch (to Query|back to Basic)/.test(name) && (width < 448 ? 'phone' : 'wide')
             )
             last = now
           }
@@ -771,10 +774,12 @@ export function headerHoldsStill(route: Route) {
                 .waitFor({ state: 'visible', timeout: 20_000 })
               await page.locator('main h1').first().click({ force: true })
             })
-            // The tokens stay, inert: the text owns the filter.
+            // The tokens step aside, inert: the text owns the filter.
             const tokens = page.locator('main [data-slot="list-toolbar-tokens"]')
-            if ((await tokens.count()) > 0)
+            if ((await tokens.count()) > 0) {
               await expect(tokens.first()).toHaveAttribute('inert', '')
+              await expect(tokens.first()).toBeHidden()
+            }
 
             // A text the server refuses: its problem shows in the status row
             // under the toolbar, one row high, and the toolbar row keeps its

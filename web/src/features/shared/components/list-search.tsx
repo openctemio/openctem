@@ -24,9 +24,11 @@ import { cn } from '@/lib/utils'
  * - on a list that takes query text (`query`), a Basic | Query switch drawn
  *   as its own control right before the field (and before a joined filter
  *   trigger): a two-segment switch on a wide toolbar, one icon toggle below;
- *   Ctrl+/ toggles too. Its width is fixed per language, so switching modes
- *   moves nothing. In Query mode the field is the page's query editor, in the
- *   same place and size: one field, two ways to write the same filter.
+ *   Ctrl+/ toggles too. Its width is fixed per language, so the switch never
+ *   moves. In Query mode the field is the page's query editor, in the same
+ *   place, and it takes all the room the row has (the filter tokens step
+ *   aside, `ListToolbar`), so a query is read on one long line: one field,
+ *   two ways to write the same filter.
  *
  * The component only reports what was typed. A server-side search passes the
  * value through `useSearchQuery` / `useListParams` before it reaches a request
@@ -106,7 +108,6 @@ export function ListSearch({
   const joined = useJoinedStart(rootRef, !!filter)
   const { onKeyDown, ...restInput } = inputProps ?? {}
   const queryActive = !!query?.active
-  const modeWidth = useModeWidth(rootRef, queryActive)
   const setQueryActive = query?.onActiveChange
   const hasQuery = !!query
 
@@ -173,10 +174,14 @@ export function ListSearch({
         // keep one line on a 720 px toolbar. A phone's field takes what its
         // line leaves after the toggle.
         query && 'min-w-44 flex-[1_1_11rem] @max-md/toolbar:min-w-0',
+        // Query mode: the editor takes the row's free width (not the 28rem
+        // search cap), so a query is read on one long line, not wrapped; at
+        // most a long text field's width (60rem), so it never stretches
+        // across a wide screen.
+        queryActive && 'flex-[1_1_16rem] sm:max-w-(--field-max-multiline)',
         filter && '[&_[data-slot=filter-button]]:z-10 [&_[data-slot=filter-button]]:rounded-e-none',
         className
       )}
-      style={modeWidth ? { flex: 'none', width: modeWidth } : undefined}
     >
       {filter}
       {queryActive && query ? (
@@ -307,70 +312,6 @@ export function ListSearchModeSwitch({
       </button>
     </>
   )
-}
-
-/** The toolbar width below which the phone layout applies (28rem). */
-const PHONE_TOOLBAR_PX = 448
-
-/**
- * The field's width to hold in Query mode: the width it had in Basic mode
- * just before the switch. Query mode takes the filter tokens beside the field
- * away, and a growing field would move everything after it; held, switching
- * modes moves and resizes nothing. A change of the toolbar's own width (a
- * resized window, a panel opened) lets go, so the field fits again; on a
- * phone nothing is held (the field takes the whole line). Nothing
- * is held for a list opened in Query mode (no switch happened).
- */
-function useModeWidth(
-  ref: React.RefObject<HTMLElement | null>,
-  queryActive: boolean
-): number | null {
-  const basicWidth = React.useRef<number | null>(null)
-  const [held, setHeld] = React.useState<number | null>(null)
-  // Basic mode: remember the width, kept current.
-  React.useLayoutEffect(() => {
-    const el = ref.current
-    if (queryActive || !el) return
-    setHeld(null)
-    const read = () => {
-      const w = el.getBoundingClientRect().width
-      if (w > 0) basicWidth.current = w
-    }
-    read()
-    if (typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(read)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [ref, queryActive])
-  // Query mode: hold it until the toolbar itself changes width.
-  React.useLayoutEffect(() => {
-    const el = ref.current
-    if (!queryActive || !el || basicWidth.current === null) return
-    const bar =
-      el.closest<HTMLElement>('[data-slot="list-toolbar-region"]') ??
-      el.closest<HTMLElement>('[data-slot="list-toolbar"]') ??
-      el.parentElement
-    // A phone's toolbar (under 28rem) gives the Query field the whole line:
-    // the end actions step down, so there is nothing to hold still for.
-    if (bar && bar.getBoundingClientRect().width < PHONE_TOOLBAR_PX) {
-      setHeld(null)
-      return
-    }
-    setHeld(basicWidth.current)
-    if (!bar || typeof ResizeObserver === 'undefined') return
-    let start: number | null = null
-    const ro = new ResizeObserver(() => {
-      const w = bar.getBoundingClientRect().width
-      if (start === null) start = w
-      else if (Math.abs(w - start) > 0.5) {
-        basicWidth.current = null
-        setHeld(null)
-      }
-    })
-    ro.observe(bar)
-    return () => ro.disconnect()
-  }, [ref, queryActive])
-  return queryActive ? held : null
 }
 
 /**

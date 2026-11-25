@@ -74,7 +74,11 @@ export function VulnPhoneCard({
             {item.worst_priority || <span className="text-muted-foreground">—</span>}
           </span>
         </div>
-        {title && <p className="line-clamp-2 text-sm text-muted-foreground">{title}</p>}
+        {title && (
+          <p data-cut-tooltip title={title} className="line-clamp-2 text-sm text-muted-foreground">
+            {title}
+          </p>
+        )}
         <p className="text-meta">
           {signals.length > 0 ? (
             signals.join(', ')

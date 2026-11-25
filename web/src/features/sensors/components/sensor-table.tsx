@@ -17,6 +17,7 @@ import {
 } from '@/features/shared'
 import type { DataTableBulk } from '@/features/shared/components/data-table/data-table-selection'
 
+import { cn } from '@/lib/utils'
 import type { Sensor } from '@/lib/api/sensor-types'
 import { sensorRoleOf } from '@/lib/api/sensor-types'
 import { SensorStateBadge, sensorStateDetail } from './sensor-state-badge'
@@ -243,27 +244,35 @@ export function SensorTable({
             ...(reasons.length ? reasons.map((r) => r.message) : reason ? [reason.text] : []),
             ...(detail ? [detail] : []),
           ].join('\n')
-          // Two lines: the state, then the reason (or the heartbeat age)
-          // under it with the column's whole width, wrapping rather than cut.
+          // The state, then the reason (or the heartbeat age) under it with
+          // the column's whole width, wrapping in full: a clamp cut "takes no
+          // new jo…" on its second line.
           return (
             <span className="block min-w-0" title={hover || undefined} data-slot="sensor-status">
               <StackedCell
                 primary={
                   <SensorStateBadge sensor={row.original} now={now} thresholds={thresholds} />
                 }
-                secondaryLines={2}
                 secondary={
                   reason ? (
                     <span
                       data-slot="sensor-reason"
-                      className={
+                      className={cn(
+                        'block whitespace-normal break-words',
                         reason.tone === 'destructive' ? 'text-destructive' : 'text-warning'
-                      }
+                      )}
                     >
                       {reason.text}
                     </span>
                   ) : (
-                    detail && <span data-slot="sensor-state-detail">{detail}</span>
+                    detail && (
+                      <span
+                        data-slot="sensor-state-detail"
+                        className="block whitespace-normal break-words"
+                      >
+                        {detail}
+                      </span>
+                    )
                   )
                 }
               />

@@ -68,10 +68,10 @@ test.describe('Query editor controls', { tag: ['@findings'] }, () => {
     await expect(big).toBeFocused()
     await expect(big).toHaveValue('severity>=high')
     expect(await big.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(3)
-    // Its height grows in over 200 ms: measured once it has grown.
+    // Its height grows in over 200 ms to the two lines it keeps at least.
     await expect
       .poll(async () => (await big.boundingBox())!.height, { timeout: 2_000 })
-      .toBeGreaterThanOrEqual(200)
+      .toBeGreaterThanOrEqual(50)
     test.info().annotations.push({
       type: 'expanded editor',
       description: JSON.stringify(

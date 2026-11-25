@@ -97,8 +97,8 @@ export function AttentionQueueHeader({
   return (
     // One row (research/249; MVP v2: no row of its own above the list): the
     // back link as an icon, the reason heading that switches reason, the
-    // count, the why line (cut with an ellipsis, whole in its tooltip and at
-    // the top of the reason menu), then the inventory link and the More.
+    // count, the why line (wrapped; on a phone at the top of the reason
+    // menu), then the inventory link and the More.
     <div
       // One line on a phone: the reason name ends in an ellipsis (whole in
       // the menu) rather than push the count and More onto a line of their own.
@@ -121,7 +121,15 @@ export function AttentionQueueHeader({
                 // link and the More share its line.
                 className="inline-flex h-control max-w-full items-center gap-1.5 rounded-md px-1 text-start font-semibold outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring max-md:h-control-touch"
               >
-                <span className="truncate">{t(current.labelKey, current.label)}</span>
+                {/* The heading is the queue's name: on a phone it ends in an
+                    ellipsis rather than wrap, whole in its title and the menu. */}
+                <span
+                  data-cut-tooltip
+                  title={t(current.labelKey, current.label)}
+                  className="truncate"
+                >
+                  {t(current.labelKey, current.label)}
+                </span>
                 <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
               </button>
             </DropdownMenuTrigger>
@@ -166,12 +174,13 @@ export function AttentionQueueHeader({
             : `${formatNumber(count)} ${t(current.unitKey, current.unit, { count })}`
         }
       />
-      {/* Takes what the row has left and never wraps onto a row of its own;
-          a phone reads it in the reason menu. */}
+      {/* A sentence, read whole: from 1280 px it wraps in what the heading
+          row has left. Below, the row has no room for it and a line of its
+          own would push the list down, so it is read at the top of the
+          reason menu, as on a phone. */}
       <p
         data-slot="attention-why"
-        title={why}
-        className="min-w-0 flex-1 basis-0 truncate text-sm text-muted-foreground max-md:hidden"
+        className="min-w-64 flex-1 basis-0 text-sm text-muted-foreground max-xl:hidden"
       >
         {why}
       </p>

@@ -256,6 +256,7 @@ export function CampaignList() {
               <Link
                 href={`/remediation/campaigns/${c.id}`}
                 onClick={(e) => opensSheet(e, () => openSheet(c.id))}
+                data-cut-tooltip
                 className="line-clamp-2 min-w-0 font-medium break-words hover:underline"
                 title={c.name}
               >

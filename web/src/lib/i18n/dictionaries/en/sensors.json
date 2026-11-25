@@ -529,7 +529,7 @@
   "sensors.facets.versionTitle": "Version",
   "sensors.facts.identityCloned": "identity used from two hosts",
   "sensors.facts.neverConnectedSince": "added {age}, never connected",
-  "sensors.facts.noLocalPolicy": "No local policy: network tasks are refused",
+  "sensors.facts.noLocalPolicy": "No local policy: network tasks refused",
   "sensors.facts.paused": "paused by its kill switch",
   "sensors.filters.sdkUnknown": "Not reported",
   "sensors.filters.sdkVersion": "SDK version",

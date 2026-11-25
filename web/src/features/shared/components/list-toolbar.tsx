@@ -286,10 +286,12 @@ const PHONE = {
   below:
     '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-2 @max-md/toolbar:mt-2 @max-md/toolbar:group-has-[[data-slot=list-toolbar-tokens]:not([data-empty])]/toolbar:row-start-3',
   // Query mode: the field takes the whole first line; the end group steps
-  // down to the second line's end (the tokens, inert in this mode, are out).
+  // down to the second line's end (the tokens, inert in this mode, are out)
+  // and the chips row moves to the third line, under it.
   leadQuery: '@max-md/toolbar:col-end-4',
   endQuery:
     '@max-md/toolbar:row-start-2 @max-md/toolbar:mt-2 @max-md/toolbar:ms-0 @max-md/toolbar:justify-self-end',
+  belowQuery: '@max-md/toolbar:row-start-3',
   status:
     '@max-md/toolbar:col-start-1 @max-md/toolbar:col-end-4 @max-md/toolbar:row-start-4 @max-md/toolbar:mt-2',
 }
@@ -410,9 +412,9 @@ export function ListToolbar({
   const regionRef = React.useRef<HTMLDivElement>(null)
   useEmptyGroups(regionRef, [tokensRef, endRef])
   // One alignment in both modes (centre: controls of a few px more, such as
-  // a bordered view switch, share the row's centre line), and the tokens
-  // stay in Query mode, so switching modes never re-flows the row. `top`
-  // marks Query mode (the tokens go inert).
+  // a bordered view switch, share the row's centre line). `top` marks Query
+  // mode: the tokens step aside and the field takes the row up to the end
+  // group, which keeps its place at the row's end.
   const top = !!search?.query?.active
   const toolbar = (
     <div
@@ -456,21 +458,21 @@ export function ListToolbar({
           {start ? (
             // A phone draws here only the tokens that filter: the others are in
             // the Filters sheet (all of them when the list has no such sheet).
-            // In Query mode the text owns the filter: the tokens stay in their
-            // place, dimmed and inert (no focus, no click, no `f`), so the
-            // switch moves nothing (the end group never re-flows up a line).
+            // In Query mode the text owns the filter (the tokens' values are in
+            // it): the tokens step aside, so the editor takes their room and a
+            // query reads on one long line instead of wrapping in a narrow box.
             <div
               ref={tokensRef}
               data-slot="list-toolbar-tokens"
               data-inactive={top ? '' : undefined}
               inert={top || undefined}
               className={cn(
-                top && '*:opacity-50',
                 'contents',
                 PHONE.tokens,
                 (phoneSheet || toggle) && PHONE.tokensInSheet,
-                // Query mode: the text owns the filter, the phone draws no token.
-                top && '@max-md/toolbar:hidden',
+                // Query mode: the text owns the filter, no token is drawn (the
+                // phone's own display rule is overridden too).
+                top && 'hidden @max-md/toolbar:hidden',
                 // Overflow: the tokens are in the Filters sheet, as on a phone.
                 overflow && 'hidden',
                 EMPTY_GROUP_CLASS
@@ -554,8 +556,10 @@ export function ListToolbar({
               // whose only (leading) chip renders nothing.
               'flex min-w-0 basis-full flex-wrap items-center gap-2 empty:hidden has-[>[data-bare]_[data-slot=filter-chips-lead]:empty]:hidden',
               // A phone: the start of the second line; the whole line when no
-              // token is drawn there.
+              // token is drawn there. In Query mode the end actions take the
+              // second line's end, so the chips start the third.
               PHONE.below,
+              top && end && PHONE.belowQuery,
               // With a problem shown the row is as wide as what it holds (the
               // leading chip, at most half the line as before) and the problem
               // takes the rest of the line: the list does not move.
