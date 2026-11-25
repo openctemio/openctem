@@ -17,7 +17,6 @@ import {
   PageHeader,
   PageStack,
   RelativeTime,
-  StackedCell,
   type MetricStripItem,
 } from '@/features/shared'
 import { ListToolbarTitle } from '@/features/shared/components/list-title-row'
@@ -169,8 +168,8 @@ export default function TargetMappingsPage() {
         accessorKey: 'target_type',
         header: t('admin.scanningTargetMappingsPage.targetType', 'Target type'),
         enableSorting: false,
-        // The target type is the row's name: its label, then what it means
-        // on a line under it. It stays in view while the table scrolls sideways.
+        // The target type is the row's name: its label, then what it means,
+        // on one line. It stays in view while the table scrolls sideways.
         meta: {
           kind: 'name',
           pin: 'start',
@@ -179,15 +178,15 @@ export default function TargetMappingsPage() {
         },
         cell: ({ row }) => {
           const hint = text.hint(row.original.target_type)
-          // The meaning on a line under the label, wrapping, never cut beside it.
           return (
-            <span className="block min-w-0" title={hint || undefined}>
-              <StackedCell
-                primary={text.label(row.original.target_type)}
-                secondary={hint}
-                secondaryLines={2}
-              />
-            </span>
+            <div className="flex min-w-0 items-baseline gap-2">
+              <span className="shrink-0 font-medium">{text.label(row.original.target_type)}</span>
+              {hint && (
+                <span className="truncate text-xs text-muted-foreground" title={hint}>
+                  {hint}
+                </span>
+              )}
+            </div>
           )
         },
       },

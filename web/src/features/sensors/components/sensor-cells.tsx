@@ -498,33 +498,22 @@ const SDK_TAG: Record<
 export function inlineVersionSignal(
   status: SensorVersionStatus,
   sdkStatus: SensorSdkStatus
-): { key: string; label: string; state: HealthState; value: string } | null {
+): { key: string; state: HealthState; value: string } | null {
   if (status === 'unsupported' || sdkStatus === 'unsupported') {
-    return {
-      key: 'sensors.cells.versionTag.unsupported',
-      label: 'Unsupported',
-      state: 'down',
-      value: 'unsupported',
-    }
+    return { key: 'sensors.cells.versionTag.unsupported', state: 'down', value: 'unsupported' }
   }
   if (sdkStatus === 'advisory') {
     return {
       key: 'sensors.cells.versionTag.securityUpdate',
-      label: 'Security update',
       state: 'warn',
       value: 'security_update',
     }
   }
   if (status === 'update_available' || sdkStatus === 'outdated') {
-    return {
-      key: 'sensors.cells.versionTag.update',
-      label: 'Update available',
-      state: 'queued',
-      value: 'update_available',
-    }
+    return { key: 'sensors.cells.versionTag.update', state: 'queued', value: 'update_available' }
   }
   if (status === 'latest') {
-    return { key: 'sensors.cells.versionTag.latest', label: 'Latest', state: 'ok', value: 'latest' }
+    return { key: 'sensors.cells.versionTag.latest', state: 'ok', value: 'latest' }
   }
   return null
 }
@@ -698,7 +687,7 @@ export function SensorVersionCell({
           <HealthStatus
             state={signal.state}
             value={signal.value}
-            label={t(signal.key, signal.label)}
+            label={t(signal.key)}
             title={[title, sdkTitle].filter(Boolean).join('\n') || undefined}
             className="min-w-0 shrink"
           />
