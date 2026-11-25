@@ -638,7 +638,32 @@ const CARD_TITLE_CLASS =
 const CARD_HEAD_CONTROL_CLASS =
   '[&_button:not([role=switch])]:inline-flex [&_button:not([role=switch])]:h-9 [&_button:not([role=switch])]:items-center [&_[role=button]]:inline-flex [&_[role=button]]:h-9 [&_[role=button]]:items-center'
 
+/**
+ * A field value while the card measures which fields to show: one line, so a
+ * chip or a key figure that does not fit half the line is found (it then
+ * takes the whole line).
+ */
 const CARD_VALUE_CLASS = cn('h-5 truncate text-sm leading-5', CARD_LINE_CLASS)
+
+/**
+ * A shown field value: it wraps under its label instead of ending in an
+ * ellipsis ("khoảng 2 tháng tr…", "2001:db8:85a3:8d…"). A text the table cuts
+ * on one line (`.truncate`) takes up to three lines here, and a row of a chip
+ * and a text wraps the text under the chip rather than squeezing it beside
+ * the chip into a tall sliver (/scans/runs at 390 px, 2026-11-17). A value
+ * still longer than three lines ends in a clamp with its whole text as the
+ * field's title (`data-cut-tooltip`).
+ */
+const CARD_WRAP_VALUE_CLASS =
+  'min-w-0 max-w-full text-sm leading-5 [overflow-wrap:anywhere] [&_.flex]:flex-wrap [&_.truncate]:whitespace-normal [&_.truncate]:line-clamp-3'
+
+/**
+ * A field label: while measuring, one line beside its value; once shown, it
+ * wraps between its words and is never cut ("Hoạt động gần n…").
+ */
+const CARD_LABEL_MEASURE_CLASS =
+  'max-w-[max(50%,25cqw)] shrink-0 truncate text-xs text-muted-foreground'
+const CARD_LABEL_CLASS = 'min-w-0 break-words text-xs text-muted-foreground'
 
 /**
  * A field that took the whole line for its chip. A chip there is never cut at
@@ -665,7 +690,16 @@ const CARD_CHIP_SELECTOR =
  * over a bare control. The switch keeps its own name and state for a screen
  * reader; the word is for the eye only.
  */
-function CardFieldValue({ children, wide }: { children: React.ReactNode; wide?: boolean }) {
+function CardFieldValue({
+  children,
+  wide,
+  measuring,
+}: {
+  children: React.ReactNode
+  wide?: boolean
+  /** True while the card measures its fields: one line, cut. */
+  measuring?: boolean
+}) {
   const { t } = useTranslation()
   const cellRef = React.useRef<HTMLSpanElement>(null)
   const [switchOn, setSwitchOn] = React.useState<boolean | null>(null)
@@ -694,8 +728,9 @@ function CardFieldValue({ children, wide }: { children: React.ReactNode; wide?: 
   return (
     <dd
       title={fullText || undefined}
+      data-cut-tooltip={measuring ? undefined : ''}
       className={cn(
-        CARD_VALUE_CLASS,
+        measuring ? CARD_VALUE_CLASS : CARD_WRAP_VALUE_CLASS,
         wide && CARD_WIDE_VALUE_CLASS,
         switchOn !== null && 'flex items-center gap-2'
       )}
@@ -734,9 +769,11 @@ const PHONE_CARD_FOCUS_CLASS =
  *   before the rest, shown in column order, chosen before paint. A chip
  *   or a key figure is never cut: a field whose chip or figure does not fit
  *   half the line takes the whole line and the other field goes on the line
- *   under it, on the whole line too; a lone field takes the whole line. A
- *   value is cut only at the card's edge, its whole text in its tooltip.
- * Every line but the title is one line high whatever its cell draws.
+ *   under it, on the whole line too; a lone field takes the whole line.
+ *   Chosen on one fixed line each; once shown, a label and its value wrap
+ *   (the value under the label when both do not fit), a value at most three
+ *   lines, then clamped with its whole text as its title.
+ * The subtitle and a status line of their own stay one line high.
  */
 function AutoMobileCard<TData>({
   row,
@@ -954,8 +991,13 @@ function AutoMobileCard<TData>({
             // Two fields on one line: the first at its own width, at most half
             // the line; the second takes the rest, so its value ends at the
             // card's edge rather than at a fixed middle.
-            '@container mt-1 grid grid-cols-[fit-content(50%)_minmax(0,1fr)] gap-x-3 overflow-hidden',
-            pick?.wide.length ? 'auto-rows-[1.25rem] gap-y-1' : 'h-5',
+            // While measuring, every field sits on one fixed line; once
+            // shown, a field is as tall as its wrapped label and value.
+            '@container mt-1 grid grid-cols-[fit-content(50%)_minmax(0,1fr)] gap-x-3',
+            // A card with no field to show keeps the empty line, so the cards
+            // of a list line up.
+            (!pick || pick.fields.length === 0) && 'h-5 overflow-hidden',
+            pick && pick.fields.length > 0 && 'gap-y-1',
             select && 'ps-7'
           )}
         >
@@ -971,16 +1013,22 @@ function AutoMobileCard<TData>({
                   ? ''
                   : undefined
               }
-              className={cn('flex min-w-0 items-baseline gap-1.5', fullLine && 'col-span-2')}
+              className={cn(
+                'flex min-w-0 items-baseline gap-x-1.5',
+                // Shown: the value goes under its label when the two do not
+                // fit on one line, and then wraps across the field's width.
+                pick && 'flex-wrap',
+                fullLine && 'col-span-2'
+              )}
             >
-              {/* At most half its field, but never less than a quarter of the
-                  line (cqw: the field list is the size container): a short
-                  value no longer cuts its label ("As…" beside "12"), and a
-                  half-line field keeps the half of it its chip needs. */}
-              <dt className="max-w-[max(50%,25cqw)] shrink-0 truncate text-xs text-muted-foreground">
+              {/* While measuring, the label is at most half its field but
+                  never less than a quarter of the line (cqw: the field list
+                  is the size container), so a half-line field keeps the half
+                  of it its chip needs. Once shown, it wraps in full. */}
+              <dt className={pick ? CARD_LABEL_CLASS : CARD_LABEL_MEASURE_CLASS}>
                 {labels.get(cell.column.id)}
               </dt>
-              <CardFieldValue wide={pick?.wide.includes(cell.column.id)}>
+              <CardFieldValue wide={pick?.wide.includes(cell.column.id)} measuring={!pick}>
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </CardFieldValue>
             </div>

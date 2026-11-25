@@ -89,8 +89,9 @@ describe('automatic phone card: a chip value is never cut', () => {
     expect(field(container, 'owner')?.className).toContain('col-span-2')
     expect(field(container, 'owner')?.querySelector('dd')?.getAttribute('title')).toBe('Ana')
     const dl = container.querySelector('[data-slot="mobile-card"] dl')!
+    // Shown fields have no fixed line height: a long value wraps.
     expect(dl.className).not.toContain('h-5')
-    expect(dl.className).toContain('auto-rows-[1.25rem]')
+    expect(dl.className).not.toContain('auto-rows-[1.25rem]')
   })
 
   it('measures again once the web font arrives (owner report 2026-11-20: a chip cut at its border)', async () => {
@@ -175,7 +176,8 @@ describe('automatic phone card: a chip value is never cut', () => {
       />
     )
     expect(field(container, 'criticality')?.className).not.toContain('col-span-2')
-    expect(container.querySelector('[data-slot="mobile-card"] dl')?.className).toContain('h-5')
+    expect(field(container, 'criticality')?.className).toContain('flex-wrap')
+    expect(field(container, 'owner')?.className).not.toContain('col-span-2')
   })
 
   it('gives a lone field the whole line', () => {
