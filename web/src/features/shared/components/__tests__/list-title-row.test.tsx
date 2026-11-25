@@ -75,6 +75,16 @@ describe('ListTitleRow', () => {
     expect(container.querySelector('[data-slot="list-title-row"]')).not.toHaveClass(
       'max-md:sr-only'
     )
+    // Actions drawn only on wide screens (`{!isPhone && ...}`) still keep the
+    // row: a Modified mark appearing later must not move the toolbar.
+    rerender(
+      <ListTitleRow title="All" count={<span>5</span>}>
+        {false}
+      </ListTitleRow>
+    )
+    expect(container.querySelector('[data-slot="list-title-row"]')).not.toHaveClass(
+      'max-md:sr-only'
+    )
   })
   it('puts the name and the count first, the list actions at the end', () => {
     render(

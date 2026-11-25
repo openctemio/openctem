@@ -222,7 +222,10 @@ export function ListTitleRow({
   // assistive technology only, and the list's footer says how many rows
   // there are ("25 of 200"). Decided from the props, never from what is drawn,
   // so nothing appearing later (a Modified mark) moves the toolbar.
-  const metaOnly = !start && React.Children.toArray(children).length === 0
+  // The raw props: a page that renders its actions only on wide screens
+  // (`{!isPhone && <Refresh />}`) or a start that appears later (a Modified
+  // mark) still keeps the row, so the toolbar never moves.
+  const metaOnly = start == null && children == null
   // Nothing to draw (a hidden name, no count, nothing after it, no actions):
   // the heading stays for assistive technology and the row takes no room, so
   // the page never shows an empty line.
