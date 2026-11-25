@@ -105,7 +105,12 @@ export function LastRunCell({
   if (inline) {
     const blocked = showHint ? blockedRunHint(run, t) : null
     return (
-      <div data-slot="last-run-cell" className="flex min-w-0 items-center gap-2">
+      // The fix link drops under the state and time when they do not fit
+      // beside it, so a wrapped time never runs under the link.
+      <div
+        data-slot="last-run-cell"
+        className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5"
+      >
         {onOpen ? (
           <button
             type="button"
