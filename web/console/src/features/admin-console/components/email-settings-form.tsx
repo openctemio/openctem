@@ -280,7 +280,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
                 rows={4}
                 spellCheck={false}
                 autoComplete="off"
-                className="font-mono text-xs"
+                className="font-mono text-code"
                 placeholder={
                   settings.ca_set
                     ? t('admin.email.caKeep', 'Stored. Paste a new PEM bundle to replace it.')
@@ -298,7 +298,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
             </p>
           )}
           {settings.ca_set && canEdit && (
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <label className="flex items-center gap-2 text-dense text-muted-foreground">
               <input
                 type="checkbox"
                 checked={clearCa}
