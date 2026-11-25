@@ -97,6 +97,7 @@ function DialogContent({
   onInteractOutside,
   onOpenAutoFocus,
   typingSurface,
+  overlayClassName,
   ref,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
@@ -112,6 +113,8 @@ function DialogContent({
    * focus on open on a touch screen too.
    */
   typingSurface?: TouchTypingSurface
+  /** Extra classes of the backdrop (the command palette dims the page more). */
+  overlayClassName?: string
 }) {
   const contentRef = React.useRef<HTMLDivElement | null>(null)
   const [node, setNode] = React.useState<HTMLDivElement | null>(null)
@@ -133,7 +136,7 @@ function DialogContent({
   const autoFocus = useOpenAutoFocus(contentRef, 'dialog-body', onOpenAutoFocus, typingSurface)
   return (
     <DialogPortal data-slot="dialog-portal">
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         ref={setRefs}
         data-slot="dialog-content"

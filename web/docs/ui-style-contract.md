@@ -1086,8 +1086,16 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
     motion. A list that is not a `DataTable` puts `TableRefreshBar` as the
     first child of its own `relative` frame. Never draw a bar above the
     toolbar or between the toolbar and the frame.
-- **Empty**: the shared `<EmptyState>` (icon, title, why it is empty and the
-  next step, optional primary action, optional secondary link such as docs).
+- **Empty**: the shared `<EmptyState>` (optional small icon, title, one line
+  on why it is empty and the next step, at most one action). It is sized to
+  its content (no minimum height, no tall blank box), and inside a card, a
+  table or a list frame it drops its own border and background, so it never
+  draws a box in a box. Leave the action out when the page header already
+  shows the same action (one button per job); when the next step is on another
+  page, the action is an outline link to it. `filtered` (with
+  `onClearFilters`) switches it to the no-results kind below, and
+  `NoResultsState` draws that kind on its own. Every queue and table empty
+  body (`QueueEmpty`, the `DataTable` defaults) is drawn by it.
   **One filled button per screen**: the empty state's action is filled only
   when no other filled button is shown (`OneFilledAction`, before paint); beside
   the page's main action in the header it is an outline button. A page whose
@@ -1254,6 +1262,24 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
     confirmation, the approver's buttons). Do not build a second band.
   - The step-up dialog says the action continues right away once the identity
     is confirmed; it never describes the act.
+- Command palette (⌘K / Ctrl+K, the header's search): `CommandDialog` in
+  `src/components/ui/command.tsx`, shared by the app, the platform console and
+  the remediation "Move to task" picker. One surface: the search field on its
+  top edge, the list (the only part that scrolls), and a footer of key hints
+  (`CommandFooter`, `CommandKeyHint`; from `sm` only). From `sm` it is 640 px
+  wide, 15% from the top and at most 70% of the screen tall; on a phone it is
+  a full-height sheet from the top, above the keyboard. Rows are 36 px (44 on a
+  phone), each with a muted icon that says what it is (never one icon for
+  every row); headings are small and muted; the selected row is `bg-sel`. No
+  corner close button: Esc closes it, the search row ends with an "Esc" key
+  cap from `sm` and a Close button on a phone.
+  - The app's palette (`src/components/command-menu.tsx`) opens on a short
+    list: Recent (pages opened in this browser,
+    `features/command-palette/recent-pages.ts`: plain paths only, never an id;
+    shown only while the filtered navigation still offers the page), Go to (the
+    main sections) and Create (the header's Create menu, `useCreateActions`).
+    Typing searches every page, settings, views, help and records; `>` lists
+    the commands only.
 
 ### Forms, wizards and form dialogs
 

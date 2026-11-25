@@ -66,6 +66,7 @@
   "threatIntel.detections.emptyTitle": "No detections yet",
   "threatIntel.detections.loadFailed": "Failed to load detections",
   "threatIntel.detections.logged": "Logged",
+  "threatIntel.detections.openSensors": "Open sensors",
   "threatIntel.detections.reopened": "Finding reopened",
   "threatIntel.detections.retry": "Retry",
   "threatIntel.detections.search": "Search detections…",

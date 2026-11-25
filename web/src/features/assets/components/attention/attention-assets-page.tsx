@@ -27,6 +27,7 @@ import { Permission, usePermissions } from '@/lib/permissions'
 import { useAssets, type AssetSearchFilters } from '../../hooks/use-assets'
 import { attributionQuery, serializeInventoryFilters, SORT_FIELDS } from '../../lib/inventory-url'
 import { AssetsSectionTabs } from '../assets-section-tabs'
+import { QueueEmpty } from '@/features/shared/components/queue'
 import { AttentionQueueHeader } from './attention-queue-header'
 import { ATTENTION_FILTERS, type AttentionReason } from './attention-filters'
 import { useInventoryTableBulk } from '../inventory/inventory-bulk-bar'
@@ -146,16 +147,18 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
           selectMode={phoneSelect.selectMode}
           resetSelectionKey={tableBulk.resetKey}
           onAssetUpdated={() => void mutate()}
-          hasFilters
-          // With a search, an empty queue is "no match" (with Clear), not "all done".
-          emptyMessage={
-            searchTerm ? undefined : t('assets.attention.empty', 'Nothing needs attention here')
-          }
-          emptyDescription={
-            searchTerm
-              ? undefined
-              : t('assets.attention.emptyHint', 'Every asset you can see has this covered.')
-          }
+          hasFilters={Boolean(searchTerm)}
+          // An empty queue is done (the same block as the other queues); with
+          // a search it is "no match", with Clear filters.
+          emptyState={{
+            nothingYet: (
+              <QueueEmpty
+                kind="nothing-waiting"
+                title={t('assets.attention.empty', 'Nothing needs attention here')}
+                hint={t('assets.attention.emptyHint', 'Every asset you can see has this covered.')}
+              />
+            ),
+          }}
         />
       </PageStack>
 

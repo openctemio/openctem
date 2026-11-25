@@ -89,13 +89,6 @@ export function MappingListView() {
                 'ticketMapping.list.emptyDescription',
                 'Without a mapping, tickets use the built-in fields: summary, description, priority from severity and labels.'
               )}
-              action={
-                <Can permission={Permission.IntegrationsManage}>
-                  <Button onClick={() => setCreateOpen(true)}>
-                    {t('ticketMapping.list.new', 'New mapping')}
-                  </Button>
-                </Can>
-              }
             />
           ) : (
             <div className="grid gap-3">

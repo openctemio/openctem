@@ -564,7 +564,6 @@ export default function ServiceAccountsPage() {
                     )
               }
               card={false}
-              action={canCreate ? createButton : undefined}
             />
           ),
           noMatch: {

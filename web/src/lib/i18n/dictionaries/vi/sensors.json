@@ -1640,6 +1640,7 @@
   "sensors.toolDefaults.emptyTitle": "Chưa có công cụ nào có cài đặt",
   "sensors.toolDefaults.layersNote": "Thứ tự: mặc định của công cụ, rồi mặc định của tổ chức ở đây, rồi giá trị ghi đè của từng sensor. Lượt quét hoặc bước quy trình chỉ có thể giảm tốc độ, mức đồng thời và số lần thử lại, và chính sách cục bộ của mỗi sensor luôn có thể thu hẹp thêm. Sensor dùng chung của nền tảng không bao giờ dùng các mặc định này.",
   "sensors.toolDefaults.noSchema": "Không còn sensor nào báo cáo công cụ này. Hãy đặt lại để xóa các mặc định của nó.",
+  "sensors.toolDefaults.openSensors": "Mở danh sách sensor",
   "sensors.toolDefaults.problemItem": "{sensor}: {key}: {message}",
   "sensors.toolDefaults.problemsTitle": "Phiên bản công cụ của các sensor sau từ chối các mặc định này, nên các tác vụ quét của công cụ trên chúng sẽ thất bại:",
   "sensors.toolDefaults.readOnly": "Chủ sở hữu và quản trị viên thay đổi các mặc định này.",

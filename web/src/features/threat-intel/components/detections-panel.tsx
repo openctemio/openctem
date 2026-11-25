@@ -149,6 +149,11 @@ export function DetectionsPanel() {
             'threatIntel.detections.emptyDescription',
             'Detections appear here when a sensor forwards an event from your monitoring tools that matches an indicator in your catalog.'
           )}
+          action={
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/sensors">{t('threatIntel.detections.openSensors', 'Open sensors')}</Link>
+            </Button>
+          }
         />
       ) : (
         <DataTable
