@@ -56,11 +56,11 @@ export function FindingAIReviewSection({ findingId }: { findingId: string }) {
   const { hasPermission } = usePermissionsSafe()
   const canRead = hasPermission(Permission.AITriageRead)
   const { data: runs } = useFindingAIRuns(findingId, canRead)
-  const { data: agents } = useAIAgents(canRead)
+  const { data: aiAgents } = useAIAgents(canRead)
   const review = useMemo(() => aiReviewOf(runs), [runs])
   if (!review) return null
   const { run } = review
-  const agent = agents?.find((a) => a.id === run.ai_agent_id)
+  const aiAgent = aiAgents?.find((a) => a.id === run.ai_agent_id)
   const accountable = run.accountable.map((o) => o.name).filter(Boolean)
   const onWorker = run.executor === 'tenant_worker' || run.executor === 'platform_worker'
   const model = [run.provider, run.model].filter(Boolean).map((v) => toDisplayText(v ?? '', 128))
@@ -80,7 +80,7 @@ export function FindingAIReviewSection({ findingId }: { findingId: string }) {
         </span>
       }
     >
-      <AIBadge source="ai_agent" name={agent?.name} accountable={accountable} />
+      <AIBadge source="ai_agent" name={aiAgent?.name} accountable={accountable} />
       {review.state === 'not_reviewed' && review.reason && (
         <p className="text-sm text-muted-foreground">
           {t('findings.aiReview.notReviewedBecause', 'Not reviewed: {reason}', {

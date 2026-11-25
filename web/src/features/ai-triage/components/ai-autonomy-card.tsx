@@ -35,8 +35,8 @@ const toInput = (a: AIAutonomy): AIAutonomyInput => ({
 })
 
 /**
- * Settings > AI > Use cases: the one switch and the two limits on changes AI
- * agents make without a person (api docs: architecture/ai-autonomy.md). Only
+ * Settings > AI > Use cases: the one switch and the two limits on changes
+ * AI agents make without a person (api docs: architecture/ai-autonomy.md). Only
  * confirming a finding can ever happen without a person; lowering risk is
  * always a request. Pausing is one click and applies at once, also to runs in
  * flight; resuming or allowing more asks for confirmation and may ask the
