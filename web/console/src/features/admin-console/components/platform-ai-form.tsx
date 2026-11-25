@@ -65,6 +65,10 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
   const [policyConfirmOpen, setPolicyConfirmOpen] = useState(false)
   const [testing, setTesting] = useState(false)
 
+  // The provider the form starts from: the saved one, or the first offered
+  // when none is saved yet. Compared against it, a fresh form is not dirty.
+  const initialProvider = settings.provider || settings.providers[0] || ''
+
   // The saved values: on load, after a save and on Discard.
   const reset = useCallback(() => {
     setEnabled(settings.enabled)
@@ -88,7 +92,7 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
     .filter(Boolean)
   const dirty =
     enabled !== settings.enabled ||
-    provider !== settings.provider ||
+    provider !== initialProvider ||
     model.trim() !== settings.model ||
     (compat && (baseUrl.trim() !== settings.base_url || allowPrivate !== settings.allow_private)) ||
     models.join(',') !== settings.allowed_models.join(',') ||
@@ -168,8 +172,8 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
   return (
     <>
       <Card>
+        {/* No title: the page header names it; the description adds what it costs. */}
         <CardHeader>
-          <CardTitle>{t('admin.ai.title', 'Platform AI provider')}</CardTitle>
           <CardDescription>
             {t(
               'admin.ai.description',
@@ -329,18 +333,13 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
           <SettingChangedLine change={settings} />
           {canEdit && !locked && (
             <div className="flex flex-wrap items-center justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => void test()}
-                disabled={
-                  testing ||
-                  dirty ||
-                  !(settings.key_set || settings.provider === 'openai_compatible')
-                }
-              >
-                {testing && <Loader2 className="me-1.5 size-4 animate-spin" />}
-                {t('admin.ai.test', 'Test the key')}
-              </Button>
+              {/* Shown only when there is a saved key to test and nothing unsaved. */}
+              {!dirty && (settings.key_set || settings.provider === 'openai_compatible') && (
+                <Button variant="outline" onClick={() => void test()} disabled={testing}>
+                  {testing && <Loader2 className="me-1.5 size-4 animate-spin" />}
+                  {t('admin.ai.test', 'Test the key')}
+                </Button>
+              )}
               <SettingsSaveBar
                 className="basis-full"
                 dirty={dirty}
@@ -388,14 +387,17 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
             />
           </div>
           {canEdit ? (
-            <div className="flex justify-end">
-              <Button
-                onClick={() => setPolicyConfirmOpen(true)}
-                disabled={allowOrg === settings.allow_org_provider}
-              >
-                {t('admin.ai.policySave', 'Save policy')}
-              </Button>
-            </div>
+            // Save appears once the switch differs from the saved policy.
+            allowOrg !== settings.allow_org_provider && (
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setAllowOrg(settings.allow_org_provider)}>
+                  {t('settings.saveBar.discard', 'Discard')}
+                </Button>
+                <Button onClick={() => setPolicyConfirmOpen(true)}>
+                  {t('admin.ai.policySave', 'Save policy')}
+                </Button>
+              </div>
+            )
           ) : (
             <p className="text-sm text-muted-foreground">
               {t('admin.settings.superAdminOnly', 'Only a super admin can change this setting.')}

@@ -32,7 +32,6 @@
   "proxyPools.default.emptyDescription": "Add the proxies your sensors should scan public targets through, then turn proxies on. Until then, scans leave directly from each sensor.",
   "proxyPools.default.emptyTitle": "No proxies yet",
   "proxyPools.default.name": "Organization default",
-  "proxyPools.default.needsProxyFirst": "Add a proxy first.",
   "proxyPools.default.title": "Default pool",
   "proxyPools.default.toggle": "Use proxies for scans",
   "proxyPools.default.turnOff": "Turn off",

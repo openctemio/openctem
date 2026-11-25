@@ -16,7 +16,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { RefreshButton, TableSkeleton } from '@/components/list-page-parts'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { Can, useCanMutate } from '@/lib/permissions'
@@ -352,28 +351,18 @@ export function CapabilitiesSection() {
         )}
       >
         <Can route="POST /api/v1/capabilities">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Button
-                  size="sm"
-                  onClick={() => setCreateDialogOpen(true)}
-                  disabled={!isCustomMode}
-                >
-                  <Plus className="h-4 w-4" />
-                  {t('scans.capabilities.add', 'Add capability')}
-                </Button>
-              </span>
-            </TooltipTrigger>
-            {!isCustomMode && (
-              <TooltipContent>
-                {t(
-                  'scans.capabilities.addHint',
-                  'Switch to the Custom tab to add your own capabilities'
-                )}
-              </TooltipContent>
-            )}
-          </Tooltip>
+          {/* Always enabled: a custom capability is added from any tab, and
+              the list moves to Custom where the new one is shown. */}
+          <Button
+            size="sm"
+            onClick={() => {
+              if (!isCustomMode) handleMainTabChange('custom')
+              setCreateDialogOpen(true)
+            }}
+          >
+            <Plus className="h-4 w-4" />
+            {t('scans.capabilities.add', 'Add capability')}
+          </Button>
         </Can>
       </PageHeader>
 
