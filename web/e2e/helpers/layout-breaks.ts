@@ -1518,8 +1518,10 @@ export function layoutMatrix({ session = 'tenant', data, ...options }: MatrixOpt
             // a full-page screenshot stopped at the window. The window grows
             // by the page scrollers' full height for the picture (the checks
             // above ran at the real height), up to 12000 px. The page
-            // scrollers are named, not inferred: the shell's `main#content`
-            // (MainRegion, the skip link's target) and the document. Any other
+            // scrollers are named, not inferred: the shell's `#content` (the
+            // app's MainRegion `main#content` and the console's content
+            // region `div#content`, both the skip link's target) and the
+            // document. Any other
             // scroller (a boxed list inside the page) keeps its box: growing
             // the window by its height left a screen of empty page under it.
             const tall = v.overlay
@@ -1527,8 +1529,8 @@ export function layoutMatrix({ session = 'tenant', data, ...options }: MatrixOpt
               : await page.evaluate(() =>
                   Math.max(
                     0,
-                    ...[document.querySelector('main#content'), document.scrollingElement].map(
-                      (e) => (e ? e.scrollHeight - e.clientHeight : 0)
+                    ...[document.querySelector('#content'), document.scrollingElement].map((e) =>
+                      e ? e.scrollHeight - e.clientHeight : 0
                     )
                   )
                 )
