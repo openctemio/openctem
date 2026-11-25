@@ -1812,10 +1812,11 @@ export function DataTable<TData, TValue>({
       : undefined
 
   // The Display menu (row density and, when the table allows it, which
-  // columns show). Not offered over an empty list (nothing to display), and
-  // never a control alone on a row: a table whose toolbar holds nothing else
-  // draws no toolbar and offers Display at the start of its pager instead
-  // (nowhere when the list fits one page).
+  // columns show). It stays in a toolbar that holds other controls, so the
+  // toolbar holds still whatever the rows; but it is never a control alone on
+  // a row: a table whose toolbar holds nothing else draws no toolbar and
+  // offers Display at the start of its pager instead (nowhere when the list
+  // fits one page or is empty).
   const searchShown = !!serverSearch || showSearch
   const displayAlone =
     !toolbarTitle &&
@@ -1826,7 +1827,6 @@ export function DataTable<TData, TValue>({
     !toolbarEnd &&
     !toolbarBelow &&
     !phoneSelect
-  const displayShown = !(!isLoading && paginationTotal === 0 && !filterActive)
   const displayMenu = (
     <>
       {/* Display menu: row density (every table, D14) and, when the
@@ -1953,7 +1953,7 @@ export function DataTable<TData, TValue>({
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
-              {displayShown && !displayAlone && displayMenu}
+              {!displayAlone && displayMenu}
             </>
           }
         />
@@ -2491,7 +2491,7 @@ export function DataTable<TData, TValue>({
           {/* Pagination controls - centered on mobile */}
           <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2 sm:gap-4">
             {/* A table with no toolbar offers Display here (see displayAlone). */}
-            {displayAlone && displayShown && displayMenu}
+            {displayAlone && displayMenu}
             {/* Rows per page: one set for every list (25, 50, 100), plus the
                 size in use when a link asked for another. A list with one
                 fixed size (pageSizeOptions of one) has no choice to offer. */}

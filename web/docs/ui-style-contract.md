@@ -600,7 +600,8 @@ reference.
   The list's count is in its title.
 - **Display is never alone on a row**: a table whose toolbar holds nothing else
   draws no toolbar and offers Display at the start of its pager (nowhere when
-  the list fits one page), and no table offers it over an empty list.
+  the list fits one page or is empty). In a toolbar with other controls it
+  stays, so the toolbar holds still whatever the rows.
 - **The list's name and count are never a row of their own**: `ListTitleRow`
   carries the list's actions; a list without any passes the name and count as
   the toolbar's `title` (`DataTable` `toolbarTitle`), before the search box.
