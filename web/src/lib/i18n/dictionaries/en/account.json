@@ -36,7 +36,6 @@
   "account.notifications.min.low": "Low and above",
   "account.notifications.min.medium": "Medium and above",
   "account.notifications.minSeverity": "Minimum severity",
-  "account.notifications.save": "Save changes",
   "account.notifications.saveFailed": "Could not save notification settings",
   "account.notifications.saved": "Notification settings saved",
   "account.notifications.severityFilter": "Severity filter",

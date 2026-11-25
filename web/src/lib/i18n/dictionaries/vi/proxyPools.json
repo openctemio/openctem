@@ -32,7 +32,6 @@
   "proxyPools.default.emptyDescription": "Thêm các proxy mà sensor dùng để quét mục tiêu công khai, rồi bật proxy. Trước đó, lưu lượng quét đi thẳng từ từng sensor.",
   "proxyPools.default.emptyTitle": "Chưa có proxy",
   "proxyPools.default.name": "Mặc định của tổ chức",
-  "proxyPools.default.needsProxyFirst": "Hãy thêm proxy trước.",
   "proxyPools.default.title": "Nhóm proxy mặc định",
   "proxyPools.default.toggle": "Dùng proxy cho lượt quét",
   "proxyPools.default.turnOff": "Tắt",

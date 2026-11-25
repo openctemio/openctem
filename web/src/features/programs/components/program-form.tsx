@@ -49,7 +49,7 @@ import {
   scopeFileTooLarge,
   shortHash,
 } from '../lib/program-form'
-import { DetailDisclosure } from '@/features/shared'
+import { DetailDisclosure, FilePicker } from '@/features/shared'
 import {
   RequireIdentificationSwitch,
   UserAgentRotationField,
@@ -382,11 +382,11 @@ export function ProgramForm({
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor={`${id}-file`}>{t('programs.file.label', 'Scope file')}</Label>
-                  <Input
+                  <FilePicker
                     id={`${id}-file`}
-                    type="file"
+                    file={v.fileName ? { name: v.fileName } : null}
                     accept=".csv,.tsv,.json,.txt,text/csv,application/json,text/plain"
-                    onChange={(e) => void readFile(e.target.files?.[0])}
+                    onFile={(f) => void readFile(f ?? undefined)}
                   />
                   {v.fileName && (
                     <p className="text-muted-foreground text-xs">

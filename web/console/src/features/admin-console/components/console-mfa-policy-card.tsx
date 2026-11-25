@@ -34,7 +34,7 @@ export function ConsoleMfaPolicyCard() {
   if (error) {
     return (
       <ErrorState
-        title={t('admin.mfaPolicy.title', 'Require security keys')}
+        title={t('admin.mfaPolicy.title', 'Security keys for administrators')}
         error={error}
         onRetry={() => void mutate()}
       />
@@ -96,7 +96,7 @@ export function ConsoleMfaPolicyCard() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Fingerprint className="size-4 text-muted-foreground" />
-          {t('admin.mfaPolicy.title', 'Require security keys')}
+          {t('admin.mfaPolicy.title', 'Security keys for administrators')}
         </CardTitle>
         <CardDescription>
           {t(

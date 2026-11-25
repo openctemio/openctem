@@ -234,7 +234,6 @@
   "scans.capabilities.action.edit": "Edit",
   "scans.capabilities.action.viewDetails": "View details",
   "scans.capabilities.add": "Add capability",
-  "scans.capabilities.addHint": "Switch to the Custom tab to add your own capabilities",
   "scans.capabilities.card.sensorsWith": "{count} sensor with this capability",
   "scans.capabilities.card.sensorsWithMany": "{count, plural, one {# sensor} other {# sensors}} with this capability",
   "scans.capabilities.card.toolsUsing": "{count} tool using this capability",

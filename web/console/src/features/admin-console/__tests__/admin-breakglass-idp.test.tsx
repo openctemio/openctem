@@ -134,7 +134,7 @@ describe('admin sign-in (platform IdP) form', () => {
       'Stored. Leave empty to keep it.'
     )
     await user.click(screen.getByRole('switch', { name: 'Require the identity provider' }))
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: /Save changes/ }))
     expect(save).not.toHaveBeenCalled()
     await user.click(await screen.findByRole('button', { name: 'Require it' }))
     await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1))
@@ -150,7 +150,10 @@ describe('admin sign-in (platform IdP) form', () => {
     )
     const user = userEvent.setup()
     render(<PlatformIdPForm idp={configured} hasBreakGlass onSaved={vi.fn()} />)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    // Nothing to save at rest: the save bar shows once a value changes.
+    expect(screen.queryByRole('button', { name: /Save changes/ })).toBeNull()
+    await user.type(screen.getByLabelText('Client secret'), 'new-secret')
+    await user.click(screen.getByRole('button', { name: /Save changes/ }))
     expect(
       await screen.findByText("could not read the issuer's OpenID configuration")
     ).toBeInTheDocument()

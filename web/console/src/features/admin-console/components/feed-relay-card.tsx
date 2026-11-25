@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
-import { ExternalLink, Loader2 } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SafeExternalLink } from '@/components/safe-external-link'
@@ -25,7 +25,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, RelativeTime } from '@/features/shared'
+import { ErrorState, RelativeTime, SettingsSaveBar } from '@/features/shared'
 import { TonePill, type PillTone } from '@/features/shared/components/tone-pill'
 import {
   saveFeedRelay,
@@ -522,18 +522,24 @@ export function FeedRelayCard({ canEdit }: { canEdit: boolean }) {
               </fieldset>
             )}
 
-            {canEdit && (
+            {canEdit && data.mode === 'relay' && (
               <div className="flex flex-wrap justify-end gap-2">
-                {data.mode === 'relay' && (
-                  <Button variant="outline" disabled={busy} onClick={() => setConfirm('direct')}>
-                    {t('admin.feedRelay.switchDirect', 'Switch to direct now')}
-                  </Button>
-                )}
-                <Button disabled={!dirty || !valid || busy} onClick={() => setConfirm('save')}>
-                  {busy && <Loader2 className="me-1.5 size-4 animate-spin" />}
-                  {t('admin.settings.save', 'Save')}
+                <Button variant="outline" disabled={busy} onClick={() => setConfirm('direct')}>
+                  {t('admin.feedRelay.switchDirect', 'Switch to direct now')}
                 </Button>
               </div>
+            )}
+            {canEdit && (
+              <SettingsSaveBar
+                dirty={dirty}
+                saving={busy}
+                saveDisabled={!valid}
+                onSave={() => setConfirm('save')}
+                onDiscard={() => {
+                  setMode(data.mode)
+                  setPicked(data.sensor_ids)
+                }}
+              />
             )}
           </div>
         )}

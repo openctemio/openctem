@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Switch } from '@/components/ui/switch'
@@ -142,8 +142,8 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
   return (
     <>
       <Card>
+        {/* The question is asked once, above its choices; the page header names the page. */}
         <CardHeader>
-          <CardTitle>{t('admin.signup.title')}</CardTitle>
           <CardDescription>{t('admin.signup.desc')}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">

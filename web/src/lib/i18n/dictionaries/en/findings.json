@@ -1186,6 +1186,7 @@
   "findings.importResults.endpoints": "Endpoints",
   "findings.importResults.failed": "The import failed",
   "findings.importResults.file": "File",
+  "findings.importResults.fileRequired": "Choose the file to import first.",
   "findings.importResults.findings": "Findings",
   "findings.importResults.format": "Format",
   "findings.importResults.formatDetect": "Detect from the file",

@@ -106,7 +106,7 @@ export function AlertWebhookForm({ settings, canEdit, onSaved }: AlertWebhookFor
       <SettingsSection
         framed
         id="alert-webhook"
-        title={t('admin.alerts.title', 'Alert webhook')}
+        title={t('admin.alerts.title', 'Chat or paging webhook')}
         description={t(
           'admin.alerts.description',
           'Sends the alerts administrators get by email to a chat or paging tool too: low disk space, stale backups, expiring certificates and changes to these settings. Checks that must run while the API is down stay with the server monitoring.'

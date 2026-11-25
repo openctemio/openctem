@@ -117,7 +117,7 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
             under the list, so no line of text sits on its own above it. */}
         <CardHeader>
           <CardTitle role="heading" aria-level={2}>
-            {t('limits.console.defaults.title', 'Limits of self-service organizations')}
+            {t('limits.console.defaults.title', 'Defaults for self-service organizations')}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">

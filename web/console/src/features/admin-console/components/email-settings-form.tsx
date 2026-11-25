@@ -6,7 +6,7 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -16,6 +16,7 @@ import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import type { EmailSettingsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveEmailSettings, sendTestEmail } from '../api/use-email-settings'
+import { SecretField } from './console-setting-parts'
 import { ReasonAndCodeFields, useReasonAndCode } from './step-up-code-hint'
 
 export interface EmailSettingsFormProps {
@@ -125,7 +126,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
         totp_code: rc.code.trim(),
       })
       setConfirmOpen(false)
-      toast.success(t('admin.email.saved', 'Email settings saved'))
+      toast.success(t('admin.email.saved', 'E-mail settings saved'))
       onSaved()
     } catch (e) {
       if (e instanceof AdminApiError && e.status === 401) {
@@ -146,7 +147,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
       toast.error(
         e instanceof Error
           ? e.message
-          : t('admin.email.saveFailed', 'Could not save the email settings')
+          : t('admin.email.saveFailed', 'Could not save the e-mail settings')
       )
     } finally {
       setBusy(false)
@@ -157,7 +158,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
     setTesting(true)
     try {
       await sendTestEmail()
-      toast.success(t('admin.email.testSent', 'Test email sent to your address'))
+      toast.success(t('admin.email.testSent', 'Test e-mail sent to your address'))
     } catch (e) {
       const reason =
         e instanceof AdminApiError && e.details && typeof e.details === 'object'
@@ -165,8 +166,8 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
           : undefined
       toast.error(
         reason && TEST_REASONS.includes(reason)
-          ? t(`admin.email.testFailed.${reason}`, 'The test email could not be sent')
-          : t('admin.email.testFailed', 'The test email could not be sent')
+          ? t(`admin.email.testFailed.${reason}`, 'The test e-mail could not be sent')
+          : t('admin.email.testFailed', 'The test e-mail could not be sent')
       )
     } finally {
       setTesting(false)
@@ -193,23 +194,15 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
   return (
     <>
       <Card>
-        <CardHeader>
-          <CardTitle>{t('admin.email.title', 'Platform email')}</CardTitle>
-          <CardDescription>
-            {t(
-              'admin.email.description',
-              'The SMTP server for sign-up, invitation, verification and password emails. An organization with its own email integration sends through that instead.'
-            )}
-          </CardDescription>
-        </CardHeader>
+        {/* No card title: the page header already names this form. */}
         <CardContent className="space-y-6">
           <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
             <Label htmlFor={`${id}-enabled`} className="grid gap-1 font-normal">
-              <span className="font-medium">{t('admin.email.enabled', 'Send email')}</span>
+              <span className="font-medium">{t('admin.email.enabled', 'Send e-mail')}</span>
               <span className="text-sm text-muted-foreground">
                 {t(
                   'admin.email.enabledHelp',
-                  'Off: no email is sent; set-password links are shown to the administrator instead.'
+                  'Off: no e-mail is sent; set-password links are shown to the administrator instead.'
                 )}
               </span>
             </Label>
@@ -231,38 +224,15 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
               placeholder: '587',
             })}
             {field('username', t('admin.email.username', 'User name'), { autoComplete: 'off' })}
-            <div className="grid gap-1.5">
-              <Label htmlFor={`${id}-password`}>{t('admin.email.password', 'Password')}</Label>
-              <Input
-                id={`${id}-password`}
-                type="password"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value)
-                  setClearPassword(false)
-                }}
-                disabled={!canEdit || clearPassword}
-                autoComplete="new-password"
-                placeholder={
-                  settings.password_set
-                    ? t('admin.email.passwordKeep', 'Stored. Type to replace it.')
-                    : t('admin.email.passwordNone', 'Not set')
-                }
-              />
-              {settings.password_set && canEdit && (
-                <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={clearPassword}
-                    onChange={(e) => {
-                      setClearPassword(e.target.checked)
-                      setPassword('')
-                    }}
-                  />
-                  {t('admin.email.passwordClear', 'Remove the stored password')}
-                </label>
-              )}
-            </div>
+            <SecretField
+              label={t('admin.email.password', 'Password')}
+              isSet={!!settings.password_set}
+              value={password}
+              onChange={setPassword}
+              clear={clearPassword}
+              onClear={setClearPassword}
+              disabled={!canEdit}
+            />
             {field('from', t('admin.email.from', 'Sender address'), {
               type: 'email',
               placeholder: 'noreply@example.com',
@@ -340,14 +310,11 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-3">
-            {canEdit && (
-              <Button
-                variant="outline"
-                onClick={() => void test()}
-                disabled={testing || dirty || !settings.enabled}
-              >
+            {/* Shown only when it can run: e-mail on and the form saved. */}
+            {canEdit && settings.enabled && !dirty && (
+              <Button variant="outline" onClick={() => void test()} disabled={testing}>
                 {testing && <Loader2 className="me-1.5 size-4 animate-spin" />}
-                {t('admin.email.sendTest', 'Send a test email')}
+                {t('admin.email.sendTest', 'Send a test e-mail')}
               </Button>
             )}
             {canEdit && (
@@ -375,10 +342,10 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
         onOpenChange={(open) => {
           if (!busy) setConfirmOpen(open)
         }}
-        title={t('admin.email.confirmTitle', 'Change the platform email settings?')}
+        title={t('admin.email.confirmTitle', 'Change the platform e-mail settings?')}
         desc={t(
           'admin.email.confirmDesc',
-          'The change applies to every email sent from now on and is recorded in the admin audit log (without the password).'
+          'The change applies to every e-mail sent from now on and is recorded in the admin audit log (without the password).'
         )}
         disabled={!rc.codeOk}
         isLoading={busy}

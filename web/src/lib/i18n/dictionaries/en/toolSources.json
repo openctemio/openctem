@@ -35,6 +35,7 @@
   "toolSources.saveFailed": "Could not save the key",
   "toolSources.saved": "Key saved for {name}",
   "toolSources.set": "Set key",
+  "toolSources.setNamed": "Set the key for {name}",
   "toolSources.title": "Tool source keys",
   "toolSources.toggleFailed": "Could not change the key",
   "toolSources.updatedBy": "by {name}",

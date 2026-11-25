@@ -107,6 +107,8 @@
   "common.editNamed": "Edit {name}",
   "common.export": "Export",
   "common.failedToLoad": "Couldn't load {title}",
+  "common.filePicker.choose": "Choose a file",
+  "common.filePicker.none": "No file chosen",
   "common.filter.all": "All",
   "common.filter.clearNamed": "Clear {name}",
   "common.filterButton.active": "{label}, {count} active",

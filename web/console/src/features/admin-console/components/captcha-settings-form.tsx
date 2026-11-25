@@ -118,7 +118,7 @@ export function CaptchaSettingsForm({ settings, canEdit, onSaved }: CaptchaSetti
       <SettingsSection
         framed
         id="captcha-keys"
-        title={t('admin.captcha.title', 'CAPTCHA (Cloudflare Turnstile)')}
+        title={t('admin.captcha.title', 'Cloudflare Turnstile keys')}
         // The state leads the description (a state, not an action): beside
         // the text it squeezed the description into a narrow column on a phone.
         description={

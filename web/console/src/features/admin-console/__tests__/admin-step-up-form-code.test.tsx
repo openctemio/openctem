@@ -85,6 +85,13 @@ async function confirmWith(user: ReturnType<typeof userEvent.setup>, code: strin
   await user.click(within(dialog).getByRole('button', { name: 'Confirm' }))
 }
 
+/** Opens the stored password for replacing when it shows as a status, then types. */
+async function typePassword(user: ReturnType<typeof userEvent.setup>, text: string) {
+  const replace = screen.queryByRole('button', { name: 'Replace Password' })
+  if (replace) await user.click(replace)
+  await user.type(screen.getByLabelText('Password'), text)
+}
+
 describe('a console form whose step-up code is refused', () => {
   beforeEach(() => {
     puts = []
@@ -99,7 +106,7 @@ describe('a console form whose step-up code is refused', () => {
   it('shows the refusal in the form and saves with the next code, with no second dialog', async () => {
     const user = userEvent.setup()
     const onSaved = renderPage()
-    await user.type(screen.getByLabelText('Password'), 'n3w-pass')
+    await typePassword(user, 'n3w-pass')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
 
     putAnswers = [refusedCode()]
@@ -132,12 +139,12 @@ describe('a console form whose step-up code is refused', () => {
   it('saves again after a save, then cancels and reopens cleanly', async () => {
     const user = userEvent.setup()
     renderPage()
-    await user.type(screen.getByLabelText('Password'), 'first')
+    await typePassword(user, 'first')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await confirmWith(user, '111111')
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
 
-    await user.type(screen.getByLabelText('Password'), 'second')
+    await typePassword(user, 'second')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     await user.click(
       within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })

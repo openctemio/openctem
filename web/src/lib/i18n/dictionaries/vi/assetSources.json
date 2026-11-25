@@ -56,7 +56,6 @@
   "assetSources.preview.truncated": "Chỉ kiểm tra 5000 tài sản đầu tiên.",
   "assetSources.remove": "Thôi xếp hạng riêng {name}",
   "assetSources.reset": "Đặt lại về mặc định",
-  "assetSources.save": "Lưu thay đổi",
   "assetSources.saveFailed": "Không lưu được cài đặt",
   "assetSources.saveHint": "Hạ thứ hạng một trình kết nối sẽ yêu cầu bạn xác nhận danh tính. Giá trị trên tài sản được cập nhật ở chế độ nền; thay đổi xuất hiện trong dòng thời gian của từng tài sản.",
   "assetSources.saved": "Đã lưu cài đặt nguồn tài sản",
