@@ -303,11 +303,21 @@ only: likely (a version match below 80% confidence) is its own number.
   including **Scan affected assets**
   (`scans:write` and `scans:execute`: the quick-scan dialog over the
   affected domains, subdomains and IP addresses, scope-checked before it
-  starts). The alert page keeps the full asset table and timeline.
-- The alert page has one main action, **Create remediation task**. The state
-  moves (acknowledge, remediating, not affected, reopen) and **Scan affected
-  assets** are buttons beside it from 1280 px and one **More actions** menu
-  below (phone, tablet, a laptop with the sidebar open).
+  starts). The alert page keeps the full asset table and timeline. The
+  drawer uses the shared quick-view frame: the CVE, one line under it with
+  the state, priority and exploit chips and the product, one main action,
+  and every other action in the header's More menu (a bottom sheet on a
+  phone). The score parts are one row each with a bar of the points the part
+  gave against the most it can give (exploitation 45, severity 25, exposure
+  30, freshness 10), then the confidence multiplier and the total.
+- The alert has one main action, the next step for its state: **Create
+  remediation task** while it is open and has findings to plan (**Scan
+  affected assets** first when the version is not certain), **Acknowledge**
+  for a new alert with nothing to plan, **Mark remediating** for an
+  acknowledged one, **Scan affected assets** while remediating (to check the
+  fix), none once it is closed. On the alert page the other actions are
+  buttons beside it from 1280 px and one **More actions** menu below (phone,
+  tablet, a laptop with the sidebar open); the drawer always uses the menu.
 - The alert page lists the affected hosts in one table grouped by tier, each
   group shown only when it has a row: **Confirmed affected**, **Likely
   affected**, **Possibly affected (version unknown)**. A group's count is its

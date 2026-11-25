@@ -1,21 +1,25 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { Languages } from 'lucide-react'
+import dynamic from 'next/dynamic'
 
 import { BrandLogoFull, PoweredBy } from '@/components/brand-logo'
-import { LocaleMenuItems } from '@/components/language-switcher'
 import Link from '@/components/link'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { TEXT_LINK_CLASS, TextLink } from '@/components/ui/text-link'
+import { TextLink } from '@/components/ui/text-link'
 import { useTranslation } from '@/context/i18n-provider'
 import { Overridable } from '@/lib/extension/overridable'
 import { safeHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
+
+import { EntryLanguageButton } from './entry-language-button'
+
+// The footer's language menu loads after the page renders: its menu code is
+// not part of the first download of every page without the app shell. Until
+// it is there the same button stands in its place.
+const EntryLanguageMenu = dynamic(
+  () => import('./entry-language-menu').then((m) => m.EntryLanguageMenu),
+  { ssr: false, loading: () => <EntryLanguageButton /> }
+)
 
 /**
  * The frame of every page without the app shell (sign-in, sign-up, password
@@ -104,37 +108,8 @@ export function EntryFrame({
           </TextLink>
         )}
         <Overridable id="auth.footer" fallback={PoweredBy} />
-        <EntryLanguageSwitch />
+        <EntryLanguageMenu />
       </footer>
     </div>
-  )
-}
-
-/**
- * The language menu of the footer: the same cookie and reload as the app's.
- * Drawn as one more footer link (same size and colour as the legal links),
- * not a button of its own size.
- */
-function EntryLanguageSwitch() {
-  const { t } = useTranslation()
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          data-slot="entry-language"
-          className={cn(
-            TEXT_LINK_CLASS.nav,
-            'inline-flex items-center gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-ring'
-          )}
-        >
-          <Languages className="size-3.5" aria-hidden />
-          {t('common.language', 'Language')}
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="center">
-        <LocaleMenuItems />
-      </DropdownMenuContent>
-    </DropdownMenu>
   )
 }

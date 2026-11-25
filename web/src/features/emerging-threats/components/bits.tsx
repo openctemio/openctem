@@ -107,7 +107,74 @@ export function EtsCell({ ets }: { ets: number }) {
 
 export const ETS_PARTS = ['exploitation', 'severity', 'exposure', 'freshness'] as const
 
-/** The parts of the score as label/value rows (tooltip and drawer). */
+/**
+ * The most points each part can give (pkg/domain/threatalert Score):
+ * exploitation 40 plus 5 for ransomware use, severity 20 plus 5 for a
+ * network attack with no privileges or user action, exposure 30 for an
+ * internet-facing crown jewel, freshness 10 for an event in the last 72 hours.
+ */
+export const ETS_PART_MAX: Record<(typeof ETS_PARTS)[number], number> = {
+  exploitation: 45,
+  severity: 25,
+  exposure: 30,
+  freshness: 10,
+}
+
+/**
+ * Why the score is what it is, using the width it has: one row per part
+ * (label, a bar of its points against the most it can give, the points),
+ * then the confidence multiplier and the total on one closing line.
+ */
+export function EtsBreakdownBars({ breakdown }: { breakdown: EtsBreakdown }) {
+  const { t } = useTranslation()
+  return (
+    <div className="space-y-2" data-slot="ets-breakdown">
+      {/* A bar chart, not a key-value list: each row is a labelled meter
+          (its accessible name carries the part, its points and the most it
+          can give), with the points beside it for sighted readers. */}
+      <ul className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 text-sm">
+        {ETS_PARTS.map((k) => {
+          const label = t(`emergingThreats.breakdown.${k}`)
+          return (
+            <li key={k} className="contents">
+              <span className="text-muted-foreground" aria-hidden>
+                {label}
+              </span>
+              <Meter
+                value={breakdown[k]}
+                max={ETS_PART_MAX[k]}
+                label={t('emergingThreats.breakdown.meter', undefined, {
+                  part: label,
+                  n: breakdown[k],
+                  max: ETS_PART_MAX[k],
+                })}
+              />
+              <span className="text-end tabular-nums" aria-hidden>
+                {breakdown[k]}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+      <p className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-t pt-2 text-sm">
+        <span className="flex items-baseline gap-2">
+          <span className="text-muted-foreground">{t('emergingThreats.breakdown.confidence')}</span>
+          <span className="tabular-nums">
+            {t('emergingThreats.breakdown.multiplier', undefined, {
+              value: Number(breakdown.confidence.toFixed(2)),
+            })}
+          </span>
+        </span>
+        <span className="flex items-baseline gap-2">
+          <span className="font-medium">{t('emergingThreats.breakdown.total')}</span>
+          <span className="font-semibold tabular-nums">{breakdown.total}</span>
+        </span>
+      </p>
+    </div>
+  )
+}
+
+/** The parts of the score as label/value rows (tooltip). */
 export function EtsBreakdownList({ breakdown }: { breakdown: EtsBreakdown }) {
   const { t } = useTranslation()
   const items: KeyValueItem[] = [

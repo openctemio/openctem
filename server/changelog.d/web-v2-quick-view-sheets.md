@@ -1,0 +1,6 @@
+### Fixed: quick-view sheets fit their own width
+
+- Emerging threats: the sheet opened from the list uses the shared quick-view frame. Under the CVE one line holds the state, priority and exploit chips and the product; there is one main action, the next step for the alert's state (Create remediation task, Scan affected assets when the version is not certain, Acknowledge, Mark remediating, or a scan to check the fix), and every other action is in the header's More menu (a bottom sheet on a phone) instead of five buttons on two rows. The full page picks its main action the same way.
+- Emerging threats: "Why it is ranked here" shows each part of the score as a bar of its points against the most it can give, across the sheet's width, then the confidence and the total, with a one-line explanation under it.
+- Every detail view: the headline numbers follow the width they have, not the screen's, so a sheet on a wide screen keeps two per row instead of four squeezed cells; labels and captions wrap instead of being cut ("+1 possibly affected").
+- Docs: server/docs/architecture/emerging-threat-alerts.md (the drawer frame, the main action per state, the score bars), web/docs/ui-style-contract.md (the headline numbers follow their own width)

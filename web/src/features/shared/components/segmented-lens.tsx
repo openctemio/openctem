@@ -35,8 +35,6 @@ export interface SegmentedLensProps<V extends string> {
   disabled?: boolean
   /** `toolbar`: the list toolbar's control height (36 px on a phone, 32 px from sm), so the lens lines up with the controls beside it. */
   size?: 'default' | 'toolbar'
-  /** The lens switches between routes (navigation), not what a list shows: page-anatomy rules do not treat it as a row filter. */
-  route?: boolean
 }
 
 const COMPACT: Intl.NumberFormatOptions = { notation: 'compact', maximumFractionDigits: 1 }
@@ -50,7 +48,6 @@ export function SegmentedLens<V extends string>({
   className,
   disabled = false,
   size = 'default',
-  route = false,
 }: SegmentedLensProps<V>) {
   const refs = React.useRef<(HTMLButtonElement | null)[]>([])
   const index = Math.max(
@@ -94,7 +91,6 @@ export function SegmentedLens<V extends string>({
       aria-label={label}
       aria-disabled={disabled || undefined}
       data-testid="segmented-lens"
-      data-slot={route ? 'route-lens' : undefined}
       onKeyDown={onKeyDown}
       className={cn(
         'inline-flex items-center rounded-md border bg-muted/40 p-0.5 pointer-coarse:h-auto',

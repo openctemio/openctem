@@ -82,12 +82,12 @@ describe('phone footer of a card list', () => {
     expect(screen.getByText('50 of 60')).toBeInTheDocument()
   })
 
-  it('has no button when everything is shown', () => {
+  it('has no footer when every card is on screen and the list fits one page', () => {
     render(
       <DataTable {...server(18, { rowCount: 18, pagination: { pageIndex: 0, pageSize: 25 } })} />
     )
     expect(more()).not.toBeInTheDocument()
-    expect(screen.getByText('18 of 18')).toBeInTheDocument()
+    expect(screen.queryByText('18 of 18')).not.toBeInTheDocument()
   })
 
   it('stops at the largest page size and says how to see the rest', () => {

@@ -107,7 +107,7 @@ describe('DataTable stale read', () => {
     expect(container.querySelector('[data-slot=table-stale]')).toBeNull()
   })
 
-  it('a read older than 5 minutes says how old it is in the pager, with a refresh', async () => {
+  it('a read older than 5 minutes says how old it is under the rows, with a refresh', async () => {
     const onRefresh = vi.fn()
     const { container } = render(
       <DataTable
@@ -119,7 +119,8 @@ describe('DataTable stale read', () => {
     )
     const note = container.querySelector('[data-slot=table-stale]')
     expect(note).toHaveTextContent('Updated 12 minutes ago')
-    expect(note?.closest('[data-slot=data-table-pager]')).not.toBeNull()
+    // One row fits one page: no pager, the note stands on its own line.
+    expect(note?.closest('[data-slot=data-table-pager]')).toBeNull()
     const refresh = screen.getByRole('button', { name: 'Refresh now' })
     // The kit's icon size: 32, 36 on a phone.
     expect(refresh.className).toContain('size-control')

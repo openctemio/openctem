@@ -275,9 +275,10 @@ that reads another table pins the caller's tenant.
   the page's older params (`types`, `criticalities`, `tags`...) so no link
   breaks, and carries the fields it has no control for (`ip`, `network`,
   `port_gte`...) under the names above. Inside the External surface lens
-  (`?lens=external_surface`) the type is a tab (`?tab=ip_address`): a locked
-  `type` condition that is not part of the editable query text; an old
-  `types=<one type>` link opens the matching tab. The Query toggle edits the
+  (`?lens=external_surface`) the type is the "Type" filter token at the start
+  of the toolbar (`?tab=ip_address`): a locked `type` condition that is not
+  part of the editable query text; an old `types=<one type>` link opens the
+  matching type. The Query toggle edits the
   same filter as text: a filter the chips can show is written back as flat
   params, any other (an OR across fields, a group) is kept whole as `fq` and
   runs as the document `POST /query/parse` made of it, through

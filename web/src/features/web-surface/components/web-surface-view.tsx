@@ -562,7 +562,7 @@ export function WebSurfaceView() {
           )}
         />
         <AttackSurfaceSectionTabs />
-        <MetricStrip loading={stats.isLoading && !s} items={metrics} />
+        <MetricStrip loading={stats.isLoading && !s} items={metrics} listFirst />
         <div>
           {tab === 'origins' ? (
             <DataTable

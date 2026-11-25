@@ -1,63 +1,31 @@
 /**
- * The attack surface has five views (research/353 D1). Every route tab of the
- * section belongs to exactly one view, so a new tab cannot slip in as a sixth
- * strip entry: it has to be placed in a view (and then shows in its lens).
+ * One tab row for Discovery > Attack surface (owner rule 2026-11-24: one tab
+ * level per screen). Every section tab is either in the row or a page opened
+ * from another page, so a new tab cannot slip in unplaced, and none of them is
+ * drawn as a second row under the strip.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ATTACK_SURFACE_SECTION_TABS } from '../section-tabs'
-import { ATTACK_SURFACE_VIEWS, viewOfRoute } from '../attack-surface-views'
+import { ATTACK_SURFACE_DETAIL_PAGES, ATTACK_SURFACE_TAB_ORDER } from '../attack-surface-views'
 
-describe('attack surface views', () => {
-  it('are the five jobs, in order', () => {
-    expect(ATTACK_SURFACE_VIEWS.map((v) => v.id)).toEqual([
-      'overview',
-      'inventory',
-      'exposures',
-      'changes',
-      'discovery',
-    ])
+describe('attack surface tab row', () => {
+  it('places every section tab once: in the row or as a page opened from another', () => {
+    const placed = [...ATTACK_SURFACE_TAB_ORDER, ...ATTACK_SURFACE_DETAIL_PAGES]
+    expect(new Set(placed).size).toBe(placed.length)
+    expect([...placed].sort()).toEqual(ATTACK_SURFACE_SECTION_TABS.map((t) => t.href).sort())
   })
 
-  it('place every section tab in exactly one view', () => {
-    const owners = new Map<string, string[]>()
-    for (const v of ATTACK_SURFACE_VIEWS)
-      for (const r of v.routes) owners.set(r.href, [...(owners.get(r.href) ?? []), v.id])
-    const misplaced = ATTACK_SURFACE_SECTION_TABS.filter(
-      (tab) => (owners.get(tab.href)?.length ?? 0) !== 1
-    ).map((tab) => tab.href)
-    expect(misplaced).toEqual([])
-    for (const [href, ids] of owners) expect(ids, href).toHaveLength(1)
-  })
-
-  it('give every view and relabelled route an i18n key', () => {
-    for (const v of ATTACK_SURFACE_VIEWS) {
-      expect(v.labelKey).toMatch(/^attackSurface\.view\./)
-      for (const r of v.routes) if (r.label) expect(r.labelKey, r.href).toBeTruthy()
-    }
-  })
-
-  it('find the view of a route, nested pages included', () => {
-    expect(viewOfRoute('/attack-surface').id).toBe('overview')
-    expect(viewOfRoute('/attack-surface/posture').id).toBe('overview')
-    expect(viewOfRoute('/attack-surface/technologies').id).toBe('inventory')
-    expect(viewOfRoute('/attack-surface/certificates').id).toBe('inventory')
-    expect(viewOfRoute('/attack-surface/web').id).toBe('inventory')
-    expect(viewOfRoute('/attack-surface/exposures').id).toBe('exposures')
-    expect(viewOfRoute('/attack-surface/lookalikes').id).toBe('exposures')
-    expect(viewOfRoute('/attack-surface/changes').id).toBe('changes')
-    expect(viewOfRoute('/attack-surface/pages').id).toBe('changes')
-    expect(viewOfRoute('/attack-surface/discovery').id).toBe('discovery')
-    expect(viewOfRoute('/attack-surface/review').id).toBe('discovery')
-    expect(viewOfRoute('/attack-surface/review/anything').id).toBe('discovery')
-    expect(viewOfRoute('/attack-surface/unknown').id).toBe('overview')
+  it('opens on the Overview, and Posture is not a tab', () => {
+    expect(ATTACK_SURFACE_TAB_ORDER[0]).toBe('/attack-surface')
+    expect(ATTACK_SURFACE_TAB_ORDER).not.toContain('/attack-surface/posture')
   })
 })
 
 /**
  * One navigation for the section: every attack-surface page renders the
- * shared AttackSurfaceSectionTabs (which draws the views and the lens) and
+ * shared AttackSurfaceSectionTabs (the one tab row) and
  * never a strip or tab list of its own.
  */
 describe('attack surface pages', () => {
@@ -74,7 +42,7 @@ describe('attack surface pages', () => {
   const DELEGATES: Record<string, string> = {
     'web/page.tsx': '../../features/web-surface/components/web-surface-view.tsx',
   }
-  // Pages outside the five views, to be retired (research/353 D9). Never add one.
+  // Pages outside the tab row, to be retired (research/353 D9). Never add one.
   const ORPHANS = new Set(['external/page.tsx'])
 
   it('use the shared section navigation', () => {
@@ -88,6 +56,7 @@ describe('attack surface pages', () => {
       if (/<(Gated)?SectionTabs\b|<TabsList\b/.test(src)) offenders.push(`${rel}: own tabs`)
       if (!/<AttackSurfaceSectionTabs\b/.test(src))
         offenders.push(`${rel}: no AttackSurfaceSectionTabs`)
+      if (/<SegmentedLens\b|part="lens"/.test(src)) offenders.push(`${rel}: a second tab level`)
     }
     expect(offenders).toEqual([])
   })

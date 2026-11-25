@@ -419,13 +419,20 @@ reference.
   (use `PropertyList`), configuration inventories, or inside a card.
 - States that are usually zero or rarely acted on (canceled, blocked, timed
   out) are not tiles: they stay values of the list's status filter.
-- A zero is a muted `0`, never hidden; an error is `—` with the reason as the
-  tooltip; red or amber only for a positive count of a problem state.
+- A zero is a muted `0`; an error is `—` with the reason as the tooltip; red
+  or amber only for a positive count of a problem state. A strip over a list
+  (`listFirst`) whose tiles all count zero is not drawn (unless one of its
+  tiles is the filter in use: it is the way back), nor one whose list is
+  empty with no filter (`listEmpty`): the empty state says it, and figures
+  counted elsewhere never contradict it.
 - No corner icons, no default trend arrows, no `StatsCard` tile walls.
 - **Phone**: compact tiles on a six-track grid, at most two rows (2 and 4
   tiles in halves, 3 in thirds, 5 as three thirds over two halves), a long
-  label wraps to a second line; never a sideways scroll.
-- **List first on a phone**: a strip above a list takes `listFirst`, so on a
+  label wraps to a second line; never a sideways scroll. A strip with a label
+  of more than 22 characters (a Vietnamese one, often) never uses thirds, and
+  its labels wrap on two lines at every width instead of being cut.
+- **List first on a phone**: every strip above a list takes `listFirst` (one
+  place on every list page, siblings never differ), so on a
   phone it follows the list (CSS order, nothing moves after hydration) and the
   first row starts within the top 45% of a 390x844 screen. A list page's
   description under the title is hidden on a phone for the same reason.
@@ -469,8 +476,11 @@ reference.
     `onOpenSheet`, `activeCount`, `controlsId`) to `<DataTable>`, or render
     `<FilterPanelToggle>` yourself when the toolbar is not a DataTable's. It
     toggles the side panel from `lg` up and opens the same panel below `lg`
-    in `<FilterSheet>` (full width, close button on its own row, a "Show N
-    results" footer). No other left-side sheet.
+    in `<FilterSheet>` (full width, its title and the close button
+    in the header, so the facet panel draws no second "Filters" heading;
+    every select in it takes the whole width; Clear all beside "Show N
+    results" in the footer). No
+    other left-side sheet.
   - Popover / sheet / dialog of filters: put `<FilterButton activeCount={n} />`
     inside `<PopoverTrigger asChild>` (it forwards its ref and props).
   - Joined to the search field (`ListSearch` `filter`): the join follows what is
@@ -595,6 +605,19 @@ reference.
   does the same, and never shows a page count below 1. It also draws no
   column headers and no select-all box at zero rows (empty or failed list);
   the headers stay while the list loads.
+- **A list that fits one page has no pager**: no "Showing 1 to 4 of 4", no
+  "Page 1 of 1", no "4 of 4" under phone cards, when every row is on screen
+  and the total fits the smallest page size (or the list has one fixed size).
+  The list's count is in its title.
+- **Display is never alone on a row**: a table whose toolbar holds nothing else
+  draws no toolbar and offers Display at the start of its pager (nowhere when
+  the list fits one page or is empty). In a toolbar with other controls it
+  stays, so the toolbar holds still whatever the rows.
+- **The list's name and count are never a row of their own**: `ListTitleRow`
+  carries the list's actions; a list without any passes the name and count as
+  the toolbar's `title` (`DataTable` `toolbarTitle`), before the search box.
+  On a phone a title row with no `start` and no actions (it can only ever
+  draw the name and count) is read to assistive technology only (the footer says "25 of 200").
 - **An automatic phone card is compact.** A table without `mobileRow` draws
   short lines of 20 px each, whatever its cells draw (one line, cut with an
   ellipsis); only the title may take two:
@@ -637,6 +660,9 @@ reference.
   (`isPhonePageSize` in `lib/page-size-options.ts`, already in
   `useListParams`), and the desktop keeps Rows per page 25 / 50 / 100. A
   list with one fixed size (`pageSizeOptions` of one) keeps the pager.
+- **A phone card label is never cut against its value**: the value gives way
+  first, at the card's edge. A switch in the card's title line keeps its own
+  box.
 - **A switch is a value on a phone card.** A field of the automatic phone card
   whose cell is only a switch (an "Enabled" column) reads "On" or "Off"
   beside it, kept in step with the switch, so no card shows a label over a
@@ -1179,7 +1205,10 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
   `src/features/shared/components/detail-sheet.tsx`: a `<DetailCallout>`
   first when something is wrong (the problem in plain words, the fix as a
   button; nothing when all is well), a `<DetailStatGrid>` of 2–4
-  `<DetailStat>`s (leave out a number the data does not have), then
+  `<DetailStat>`s (leave out a number the data does not have; its columns
+  follow its own width by a container query, not the viewport, so a drawer
+  keeps two per row and one row needs about 10rem a cell; labels and
+  captions wrap, never cut), then
   `<DetailSections>` (dividers, not cards) ending with identity and trivia
   (IDs, legacy fields) behind a "More details" disclosure. Header: at most one
   primary and one outline button; security and lifecycle actions (rotate key,
@@ -1189,7 +1218,10 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
     (right drawer from `md`, bottom sheet on phones, header pinned while the
     body scrolls, `width` token), `<DetailHeader>` (the title **wraps**, never
     truncates: it is often the only identifier; `badges` after it, `meta`
-    parts joined with `·`, an `actions` row, a `menu` of items for `⋯`) and
+    parts on one wrapping line, `actions` ending the line under the title
+    beside the meta line (or the badges, moved there when there is no meta
+    line; beside the header icons when there is neither), never a row of
+    their own, a `menu` of items for `⋯`) and
     `<DetailTabs>` (underline tabs; `useDetailTab(param, values)` keeps the
     tab in the URL when the page wants it, with a parameter the page does not
     already use).
