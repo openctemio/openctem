@@ -50,7 +50,7 @@ export function ComponentPhoneCard({
             {item.ecosystem || <span className="text-muted-foreground">—</span>}
           </span>
         </div>
-        <p className="truncate font-mono text-meta text-muted-foreground" title={item.purl}>
+        <p className="font-mono text-meta text-muted-foreground [overflow-wrap:anywhere]">
           {toDisplayText(item.purl, 200)}
         </p>
         <p className="text-meta">

@@ -696,14 +696,16 @@ export default function ExceptionsPage() {
             mobileRow={(r) => (
               <div data-slot="exception-card" className="flex min-w-0 flex-col gap-1 px-3 py-3">
                 <div className="flex min-w-0 items-center justify-between gap-3">
-                  <span className="min-w-0 truncate font-medium" title={r.name}>
+                  <span data-cut-tooltip className="min-w-0 truncate font-medium" title={r.name}>
                     {r.name}
                   </span>
                   <span className="shrink-0">
                     <SuppressionStatusBadge status={r.status} />
                   </span>
                 </div>
-                <p className="text-meta truncate font-mono">{suppressionScopeSummary(r, t)}</p>
+                <p className="text-meta font-mono [overflow-wrap:anywhere]">
+                  {suppressionScopeSummary(r, t)}
+                </p>
                 <MetaLine
                   items={[
                     suppressionTypeLabel(r.suppression_type, t),

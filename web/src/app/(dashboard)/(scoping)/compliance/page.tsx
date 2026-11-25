@@ -202,7 +202,7 @@ function FrameworkCard({
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
         <div className="min-w-0 space-y-1.5">
           <CardTitle>{fw.name}</CardTitle>
-          <CardDescription className="line-clamp-2">{fw.description}</CardDescription>
+          <CardDescription>{fw.description}</CardDescription>
         </div>
         <div className="shrink-0 text-end">
           <div className="text-2xl font-semibold tabular-nums">{score}%</div>

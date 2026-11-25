@@ -165,7 +165,11 @@ export function FindingQueue({
         href={href}
         title={
           <Link href={href} className="block min-w-0 text-sm font-medium hover:underline">
-            <span className="line-clamp-2 break-words">
+            <span
+              data-cut-tooltip
+              title={findingName(f) || undefined}
+              className="line-clamp-2 break-words"
+            >
               {findingName(f) || t('myWork.untitled')}
             </span>
           </Link>

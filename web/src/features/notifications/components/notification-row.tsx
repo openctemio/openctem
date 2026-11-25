@@ -78,6 +78,8 @@ export function NotificationRow({
           <p
             dir="auto"
             translate={titleKey ? undefined : 'no'}
+            data-cut-tooltip={compact ? '' : undefined}
+            title={compact ? title : undefined}
             className={cn(
               'break-words [unicode-bidi:isolate]',
               compact ? 'text-dense line-clamp-2 font-medium' : 'text-sm leading-snug',
@@ -88,13 +90,17 @@ export function NotificationRow({
           </p>
           <SeverityBadge severity={severity as Severity} className="flex-shrink-0" />
         </div>
+        {/* The list shows the whole message; the bell's compact row keeps
+            two lines, the rest in its title. */}
         {body && (
           <p
             dir="auto"
             translate="no"
+            data-cut-tooltip={compact ? '' : undefined}
+            title={compact ? body : undefined}
             className={cn(
-              'line-clamp-2 break-words text-muted-foreground [unicode-bidi:isolate]',
-              compact ? 'text-cap' : 'text-xs'
+              'break-words text-muted-foreground [unicode-bidi:isolate]',
+              compact ? 'text-cap line-clamp-2' : 'text-xs'
             )}
           >
             {body}
