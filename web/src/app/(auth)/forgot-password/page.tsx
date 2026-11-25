@@ -3,10 +3,15 @@
 import { useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import Link from '@/components/link'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 
-import { EntryActions, EntryBanner, EntryCard, EntryHeader } from '@/components/entry'
+import {
+  EntryActions,
+  EntryBackLink,
+  EntryBanner,
+  EntryCard,
+  EntryHeader,
+} from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -69,9 +74,7 @@ export default function ForgotPasswordPage() {
           )}
         </EntryBanner>
         <EntryActions>
-          <Button variant="signal" asChild>
-            <Link href="/login">{t('auth.common.backToSignIn', 'Back to sign in')}</Link>
-          </Button>
+          <EntryBackLink />
         </EntryActions>
       </EntryCard>
     )
@@ -98,9 +101,7 @@ export default function ForgotPasswordPage() {
           }
         />
         <EntryActions>
-          <Button variant="signal" asChild>
-            <Link href="/login">{t('auth.common.backToSignIn', 'Back to sign in')}</Link>
-          </Button>
+          <EntryBackLink />
         </EntryActions>
       </EntryCard>
     )
@@ -147,12 +148,7 @@ export default function ForgotPasswordPage() {
               {isPending && <Loader2 aria-hidden className="size-4 animate-spin" />}
               {t('auth.forgot.submit', 'Send reset link')}
             </Button>
-            <Button variant="outline" asChild>
-              <Link href="/login">
-                <ArrowLeft aria-hidden className="size-4" />
-                {t('auth.common.backToSignIn', 'Back to sign in')}
-              </Link>
-            </Button>
+            <EntryBackLink />
           </EntryActions>
         </form>
       </Form>

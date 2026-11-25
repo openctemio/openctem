@@ -1,7 +1,7 @@
 'use client'
 
 import Link from '@/components/link'
-import { EntryActions, EntryCard, EntryHeader } from '@/components/entry'
+import { EntryActions, EntryBackLink, EntryCard, EntryHeader } from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAuthProviders } from '../api/use-auth-providers'
@@ -50,9 +50,7 @@ export function NotSetUpNotice() {
             <Link href="/request-access">{t('auth.requestAccess.cta', 'Request access')}</Link>
           </Button>
         )}
-        <Button asChild variant="outline">
-          <Link href="/login">{t('auth.notSetUp.backToSignIn', 'Back to sign in')}</Link>
-        </Button>
+        <EntryBackLink />
       </EntryActions>
     </EntryCard>
   )
