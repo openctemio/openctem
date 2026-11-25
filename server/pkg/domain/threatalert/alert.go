@@ -291,11 +291,11 @@ func (v Vuln) PublicExploit() bool { return v.InKEV || v.Exploitation.PublicExpl
 func severityPoints(v Vuln) int {
 	p := 0
 	switch strings.ToLower(v.Severity) {
-	case "critical":
+	case levelCritical:
 		p = 20
-	case "high":
+	case levelHigh:
 		p = 12
-	case "medium":
+	case levelMedium:
 		p = 5
 	}
 	vec := strings.ToUpper(v.CVSSVector)
@@ -309,7 +309,7 @@ func exposurePoints(assets []Asset) int {
 	best := 0
 	for _, a := range assets {
 		p := 0
-		crown := strings.EqualFold(a.Criticality, "critical")
+		crown := strings.EqualFold(a.Criticality, levelCritical)
 		switch {
 		case a.InternetFacing && crown:
 			p = 30
@@ -402,11 +402,11 @@ func LevelFor(b Breakdown, tier Tier, v Vuln, assets []Asset, s tenant.EmergingT
 // affected only, a critical vulnerability with a public exploit, and an
 // internet-facing crown-jewel asset among the possibly affected ones.
 func CheckNeeded(tier Tier, v Vuln, assets []Asset) bool {
-	if v.CardReported || tier != TierPossible || !strings.EqualFold(v.Severity, "critical") || !v.PublicExploit() {
+	if v.CardReported || tier != TierPossible || !strings.EqualFold(v.Severity, levelCritical) || !v.PublicExploit() {
 		return false
 	}
 	for _, a := range assets {
-		if a.Kind == MatchPossible && a.InternetFacing && strings.EqualFold(a.Criticality, "critical") {
+		if a.Kind == MatchPossible && a.InternetFacing && strings.EqualFold(a.Criticality, levelCritical) {
 			return true
 		}
 	}
@@ -559,7 +559,7 @@ func CardTitle(title string, reported bool) string {
 const ReportedPrefix = "Reported, not yet reviewed: "
 
 // severities, weakest first.
-var severities = []string{"none", "low", "medium", "high", "critical"}
+var severities = []string{"none", "low", levelMedium, levelHigh, levelCritical}
 
 // StrongestSeverity is the strongest of the given severity levels (empty
 // when none is known). A card's alert never rates lower than a

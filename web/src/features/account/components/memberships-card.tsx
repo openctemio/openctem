@@ -7,7 +7,8 @@ import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { EntryActions, EntryCard, EntryHeader } from '@/components/entry'
+import { EntryActions } from '@/components/entry'
+import { SettingsSection } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { localLogoutAction, selectTenantAction } from '@/features/auth/actions/local-auth-actions'
 import { blockedReasonText } from '@/features/organization/lib/external-access'
@@ -16,6 +17,10 @@ import { safeText } from '@/lib/api/error-message'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
 
 import { membershipStep, type MembershipRefusal } from '../lib/membership-step'
+
+/** One organization or invitation: name and details, its actions at the end (under it on a phone). */
+export const HUB_ROW =
+  'flex flex-wrap items-center justify-between gap-x-4 gap-y-3 border-t border-border-subtle py-3.5 [&>:first-child]:min-w-0 [&>:first-child]:flex-[1_1_13rem]'
 
 /**
  * The account's own memberships, each with its one next step. Opening one goes
@@ -66,24 +71,21 @@ export function MembershipsCard({
   }
 
   return (
-    <EntryCard>
-      <EntryHeader
-        level={2}
-        title={t('account.orgs.membershipsTitle', 'Your organizations')}
-        description={t(
-          'account.orgs.membershipsDesc',
-          'Open one to work in it. Each organization checks its own sign-in rules when you open it.'
-        )}
-      />
-      <ul className="divide-y" data-testid="account-memberships">
+    <SettingsSection
+      framed
+      id="memberships"
+      title={t('account.orgs.membershipsTitle', 'Your organizations')}
+      description={t(
+        'account.orgs.membershipsDesc',
+        'Open one to work in it. Each organization checks its own sign-in rules when you open it.'
+      )}
+    >
+      <ul data-testid="account-memberships">
         {memberships.map((m) => {
           const refusal = refusals[m.id]
           const blocked = !!m.blocked_reason
           return (
-            <li
-              key={m.id}
-              className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
-            >
+            <li key={m.id} className={HUB_ROW}>
               <div className="flex min-w-0 items-center gap-3">
                 <span className="bg-surface-sunken flex size-8 shrink-0 items-center justify-center rounded-sm">
                   <Building2 className="size-4" aria-hidden />
@@ -164,6 +166,6 @@ export function MembershipsCard({
           )
         })}
       </ul>
-    </EntryCard>
+    </SettingsSection>
   )
 }

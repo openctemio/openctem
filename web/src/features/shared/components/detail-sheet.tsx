@@ -198,30 +198,46 @@ export function DetailField({ label, children, full, className }: DetailFieldPro
 // ============================================================================
 
 /**
- * A row of compact numbers under a detail view's header: one bordered strip
- * split into cells (not a card per number), two per row on phones and one
- * row from `sm`. Give it 2–4 `DetailStat`s and leave out a number the data
- * does not have rather than showing a dash.
+ * The compact numbers under a detail view's header: one bordered strip split
+ * into cells (not a card per number). Give it 2–4 `DetailStat`s and leave out
+ * a number the data does not have rather than showing a dash.
+ *
+ * The columns follow the width the strip has, not the viewport (a container
+ * query on a wrapper): two per row, and all in one row only where each cell
+ * gets about 10rem. A drawer about 36rem wide on a wide screen keeps two per
+ * row instead of four squeezed cells that cut their captions.
  */
+const ONE_ROW: Record<number, string> = {
+  1: 'grid-cols-1',
+  2: 'grid-cols-2',
+  3: '@min-[30rem]:grid-cols-3 @min-[30rem]:[&>*:last-child:nth-child(odd)]:col-span-1',
+  4: '@min-[40rem]:grid-cols-4',
+}
+const ONE_ROW_MANY =
+  '@min-[50rem]:grid-cols-[repeat(var(--detail-stat-cols),minmax(0,1fr))] @min-[50rem]:[&>*:last-child:nth-child(odd)]:col-span-1'
+
 export function DetailStatGrid({ className, children, ...props }: React.ComponentProps<'dl'>) {
   const count = React.Children.toArray(children).filter(Boolean).length
   if (count === 0) return null
   return (
-    <dl
-      data-slot="detail-stat-grid"
-      className={cn(
-        'grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border',
-        // An odd count on phones: the last cell takes the whole row instead
-        // of leaving an empty, border-coloured cell beside it.
-        '[&>*:last-child:nth-child(odd)]:col-span-2 sm:[&>*:last-child:nth-child(odd)]:col-span-1',
-        'sm:grid-cols-[repeat(var(--detail-stat-cols),minmax(0,1fr))]',
-        className
-      )}
-      style={{ '--detail-stat-cols': count } as React.CSSProperties}
-      {...props}
-    >
-      {children}
-    </dl>
+    // The wrapper is the container the columns measure; a caller's classes
+    // (a width cap) go on it so the cap counts.
+    <div data-slot="detail-stat-frame" className={cn('@container min-w-0', className)}>
+      <dl
+        data-slot="detail-stat-grid"
+        className={cn(
+          'grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border',
+          // An odd count over two columns: the last cell takes the whole row
+          // instead of leaving an empty, border-coloured cell beside it.
+          '[&>*:last-child:nth-child(odd)]:col-span-2',
+          ONE_ROW[count] ?? ONE_ROW_MANY
+        )}
+        style={{ '--detail-stat-cols': count } as React.CSSProperties}
+        {...props}
+      >
+        {children}
+      </dl>
+    </div>
   )
 }
 
@@ -241,10 +257,8 @@ export interface DetailStatProps {
   value: React.ReactNode
   /** Smaller text right after the value ("/ 5"). */
   unit?: React.ReactNode
-  /** One short muted line under the value. */
+  /** One short muted line under the value; it wraps rather than being cut. */
   caption?: React.ReactNode
-  /** Let the caption wrap onto several lines instead of truncating it. */
-  wrapCaption?: boolean
   /** A thin bar under the value (value / max), e.g. slots in use. */
   meter?: { value: number; max: number; label: string }
   /** Colour the value: only for a problem (style contract: never a zero). */
@@ -262,12 +276,11 @@ export function DetailStat({
   meter,
   tone = 'default',
   title,
-  wrapCaption,
   className,
 }: DetailStatProps) {
   return (
     <div className={cn('min-w-0 bg-card px-3 py-2.5', className)} data-slot="detail-stat">
-      <dt className="truncate text-xs text-muted-foreground">{label}</dt>
+      <dt className="text-xs break-words text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 flex min-w-0 items-baseline gap-1" title={title}>
         <span
           className={cn(
@@ -287,12 +300,7 @@ export function DetailStat({
         </dd>
       )}
       {caption && (
-        <dd
-          className={cn(
-            'mt-1 text-xs text-muted-foreground tabular-nums',
-            wrapCaption ? 'min-w-0 break-words' : 'truncate'
-          )}
-        >
+        <dd className="mt-1 min-w-0 text-xs break-words text-muted-foreground tabular-nums">
           {caption}
         </dd>
       )}

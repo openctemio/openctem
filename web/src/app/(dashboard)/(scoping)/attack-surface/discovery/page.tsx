@@ -22,9 +22,8 @@ export default function AttackSurfaceDiscoveryPage() {
             'How discovery runs for your organization, stage by stage: what ran last, what runs now, and what holds a stage back.'
           )}
         />
-        {/* The lens (Stages, Decisions) shares the stage toolbar's row. */}
-        <AttackSurfaceSectionTabs part="tabs" />
-        <EASMDiscovery lens={<AttackSurfaceSectionTabs part="lens" />} />
+        <AttackSurfaceSectionTabs />
+        <EASMDiscovery />
       </PageStack>
     </Main>
   )
