@@ -314,6 +314,16 @@ describe('EmergingThreatsList', () => {
       '/assets/as4'
     )
     expect(within(sheet).getByText('Most important affected hosts')).toBeInTheDocument()
+    // The header: one main action, the rest in the header's More menu; the
+    // state, priority and exploit chips on one line under the title.
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('button', { name: /Create remediation task/ })).toBeVisible()
+    expect(within(dialog).queryByRole('button', { name: 'Acknowledge' })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: /Scan affected/ })).toBeNull()
+    expect(within(dialog).getByRole('button', { name: 'More actions' })).toBeInTheDocument()
+    const meta = dialog.querySelector('[data-slot="et-meta"]') as HTMLElement
+    expect(meta.textContent).toContain('New')
+    expect(meta.textContent).toContain('KEV')
   })
 
   it('shows the API error', async () => {

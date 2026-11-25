@@ -3,7 +3,7 @@
 /** Triage actions and "create remediation task" of one alert. */
 
 import { useMemo, useState } from 'react'
-import { ListChecks, Loader2, MoreHorizontal, Radar } from 'lucide-react'
+import { ListChecks, Loader2, MoreHorizontal, Radar, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
 import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
@@ -36,12 +36,47 @@ import {
 } from '../types'
 import { NotAffectedDialog } from './not-affected-dialog'
 
-export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
+/** One action on an alert, drawn as a button or a menu entry. */
+export interface AlertAction {
+  id: 'acknowledge' | 'remediating' | 'not-affected' | 'reopen' | 'task' | 'scan'
+  label: string
+  icon?: LucideIcon
+  run: () => void
+  /** Shown but not usable, with this as the reason. */
+  disabledReason?: string
+}
+
+/**
+ * The one main action: the next step for the alert's state and what it
+ * recommends. An open alert with findings to plan gets "Create remediation
+ * task", or "Scan affected assets" first when the version is not certain
+ * (the recommendation is to confirm); a new alert with nothing to plan is
+ * acknowledged, an acknowledged one marked remediating, and a remediating
+ * one scanned again to check the fix. A closed alert has none: Reopen is in
+ * the menu.
+ */
+export function pickPrimary(
+  alert: Pick<EmergingThreatDetail, 'state' | 'recommended_action'>,
+  actions: AlertAction[]
+): AlertAction | null {
+  const usable = (id: AlertAction['id']) => actions.find((a) => a.id === id && !a.disabledReason)
+  const open = alert.state === 'new' || alert.state === 'acknowledged'
+  if (open && alert.recommended_action === 'confirm' && usable('scan')) return usable('scan')!
+  if (open && usable('task')) return usable('task')!
+  if (alert.state === 'new' && usable('acknowledge')) return usable('acknowledge')!
+  if (alert.state === 'acknowledged' && usable('remediating')) return usable('remediating')!
+  if (alert.state === 'remediating' && usable('scan')) return usable('scan')!
+  return null
+}
+
+/**
+ * The actions of one alert and their dialogs, shared by the full page and
+ * the quick-view sheet: `primary` is the one main action, `rest` the others
+ * in the order they are used (state moves, then the task, then the scan).
+ */
+export function useAlertActions(alert: EmergingThreatDetail) {
   const { t } = useTranslation()
   const revalidate = useRevalidateEmergingThreats()
-  // Below xl the six buttons took two or three rows (phone, tablet, a
-  // laptop with the sidebar open): one main action and a More menu there.
-  const compact = !useIsWide()
   const canTriage = useHasPermission(Permission.FindingsTriage)
   const canTask = useHasPermission(Permission.RemediationWrite)
   const canScanWrite = useHasPermission(Permission.ScansWrite)
@@ -79,117 +114,63 @@ export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
   const canNotAffected = state === 'new' || state === 'acknowledged' || state === 'remediating'
   const canReopen = state !== 'new'
 
-  // The state moves, in the order they are used. Below xl they and the scan
-  // join one "More actions" menu beside the one main action (Create
-  // remediation task).
-  const moves: { id: string; label: string; run: () => void }[] = canTriage
-    ? [
-        ...(canAcknowledge
-          ? [
-              {
-                id: 'acknowledge',
-                label: t('emergingThreats.actions.acknowledge'),
-                run: () => void move('acknowledged'),
-              },
-            ]
-          : []),
-        ...(canRemediate
-          ? [
-              {
-                id: 'remediating',
-                label: t('emergingThreats.actions.remediating'),
-                run: () => void move('remediating'),
-              },
-            ]
-          : []),
-        ...(canNotAffected && alert.can_suppress
-          ? [
-              {
-                id: 'not-affected',
-                label: t('emergingThreats.actions.notAffected'),
-                run: () => setNaOpen(true),
-              },
-            ]
-          : []),
-        ...(canReopen
-          ? [
-              {
-                id: 'reopen',
-                label: t('emergingThreats.actions.reopen'),
-                run: () => void move('new'),
-              },
-            ]
-          : []),
-      ]
-    : []
+  const busyReason = busy ? t('emergingThreats.actions.busy') : undefined
+  const all: AlertAction[] = []
+  if (canTriage) {
+    if (canAcknowledge)
+      all.push({
+        id: 'acknowledge',
+        label: t('emergingThreats.actions.acknowledge'),
+        run: () => void move('acknowledged'),
+        disabledReason: busyReason,
+      })
+    if (canRemediate)
+      all.push({
+        id: 'remediating',
+        label: t('emergingThreats.actions.remediating'),
+        run: () => void move('remediating'),
+        disabledReason: busyReason,
+      })
+    if (canNotAffected && alert.can_suppress)
+      all.push({
+        id: 'not-affected',
+        label: t('emergingThreats.actions.notAffected'),
+        run: () => setNaOpen(true),
+        disabledReason: busyReason,
+      })
+    if (canReopen)
+      all.push({
+        id: 'reopen',
+        label: t('emergingThreats.actions.reopen'),
+        run: () => void move('new'),
+        disabledReason: busyReason,
+      })
+  }
+  if (canTask)
+    all.push({
+      id: 'task',
+      label: t('emergingThreats.task.create'),
+      icon: ListChecks,
+      run: () => {
+        setTaskKey((k) => k + 1)
+        setTaskOpen(true)
+      },
+      disabledReason: eligible.length === 0 ? t('emergingThreats.task.nothingToAdd') : undefined,
+    })
+  if (canScan)
+    all.push({
+      id: 'scan',
+      label: t('emergingThreats.scan.affected'),
+      icon: Radar,
+      run: () => setScanOpen(true),
+      disabledReason: candidates.length === 0 ? t('emergingThreats.scan.none') : undefined,
+    })
 
-  const scanLabel = t('emergingThreats.scan.affected')
-  const menuItems: ActionMenuEntry[] = [
-    ...moves.map((m) => ({
-      id: m.id,
-      label: m.label,
-      onSelect: m.run,
-      disabledReason: busy ? t('emergingThreats.actions.busy') : undefined,
-    })),
-    ...(canScan
-      ? [
-          {
-            id: 'scan',
-            label: scanLabel,
-            section: 'scan',
-            onSelect: () => setScanOpen(true),
-            disabledReason: candidates.length === 0 ? t('emergingThreats.scan.none') : undefined,
-          },
-        ]
-      : []),
-  ]
+  const primary = pickPrimary(alert, all)
+  const rest = all.filter((a) => a !== primary)
 
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      {!compact &&
-        moves.map((m) => (
-          <Button key={m.id} size="sm" variant="outline" disabled={busy} onClick={m.run}>
-            {m.label}
-          </Button>
-        ))}
-      {canTask && (
-        <Button
-          size="sm"
-          disabled={eligible.length === 0}
-          title={eligible.length === 0 ? t('emergingThreats.task.nothingToAdd') : undefined}
-          onClick={() => {
-            setTaskKey((k) => k + 1)
-            setTaskOpen(true)
-          }}
-        >
-          <ListChecks className="me-2 h-4 w-4" aria-hidden />
-          {t('emergingThreats.task.create')}
-        </Button>
-      )}
-      {!compact && canScan && (
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={candidates.length === 0}
-          title={candidates.length === 0 ? t('emergingThreats.scan.none') : undefined}
-          onClick={() => setScanOpen(true)}
-        >
-          <Radar className="me-2 h-4 w-4" aria-hidden />
-          {scanLabel}
-        </Button>
-      )}
-      {compact && menuItems.length > 0 && (
-        <ActionMenu
-          title={alert.vuln_id}
-          label={t('emergingThreats.actions.menu', undefined, { vulnId: alert.vuln_id })}
-          items={menuItems}
-          trigger={
-            <Button size="icon" variant="outline" aria-label={t('emergingThreats.actions.more')}>
-              <MoreHorizontal className="h-4 w-4" aria-hidden />
-            </Button>
-          }
-        />
-      )}
+  const dialogs = (
+    <>
       {canTask && (
         <CreateTaskDialog key={taskKey} alert={alert} open={taskOpen} onOpenChange={setTaskOpen} />
       )}
@@ -208,6 +189,69 @@ export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
         busy={busy}
         onConfirm={(reason, note) => void move('not_affected', { reason, note })}
       />
+    </>
+  )
+
+  return { primary, rest, dialogs }
+}
+
+/** The main action as a kit button (no size override). */
+export function AlertActionButton({
+  action,
+  variant,
+}: {
+  action: AlertAction
+  variant?: 'outline'
+}) {
+  const Icon = action.icon
+  return (
+    <Button
+      variant={variant}
+      disabled={!!action.disabledReason}
+      title={action.disabledReason}
+      onClick={action.run}
+    >
+      {Icon && <Icon className="h-4 w-4" aria-hidden />}
+      {action.label}
+    </Button>
+  )
+}
+
+/**
+ * The actions on the full page. From xl every action is a button (the main
+ * one filled); below xl (phone, tablet, a laptop with the sidebar open) the
+ * buttons took two or three rows, so there it is the main action and a More
+ * menu. The quick-view sheet uses `useAlertActions` with its header instead.
+ */
+export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
+  const { t } = useTranslation()
+  const compact = !useIsWide()
+  const { primary, rest, dialogs } = useAlertActions(alert)
+  const menuItems: ActionMenuEntry[] = rest.map((a) => ({
+    id: a.id,
+    label: a.label,
+    icon: a.icon,
+    onSelect: a.run,
+    disabledReason: a.disabledReason,
+    section: a.id === 'task' || a.id === 'scan' ? a.id : 'state',
+  }))
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {primary && <AlertActionButton action={primary} />}
+      {!compact && rest.map((a) => <AlertActionButton key={a.id} action={a} variant="outline" />)}
+      {compact && menuItems.length > 0 && (
+        <ActionMenu
+          title={alert.vuln_id}
+          label={t('emergingThreats.actions.menu', undefined, { vulnId: alert.vuln_id })}
+          items={menuItems}
+          trigger={
+            <Button size="icon" variant="outline" aria-label={t('emergingThreats.actions.more')}>
+              <MoreHorizontal className="h-4 w-4" aria-hidden />
+            </Button>
+          }
+        />
+      )}
+      {dialogs}
     </div>
   )
 }

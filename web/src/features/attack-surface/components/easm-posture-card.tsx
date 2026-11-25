@@ -1,21 +1,29 @@
 'use client'
 
 /**
- * The posture card of the Attack surface overview: grade, score, the change
- * since the last computation, the categories that take the most points and
- * a link to the Posture page.
+ * The posture section of the Attack surface overview: grade, score, the change
+ * since the last computation, the categories that take the most points, the
+ * first fixes of the plan (shown only when there is something to fix) and a
+ * link to the Posture page. The Posture page is not a tab: it opens from here
+ * and from the command palette (one tab level per screen, owner 2026-11-24).
  */
 
+import { ArrowRight } from 'lucide-react'
 import Link from '@/components/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PostureCategoryList, PostureHeadline } from '@/components/dashboard-kit'
 import { RelativeTime } from '@/features/shared'
+import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePosture } from '../hooks/use-posture'
 import { scoreDelta, topDeductions, type PostureResponse } from '../lib/posture'
+import { PosturePlanList } from './posture-plan-list'
 
 export const POSTURE_HREF = '/attack-surface/posture'
+
+/** Fixes of the plan the Overview shows; the Posture page lists them all. */
+const PLAN_PREVIEW = 3
 
 /** The next-grade sentence shared by the card and the page. */
 export function useNextGradeSentence() {
@@ -78,28 +86,40 @@ export function EASMPostureCard() {
   } else {
     const delta = scoreDelta(posture)
     const top = topDeductions(posture.score.categories)
+    const steps = posture.plan.steps.slice(0, PLAN_PREVIEW)
     body = (
-      <div className="flex flex-col gap-3">
-        <PostureHeadline
-          grade={posture.score.grade}
-          score={posture.score.score}
-          caption={
-            delta != null && delta !== 0
-              ? delta > 0
-                ? t('attackSurface.posture.up', 'Up {n} since the last computation', { n: delta })
-                : t('attackSurface.posture.down', 'Down {n} since the last computation', {
-                    n: -delta,
-                  })
-              : undefined
-          }
-        />
-        <p className="text-sm">{next(posture)}</p>
-        {top.length > 0 ? (
-          <PostureCategoryList categories={top} />
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            {t('attackSurface.posture.nothingTakesPoints', 'No open issue takes points away.')}
-          </p>
+      <div className={cn('grid gap-5', steps.length > 0 && 'lg:grid-cols-2')}>
+        <div className="flex min-w-0 flex-col gap-3">
+          <PostureHeadline
+            grade={posture.score.grade}
+            score={posture.score.score}
+            caption={
+              delta != null && delta !== 0
+                ? delta > 0
+                  ? t('attackSurface.posture.up', 'Up {n} since the last computation', { n: delta })
+                  : t('attackSurface.posture.down', 'Down {n} since the last computation', {
+                      n: -delta,
+                    })
+                : undefined
+            }
+          />
+          <p className="text-sm">{next(posture)}</p>
+          {top.length > 0 ? (
+            <PostureCategoryList categories={top} />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {t('attackSurface.posture.nothingTakesPoints', 'No open issue takes points away.')}
+            </p>
+          )}
+        </div>
+        {/* The heading only with the fixes under it: a top grade has none. */}
+        {steps.length > 0 && (
+          <section className="flex min-w-0 flex-col gap-1" data-testid="posture-fix-first">
+            <h3 className="text-sm font-medium">
+              {t('attackSurface.posture.fixFirstTitle', 'What to fix to raise the grade')}
+            </h3>
+            <PosturePlanList steps={steps} />
+          </section>
         )}
       </div>
     )
@@ -125,8 +145,12 @@ export function EASMPostureCard() {
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {body}
-        <Link href={POSTURE_HREF} className="text-sm text-primary hover:underline">
-          {t('attackSurface.posture.viewDetails', 'What to fix to raise the grade')}
+        <Link
+          href={POSTURE_HREF}
+          className="inline-flex items-center gap-1 self-start text-sm font-medium text-primary hover:underline"
+        >
+          {t('attackSurface.posture.viewDetails', 'View posture details')}
+          <ArrowRight className="size-4 rtl:rotate-180" aria-hidden />
         </Link>
       </CardContent>
     </Card>

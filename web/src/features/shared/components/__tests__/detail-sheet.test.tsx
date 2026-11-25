@@ -177,18 +177,34 @@ describe('DetailStatGrid / DetailStat', () => {
     )
   })
 
-  it('is two per row on phones and one row of N from sm', () => {
+  it('is two per row and one row of N where its own width fits them', () => {
     const { container } = render(
-      <DetailStatGrid>
+      <DetailStatGrid className="max-w-sm">
         <DetailStat label="A" value={1} />
         <DetailStat label="B" value={2} />
         <DetailStat label="C" value={3} />
         {null}
       </DetailStatGrid>
     )
-    const grid = container.firstChild as HTMLElement
-    expect(grid).toHaveClass('grid-cols-2')
+    // The wrapper is the query container and takes the caller's classes.
+    const frame = container.firstChild as HTMLElement
+    expect(frame).toHaveClass('@container', 'max-w-sm')
+    const grid = container.querySelector('[data-slot="detail-stat-grid"]') as HTMLElement
+    expect(grid).toHaveClass('grid-cols-2', '@min-[30rem]:grid-cols-3')
+    expect(grid.className).not.toMatch(/(^|\s)sm:/)
     expect(grid.style.getPropertyValue('--detail-stat-cols')).toBe('3')
+  })
+
+  it('wraps a long caption instead of cutting it', () => {
+    render(
+      <DetailStatGrid>
+        <DetailStat label="Hosts confirmed" value={0} caption="+1 possibly affected" />
+        <DetailStat label="B" value={2} />
+      </DetailStatGrid>
+    )
+    const caption = screen.getByText('+1 possibly affected')
+    expect(caption).not.toHaveClass('truncate')
+    expect(caption).toHaveClass('break-words')
   })
 
   it('renders nothing without stats', () => {
