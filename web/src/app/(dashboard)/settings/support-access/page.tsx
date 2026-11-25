@@ -1,8 +1,6 @@
 'use client'
 
 import { Main } from '@/components/layout'
-import { useTranslation } from '@/context/i18n-provider'
-import { PageHeader, PageStack } from '@/features/shared'
 import { SupportAccessSettings } from '@/features/support-access/components/support-access-settings'
 import { usePermissions } from '@/lib/permissions'
 
@@ -12,20 +10,11 @@ import { usePermissions } from '@/lib/permissions'
  * the history. The API enforces every rule; the page only hides actions.
  */
 export default function SupportAccessPage() {
-  const { t } = useTranslation()
   const { isOwner, isAtLeast, isLoading } = usePermissions()
   return (
     <Main>
-      <PageStack>
-        <PageHeader
-          title={t('supportAccess.title', 'Support access')}
-          description={t(
-            'supportAccess.description',
-            'Let platform support read your data, read-only and for a limited time, while they help you.'
-          )}
-        />
-        {!isLoading && <SupportAccessSettings canRead={isAtLeast('admin')} isOwner={isOwner()} />}
-      </PageStack>
+      {/* The settings render the page header (with Grant access) themselves. */}
+      {!isLoading && <SupportAccessSettings canRead={isAtLeast('admin')} isOwner={isOwner()} />}
     </Main>
   )
 }

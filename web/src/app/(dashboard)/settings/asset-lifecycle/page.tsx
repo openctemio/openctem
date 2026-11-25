@@ -2,16 +2,8 @@
 
 import { useCallback, useState } from 'react'
 import { PlayCircle } from 'lucide-react'
-import { Main } from '@/components/layout'
-import {
-  ErrorState,
-  NoAccessState,
-  PageHeader,
-  PageStack,
-  SettingsSaveBar,
-} from '@/features/shared'
+import { NoAccessState, SettingsPage, SettingsSaveBar } from '@/features/shared'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import {
   LifecycleSettingsForm,
   useAssetLifecycleSettings,
@@ -39,60 +31,50 @@ export default function AssetLifecycleSettingsPage() {
   const formReady = canRead && !error && !isLoading
 
   return (
-    <Main>
-      <PageStack>
-        <PageHeader
-          title={t('settings.assetLifecycle.title', 'Asset lifecycle')}
-          description={t(
-            'settings.assetLifecycle.description',
-            'Mark assets as stale when no scan or integration has seen them for a while.'
-          )}
-        >
-          {formReady && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setDryRunOpen(true)}
-              disabled={status.submitting || !currentTenant}
-            >
-              <PlayCircle className="h-4 w-4" />
-              {t('settings.assetLifecycle.runDryRun', 'Run dry run')}
-            </Button>
-          )}
-        </PageHeader>
-
-        {!canRead ? (
-          <NoAccessState
-            title={t('settings.assetLifecycle.errorName', 'asset lifecycle settings')}
-          />
-        ) : error ? (
-          <ErrorState
-            title={t('settings.assetLifecycle.errorName', 'asset lifecycle settings')}
-            error={error}
-            onRetry={() => void mutate()}
-          />
-        ) : isLoading ? (
-          <Skeleton className="h-96 w-full rounded-xl" />
-        ) : (
-          <LifecycleSettingsForm
-            key={resets}
-            initial={data ?? DEFAULT_LIFECYCLE_SETTINGS}
-            formId={FORM_ID}
-            onStatusChange={onStatusChange}
-            dryRunOpen={dryRunOpen}
-            onDryRunOpenChange={setDryRunOpen}
-          />
-        )}
-        {formReady && (
-          <SettingsSaveBar
-            dirty={status.dirty}
-            saving={status.submitting}
-            form={FORM_ID}
-            saveDisabled={!currentTenant}
-            onDiscard={() => setResets((n) => n + 1)}
-          />
-        )}
-      </PageStack>
-    </Main>
+    <SettingsPage
+      title={t('settings.assetLifecycle.title', 'Asset lifecycle')}
+      description={t(
+        'settings.assetLifecycle.description',
+        'Mark assets as stale when no scan or integration has seen them for a while.'
+      )}
+      actions={
+        formReady && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDryRunOpen(true)}
+            disabled={status.submitting || !currentTenant}
+          >
+            <PlayCircle className="h-4 w-4" />
+            {t('settings.assetLifecycle.runDryRun', 'Run dry run')}
+          </Button>
+        )
+      }
+      state={!canRead ? 'ready' : error ? 'error' : isLoading ? 'loading' : 'ready'}
+      error={error}
+      onRetry={() => void mutate()}
+    >
+      {!canRead ? (
+        <NoAccessState title={t('settings.assetLifecycle.errorName', 'asset lifecycle settings')} />
+      ) : (
+        <LifecycleSettingsForm
+          key={resets}
+          initial={data ?? DEFAULT_LIFECYCLE_SETTINGS}
+          formId={FORM_ID}
+          onStatusChange={onStatusChange}
+          dryRunOpen={dryRunOpen}
+          onDryRunOpenChange={setDryRunOpen}
+        />
+      )}
+      {formReady && (
+        <SettingsSaveBar
+          dirty={status.dirty}
+          saving={status.submitting}
+          form={FORM_ID}
+          saveDisabled={!currentTenant}
+          onDiscard={() => setResets((n) => n + 1)}
+        />
+      )}
+    </SettingsPage>
   )
 }
