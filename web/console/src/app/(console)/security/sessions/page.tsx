@@ -123,7 +123,8 @@ export default function AdminSessionsPage() {
         header: t('admin.sessions.col.method', 'Signed in with'),
         meta: {
           kind: 'text',
-          width: 184,
+          // "Mật khẩu + ứng dụng xác thực" whole.
+          width: 248,
           hideBelow: 1100,
           label: t('admin.sessions.col.method', 'Signed in with'),
         },
@@ -145,12 +146,13 @@ export default function AdminSessionsPage() {
           label: t('admin.sessions.col.ip', 'IP address'),
         },
         cell: ({ row }) => (
-          // An address is read whole (IPv6 wraps at any character); the
-          // browser is in the hover text.
+          // One line (the phone card's field is one line): a long IPv6
+          // address ends in an ellipsis, whole in the hover text with the
+          // browser.
           <span
-            data-token
-            className="block whitespace-normal tabular-nums [overflow-wrap:anywhere]"
-            title={row.original.user_agent}
+            data-cut-tooltip
+            className="block truncate tabular-nums"
+            title={[row.original.ip_address, row.original.user_agent].filter(Boolean).join('\n')}
           >
             {row.original.ip_address || (
               <EmptyCell title={t('admin.sessions.noIp', 'No address recorded')} />
