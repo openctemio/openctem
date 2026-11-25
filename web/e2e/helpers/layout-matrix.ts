@@ -303,6 +303,30 @@ export const ROUTE_STATES: Record<string, RouteState> = {
   ...queryStates('/findings'),
   ...queryStates('/assets'),
   ...queryStates('/scans'),
+  // A text of its own applied on top of the view (the view then reads as
+  // changed: Modified, Save view and Reset join the title row), then the
+  // editor expanded: the state a filter edit is left in.
+  '/findings@query-applied': {
+    path: '/findings?mode=query',
+    act: async (page) => {
+      const field = page.locator('main [data-slot="list-search-query"] [role="combobox"]')
+      await field.first().waitFor({ state: 'visible', timeout: 20_000 })
+      await page.waitForFunction(
+        () =>
+          !document.querySelector<HTMLInputElement>(
+            'main [data-slot="list-search-query"] [role="combobox"]'
+          )?.disabled,
+        undefined,
+        { timeout: 20_000 }
+      )
+      const before = page.url()
+      await field.first().fill('practice!=compliance state=open severity>=medium')
+      // The run button (Enter would take an open suggestion first).
+      await page.locator('main [data-slot="query-apply"]').first().click()
+      await page.waitForURL((u) => u.toString() !== before, { timeout: 15_000 })
+      await expandQueryEditor(page)
+    },
+  },
 }
 
 /**
