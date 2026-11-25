@@ -47,6 +47,21 @@ describe('FeedFreshnessBanner', () => {
     )
   })
 
+  it('names the data that is missing, in plain words', async () => {
+    vi.mocked(get).mockResolvedValue({
+      stale: true,
+      reasons: ['data_stale'],
+      sources: ['epss', 'kev'],
+    })
+    renderIt(<FeedFreshnessBanner />)
+    const banner = await screen.findByRole('alert')
+    expect(banner).toHaveTextContent(
+      'Affected: the exploit likelihood scores (EPSS), the known exploited list (CISA KEV).'
+    )
+    // No error codes or administrator detail for organization users.
+    expect(banner).not.toHaveTextContent('data_stale')
+  })
+
   it('says the check is not running when that is the only reason', async () => {
     vi.mocked(get).mockResolvedValue({ stale: true, reasons: ['check_not_running'] })
     renderIt(<FeedFreshnessBanner />)

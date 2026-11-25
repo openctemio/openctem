@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/server/internal/app/consolesetting/consolesettingtest"
 	dom "github.com/openctemio/openctem/server/pkg/domain/feedrelay"
+	"github.com/openctemio/openctem/server/pkg/domain/sensor"
 	"github.com/openctemio/openctem/server/pkg/jobsign"
 )
 
@@ -225,5 +226,32 @@ func TestCandidates(t *testing.T) {
 	if reasons[f.relay.ID.String()] != "" || reasons[f.shared2.ID.String()] != "" ||
 		reasons[f.shared3.ID.String()] != CandidateInactive || reasons[f.noCap.ID.String()] != CandidateNoCapability {
 		t.Fatalf("reasons %v", reasons)
+	}
+}
+
+// A sensor that cannot relay is told why, from what it reports about
+// itself; the reason never makes a sensor eligible.
+func TestCandidateReason(t *testing.T) {
+	posture := func(signed string) *sensor.ManifestPosture {
+		return &sensor.ManifestPosture{Jobs: &sensor.JobsPosture{Signed: signed}}
+	}
+	for name, tc := range map[string]struct {
+		sn   *sensor.Sensor
+		want string
+	}{
+		"eligible":         {&sensor.Sensor{Status: sensor.SensorStatusActive, Capabilities: []string{Capability}, Version: "0.30.0"}, ""},
+		"disabled":         {&sensor.Sensor{Status: sensor.SensorStatusDisabled, Capabilities: []string{Capability}}, CandidateInactive},
+		"old release":      {&sensor.Sensor{Status: sensor.SensorStatusActive, Version: "v0.35.2", Posture: posture(sensor.SignedJobsRequired)}, CandidateVersionTooOld},
+		"no signing key":   {&sensor.Sensor{Status: sensor.SensorStatusActive, Version: "0.41.1", Posture: posture(sensor.SignedJobsOff)}, CandidateNoSigningKey},
+		"relay turned off": {&sensor.Sensor{Status: sensor.SensorStatusActive, Version: "0.41.1", Posture: posture(sensor.SignedJobsRequired)}, CandidateRelayOff},
+		"no posture":       {&sensor.Sensor{Status: sensor.SensorStatusActive, Version: "0.41.1"}, CandidateNoCapability},
+		"unknown version":  {&sensor.Sensor{Status: sensor.SensorStatusActive, Version: "dev", Posture: posture(sensor.SignedJobsRequired)}, CandidateNoCapability},
+	} {
+		if got := CandidateReason(tc.sn); got != tc.want {
+			t.Errorf("%s: %q, want %q", name, got, tc.want)
+		}
+		if tc.want != "" && eligible(tc.sn) {
+			t.Errorf("%s: a sensor with a reason is eligible", name)
+		}
 	}
 }
