@@ -113,6 +113,11 @@ export function EnterCodePanel({
   const find = async (typed: string = input) => {
     if (busy) return
     setError(null)
+    if (typed.trim() === '') {
+      // Find stays enabled: an empty code is said under the field.
+      setError(t('sensors.pair.codeRequired', 'Enter the code your sensor printed.'))
+      return
+    }
     const norm = normalizePairingCode(typed)
     if (!norm) {
       // Same answer as an unknown code: the shape of a code is no secret,
@@ -188,8 +193,9 @@ export function EnterCodePanel({
         disabled={busy}
         error={error}
       />
-      <div className="flex justify-end">
-        <Button type="submit" disabled={busy || input.trim() === ''}>
+      {/* Find sits under the code it acts on, not at the far edge of the card. */}
+      <div className="flex">
+        <Button type="submit" disabled={busy}>
           {busy && <Loader2 className="h-4 w-4 animate-spin" />}
           {t('sensors.pair.find')}
         </Button>

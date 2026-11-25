@@ -69,10 +69,7 @@ export function ActivateSensor() {
 
   return (
     <PageStack>
-      <PageHeader
-        title={t('sensors.activate.title')}
-        description={t('sensors.activate.description')}
-      />
+      <PageHeader title={t('sensors.activate.title')} />
       <Card className="w-full max-w-2xl gap-0 py-0" data-testid="activate-sensor">
         <CardContent className="p-4 sm:p-6">
           {!canPair ? (
