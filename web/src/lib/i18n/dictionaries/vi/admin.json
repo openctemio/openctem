@@ -1845,7 +1845,7 @@
   "admin.privateNetworks.reason.tooWide": "Dải IPv6 phải là /48 hoặc hẹp hơn.",
   "admin.privateNetworks.remove": "Xóa {range}",
   "admin.privateNetworks.saved": "Đã lưu mạng riêng",
-  "admin.privateNetworks.serverHint": "Chỉ thay đổi được trong biến môi trường của máy chủ (OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS) và khởi động lại.",
+  "admin.privateNetworks.serverHint": "Chỉ thay đổi được trong biến môi trường của máy chủ ({name}) và khởi động lại.",
   "admin.privateNetworks.serverNone": "Không có.",
   "admin.privateNetworks.serverTitle": "Đặt trên máy chủ",
   "admin.privateNetworks.signupOpenDesc": "Bất kỳ ai cũng có thể tạo tổ chức trên máy chủ này (SIGNUP_MODE=open), vì vậy không mở được dải địa chỉ riêng nào. Chỉ có thể xóa các dải.",

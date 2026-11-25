@@ -1845,7 +1845,7 @@
   "admin.privateNetworks.reason.tooWide": "An IPv6 range must be /48 or narrower.",
   "admin.privateNetworks.remove": "Remove {range}",
   "admin.privateNetworks.saved": "Private networks saved",
-  "admin.privateNetworks.serverHint": "Changed only in the server’s environment (OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS) and a restart.",
+  "admin.privateNetworks.serverHint": "Changed only in the server’s environment ({name}) and a restart.",
   "admin.privateNetworks.serverNone": "None.",
   "admin.privateNetworks.serverTitle": "Set on the server",
   "admin.privateNetworks.signupOpenDesc": "Anyone may create an organization on this server (SIGNUP_MODE=open), so no private range can be opened. Ranges can only be removed.",
