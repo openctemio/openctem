@@ -1561,23 +1561,23 @@ vars:
     group: "Discovery feeds and background jobs"
     type: url
     default: "https://github.com/openctemio/vulnfeed-bundles/releases"
-    description: "Release base URL of the signed vulnerability bundles. Unset: the platform owner may change it in the console (System > Threat intelligence > Vulnerability feed address); set: it pins the address and the console shows it locked."
+    description: "Release base URL of the signed vulnerability bundles. Unset: the platform owner may change it in the console (System > Threat intelligence > Vulnerability feed address); set: it pins the address and the console shows it locked. A mirror on a private address needs its range in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`, checked at start-up. Compose passes it from `.env`."
   - name: VULNFEED_BUNDLE_DIR
     component: api
     group: "Discovery feeds and background jobs"
     type: path
-    description: "Air-gapped platforms: local directory holding a vulnerability bundle release's files. Server only: the console shows whether it is set, never the path."
+    description: "Air-gapped platforms: local directory holding a vulnerability bundle release's files. Server only: the console shows whether it is set, never the path. Compose passes it from `.env` but does not mount the folder: add a read-only volume in an extra compose file."
   - name: VULNFEED_MIRRORS
     component: api
     group: "Discovery feeds and background jobs"
     type: list
-    description: "Comma-separated https mirrors tried after the release for chunked vulnerability bundles (direct mode only). Setting it, like `VULNFEED_BASE_URL`, pins the feed address; unset, the console manages the mirrors."
+    description: "Comma-separated https mirrors tried after the release for chunked vulnerability bundles (direct mode only). Setting it, like `VULNFEED_BASE_URL`, pins the feed address; unset, the console manages the mirrors. A mirror on a private address needs its range in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`, checked at start-up."
   - name: VULNFEED_ROOT_KEY_ID
     component: api
     group: "Discovery feeds and background jobs"
     type: string
     default: "official root"
-    description: "Pinned root key id of the vulnerability bundles. Defaults to the root of the official feed (openctemio/vulnfeed-bundles releases); set it only for a private collector. A trust anchor: server only, the console shows it read-only."
+    description: "Pinned root key id of the vulnerability bundles. Defaults to the root of the official feed (openctemio/vulnfeed-bundles releases); set it only for a private collector. A trust anchor: server only, the console shows it read-only. Compose passes it from `.env`."
   - name: GITHUB_APP_ID
     component: api
     group: "Integrations"
@@ -1636,13 +1636,13 @@ vars:
     component: api
     group: "Integrations"
     type: string
-    description: "Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services; the API refuses to start when it is set together with `SIGNUP_MODE=open`. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says. A platform owner can also open ranges at runtime in the console (System > Private networks); the guard allows both lists, and the console shows this one read only."
+    description: "Comma-separated private ranges that outbound calls of the API (webhook and notification channels, self-hosted Jira or GitLab, an SMTP relay) may reach, for example `10.20.0.0/16`. Each entry must be a CIDR inside `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16` or `fc00::/7`, otherwise the API refuses to start. The list applies to every organization, so name only the subnets of your own services; the API refuses to start when it is set together with `SIGNUP_MODE=open`. Loopback, link-local, CGNAT and cloud metadata addresses stay blocked whatever the list says. A platform owner can also open ranges at runtime in the console (System > Private networks); the guard allows both lists, and the console shows this one read only. This is also where a vulnerability feed mirror (`VULNFEED_BASE_URL`, `VULNFEED_MIRRORS`) on a private address needs its range: it is checked at start-up. Compose passes it from `.env`."
   - name: OPENCTEM_HTTPSEC_FEED_PROXY
     component: api
     group: "Integrations"
     type: url
     secret: true
-    description: "HTTPS proxy for the platform's own feed fetchers only (vulnerability bundles, CISA KEV, EPSS, CTEM-ID catalog, public program feed, release feed), for a network whose only way out is a proxy: `http://[user:password@]proxy.corp:3128` or `https://...`, no path or query. Requests to an https destination go through it with CONNECT (TLS stays end to end); the destination is still checked first (blocked address literals, dangerous names and names whose local answers are in a blocked range are refused; a name the local resolver cannot answer is left to the proxy). The proxy may be on a private address; loopback, link-local and metadata addresses are refused. Webhooks, integrations, identity providers and anything an organization configures never use it, and `HTTPS_PROXY`/`HTTP_PROXY` are not read. The API refuses to start on a value that is not a proxy URL. Empty (the default): direct connections."
+    description: "HTTPS proxy for the platform's own feed fetchers only (vulnerability bundles, CISA KEV, EPSS, CTEM-ID catalog, public program feed, release feed), for a network whose only way out is a proxy: `http://[user:password@]proxy.corp:3128` or `https://...`, no path or query. Requests to an https destination go through it with CONNECT (TLS stays end to end); the destination is still checked first (blocked address literals, dangerous names and names whose local answers are in a blocked range are refused; a name the local resolver cannot answer is left to the proxy). The proxy may be on a private address; loopback, link-local and metadata addresses are refused. Webhooks, integrations, identity providers and anything an organization configures never use it, and `HTTPS_PROXY`/`HTTP_PROXY` are not read. The API refuses to start on a value that is not a proxy URL. Empty (the default): direct connections. Compose passes it from `.env`; the value may hold a password, so keep `.env` at mode 0600."
   - name: OPENCTEM_HTTPSEC_FEED_NO_PROXY
     component: api
     group: "Integrations"
