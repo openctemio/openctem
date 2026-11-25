@@ -96,7 +96,7 @@ export function buildAttention(
       title: 'Emergency access was used',
       detailKey: 'admin.attention.breakGlass.detail',
       detail:
-        '{count, plural, one {# break-glass sign-in} other {# break-glass sign-ins}} in the last 7 days. Confirm each was expected.',
+        '{count, plural, one {# emergency sign-in} other {# emergency sign-ins}} in the last 7 days. Confirm each was expected.',
       vars: { count: o.security.break_glass_sign_ins_7d },
       href: '/security/activity?kind=all&action=console.break_glass_sign_in',
       actionKey: 'admin.attention.review',
@@ -166,7 +166,7 @@ export function buildAttention(
       id: 'break-glass-test-overdue',
       severity: 'warning',
       titleKey: 'admin.attention.breakGlassTest.title',
-      title: 'Break-glass test overdue',
+      title: 'Emergency access test overdue',
       detailKey: 'admin.attention.breakGlassTest.detail',
       detail:
         '{count, plural, one {# emergency-access account} other {# emergency-access accounts}} not tested in 90 days.',

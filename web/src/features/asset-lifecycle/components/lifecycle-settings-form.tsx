@@ -347,7 +347,10 @@ export function LifecycleSettingsForm({
                       variant={active ? 'default' : 'outline'}
                       className={active ? '' : 'opacity-60 hover:opacity-90'}
                     >
-                      {t(`settings.assetLifecycle.sourceType.${type}`, type)}
+                      {t(
+                        `settings.assetLifecycle.sourceType.${type}`,
+                        t('settings.assetLifecycle.sourceType.other', 'Other')
+                      )}
                     </Badge>
                   </button>
                 )

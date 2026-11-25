@@ -114,7 +114,7 @@ export function DetectionsPanel() {
         title={t('threatIntel.detections.title', 'Detections')}
         description={t(
           'threatIntel.detections.description',
-          'Runtime detections from your EDR, XDR or SIEM that matched a known indicator; a match on a resolved finding reopens it.'
+          'Detections from your endpoint and security monitoring tools that matched a known indicator; a match on a resolved finding reopens it.'
         )}
       />
 
@@ -147,7 +147,7 @@ export function DetectionsPanel() {
           title={t('threatIntel.detections.emptyTitle', 'No detections yet')}
           description={t(
             'threatIntel.detections.emptyDescription',
-            'Detections appear here when a collector sensor forwards a runtime event that matches an indicator in your catalogue.'
+            'Detections appear here when a sensor forwards an event from your monitoring tools that matches an indicator in your catalog.'
           )}
         />
       ) : (

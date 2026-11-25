@@ -26,12 +26,12 @@ export default function EmailSettingsPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('admin.email.pageTitle', 'E-mail')}
-          description={t('admin.email.pageDescription', 'How this deployment sends e-mail.')}
+          title={t('admin.email.pageTitle', 'Email')}
+          description={t('admin.email.pageDescription', 'How this deployment sends email.')}
         />
         {error ? (
           <ErrorState
-            title={t('admin.email.errorSubject', 'the e-mail settings')}
+            title={t('admin.email.errorSubject', 'the email settings')}
             error={error}
             onRetry={() => void mutate()}
           />

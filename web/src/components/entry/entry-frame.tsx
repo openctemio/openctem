@@ -81,12 +81,12 @@ export function EntryFrame({
       >
         {termsUrl && (
           <TextLink href={safeHref(termsUrl)} external={!termsUrl.startsWith('/')}>
-            {t('auth.legal.terms', 'Terms of Service')}
+            {t('auth.legal.terms', 'Terms of service')}
           </TextLink>
         )}
         {privacyUrl && (
           <TextLink href={safeHref(privacyUrl)} external={!privacyUrl.startsWith('/')}>
-            {t('auth.legal.privacy', 'Privacy Policy')}
+            {t('auth.legal.privacy', 'Privacy policy')}
           </TextLink>
         )}
         <Overridable id="auth.footer" fallback={PoweredBy} />

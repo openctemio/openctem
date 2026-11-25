@@ -34,6 +34,7 @@ import type { APIKey } from '@/features/api-keys/types/api-key.types'
 import { APIKeyPolicySection } from '@/features/api-keys/components/api-key-policy-card'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
+import { usePermissionLabel } from '@/lib/use-permission-label'
 
 /**
  * API keys (board P4-Settings-ApiKeys): the organization's maximum key
@@ -73,7 +74,7 @@ function ExpiryCell({ k }: { k: APIKey }) {
     )
   }
   if (!k.expires_at) {
-    return <span className="text-muted-foreground">{t('settings.keys.never', 'Never')}</span>
+    return <span className="text-muted-foreground">{t('settings.keys.noExpiry', 'No expiry')}</span>
   }
   return (
     <span className="inline-flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -204,6 +205,7 @@ const API_KEY_HIDE_BELOW = { scopes: 1100, lastUsed: 980, key: 780, expires: 600
 
 export default function APIKeysPage() {
   const { t } = useTranslation()
+  const permissionLabel = usePermissionLabel()
   const list = useListParams({
     pageSizes: API_KEY_PAGE_SIZES,
     sortFields: API_KEY_SORT_FIELDS,
@@ -267,8 +269,11 @@ export default function APIKeysPage() {
         enableSorting: false,
         header: scopesLabel,
         cell: ({ row }) => (
-          <span className="block truncate font-mono text-cap" title={row.original.scopes.join(' ')}>
-            {row.original.scopes.join(' ')}
+          <span
+            className="block truncate text-cap"
+            title={row.original.scopes.map(permissionLabel).join(', ')}
+          >
+            {row.original.scopes.map(permissionLabel).join(', ')}
           </span>
         ),
       },
@@ -314,7 +319,17 @@ export default function APIKeysPage() {
         cell: ({ row }) => <KeyRowActions k={row.original} onChanged={() => void mutate()} />,
       },
     ],
-    [mutate, t, nameLabel, keyLabel, scopesLabel, statusLabel, lastUsedLabel, expiresLabel]
+    [
+      mutate,
+      t,
+      permissionLabel,
+      nameLabel,
+      keyLabel,
+      scopesLabel,
+      statusLabel,
+      lastUsedLabel,
+      expiresLabel,
+    ]
   )
 
   const generateButton = (

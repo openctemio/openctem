@@ -52,7 +52,7 @@ describe('legal documents', () => {
     const privacy = LEGAL_DOCS.find((d) => d.doc === 'privacy')!
     const { container } = renderDoc(privacy)
     const main = container.querySelector('main') as HTMLElement
-    expect(within(main).getByRole('link', { name: 'Data Processing Addendum' })).toHaveAttribute(
+    expect(within(main).getByRole('link', { name: 'Data processing addendum' })).toHaveAttribute(
       'href',
       '/dpa'
     )

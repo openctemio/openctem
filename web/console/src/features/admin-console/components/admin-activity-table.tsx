@@ -35,7 +35,6 @@ function ResultBadge({ entry }: { entry: AdminAuditEntry }) {
  * An administrator action on a phone:
  *
  *   Password changed                                       Succeeded
- *   console.password_changed
  *   admin@example.com
  *   8 minutes ago   192.0.2.10
  */
@@ -56,9 +55,6 @@ export function AdminActivityPhoneCard({
         </span>
         <ResultBadge entry={entry} />
       </div>
-      <span className="truncate font-mono text-code text-muted-foreground" title={entry.action}>
-        {entry.action}
-      </span>
       {email && (
         <span className="truncate text-cap" title={email}>
           {email}
@@ -93,15 +89,7 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
         label: t('admin.adminActivityTable.action', 'Action'),
       },
       cell: ({ row }) => (
-        <div className="flex min-w-0 items-baseline gap-2">
-          <span className="shrink-0 font-medium">{auditActionLabel(t, row.original.action)}</span>
-          <span
-            className="truncate font-mono text-code text-muted-foreground"
-            title={row.original.action}
-          >
-            {row.original.action}
-          </span>
-        </div>
+        <span className="truncate font-medium">{auditActionLabel(t, row.original.action)}</span>
       ),
     },
     {

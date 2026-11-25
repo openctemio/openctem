@@ -35,6 +35,7 @@ import {
 import type { AdminOperations, AdminSystem } from '@console/features/admin-console/types'
 import { DOCS } from '@/lib/docs-links'
 import { formatNumber } from '@/lib/app-locale'
+import { humanizeIdentifier } from '@/lib/humanize-identifier'
 
 /**
  * One health page: what the host reports (services, storage, backup,
@@ -229,18 +230,28 @@ function HostSections({ s, o }: { s: AdminSystem; o?: AdminOperations }) {
                 <Row key={sv.name} label={t(`admin.system.service.${sv.name}`, sv.name)}>
                   {sv.name === 'api' && (s.version.running || o?.build.version) && (
                     <span className="text-muted-foreground">
-                      {[s.version.running || o?.build.version, o?.build.commit, s.version.channel]
-                        .filter(Boolean)
-                        .join(', ')}
+                      {Array.from(
+                        new Set(
+                          [
+                            s.version.running || o?.build.version,
+                            o?.build.commit,
+                            s.version.channel,
+                          ].filter((x): x is string => !!x && x !== 'unknown')
+                        )
+                      ).join(', ')}
                     </span>
                   )}
                   {sv.name === 'postgres' && o?.database && (
                     <span className="text-muted-foreground">
-                      {t('admin.ops.pool', 'Pool {inUse} in use of {open} open (max {max})', {
-                        inUse: o.database.in_use,
-                        open: o.database.open_connections,
-                        max: o.database.max_open || '-',
-                      })}
+                      {t(
+                        'admin.ops.pool',
+                        'Database connections: {inUse} in use of {open} open (limit {max})',
+                        {
+                          inUse: o.database.in_use,
+                          open: o.database.open_connections,
+                          max: o.database.max_open || '-',
+                        }
+                      )}
                     </span>
                   )}
                   {sv.name === 'sensors' && sv.configured && (
@@ -268,7 +279,10 @@ function HostSections({ s, o }: { s: AdminSystem; o?: AdminOperations }) {
           ) : (
             <dl className="divide-y">
               {s.storage.volumes.map((v) => (
-                <Row key={v.name} label={v.name}>
+                <Row
+                  key={v.name}
+                  label={t(`admin.system.volume.${v.name}`, humanizeIdentifier(v.name))}
+                >
                   {v.ok ? (
                     <>
                       <span className="text-muted-foreground">
@@ -340,7 +354,7 @@ function HostSections({ s, o }: { s: AdminSystem; o?: AdminOperations }) {
             <p className="text-sm text-muted-foreground">
               {t(
                 'admin.system.backupNotReported',
-                'No backup status is reported. Set SYSTEM_BACKUP_STATUS_FILE to the backup job status file.'
+                'No backup status is reported. Point the server at the backup job status file.'
               )}
             </p>
           )}
@@ -354,7 +368,10 @@ function HostSections({ s, o }: { s: AdminSystem; o?: AdminOperations }) {
               </p>
             )}
             {s.certificates.map((c) => (
-              <Row key={c.name} label={c.name}>
+              <Row
+                key={c.name}
+                label={t(`admin.system.cert.${c.name}`, humanizeIdentifier(c.name))}
+              >
                 {c.ok ? (
                   <>
                     <span className="text-muted-foreground">

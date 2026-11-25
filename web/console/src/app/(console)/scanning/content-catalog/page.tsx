@@ -367,7 +367,7 @@ export default function ContentCatalogPage() {
                     <CardDescription>
                       {t(
                         'admin.catalog.rootsReadOnly',
-                        'Trust roots: {n}. They are set on the server (CONTENT_TRUST_ROOT_KEY_IDS) and cannot be changed from this console: a stolen console session must not be able to trust new content.',
+                        'Trusted signing keys: {n}. They are set on the server and cannot be changed from here, so a stolen sign-in cannot make the platform trust new content.',
                         { n: tr.roots_configured }
                       )}
                     </CardDescription>
@@ -400,10 +400,17 @@ export default function ContentCatalogPage() {
                         <dt className="text-muted-foreground">
                           {t('admin.catalog.revocations', 'Revocation list')}
                         </dt>
-                        <dd className="font-mono">
-                          {tr.revocations_sequence || '—'}
+                        <dd>
+                          {tr.revocations_sequence ? (
+                            <span className="font-mono">{tr.revocations_sequence}</span>
+                          ) : !tr.revocations_stale ? (
+                            '—'
+                          ) : null}
                           {tr.revocations_stale && (
-                            <Badge variant="destructive" className="ms-2">
+                            <Badge
+                              variant="destructive"
+                              className={tr.revocations_sequence ? 'ms-2' : undefined}
+                            >
                               {t('admin.catalog.stale', 'Out of date')}
                             </Badge>
                           )}

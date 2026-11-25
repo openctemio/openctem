@@ -237,7 +237,9 @@ function ProviderCard({ settings, provider: p, canEdit, onSaved }: CardProps) {
             />
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor={`${id}-scopes`}>{t('admin.socialLogin.scopes', 'Scopes')}</Label>
+            <Label htmlFor={`${id}-scopes`}>
+              {t('admin.socialLogin.scopes', 'Permissions requested')}
+            </Label>
             <Input
               id={`${id}-scopes`}
               value={scopes}
@@ -250,7 +252,7 @@ function ProviderCard({ settings, provider: p, canEdit, onSaved }: CardProps) {
             <p className="text-xs text-muted-foreground">
               {t(
                 'admin.socialLogin.scopesHelp',
-                'Separated by spaces. Leave empty to use the defaults shown. The scopes that identify the person cannot be removed.'
+                'Separated by spaces. Leave empty to use the defaults shown. The permissions that identify the person cannot be removed.'
               )}
             </p>
           </div>
@@ -274,7 +276,7 @@ function ProviderCard({ settings, provider: p, canEdit, onSaved }: CardProps) {
             <p className="text-sm text-muted-foreground">
               {t(
                 'admin.socialLogin.masterOff',
-                'Social sign-in is switched off for the whole server (OAUTH_ENABLED). Nothing is offered until the server setting is changed.'
+                'Social sign-in is switched off for the whole server. Nothing is offered until it is switched on in the server settings.'
               )}
             </p>
           )}

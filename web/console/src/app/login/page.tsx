@@ -197,7 +197,7 @@ export default function AdminSignInPage() {
               <p className="text-xs text-muted-foreground">
                 {t(
                   'admin.login.breakGlassNote',
-                  'Password sign-in is for break-glass (emergency) accounts when the identity provider is required.'
+                  'Password sign-in is for emergency access accounts when the identity provider is required.'
                 )}
               </p>
             )}

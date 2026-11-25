@@ -338,7 +338,7 @@ export function TriageDecisionPanel({
       <p className="max-w-prose text-xs leading-relaxed text-muted-foreground">
         {t(
           'findings.triageMode.policyNote',
-          'Decisions use the same checks as the finding page: your permissions, your data scope, approvals and re-authentication. Re-authentication is asked once per window, not per finding.'
+          'Decisions follow the same rules as on the finding page.'
         )}
       </p>
     </section>

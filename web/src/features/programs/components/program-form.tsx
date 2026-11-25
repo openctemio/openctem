@@ -333,7 +333,7 @@ export function ProgramForm({
             </div>
             <div className="space-y-2">
               <Label htmlFor={`${id}-handle`}>
-                {t('programs.form.handle', 'Your handle (optional)')}
+                {t('programs.form.handle', 'Your username (optional)')}
               </Label>
               <Input
                 id={`${id}-handle`}
@@ -512,7 +512,7 @@ export function ProgramForm({
               <p className="text-sm text-muted-foreground" data-testid="program-required-no-header">
                 {t(
                   'programs.form.requiredNoHeader',
-                  'Add a required header below, or make sure the organization sets a header or query parameter in Settings > Scanning > Scan identification. Jobs fail without one.'
+                  'Add a required header below, or set one in Settings > Scanning > Scan identification. Scans fail without one.'
                 )}
               </p>
             )}

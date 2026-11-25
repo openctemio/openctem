@@ -114,7 +114,7 @@ function useTopRiskColumns(): ColumnDef<TopRiskRow>[] {
       {
         accessorKey: 'epss_score',
         enableSorting: false,
-        header: t('insights.executive.colEpss', 'EPSS'),
+        header: t('insights.executive.colEpss', 'Exploit likelihood (EPSS)'),
         cell: ({ row }) => (
           <span className="text-sm tabular-nums">
             {formatEpssScore(row.original.epss_score, 2, t('insights.executive.na', 'N/A'))}
@@ -124,7 +124,7 @@ function useTopRiskColumns(): ColumnDef<TopRiskRow>[] {
       {
         accessorKey: 'is_in_kev',
         enableSorting: false,
-        header: t('insights.executive.colKev', 'KEV'),
+        header: t('insights.executive.colKev', 'Known exploited (KEV)'),
         cell: ({ row }) =>
           row.original.is_in_kev ? (
             <KevBadge />
@@ -202,7 +202,7 @@ export default function ExecutiveSummaryPage() {
         },
         {
           key: 'p0',
-          label: t('insights.executive.p0', 'P0 open'),
+          label: t('insights.executive.p0', 'Highest priority open (P0)'),
           value: summary.p0_open,
           tone: 'danger' as const,
           hint: t('insights.executive.resolvedThisPeriod', '{count} resolved this period', {
@@ -212,7 +212,7 @@ export default function ExecutiveSummaryPage() {
         },
         {
           key: 'p1',
-          label: t('insights.executive.p1', 'P1 open'),
+          label: t('insights.executive.p1', 'High priority open (P1)'),
           value: summary.p1_open,
           hint: t('insights.executive.resolvedThisPeriod', '{count} resolved this period', {
             count: formatCount(summary.p1_resolved_period ?? 0, locale),
@@ -311,7 +311,9 @@ export default function ExecutiveSummaryPage() {
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle>{t('insights.executive.mttrSeverity', 'MTTR by severity')}</CardTitle>
+              <CardTitle>
+                {t('insights.executive.mttrSeverity', 'Average time to fix by severity')}
+              </CardTitle>
               <CardDescription>
                 {t('insights.executive.mttrSeverityHint', 'Average remediation time, {window}', {
                   window: window90.toLowerCase(),
@@ -353,7 +355,7 @@ export default function ExecutiveSummaryPage() {
                   title={t('insights.executive.mttrEmptyTitle', 'Not enough data yet')}
                   description={t(
                     'insights.executive.mttrEmptyDescription',
-                    'MTTR appears once enough findings have been resolved.'
+                    'The average time to fix appears once enough findings are resolved.'
                   )}
                 />
               )}
@@ -363,12 +365,12 @@ export default function ExecutiveSummaryPage() {
           <Card>
             <CardHeader>
               <CardTitle>
-                {t('insights.executive.mttrPriority', 'MTTR by priority class')}
+                {t('insights.executive.mttrPriority', 'Average time to fix by priority')}
               </CardTitle>
               <CardDescription>
                 {t(
                   'insights.executive.mttrPriorityHint',
-                  'Average remediation time per priority class (P0 to P3), {window}',
+                  'Average time to fix per priority (P0 to P3), {window}',
                   { window: window90.toLowerCase() }
                 )}
               </CardDescription>
@@ -396,7 +398,7 @@ export default function ExecutiveSummaryPage() {
                   card={false}
                   className="py-8"
                   icon={Timer}
-                  title={t('insights.executive.priorityEmpty', 'No priority class data yet')}
+                  title={t('insights.executive.priorityEmpty', 'No priority data yet')}
                 />
               )}
             </CardContent>
@@ -424,7 +426,7 @@ export default function ExecutiveSummaryPage() {
                   {[
                     {
                       key: 'approval',
-                      label: t('insights.executive.approvalAvg', 'Approval avg time'),
+                      label: t('insights.executive.approvalAvg', 'Average approval time'),
                       value:
                         processMetrics.approval_count > 0
                           ? formatHours(processMetrics.approval_avg_hours)
@@ -452,7 +454,7 @@ export default function ExecutiveSummaryPage() {
                     },
                     {
                       key: 'assign',
-                      label: t('insights.executive.timeToAssign', 'Avg time to assign'),
+                      label: t('insights.executive.timeToAssign', 'Average time to assign'),
                       value: formatHours(processMetrics.avg_time_to_assign_hours),
                       hint: t(
                         'insights.executive.timeToAssignHint',

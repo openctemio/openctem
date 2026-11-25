@@ -226,7 +226,7 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor={id.kind}>{t('admin.cp.kind', 'Kind')}</Label>
+                    <Label htmlFor={id.kind}>{t('admin.cp.kind', 'Type')}</Label>
                     <Input
                       id={id.kind}
                       list={`${id.kind}-list`}

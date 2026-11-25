@@ -66,8 +66,31 @@ export function credentialTypeLabel(t: TFn, type: string): string {
     : value
 }
 
+const KNOWN_SOURCES = new Set([
+  'api_response',
+  'ci_cd',
+  'code_repository',
+  'commit_history',
+  'config_file',
+  'dark_web',
+  'data_breach',
+  'docker_image',
+  'internal_report',
+  'log_file',
+  'malware',
+  'other',
+  'paste_site',
+  'phishing',
+  'public_bucket',
+  'underground_forum',
+])
+
 export function credentialSourceLabel(t: TFn, source: string): string {
-  return t(`credentials.source.${source}`, source.replace(/_/g, ' '))
+  // A source the catalog does not know reads "Other", never the raw key.
+  return t(
+    KNOWN_SOURCES.has(source) ? `credentials.source.${source}` : 'credentials.source.other',
+    'Other'
+  )
 }
 
 export function credentialStatusLabel(t: TFn, status: CredentialStatus): string {

@@ -226,7 +226,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
         snippet: snippet || undefined,
       })
 
-      toast.success(t('findings.createFinding.created', 'Finding created successfully'))
+      toast.success(t('findings.createFinding.created', 'Finding created'))
       await invalidateFindingsCache()
       resetForm()
       onOpenChange(false)
@@ -242,7 +242,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t('findings.createFinding.title', 'Add Finding')}</DialogTitle>
+          <DialogTitle>{t('findings.createFinding.title', 'Add finding')}</DialogTitle>
           <DialogDescription>
             {t(
               'findings.createFinding.description',
@@ -460,7 +460,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="startLine">
-                          {t('findings.createFinding.startLine', 'Start Line')}
+                          {t('findings.createFinding.startLine', 'Start line')}
                         </Label>
                         <Input
                           id="startLine"
@@ -472,7 +472,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="endLine">
-                          {t('findings.createFinding.endLine', 'End Line')}
+                          {t('findings.createFinding.endLine', 'End line')}
                         </Label>
                         <Input
                           id="endLine"
@@ -506,7 +506,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                 {assetCategory === 'network' && (
                   <div className="space-y-2">
                     <Label htmlFor="affectedUrl">
-                      {t('findings.createFinding.affectedUrl', 'Affected URL/Endpoint')}
+                      {t('findings.createFinding.affectedUrl', 'Affected URL or endpoint')}
                     </Label>
                     <Input
                       id="affectedUrl"
@@ -591,7 +591,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
             {/* Tool Name */}
             <div className="space-y-2">
               <Label htmlFor="toolName">
-                {t('findings.createFinding.toolName', 'Tool/Scanner Name')}
+                {t('findings.createFinding.toolName', 'Tool or scanner name')}
               </Label>
               <Input
                 id="toolName"
@@ -623,7 +623,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
             </Button>
             <Button type="submit" disabled={isCreating || !assetId || !title.trim()}>
               {isCreating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              {t('findings.createFinding.submit', 'Create Finding')}
+              {t('findings.createFinding.submit', 'Create finding')}
             </Button>
           </DialogFooter>
         </DialogForm>

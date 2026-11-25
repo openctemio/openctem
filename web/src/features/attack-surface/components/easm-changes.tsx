@@ -141,7 +141,7 @@ function ChangeRow({ change }: { change: EASMChange }) {
   const known = isChangeKind(change.kind ?? '')
   const kind = known ? (change.kind as ChangeKind) : undefined
   const Icon = kind ? KIND_ICON[kind] : History
-  const label = kind ? kindLabel(kind) : (change.kind ?? '').replace(/_/g, ' ')
+  const label = kind ? kindLabel(kind) : t('attackSurface.changes.kindOther', 'Other change')
   const name = change.asset_name || t('attackSurface.changes.noAsset', 'Not linked to an asset')
   return (
     // On a phone a grid: the time sits on the title row and the asset name

@@ -123,7 +123,7 @@ describe('Sessions page', () => {
     const nameCell = mark.parentElement!
     expect(nameCell.firstElementChild).toHaveClass('min-w-0', 'truncate')
     // Break-glass is a mark of the name, plain text, not a badge in the Role column.
-    const breakGlass = screen.getAllByText('Break-glass')[0]
+    const breakGlass = screen.getAllByText('Emergency access')[0]
     expect(breakGlass.closest('[data-slot="badge"]')).toBeNull()
     expect(breakGlass.parentElement!.textContent).toContain('Ops')
     const address = within(breakGlass.parentElement!).getByText('ops@op.test')

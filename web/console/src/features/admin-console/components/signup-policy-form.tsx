@@ -148,9 +148,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
         </CardHeader>
         <CardContent className="space-y-6">
           <Alert>
-            <AlertTitle>
-              {t('admin.signup.deployment.title', undefined, { mode: deploymentMode })}
-            </AlertTitle>
+            <AlertTitle>{t('admin.signup.deployment.title')}</AlertTitle>
             <AlertDescription>
               {t(DEPLOYMENT_KEY[deploymentMode] ?? 'admin.signup.deployment.disabled')}
             </AlertDescription>

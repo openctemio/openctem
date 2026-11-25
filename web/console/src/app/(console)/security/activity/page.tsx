@@ -188,7 +188,7 @@ export default function AdminActivityPage() {
       >
         <div className="pe-1 pt-1">
           <Input
-            placeholder={t('admin.activity.actionFilter', 'Action, e.g. console.login')}
+            placeholder={t('admin.activity.actionFilter', 'Search actions')}
             value={action}
             onChange={(e) => list.setFilter('action', e.target.value)}
             aria-label={t('admin.activity.actionFilterLabel', 'Filter by action')}

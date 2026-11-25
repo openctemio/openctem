@@ -163,15 +163,7 @@ export default function AdminOrganizationPage({
           </div>
         ) : (
           <>
-            <PageHeader
-              title={org.name}
-              description={
-                org.description ||
-                t('admin.organizationsDetailPage.organization', 'Organization {slug}', {
-                  slug: org.slug,
-                })
-              }
-            >
+            <PageHeader title={org.name} description={org.description || undefined}>
               <OrganizationStatusBadge org={org} />
               {/* Lifting a suspension restores access: a neutral header action. */}
               {canSuspend && org.status === 'suspended' && (

@@ -19,6 +19,8 @@ interface Rule {
   pattern: RegExp
   use: string
   allowKeys: { key: string; why: string }[]
+  /** Key prefixes where the word is another product's own term. */
+  allowPrefixes?: { prefix: string; why: string }[]
   /** One sample the pattern must catch and one it must spare (self-test). */
   catches: string
   spares: string
@@ -122,6 +124,50 @@ const RULES: Rule[] = [
     catches: 'Nhật ký kiểm tra',
     spares: 'Nhật ký kiểm toán',
   },
+  {
+    lang: 'vi',
+    pattern: /\bjobs?\b/i,
+    use: 'tác vụ',
+    allowKeys: [],
+    allowPrefixes: [
+      { prefix: 'scans.ci.', why: 'a CI job is the CI provider’s own word (GitHub, GitLab)' },
+    ],
+    catches: 'Sensor không nhận job mới',
+    spares: 'Sensor không nhận tác vụ mới',
+  },
+  {
+    lang: 'vi',
+    pattern: /nhiệm vụ/i,
+    use: 'công việc',
+    allowKeys: [],
+    catches: 'Nhiệm vụ khắc phục',
+    spares: 'Công việc khắc phục',
+  },
+  {
+    lang: 'vi',
+    pattern: /lần quét/i,
+    use: 'lượt quét',
+    allowKeys: [],
+    catches: 'Lần quét gần nhất',
+    spares: 'Lượt quét gần nhất',
+  },
+  {
+    lang: 'vi',
+    pattern: /\btemplates?\b/i,
+    use: 'mẫu',
+    allowKeys: [],
+    allowPrefixes: [{ prefix: 'scans.ci.', why: 'GitLab names its include type "template"' }],
+    catches: 'Template tùy chỉnh',
+    spares: 'Mẫu tùy chỉnh',
+  },
+  {
+    lang: 'vi',
+    pattern: /\b(passkeys?|heartbeats?|terminal|seeds?|break-glass|ticketing|e-mail)\b/i,
+    use: 'the words in web/.claude/i18n.md, Vietnamese glossary (khóa truy cập, tín hiệu kết nối, cửa sổ dòng lệnh, điểm khởi đầu, tài khoản khẩn cấp, quản lý phiếu, email)',
+    allowKeys: [],
+    catches: 'Dùng khóa bảo mật hoặc passkey',
+    spares: 'Dùng khóa bảo mật hoặc khóa truy cập',
+  },
 ]
 
 function load(lang: Lang): Record<string, string> {
@@ -140,8 +186,15 @@ describe('glossary vocabulary (server/docs/glossary.md)', () => {
   for (const r of RULES) {
     it(`${r.lang}: no ${r.pattern} (use ${r.use})`, () => {
       const allowed = new Set(r.allowKeys.map((a) => a.key))
+      const prefixes = (r.allowPrefixes ?? []).map((a) => a.prefix)
       const hits = Object.entries(DICTS[r.lang])
-        .filter(([k, v]) => r.pattern.test(v) && !allowed.has(k))
+        .filter(
+          ([k, v]) =>
+            // A {placeholder} name is not text a person reads.
+            r.pattern.test(v.replace(/\{\w+\}/g, '')) &&
+            !allowed.has(k) &&
+            !prefixes.some((p) => k.startsWith(p))
+        )
         .map(([k, v]) => `  ${k}: ${v}`)
       expect(
         hits,
@@ -155,6 +208,7 @@ describe('glossary vocabulary (server/docs/glossary.md)', () => {
     })
 
     it(`${r.lang}: ${r.pattern} allow list names real keys with a reason`, () => {
+      for (const a of r.allowPrefixes ?? []) expect(a.why.length, a.prefix).toBeGreaterThan(5)
       for (const a of r.allowKeys) {
         expect(a.why.length, a.key).toBeGreaterThan(5)
         expect(DICTS[r.lang][a.key], `${a.key} is not a ${r.lang} key`).toBeDefined()

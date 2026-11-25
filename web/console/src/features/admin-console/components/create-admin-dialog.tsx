@@ -136,11 +136,11 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                   : created.link
                     ? t(
                         'admin.createAdminDialog.invitationLinkShownOnce',
-                        'This platform cannot send e-mail. Give this link only to the new administrator. It is shown once, works once and expires in 24 hours.'
+                        'This platform cannot send email. Give this link only to the new administrator. It is shown once, works once and expires in 24 hours.'
                       )
                     : t(
                         'admin.createAdminDialog.invitationNotSent',
-                        'The administrator was added, but the invitation e-mail could not be sent. They can use Forgot password on the sign-in page.'
+                        'The administrator was added, but the invitation email could not be sent. They can use Forgot password on the sign-in page.'
                       )}
               </DialogDescription>
             </DialogHeader>
@@ -195,7 +195,7 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
               <DialogDescription>
                 {t(
                   'admin.createAdminDialog.anAdministratorSignsInOn',
-                  'The new administrator is e-mailed a link to choose their own password. They belong to no organization: use an email that has no account yet.'
+                  'The new administrator is emailed a link to choose their own password. They belong to no organization: use an email that has no account yet.'
                 )}
               </DialogDescription>
             </DialogHeader>
@@ -256,7 +256,7 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                     <Label htmlFor="adm-break-glass">
                       {t(
                         'admin.createAdminDialog.breakGlassEmergencyAccessAccount',
-                        'Break-glass (emergency access) account'
+                        'Emergency access account'
                       )}
                     </Label>
                     <p className="text-xs text-muted-foreground">

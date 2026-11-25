@@ -50,7 +50,7 @@ export function ScopeBadge({ data, kind }: { data?: DashboardData; kind: Dashboa
       )
     : data?.restricted
       ? t('dashboards.scope.mineRestrictedHint', 'Figures for the assets you can see.')
-      : t('dashboards.scope.mineHint', 'Figures computed for your own access.')
+      : t('dashboards.scope.mineHint', 'Figures shown for what you can access.')
   return (
     <Tooltip>
       <TooltipTrigger asChild>

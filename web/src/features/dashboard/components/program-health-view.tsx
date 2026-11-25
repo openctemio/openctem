@@ -292,7 +292,7 @@ export function ProgramHealthView() {
     addAct(
       dgStatus,
       'downgrade',
-      t('insights.programHealth.act.downgrade', 'Validation downgrades are out of range'),
+      t('insights.programHealth.act.downgrade', 'Too many findings ranked lower after validation'),
       dgDisplay ?? undefined,
       PROGRAM_HEALTH_LINKS.validation
     )
@@ -315,13 +315,19 @@ export function ProgramHealthView() {
       p0Days === null
         ? {
             key: 'p0-time',
-            label: t('dashboardMetrics.program.p0MeanTime', 'Mean time to fix, P0'),
+            label: t(
+              'dashboardMetrics.program.p0MeanTime',
+              'Average time to fix, highest priority (P0)'
+            ),
             value: notMeasuredNode,
             notMeasured: true,
           }
         : {
             key: 'p0-time',
-            label: t('dashboardMetrics.program.p0MeanTime', 'Mean time to fix, P0'),
+            label: t(
+              'dashboardMetrics.program.p0MeanTime',
+              'Average time to fix, highest priority (P0)'
+            ),
             value: t('insights.programHealth.days', '{value}d', { value: p0Days.toFixed(1) }),
             hint: target(t('insights.programHealth.targetDays', '< {value} days', { value: 14 })),
             description: t(
@@ -387,7 +393,7 @@ export function ProgramHealthView() {
             key: 'trend',
             label: t('dashboardMetrics.program.exposureTrend', 'Open findings trend'),
             value: trendDisplay,
-            hint: target(t('insights.programHealth.trendingDown', 'Trending down')),
+            hint: target(t('insights.programHealth.trendingDown', 'Falling over time')),
             description: t(
               'dashboardMetrics.program.exposureTrendMeasures',
               'Open findings now vs {window} ago, which should fall after ramp-up',
@@ -402,18 +408,18 @@ export function ProgramHealthView() {
       dgDisplay === null || (dgValidated ?? 0) <= 0
         ? {
             key: 'downgrade',
-            label: t('insights.programHealth.downgrade', 'Validation downgrade %'),
+            label: t('insights.programHealth.downgrade', 'Findings ranked lower after validation'),
             value: notMeasuredNode,
             notMeasured: true,
           }
         : {
             key: 'downgrade',
-            label: t('insights.programHealth.downgrade', 'Validation downgrade %'),
+            label: t('insights.programHealth.downgrade', 'Findings ranked lower after validation'),
             value: dgDisplay,
             hint: target('25–40%'),
             description: t(
               'insights.programHealth.downgradeMeasures',
-              'Findings de-prioritised after validation proved them non-exploitable'
+              'Findings ranked lower after validation showed they cannot be exploited'
             ),
             href: PROGRAM_HEALTH_LINKS.validation,
           }
@@ -535,7 +541,10 @@ export function ProgramHealthView() {
             <div className="grid gap-page lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
               {view.completion === null ? (
                 <OverviewAnswer
-                  question={t('insights.programHealth.answer.question', 'P0 fixed within target')}
+                  question={t(
+                    'insights.programHealth.answer.question',
+                    'Highest priority (P0) fixed within target'
+                  )}
                   notMeasured={{
                     label: t('insights.status.pending', 'Not measured'),
                     reason: t(
@@ -555,7 +564,10 @@ export function ProgramHealthView() {
                 </OverviewAnswer>
               ) : (
                 <OverviewAnswer
-                  question={t('insights.programHealth.answer.question', 'P0 fixed within target')}
+                  question={t(
+                    'insights.programHealth.answer.question',
+                    'Highest priority (P0) fixed within target'
+                  )}
                   value={fmtPct(view.completion, locale) ?? ''}
                   tone={answerTone}
                   sentence={t(

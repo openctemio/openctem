@@ -88,7 +88,7 @@ describe('Approvals page', () => {
     mockList({ four_eyes: { active: false, approvers: 1, can_approve: true } })
     renderPage('super_admin')
     expect(screen.getByText('Approvals are off')).toBeInTheDocument()
-    expect(screen.getByText(/break-glass accounts do not count/i)).toBeInTheDocument()
+    expect(screen.getByText(/emergency access accounts do not count/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Add a platform owner' })).toHaveAttribute(
       'href',
       '/security/administrators'

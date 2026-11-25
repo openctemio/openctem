@@ -144,7 +144,9 @@ export default function NotificationsPage() {
               <SelectValue placeholder={t('notifications.filters.statusPlaceholder', 'Status')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">{t('notifications.filters.statusAll', 'All')}</SelectItem>
+              <SelectItem value="all">
+                {t('notifications.filters.statusAll', 'All statuses')}
+              </SelectItem>
               <SelectItem value="unread">
                 {t('notifications.filters.statusUnread', 'Unread')}
               </SelectItem>

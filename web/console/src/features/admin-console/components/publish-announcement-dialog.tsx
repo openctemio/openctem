@@ -32,13 +32,18 @@ export function toLocalInput(d: Date): string {
  * Checks a draft the way the API does: one line of 1-500 characters, the end
  * after the start and at most 31 days later. Returns the problem, or null.
  */
-export function announcementProblem(message: string, starts: Date, ends: Date): string | null {
+export type AnnouncementProblem = 'empty' | 'tooLong' | 'endBeforeStart' | 'tooManyDays'
+
+export function announcementProblem(
+  message: string,
+  starts: Date,
+  ends: Date
+): AnnouncementProblem | null {
   const m = message.trim()
-  if (m.length === 0) return 'Write the message.'
-  if (m.length > ANNOUNCEMENT_MAX) return `At most ${ANNOUNCEMENT_MAX} characters.`
-  if (Number.isNaN(ends.getTime()) || ends <= starts) return 'The end must be after the start.'
-  if (ends.getTime() - starts.getTime() > MAX_DAYS * 24 * 3600 * 1000)
-    return `At most ${MAX_DAYS} days.`
+  if (m.length === 0) return 'empty'
+  if (m.length > ANNOUNCEMENT_MAX) return 'tooLong'
+  if (Number.isNaN(ends.getTime()) || ends <= starts) return 'endBeforeStart'
+  if (ends.getTime() - starts.getTime() > MAX_DAYS * 24 * 3600 * 1000) return 'tooManyDays'
   return null
 }
 
@@ -120,7 +125,7 @@ export function PublishAnnouncementDialog({ onPublished }: { onPublished: () => 
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
-              <Label htmlFor={ids.sev}>{t('admin.ann.severity', 'Kind')}</Label>
+              <Label htmlFor={ids.sev}>{t('admin.ann.severity', 'Type')}</Label>
               <Select
                 value={severity}
                 onValueChange={(v) => setSeverity(v as AdminAnnouncement['severity'])}
@@ -138,7 +143,7 @@ export function PublishAnnouncementDialog({ onPublished }: { onPublished: () => 
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor={ids.start}>{t('admin.ann.starts', 'Starts (empty = now)')}</Label>
+              <Label htmlFor={ids.start}>{t('admin.ann.starts', 'Starts (now if blank)')}</Label>
               <Input
                 id={ids.start}
                 type="datetime-local"
@@ -157,7 +162,21 @@ export function PublishAnnouncementDialog({ onPublished }: { onPublished: () => 
               />
             </div>
           </div>
-          {problem && message.length > 0 && <p className="text-sm text-destructive">{problem}</p>}
+          {problem && message.length > 0 && (
+            <p className="text-sm text-destructive">
+              {problem === 'empty'
+                ? t('admin.ann.problem.empty', 'Write the message.')
+                : problem === 'tooLong'
+                  ? t('admin.ann.problem.tooLong', 'At most {max} characters.', {
+                      max: ANNOUNCEMENT_MAX,
+                    })
+                  : problem === 'endBeforeStart'
+                    ? t('admin.ann.problem.endBeforeStart', 'The end must be after the start.')
+                    : t('admin.ann.problem.tooManyDays', 'At most {days} days.', {
+                        days: MAX_DAYS,
+                      })}
+            </p>
+          )}
         </div>
       </AdminConfirmDialog>
     </>

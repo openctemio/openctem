@@ -152,7 +152,7 @@ export function DryRunDialog({ open, onOpenChange, rule }: DryRunDialogProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FlaskConical className="size-5" />
-            {t('prioritization.dryRun.title', 'Dry run: {name}', {
+            {t('prioritization.dryRun.title', 'Test run: {name}', {
               name: rule.name || t('prioritization.dryRun.unsaved', '(unsaved rule)'),
             })}
           </DialogTitle>

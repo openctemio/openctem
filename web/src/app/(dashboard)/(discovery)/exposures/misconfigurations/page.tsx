@@ -65,7 +65,7 @@ export default function MisconfigurationsPage() {
           title={t('exposures.misconfigurations.title', 'Misconfigurations')}
           description={t(
             'exposures.misconfigurations.description',
-            'Infrastructure and cloud misconfigurations found by IaC and cloud posture scanning, by severity.'
+            'Infrastructure and cloud misconfigurations found by infrastructure-as-code and cloud scans, by severity.'
           )}
         >
           <ViewFindingsButton
@@ -92,7 +92,7 @@ export default function MisconfigurationsPage() {
             title={t('exposures.misconfigurations.emptyTitle', 'No misconfigurations yet')}
             description={t(
               'exposures.misconfigurations.emptyDescription',
-              'Run IaC or cloud posture scans to identify infrastructure and cloud misconfigurations.'
+              'Run infrastructure-as-code or cloud scans to find misconfigurations.'
             )}
           />
         ) : !typeStats.scoped ? (

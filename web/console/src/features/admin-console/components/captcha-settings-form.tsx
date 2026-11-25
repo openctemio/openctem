@@ -66,14 +66,16 @@ export function CaptchaSettingsForm({ settings, canEdit, onSaved }: CaptchaSetti
     try {
       const { result } = await verifyCaptchaSecret(secret.trim() || undefined)
       if (result === 'valid')
-        toast.success(t('admin.captcha.checkValid', 'Turnstile accepts this secret key'))
+        toast.success(t('admin.captcha.checkValid', 'The CAPTCHA service accepts this secret key'))
       else if (result === 'invalid')
-        toast.error(t('admin.captcha.checkInvalid', 'Turnstile does not know this secret key'))
+        toast.error(
+          t('admin.captcha.checkInvalid', 'The CAPTCHA service does not know this secret key')
+        )
       else
         toast.warning(
           t(
             'admin.captcha.checkUnreachable',
-            'Turnstile could not be reached; nothing is known about the key'
+            'The CAPTCHA service could not be reached; nothing is known about the key'
           )
         )
     } catch (e) {
@@ -187,7 +189,7 @@ export function CaptchaSettingsForm({ settings, canEdit, onSaved }: CaptchaSetti
             label={t('admin.captcha.check', 'Check the secret key')}
             hint={t(
               'admin.captcha.checkHint',
-              'Asks Turnstile whether it knows the typed secret, or the stored one when the field is empty.'
+              'Asks the CAPTCHA service whether it knows the typed secret, or the stored one when the field is empty.'
             )}
           >
             <Button

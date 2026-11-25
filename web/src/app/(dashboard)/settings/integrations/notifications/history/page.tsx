@@ -267,7 +267,10 @@ function HistoryContent() {
                       {i.name}
                     </span>
                     <Badge variant="outline" className="shrink-0 text-xs">
-                      {i.provider}
+                      {t(
+                        `automations.notificationType.${i.provider}`,
+                        t('notificationChannels.history.providerOther', 'Other')
+                      )}
                     </Badge>
                   </div>
                 </SelectItem>

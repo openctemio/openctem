@@ -277,7 +277,7 @@ export function PrivateDestinationsPanel({
               <AlertDescription>
                 {t(
                   'admin.privateNetworks.signupOpenDesc',
-                  'Anyone may create an organization on this server (SIGNUP_MODE=open), so no private range can be opened. Ranges can only be removed.'
+                  'Anyone may create an organization on this server, so no private range can be opened. Ranges can only be removed.'
                 )}
               </AlertDescription>
             </Alert>
@@ -319,7 +319,7 @@ export function PrivateDestinationsPanel({
             <p className="text-cap text-muted-foreground">
               {t(
                 'admin.privateNetworks.serverHint',
-                'Changed only in the server’s environment (OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS) and a restart.'
+                'Changed only in the server settings, followed by a restart.'
               )}
             </p>
           </section>

@@ -603,7 +603,7 @@ export default function ExceptionsPage() {
             title={t('exceptions.page.title', 'Exceptions')}
             description={t(
               'exceptions.page.description',
-              'Suppression rules that hide false positives and accepted risks, with an approval step.'
+              'Rules that hide false positives and accepted risks, with an approval step.'
             )}
           />
 

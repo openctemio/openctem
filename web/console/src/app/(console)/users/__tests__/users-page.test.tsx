@@ -124,7 +124,7 @@ describe('Console users list', () => {
     // The cell draws the marks twice: the phone card's chip (first mark and
     // "+n") and the marks that fit from 768 px; CSS shows one of them.
     expect(within(row).getAllByText('Locked').length).toBeGreaterThan(0)
-    expect(within(row).getAllByText('MFA').length).toBeGreaterThan(0)
+    expect(within(row).getAllByText('Two-factor on').length).toBeGreaterThan(0)
   })
 
   it('offers the state select and the search, and no control that changes an account', () => {

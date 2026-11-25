@@ -88,7 +88,7 @@ describe('two-factor floor', () => {
 
   it('warns before lowering it', async () => {
     render(<MFAFloorForm settings={floor} canEdit onSaved={() => {}} />)
-    await userEvent.click(screen.getByLabelText('No floor'))
+    await userEvent.click(screen.getByLabelText('No minimum'))
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
     expect(screen.getByRole('alertdialog')).toHaveTextContent('Lower the two-factor floor?')
   })

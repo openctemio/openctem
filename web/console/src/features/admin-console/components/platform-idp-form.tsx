@@ -299,7 +299,9 @@ export function PlatformIdPForm({
             </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="idp-scopes">{t('admin.platformIdpForm.scopes', 'Scopes')}</Label>
+            <Label htmlFor="idp-scopes">
+              {t('admin.platformIdpForm.scopes', 'Permissions requested')}
+            </Label>
             <Input
               id="idp-scopes"
               value={form.scopes}
@@ -381,7 +383,7 @@ export function PlatformIdPForm({
           <CardDescription>
             {t(
               'admin.platformIdpForm.passwordSignInToThe',
-              'Password sign-in to the console is refused for every administrator except break-glass accounts, which stay local so the console is reachable when the IdP is down. Turning it on signs out administrators who are in the console with a password.'
+              'Password sign-in to the console is refused for every administrator except emergency access accounts, which stay local so the console is reachable when the IdP is down. Turning it on signs out administrators who are in the console with a password.'
             )}
           </CardDescription>
         </CardHeader>
@@ -397,7 +399,7 @@ export function PlatformIdPForm({
                 <p className="text-muted-foreground">
                   {t(
                     'admin.platformIdpForm.addAnActiveBreakGlass',
-                    'Add an active break-glass super admin first (Administrators).'
+                    'Add an active emergency access super admin first (Administrators).'
                   )}
                 </p>
               )}
@@ -507,7 +509,7 @@ export function PlatformIdPForm({
         title={t('confirm.platformIdp.requireTitle', 'Require the identity provider?')}
         desc={t(
           'confirm.platformIdp.requireDesc',
-          'Administrators who are not break-glass accounts can no longer use their password for the console, and those in the console with a password are signed out now (you too, if you signed in with a password).'
+          'Administrators who are not emergency access accounts can no longer use their password for the console, and those in the console with a password are signed out now (you too, if you signed in with a password).'
         )}
         confirmText={t('confirm.platformIdp.require', 'Require it')}
         destructive

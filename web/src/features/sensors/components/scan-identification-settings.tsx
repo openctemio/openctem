@@ -328,7 +328,7 @@ export function ScanIdentificationSettings() {
             <p className="text-cap text-muted-foreground text-pretty">
               {t(
                 'sensors.scanIdent.headersHelp',
-                'Any name and value, for example ATTT: is-here. Names are not case-sensitive. Connection, proxy, Host, Authorization and Cookie headers cannot be set.'
+                'Any name and value, for example X-Scanner: security-team. Names are not case-sensitive. Connection, proxy, Host, Authorization and Cookie headers cannot be set.'
               )}
             </p>
           </div>

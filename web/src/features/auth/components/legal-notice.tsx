@@ -45,12 +45,12 @@ export function LegalNotice({ kind, termsUrl = '', privacyUrl = '', className }:
   const links: Record<string, ReactNode> = {
     '{terms}': termsUrl ? (
       <a href={termsUrl} target="_blank" rel="noopener noreferrer" className={linkClass}>
-        {t('auth.legal.terms', 'Terms of Service')}
+        {t('auth.legal.terms', 'Terms of service')}
       </a>
     ) : null,
     '{privacy}': privacyUrl ? (
       <a href={privacyUrl} target="_blank" rel="noopener noreferrer" className={linkClass}>
-        {t('auth.legal.privacy', 'Privacy Policy')}
+        {t('auth.legal.privacy', 'Privacy policy')}
       </a>
     ) : null,
   }

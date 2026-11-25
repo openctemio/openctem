@@ -470,14 +470,14 @@ export function SoftwareUpdatesPanel({ status, canImport, onChanged }: Props) {
             <CardDescription>
               {t(
                 'admin.versionCheck.import.hint',
-                'For an instance without internet access: download openctem-releases.json from the latest release on a connected machine and upload it here. It is verified like the online check.'
+                'For an installation without internet access: download the release information file from the latest release on a connected machine and upload it here. It is verified like the online check.'
               )}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="min-w-0 flex-1 space-y-1.5">
               <Label htmlFor={fileId}>
-                {t('admin.versionCheck.import.file', 'Release feed file (JSON, up to 256 KiB)')}
+                {t('admin.versionCheck.import.file', 'Release information file (up to 256 KiB)')}
               </Label>
               <Input
                 id={fileId}

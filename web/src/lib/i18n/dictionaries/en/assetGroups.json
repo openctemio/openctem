@@ -386,7 +386,7 @@
   "assetGroups.truncated": "Showing the first {shown, plural, other {#}} of {total, plural, one {# group} other {# groups}}. Search or filter to narrow the list.",
   "assetGroups.updateFailed": "Failed to update the group",
   "assetGroups.viewAll": "All groups",
-  "assetGroups.wizard.step.basic": "Basic Info",
+  "assetGroups.wizard.step.basic": "Basic info",
   "assetGroups.wizard.step.members": "Members",
   "assetGroups.wizard.step.review": "Review"
 }

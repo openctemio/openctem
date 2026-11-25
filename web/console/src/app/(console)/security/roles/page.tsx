@@ -96,8 +96,8 @@ export default function AdminRolesPage() {
       },
       {
         id: 'kind',
-        header: t('admin.roles.col.kind', 'Kind'),
-        meta: { kind: 'status', width: 128, label: t('admin.roles.col.kind', 'Kind') },
+        header: t('admin.roles.col.kind', 'Type'),
+        meta: { kind: 'status', width: 128, label: t('admin.roles.col.kind', 'Type') },
         cell: ({ row }) => (
           <Badge variant="outline">
             {row.original.base
@@ -193,7 +193,7 @@ export default function AdminRolesPage() {
           row.original.break_glass || !row.original.active ? (
             <div className="flex flex-wrap gap-1 md:flex-nowrap md:*:shrink-0">
               {row.original.break_glass && (
-                <Badge variant="secondary">{t('admin.roles.breakGlass', 'Break-glass')}</Badge>
+                <Badge variant="secondary">{t('admin.roles.breakGlass', 'Emergency access')}</Badge>
               )}
               {!row.original.active && (
                 <Badge variant="secondary">{t('admin.roles.inactive', 'Inactive')}</Badge>
@@ -268,7 +268,7 @@ export default function AdminRolesPage() {
             <AlertDescription>
               {t(
                 'admin.roles.ownersWarning',
-                'Keep at least two named platform owners (besides the break-glass account): with one, four-eyes approvals have no second approver and a lost account locks the platform out.'
+                'Keep at least two named platform owners (besides the emergency access account): with one, four-eyes approvals have no second approver and a lost account locks the platform out.'
               )}
             </AlertDescription>
           </Alert>
@@ -469,7 +469,7 @@ function HolderPhoneCard({
         {(holder.break_glass || !holder.active) && (
           <span className="flex flex-wrap gap-1">
             {holder.break_glass && (
-              <Badge variant="secondary">{t('admin.roles.breakGlass', 'Break-glass')}</Badge>
+              <Badge variant="secondary">{t('admin.roles.breakGlass', 'Emergency access')}</Badge>
             )}
             {!holder.active && (
               <Badge variant="secondary">{t('admin.roles.inactive', 'Inactive')}</Badge>

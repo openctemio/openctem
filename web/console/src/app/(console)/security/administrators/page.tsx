@@ -60,7 +60,7 @@ function SignInBadges({ a }: { a: AdminUserRecord }) {
     <div className="flex flex-wrap gap-1 md:min-w-0 md:flex-nowrap md:overflow-hidden md:*:shrink-0">
       {a.is_break_glass && (
         <Badge variant="destructive">
-          {t('admin.securityAdministratorsPage.breakGlass', 'Break-glass')}
+          {t('admin.securityAdministratorsPage.breakGlass', 'Emergency access')}
         </Badge>
       )}
       {a.idp_bound && (
@@ -166,12 +166,12 @@ export default function AdministratorsPage() {
         pending.admin.is_break_glass
           ? t(
               'admin.securityAdministratorsPage.isNoLongerABreak',
-              '{email} is no longer a break-glass account',
+              '{email} is no longer an emergency access account',
               { email: pending.admin.email }
             )
           : t(
               'admin.securityAdministratorsPage.isNowABreakGlass',
-              '{email} is now a break-glass account',
+              '{email} is now an emergency access account',
               { email: pending.admin.email }
             )
       )
@@ -348,11 +348,11 @@ export default function AdministratorsPage() {
                         label: a.is_break_glass
                           ? t(
                               'admin.securityAdministratorsPage.unmarkBreakGlass',
-                              'Unmark break-glass'
+                              'Unmark emergency access'
                             )
                           : t(
                               'admin.securityAdministratorsPage.markAsBreakGlass',
-                              'Mark as break-glass'
+                              'Mark as emergency access'
                             ),
                         onClick: () => setPending({ kind: 'breakglass', admin: a }),
                       },
@@ -465,7 +465,9 @@ export default function AdministratorsPage() {
       case 'breakglass':
         return pending.admin.is_break_glass
           ? {
-              title: t('confirm.admin.unmarkTitle', 'Unmark {email} as break-glass?', { email }),
+              title: t('confirm.admin.unmarkTitle', 'Unmark {email} as emergency access?', {
+                email,
+              }),
               desc: t(
                 'confirm.admin.unmarkDesc',
                 'It becomes a normal administrator: it can be bound to the identity provider and is subject to "require IdP".'
@@ -477,12 +479,12 @@ export default function AdministratorsPage() {
               ),
             }
           : {
-              title: t('confirm.admin.markTitle', 'Mark {email} as break-glass?', { email }),
+              title: t('confirm.admin.markTitle', 'Mark {email} as emergency access?', { email }),
               desc: t(
                 'confirm.admin.markDesc',
                 'It becomes a local emergency-access account: never bound to the identity provider, allowed to use its password when the IdP is required, and every sign-in alerts all administrators.'
               ),
-              confirm: t('confirm.admin.mark', 'Mark as break-glass'),
+              confirm: t('confirm.admin.mark', 'Mark as emergency access'),
               reason: t(
                 'admin.securityAdministratorsPage.reasonMark',
                 'Kept in the safe as the emergency account, change 2231'
@@ -490,7 +492,7 @@ export default function AdministratorsPage() {
             }
       case 'test':
         return {
-          title: t('confirm.admin.testTitle', 'Record the break-glass test for {email}?', {
+          title: t('confirm.admin.testTitle', 'Record the emergency access test for {email}?', {
             email,
           }),
           desc: t(
@@ -500,7 +502,7 @@ export default function AdministratorsPage() {
           confirm: t('confirm.admin.test', 'Record test'),
           reason: t(
             'admin.securityAdministratorsPage.reasonTest',
-            'Quarterly break-glass drill, change 2231'
+            'Quarterly emergency access drill, change 2231'
           ),
         }
       case 'unbind':

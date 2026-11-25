@@ -28,7 +28,7 @@ test('the Posture tab opens a graded page', { tag: ['@attack-surface'] }, async 
       .or(page.getByText(/first posture computation is running|No surface asset in your view/))
       .first()
   ).toBeVisible()
-  await expect(page.getByText('How the score is computed')).toBeVisible()
+  await expect(page.getByText('How the score works')).toBeVisible()
 })
 
 test('the posture page fits a phone', { tag: ['@attack-surface'] }, async ({ page }) => {

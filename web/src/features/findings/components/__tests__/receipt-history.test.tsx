@@ -169,13 +169,13 @@ describe('ReceiptHistory', () => {
       new URLSearchParams('') as unknown as ReturnType<typeof useSearchParams>
     )
     const { unmount } = render(<ReceiptHistory />)
-    expect(screen.getByText('No receipts yet.')).toBeInTheDocument()
-    expect(screen.queryByText('No receipts match these filters.')).not.toBeInTheDocument()
+    expect(screen.getByText('No imports yet.')).toBeInTheDocument()
+    expect(screen.queryByText('No imports match these filters.')).not.toBeInTheDocument()
     unmount()
     vi.mocked(useSearchParams).mockReturnValue(
       new URLSearchParams('origin=sensor') as unknown as ReturnType<typeof useSearchParams>
     )
     render(<ReceiptHistory />)
-    expect(screen.getByText('No receipts match these filters.')).toBeInTheDocument()
+    expect(screen.getByText('No imports match these filters.')).toBeInTheDocument()
   })
 })

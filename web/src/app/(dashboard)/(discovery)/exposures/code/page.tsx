@@ -42,7 +42,7 @@ export default function CodeWeaknessesPage() {
           title={t('exposures.code.title', 'Code weaknesses')}
           description={t(
             'exposures.code.description',
-            'Weaknesses in your source code found by static analysis (SAST), by severity and over time.'
+            'Weaknesses found in your source code by code scans, by severity and over time.'
           )}
         >
           <ViewFindingsButton stats={typeStats} sources={CODE_SOURCES} isLoading={typeLoading} />
@@ -65,7 +65,7 @@ export default function CodeWeaknessesPage() {
             title={t('exposures.code.emptyTitle', 'No code weaknesses yet')}
             description={t(
               'exposures.code.emptyDescription',
-              'Configure static analysis (SAST) scanners to detect security weaknesses in your code.'
+              'Set up code scanners to find security weaknesses in your code.'
             )}
           />
         ) : !typeStats.scoped ? (
@@ -102,7 +102,7 @@ export default function CodeWeaknessesPage() {
                   data={stats.findingTrend}
                   emptyDescription={t(
                     'exposures.code.trendEmpty',
-                    'Run SAST scans to start tracking trends.'
+                    'Run code scans to start tracking trends.'
                   )}
                 />
               </ChartCard>

@@ -16,9 +16,9 @@ export const CONFIG_GROUPS: ConfigurationItem['group'][] = [
 
 /** English group names (i18n fallback; keys admin.config.group.<group>). */
 export const CONFIG_GROUP_LABELS: Record<ConfigurationItem['group'], string> = {
-  instance: 'Instance',
+  instance: 'Installation',
   sign_in: 'Sign-up and sign-in',
-  email: 'E-mail',
+  email: 'Email',
   scanning: 'Scanning',
   storage: 'Storage',
   ai: 'AI',
@@ -32,7 +32,7 @@ export const CONFIG_GROUP_LABELS: Record<ConfigurationItem['group'], string> = {
 export const CONFIG_ITEM_LABELS: Record<string, string> = {
   signup_policy: 'Sign-up policy',
   self_service_default_limits: 'Starting limits for self-service organizations',
-  'email.smtp': 'Platform e-mail (SMTP)',
+  'email.smtp': 'Platform email (SMTP)',
   legal: 'Legal pages and contacts',
   scan_approval_policy: 'Scan approval',
   platform_sensor_proof: 'Domain proof for platform scanning',
@@ -45,6 +45,7 @@ export const CONFIG_ITEM_LABELS: Record<string, string> = {
   'storage.tenant_quota_mb': 'Default storage quota per organization',
   'alerts.webhook': 'Alert webhook',
   'ai.platform': 'Platform AI provider',
+  'credentials.leaked_secret_storage': 'Leaked secret storage',
   APP_URL: 'Public address',
   ADMIN_PUBLIC_URL: 'Console address',
   MANAGED_SERVICE: 'Managed service defaults',

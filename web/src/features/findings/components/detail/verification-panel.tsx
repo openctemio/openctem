@@ -57,7 +57,7 @@ type Translate = ReturnType<typeof useTranslation>['t']
 
 const METHOD_LABEL: Record<string, string> = {
   retest: 'Retest',
-  covered_scan: 'Covered scan',
+  covered_scan: 'Scan checked the asset',
   safe_check: 'Reachability check',
   rotation_proof: 'Rotation proof',
   evidence_review: 'Evidence review',

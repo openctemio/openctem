@@ -125,7 +125,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
         totp_code: rc.code.trim(),
       })
       setConfirmOpen(false)
-      toast.success(t('admin.email.saved', 'E-mail settings saved'))
+      toast.success(t('admin.email.saved', 'Email settings saved'))
       onSaved()
     } catch (e) {
       if (e instanceof AdminApiError && e.status === 401) {
@@ -146,7 +146,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
       toast.error(
         e instanceof Error
           ? e.message
-          : t('admin.email.saveFailed', 'Could not save the e-mail settings')
+          : t('admin.email.saveFailed', 'Could not save the email settings')
       )
     } finally {
       setBusy(false)
@@ -157,7 +157,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
     setTesting(true)
     try {
       await sendTestEmail()
-      toast.success(t('admin.email.testSent', 'Test e-mail sent to your address'))
+      toast.success(t('admin.email.testSent', 'Test email sent to your address'))
     } catch (e) {
       const reason =
         e instanceof AdminApiError && e.details && typeof e.details === 'object'
@@ -165,8 +165,8 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
           : undefined
       toast.error(
         reason && TEST_REASONS.includes(reason)
-          ? t(`admin.email.testFailed.${reason}`, 'The test e-mail could not be sent')
-          : t('admin.email.testFailed', 'The test e-mail could not be sent')
+          ? t(`admin.email.testFailed.${reason}`, 'The test email could not be sent')
+          : t('admin.email.testFailed', 'The test email could not be sent')
       )
     } finally {
       setTesting(false)
@@ -194,22 +194,22 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
     <>
       <Card>
         <CardHeader>
-          <CardTitle>{t('admin.email.title', 'Platform e-mail')}</CardTitle>
+          <CardTitle>{t('admin.email.title', 'Platform email')}</CardTitle>
           <CardDescription>
             {t(
               'admin.email.description',
-              'The SMTP server for sign-up, invitation, verification and password e-mails. An organization with its own e-mail integration sends through that instead.'
+              'The SMTP server for sign-up, invitation, verification and password emails. An organization with its own email integration sends through that instead.'
             )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
             <Label htmlFor={`${id}-enabled`} className="grid gap-1 font-normal">
-              <span className="font-medium">{t('admin.email.enabled', 'Send e-mail')}</span>
+              <span className="font-medium">{t('admin.email.enabled', 'Send email')}</span>
               <span className="text-sm text-muted-foreground">
                 {t(
                   'admin.email.enabledHelp',
-                  'Off: no e-mail is sent; set-password links are shown to the administrator instead.'
+                  'Off: no email is sent; set-password links are shown to the administrator instead.'
                 )}
               </span>
             </Label>
@@ -347,7 +347,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
                 disabled={testing || dirty || !settings.enabled}
               >
                 {testing && <Loader2 className="me-1.5 size-4 animate-spin" />}
-                {t('admin.email.sendTest', 'Send a test e-mail')}
+                {t('admin.email.sendTest', 'Send a test email')}
               </Button>
             )}
             {canEdit && (
@@ -375,10 +375,10 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
         onOpenChange={(open) => {
           if (!busy) setConfirmOpen(open)
         }}
-        title={t('admin.email.confirmTitle', 'Change the platform e-mail settings?')}
+        title={t('admin.email.confirmTitle', 'Change the platform email settings?')}
         desc={t(
           'admin.email.confirmDesc',
-          'The change applies to every e-mail sent from now on and is recorded in the admin audit log (without the password).'
+          'The change applies to every email sent from now on and is recorded in the admin audit log (without the password).'
         )}
         disabled={!rc.codeOk}
         isLoading={busy}

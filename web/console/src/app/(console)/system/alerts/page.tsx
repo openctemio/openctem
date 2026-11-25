@@ -18,7 +18,7 @@ export default function AlertsSettingsPage() {
       title={t('admin.nav.alerts', 'Alerts')}
       description={t(
         'admin.alerts.pageDescription',
-        'Where administrator alerts go besides e-mail.'
+        'Where administrator alerts go besides email.'
       )}
       state={error ? 'error' : isLoading || !data ? 'loading' : 'ready'}
       error={error}

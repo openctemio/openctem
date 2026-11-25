@@ -80,7 +80,7 @@ function terms(v: LegalValues): LegalSection[] {
         <P>
           <Linked>
             {
-              'Your use of the service must follow the [Acceptable Use Policy](/acceptable-use). In short: scan, test or monitor only what you own or are authorized to assess. We may suspend accounts or organizations that break it.'
+              'Your use of the service must follow the [Acceptable use policy](/acceptable-use). In short: scan, test or monitor only what you own or are authorized to assess. We may suspend accounts or organizations that break it.'
             }
           </Linked>
         </P>
@@ -102,7 +102,7 @@ function terms(v: LegalValues): LegalSection[] {
         <P>
           <Linked>
             {
-              'You keep ownership of the data you bring. We process it to provide the service, as described in the [Privacy Policy](/privacy) and, for organizations, the [Data Processing Addendum](/dpa). You can export your data and ask for its deletion.'
+              'You keep ownership of the data you bring. We process it to provide the service, as described in the [Privacy policy](/privacy) and, for organizations, the [Data processing addendum](/dpa). You can export your data and ask for its deletion.'
             }
           </Linked>
         </P>
@@ -205,7 +205,7 @@ function privacy(v: LegalValues): LegalSection[] {
           {v.service}. Contact: <LegalMail to={v.contactEmail} />.{' '}
           <Linked>
             {
-              'For the data organizations bring to the service we act as their processor under the [Data Processing Addendum](/dpa).'
+              'For the data organizations bring to the service we act as their processor under the [Data processing addendum](/dpa).'
             }
           </Linked>
         </P>
@@ -285,7 +285,7 @@ function dpa(v: LegalValues): LegalSection[] {
           {v.address}{' '}
           <Linked>
             {
-              '(the processor), and forms part of the [Terms of Service](/terms). It covers the personal data the customer brings to'
+              '(the processor), and forms part of the [Terms of service](/terms). It covers the personal data the customer brings to'
             }
           </Linked>{' '}
           {v.service}.

@@ -22,6 +22,7 @@ import { useToolAvailability } from '@/lib/api/tool-hooks'
 import type { ToolAvailabilityItem } from '@/lib/api/tool-types'
 import { toolStatusLabel, availabilityByName, isRunnable } from '@/features/tools/lib/availability'
 import { useTranslation } from '@/context/i18n-provider'
+import { useCategoryLabel } from '../lib/use-category-label'
 import { PersonPhoneCard } from '@/features/organization/components/person-phone-card'
 
 interface CapabilityTableProps {
@@ -162,6 +163,7 @@ export function CapabilityTable({
   toolbarEnd,
 }: CapabilityTableProps) {
   const { t } = useTranslation()
+  const categoryLabel = useCategoryLabel()
   const showActions = Boolean(onViewDetails || (!readOnly && (onEdit || onDelete)))
   // Which of a capability's tools a scan can run now (api tool-availability.md).
   const { data: availData } = useToolAvailability()
@@ -266,9 +268,7 @@ export function CapabilityTable({
         ),
         cell: ({ row }) =>
           row.original.category ? (
-            <Badge variant="outline" className="capitalize">
-              {row.original.category}
-            </Badge>
+            <Badge variant="outline">{categoryLabel(row.original.category)}</Badge>
           ) : null,
       },
       {
@@ -336,7 +336,7 @@ export function CapabilityTable({
     }
 
     return cols
-  }, [usageStats, availability, showActions, actionsFor, t])
+  }, [usageStats, availability, showActions, actionsFor, t, categoryLabel])
 
   // Parent (capabilities-section) owns search + tab/category filters, so the
   // table's own search is disabled; DataTable adds sortable headers + pagination.
@@ -362,7 +362,7 @@ export function CapabilityTable({
           address={<code className="text-xs">{c.name}</code>}
           facts={
             <>
-              {c.category && <Badge variant="outline">{c.category}</Badge>}
+              {c.category && <Badge variant="outline">{categoryLabel(c.category)}</Badge>}
               <Badge variant="secondary">
                 {c.is_builtin
                   ? t('scans.capabilities.type.platform', 'Platform')

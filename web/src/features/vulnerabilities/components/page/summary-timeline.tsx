@@ -62,7 +62,7 @@ export function SummaryCard({ vuln, exposure }: { vuln?: Vulnerability; exposure
                 )
               : t(
                   'vulnPage.summary.notInFeed',
-                  'The vulnerability feed has no record of this id yet. The counts above come from your findings.'
+                  'The vulnerability catalog has no record of this CVE yet. The counts above come from your findings.'
                 )}
           </p>
         )}
@@ -170,7 +170,7 @@ export function ExposureTimeline({
     },
     {
       key: 'kev',
-      label: t('vulnPage.timeline.kevAdded', 'Added to KEV'),
+      label: t('vulnPage.timeline.kevAdded', 'Added to known exploited'),
       date: day(vuln?.cisa_kev?.date_added),
     },
     {

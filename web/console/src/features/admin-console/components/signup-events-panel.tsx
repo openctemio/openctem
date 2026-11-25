@@ -216,7 +216,7 @@ export function SignupEventsPanel() {
               {row.original.email_domain}
             </span>
           ) : (
-            <EmptyCell title={t('admin.signups.noDomain', 'No e-mail domain')} />
+            <EmptyCell title={t('admin.signups.noDomain', 'No email domain')} />
           ),
       },
       {

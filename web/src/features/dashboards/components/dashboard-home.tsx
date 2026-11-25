@@ -572,7 +572,7 @@ export function DashboardHome() {
               >
                 {t(
                   'dashboards.view.seeded',
-                  'This is the {name} layout, computed for your own access.',
+                  'This is the {name} layout, shown for what you can access.',
                   { name: seededName }
                 )}{' '}
                 <button
