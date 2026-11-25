@@ -143,7 +143,16 @@ export function DashboardDataCard() {
   return section(
     <>
       <SettingsRow
-        label={<HealthStatus state={health} label={stateText} />}
+        // The state is a sentence: the glyph, then the sentence wrapping in
+        // full (the state chip holds one short word and would cut it).
+        label={
+          <span className="inline-flex items-start gap-1.5 text-xs font-medium">
+            <span aria-hidden className="mt-px shrink-0">
+              <HealthStatus state={health} label={stateText} iconOnly />
+            </span>
+            <span className="min-w-0 break-words">{stateText}</span>
+          </span>
+        }
         hint={t(
           'org.dashboardData.description',
           'Dashboard numbers are computed from stored per-asset data, kept current from every change and checked every night. Rebuild it if dashboards look wrong.'
