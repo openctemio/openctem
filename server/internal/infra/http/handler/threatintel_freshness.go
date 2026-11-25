@@ -26,6 +26,9 @@ type FreshnessResponse struct {
 	// Reasons are stable codes: data_stale, newest_record_old,
 	// check_not_running.
 	Reasons []string `json:"reasons"`
+	// Sources are the feeds whose data is missing or out of date: vulnfeed
+	// (the CVE catalog), kev, epss. Platform-wide names, no organization data.
+	Sources []string `json:"sources"`
 	// StaleSince is the date of the oldest out-of-date data (absent: never
 	// loaded or unknown).
 	StaleSince *string `json:"stale_since,omitempty"`
@@ -44,6 +47,15 @@ type FreshnessConditionResponse struct {
 	AsOf   *string `json:"as_of,omitempty"`
 	Since  string  `json:"since"`
 	Detail string  `json:"detail"`
+	// LimitSeconds is the age limit of a data_stale or newest_record_old
+	// condition.
+	LimitSeconds int64 `json:"limit_seconds,omitempty"`
+	// ErrorCode (with ErrorParams) is the feed's error code for an
+	// import_failing or import_refused condition (the codes of the feed
+	// status cards).
+	ErrorCode    string            `json:"error_code,omitempty"`
+	ErrorParams  map[string]string `json:"error_params,omitempty"`
+	FailingSince *string           `json:"failing_since,omitempty"`
 }
 
 // AdminFreshnessResponse adds the open conditions with their details.
@@ -94,7 +106,8 @@ func (h *ThreatIntelHandler) GetFreshnessAdmin(w http.ResponseWriter, r *http.Re
 		for _, c := range open {
 			since := c.Since.UTC().Format(time.RFC3339)
 			out.Conditions = append(out.Conditions, FreshnessConditionResponse{Key: c.Key, Code: c.Code, Source: c.Source,
-				Banner: c.Banner, AsOf: fmtTime(c.AsOf), Since: since, Detail: c.Detail})
+				Banner: c.Banner, AsOf: fmtTime(c.AsOf), Since: since, Detail: c.Detail, LimitSeconds: c.LimitSeconds,
+				ErrorCode: c.ErrorCode, ErrorParams: c.ErrorParams, FailingSince: fmtTime(c.FailingSince)})
 		}
 	}
 	writeJSONResponse(w, http.StatusOK, out)
@@ -114,10 +127,13 @@ func (h *ThreatIntelHandler) readBanner(w http.ResponseWriter, r *http.Request) 
 }
 
 func toFreshnessResponse(b feedwatch.Banner) FreshnessResponse {
-	reasons := b.Codes
+	reasons, sources := b.Codes, b.Sources
 	if reasons == nil {
 		reasons = []string{}
 	}
-	return FreshnessResponse{Stale: b.Stale, Reasons: reasons, StaleSince: fmtTime(b.StaleSince),
+	if sources == nil {
+		sources = []string{}
+	}
+	return FreshnessResponse{Stale: b.Stale, Reasons: reasons, Sources: sources, StaleSince: fmtTime(b.StaleSince),
 		DataAsOf: fmtTime(b.DataAsOf), CheckedAt: fmtTime(b.CheckedAt)}
 }

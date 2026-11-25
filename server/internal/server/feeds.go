@@ -56,6 +56,12 @@ func newFeedControllers(cfg *config.Config, svc *Services, repos *Repositories, 
 		im, err := newVulnFeedImporter(cfg, repos, log.With("component", "vulnfeed"))
 		if err != nil {
 			log.Error("vulnerability bundle import disabled", "error", err)
+			// Shown on the console card and by the freshness watch, not only
+			// in this log line.
+			if rerr := vulnfeed.RecordStartFailure(context.Background(), repos.ThreatIntel.SyncStatus(),
+				cfg.Worker.VulnFeedBaseURL, err); rerr != nil {
+				log.Warn("vulnerability bundle import: start-up failure not recorded", "error", rerr)
+			}
 			return f
 		}
 		// Relay mode (RFC-142): the relay working directory is the only origin.

@@ -173,6 +173,10 @@ func TestFeedProxyConnect(t *testing.T) {
 	if strings.Contains(err.Error(), "s3cr3t") {
 		t.Fatalf("error carries the proxy password: %v", err)
 	}
+	var refused *ProxyRefusedError
+	if !errors.As(err, &refused) || refused.Status != http.StatusForbidden {
+		t.Fatalf("want a ProxyRefusedError with 403, got %v", err)
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	if gotTarget != "CONNECT 93.184.215.14:443" {
@@ -180,6 +184,33 @@ func TestFeedProxyConnect(t *testing.T) {
 	}
 	if !strings.HasPrefix(gotAuth, "Basic ") {
 		t.Fatalf("proxy credentials not sent: %q", gotAuth)
+	}
+}
+
+// A proxy that cannot be reached is named as such (not as the destination),
+// and a blocked proxy address stays a blocked destination.
+func TestFeedProxyUnreachable(t *testing.T) {
+	d := guardedDialer{resolver: net.DefaultResolver, dial: func(context.Context, string, string) (net.Conn, error) {
+		return nil, &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}
+	}}
+	c := newFeedHTTPClient(3*time.Second, mustFeedProxy(t, "http://feeduser:s3cr3t@10.1.2.3:3128", ""), d)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://93.184.215.14/kev.json", nil)
+	resp, err := c.Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+		t.Fatal("want an error")
+	}
+	var unreachable *ProxyUnreachableError
+	if !errors.As(err, &unreachable) {
+		t.Fatalf("want a ProxyUnreachableError, got %v", err)
+	}
+	if strings.Contains(err.Error(), "s3cr3t") {
+		t.Fatalf("error carries the proxy password: %v", err)
+	}
+	tr := newFeedHTTPClient(time.Second, mustFeedProxy(t, "http://169.254.169.254:80", ""), d).Transport.(*http.Transport)
+	_, err = tr.DialContext(context.Background(), "tcp", "169.254.169.254:80")
+	if !errors.Is(err, ErrBlockedDestination) || errors.As(err, &unreachable) {
+		t.Fatalf("a blocked proxy address must stay a blocked destination: %v", err)
 	}
 }
 
