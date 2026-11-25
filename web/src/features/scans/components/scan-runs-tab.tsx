@@ -123,9 +123,9 @@ const RUNS_WIDTH = {
   duration: 104,
   // "Nov 25, 09:58 AM" whole at 14px, plus the cell padding.
   started: 152,
-  // Who started it wraps (an e-mail at its separators): the start time took
-  // the room it gave up.
-  trigger: 116,
+  // Who started it wraps (an e-mail at its separators, two lines at most):
+  // room for a whole address on a wide frame, down to 116 on a narrow one.
+  trigger: 208,
 }
 const RUNS_HIDE_BELOW = { intensity: 1100, trigger: 1000, tasks: 900, duration: 780 } as const
 
@@ -390,6 +390,7 @@ function ScanRunsTable() {
         meta: {
           kind: 'text',
           width: RUNS_WIDTH.trigger,
+          minWidth: 116,
           hideBelow: RUNS_HIDE_BELOW.trigger,
           label: t('scans.runs.colTriggeredBy'),
         },

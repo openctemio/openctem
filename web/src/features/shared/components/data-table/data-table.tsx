@@ -837,7 +837,16 @@ function AutoMobileCard<TData>({
         const cut = (el: Element) => el.scrollWidth > el.clientWidth + 1
         const ellipsed = (el: Element) =>
           cut(el) && getComputedStyle(el).textOverflow === 'ellipsis'
-        if (dd && keep && (cut(dd) || Array.from(dd.querySelectorAll('*')).some(ellipsed))) {
+        // Any other value or label that its half of the line cuts ("18
+        // minutes a…", "Hoạt động gần n…") takes the whole line too: only a
+        // row's name may end in an ellipsis (docs/ui-style-contract.md).
+        const dt = field.querySelector('dt')
+        if (
+          dd &&
+          (cut(dd) ||
+            (!!dt && cut(dt)) ||
+            (keep && Array.from(dd.querySelectorAll('*')).some(ellipsed)))
+        ) {
           wide.push(id)
         }
       }

@@ -36,9 +36,11 @@ export function Search({ className = '', placeholder }: SearchProps) {
         'lg:text-fg-dim',
         'size-control max-md:size-control-touch justify-center p-0',
         PHONE_TOUCH_SQUARE,
-        // 1024-1279: 200 wide with the label; from 1280: 420 with the Ctrl K hint.
+        // 1024-1279: 200 wide with the label; 1280-1535: 320 with the Ctrl K
+        // hint, so the breadcrumb beside it keeps its names (a console detail
+        // page cut "Organizations" at 1440); from 1536: 420.
         // Transparent with the field border (shell package (c)).
-        'lg:border-border-strong lg:text-dense lg:w-50 lg:justify-start lg:gap-2 lg:border lg:px-2 xl:w-105',
+        'lg:border-border-strong lg:text-dense lg:w-50 lg:justify-start lg:gap-2 lg:border lg:px-2 xl:w-80 2xl:w-105',
         className
       )}
       onClick={() => setOpen(true)}

@@ -107,7 +107,8 @@ export function ScannerAddressesCard({ enabled = true }: { enabled?: boolean }) 
                         </Badge>
                       )}
                     </div>
-                    <p className="truncate text-xs text-muted-foreground">{sourceText(a, t)}</p>
+                    {/* A sentence: it wraps rather than end in an ellipsis. */}
+                    <p className="text-xs break-words text-muted-foreground">{sourceText(a, t)}</p>
                   </div>
                   <Button
                     type="button"

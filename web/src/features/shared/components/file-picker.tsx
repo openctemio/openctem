@@ -75,8 +75,9 @@ export function FilePicker({
         </Button>
         <span
           id={nameId}
-          className="min-w-0 truncate text-body text-muted-foreground"
-          title={file?.name}
+          // Wraps rather than end in an ellipsis: "No file chosen" or a long
+          // file name is read whole beside the button.
+          className="min-w-0 text-body text-muted-foreground [overflow-wrap:anywhere]"
           aria-live="polite"
         >
           {file ? file.name : t('common.filePicker.none', 'No file chosen')}

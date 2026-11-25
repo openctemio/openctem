@@ -105,6 +105,8 @@ export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
             </Button>
           )}
           {typeof requestId === 'string' && requestId && (
+            // The id is an internal value: the button copies it for a report,
+            // it is never printed in the error's text.
             <Button
               variant="ghost"
               size="sm"
@@ -115,10 +117,6 @@ export function ErrorState({ title, error, onRetry }: ErrorStateProps) {
             >
               <Copy className="me-2 h-4 w-4" />
               {t('common.copyRequestId', 'Copy request ID')}
-              {/* The id is long; on a phone the button copies it without printing it. */}
-              <span className="ms-2 hidden font-mono text-xs text-muted-foreground sm:inline">
-                {requestId}
-              </span>
             </Button>
           )}
           <ReportProblem error={error} />

@@ -127,7 +127,8 @@ export function FindingTitleCell({
             {shownTitle}
           </button>
         ) : (
-          <p dir="auto" className={titleClass}>
+          // A name: it may end in an ellipsis, the whole title held by its title.
+          <p dir="auto" data-cut-tooltip title={shownTitle} className={titleClass}>
             {shownTitle}
           </p>
         )}
@@ -139,6 +140,7 @@ export function FindingTitleCell({
             <span
               dir="auto"
               data-slot="finding-target"
+              data-cut-tooltip
               title={full}
               className="min-w-0 truncate text-xs text-muted-foreground [unicode-bidi:isolate]"
             >
