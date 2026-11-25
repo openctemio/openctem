@@ -33,12 +33,28 @@ func TestAIAutonomy_ReserveAndSetting(t *testing.T) {
 		t.Fatalf("unsaved: found=%v %v", found, err)
 	}
 	five := 5
-	if err := r.SaveAutonomy(ctx, org, aidom.Autonomy{Paused: true, PerHour: &five}); err != nil {
-		t.Fatal(err)
+	if ok, err := r.SaveAutonomy(ctx, org, nil, aidom.Autonomy{Paused: true, PerHour: &five}); err != nil || !ok {
+		t.Fatalf("first save: %v %v", ok, err)
 	}
 	got, found, err := r.GetAutonomy(ctx, org)
 	if err != nil || !found || !got.Paused || got.PerHour == nil || *got.PerHour != 5 || got.PerDay != nil {
 		t.Fatalf("round trip: %+v found=%v %v", got, found, err)
+	}
+	// Compare-and-set: "none saved" no longer holds, and a write against the
+	// stored value succeeds once; a second write against the same (now
+	// stale) value is refused and leaves the newer one.
+	ten, eight := 10, 8
+	if ok, err := r.SaveAutonomy(ctx, org, nil, aidom.Autonomy{PerHour: &ten}); err != nil || ok {
+		t.Fatalf("a write expecting nothing saved overwrote a saved setting: %v %v", ok, err)
+	}
+	if ok, err := r.SaveAutonomy(ctx, org, &got, aidom.Autonomy{PerHour: &ten}); err != nil || !ok {
+		t.Fatalf("write over the stored value: %v %v", ok, err)
+	}
+	if ok, err := r.SaveAutonomy(ctx, org, &got, aidom.Autonomy{PerHour: &eight}); err != nil || ok {
+		t.Fatalf("a write over a stale value was stored: %v %v", ok, err)
+	}
+	if cur, _, _ := r.GetAutonomy(ctx, org); cur.PerHour == nil || *cur.PerHour != 10 {
+		t.Fatalf("stored %+v, want the newer 10 an hour", cur)
 	}
 
 	now := time.Now()

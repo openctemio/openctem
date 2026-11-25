@@ -116,7 +116,9 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 	// lease epoch it holds the job: a bearer key, an unsigned request or a
 	// request that does not state its epoch is told the job does not exist,
 	// replays included.
-	if signedOnly(t, cmd) && (!in.KeyBound || in.LeaseEpoch == nil) {
+	// A superseded epoch is answered the same way: the job is not this
+	// request's.
+	if signedOnly(t, cmd) && (!in.KeyBound || in.LeaseEpoch == nil || *in.LeaseEpoch != cmd.LeaseEpoch) {
 		return nil, fmt.Errorf("%w: command not found", shared.ErrNotFound)
 	}
 
@@ -178,6 +180,10 @@ func (s *Service) Transition(ctx context.Context, t Transition, in TransitionInp
 		out, err = s.Fail(ctx, FailInput{TenantID: in.TenantID, SensorID: in.SensorID, CommandID: in.CommandID, ErrorMessage: in.ErrorMessage, LeaseEpoch: in.LeaseEpoch, Refusal: in.Refusal, Infra: in.Infra})
 	}
 	if err != nil {
+		// The lease moved between the read and the write.
+		if signedOnly(t, cmd) && errors.Is(err, ErrLeaseLost) {
+			return nil, fmt.Errorf("%w: command not found", shared.ErrNotFound)
+		}
 		return nil, s.transitionError(ctx, t, in, err)
 	}
 	if t == TransitionClaim {

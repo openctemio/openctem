@@ -278,8 +278,8 @@ func TestAIWorkerResult_RefusedPaths_DB(t *testing.T) {
 		f := h.findingFor(a, "medium")
 		run := h.askScheduled(a, f)
 		h.hold(run, worker)
-		if _, err := h.complete(h.org, run, worker, resultDoc(run.ID.String(), "completed", "["+sgConfirm+"]"), true, epoch(2)); err == nil {
-			t.Fatal("a result under a superseded lease was accepted")
+		if _, err := h.complete(h.org, run, worker, resultDoc(run.ID.String(), "completed", "["+sgConfirm+"]"), true, epoch(2)); !errors.Is(err, shared.ErrNotFound) {
+			t.Fatalf("a result under a superseded lease: %v, want not found", err)
 		}
 		if d, err := h.worker.ApplyResult(context.Background(), tid, *run.CommandID); err != nil || d != nil {
 			t.Fatalf("applied without a completed job: %v %v", d, err)
@@ -447,8 +447,16 @@ func TestAIWorkerResult_OrganizationPauseAndLimits_DB(t *testing.T) {
 	worker := h.workerSensor(h.org)
 	tid, _ := shared.IDFromString(h.org)
 	save := func(au aidom.Autonomy) {
-		if err := h.useCases.SaveAutonomy(context.Background(), tid, au); err != nil {
+		cur, found, err := h.useCases.GetAutonomy(context.Background(), tid)
+		if err != nil {
 			t.Fatal(err)
+		}
+		var exp *aidom.Autonomy
+		if found {
+			exp = &cur
+		}
+		if ok, err := h.useCases.SaveAutonomy(context.Background(), tid, exp, au); err != nil || !ok {
+			t.Fatalf("save autonomy: %v %v", ok, err)
 		}
 	}
 	t.Cleanup(func() {
@@ -528,4 +536,32 @@ func (h *aiWorkerHarness) cmdState(run *aidom.Run) (string, *string, time.Time) 
 		h.t.Fatal(err)
 	}
 	return status, sensor, at
+}
+
+// A run the deadline sweep ended after a result was claimed keeps the
+// sweep's outcome: finishing the claimed run matches the claim, not only
+// the id.
+func TestAIWorkerResult_FinishMatchesTheClaim_DB(t *testing.T) {
+	h := newAIWorkerHarness(t)
+	h.autoApplyTriage()
+	a := h.aiAgentOnWorkers("triage")
+	worker := h.workerSensor(h.org)
+	f := h.findingFor(a, "medium")
+	run := h.askScheduled(a, f)
+	repo := postgres.NewAIAnalysisRepository(&postgres.DB{DB: h.db})
+	tid, _ := shared.IDFromString(h.org)
+	sid, _ := shared.IDFromString(worker)
+	if ok, err := repo.ClaimWorkerResult(context.Background(), tid, run.ID, *run.CommandID, sid, zeroDigest); err != nil || !ok {
+		t.Fatalf("claim: %v %v", ok, err)
+	}
+	// The sweep ends the run meanwhile.
+	h.exec(`UPDATE ai_runs SET status = 'failed', error_code = 'deadline_exceeded' WHERE id = $1`, run.ID.String())
+	r := h.runRow(run.ID)
+	r.Status, r.ResultDigest = aidom.RunCompleted, zeroDigest
+	if ok, err := repo.FinishClaimedRun(context.Background(), r); err != nil || ok {
+		t.Fatalf("a finish overwrote a run the sweep ended: %v %v", ok, err)
+	}
+	if got := h.runRow(run.ID); got.Status != aidom.RunFailed || got.ErrorCode != aidom.ErrorDeadlineExceeded {
+		t.Fatalf("run %s/%s, want the sweep's failed/deadline_exceeded", got.Status, got.ErrorCode)
+	}
 }

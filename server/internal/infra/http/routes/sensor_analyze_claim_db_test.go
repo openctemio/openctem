@@ -208,9 +208,7 @@ func TestAnalyzeComplete_SignedUnderItsEpochOnly(t *testing.T) {
 	h.want(resp, out, http.StatusNotFound, notFound)
 	// Signed, under a superseded epoch.
 	resp, out = h.signedDo(key, http.MethodPost, path, raw, protov2.HeaderLeaseEpoch, "2")
-	if resp.StatusCode == http.StatusOK {
-		t.Fatalf("a superseded epoch completed the job: %s", out)
-	}
+	h.want(resp, out, http.StatusNotFound, notFound)
 	// A key-bound worker of another organization, under the right epoch.
 	other := h.newTenant()
 	foreign := h.newLimitedSensor(other, "example-worker-other", nil, []string{analyzeTriageCap}, 5)

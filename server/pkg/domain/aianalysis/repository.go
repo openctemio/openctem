@@ -70,6 +70,10 @@ type RunRepository interface {
 	// returned (status running, its sensor and the result digest); false
 	// when the run is not in that state (already taken, ended, another job).
 	ClaimWorkerResult(ctx context.Context, tenantID, runID, commandID, sensorID shared.ID, digest string) (bool, error)
+	// FinishClaimedRun stores the outcome of a run that ClaimWorkerResult
+	// claimed, only while it is still that claim (running, the same result
+	// digest); false when the run ended otherwise meanwhile.
+	FinishClaimedRun(ctx context.Context, run *Run) (bool, error)
 	// PendingWorkerResults lists, across organizations (a system job), live
 	// worker runs whose analysis job completed but whose result was not
 	// taken yet.
