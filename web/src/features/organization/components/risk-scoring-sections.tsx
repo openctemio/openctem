@@ -10,7 +10,7 @@
  */
 
 import type { ReactNode } from 'react'
-import { ArrowUpDown, Check, ListOrdered, Loader2 } from 'lucide-react'
+import { ArrowUpDown, ListOrdered, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { CommittedNumberInput } from '@/components/ui/committed-number-input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -203,8 +203,9 @@ export function PresetsSection({
       )}
     >
       <RadioGroup
-        value={current === 'custom' ? '' : (current ?? '')}
-        onValueChange={onSelect}
+        value={current ?? ''}
+        // Custom is where the values are, not a preset to apply.
+        onValueChange={(v) => v !== 'custom' && onSelect(v)}
         aria-label={title}
         className="gap-0"
       >
@@ -240,23 +241,33 @@ export function PresetsSection({
             </div>
           )
         })}
-      </RadioGroup>
-      {current === 'custom' && (
-        <div
-          data-slot="settings-row"
-          className="flex min-w-0 items-start gap-3 border-t border-border-subtle py-3.5"
-        >
-          <Check className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
-          <div className="min-w-0 flex-1">
-            <p className="text-body font-medium">
-              {t('riskScore.settings.presets.custom', 'Custom')}
-            </p>
-            <p className="mt-0.5 text-cap text-muted-foreground text-pretty">
-              {t('riskScore.settings.presets.customDesc', 'Manually configured values')}
-            </p>
+        {/* Custom is drawn as one more choice of the same group (a radio,
+            never a check mark), shown once the values no longer match a preset. */}
+        {current === 'custom' && (
+          <div
+            data-slot="settings-row"
+            className="flex min-w-0 items-start gap-3 border-t border-border-subtle py-3.5"
+          >
+            <RadioGroupItem
+              id="risk-preset-custom"
+              value="custom"
+              className="mt-0.5"
+              aria-describedby="risk-preset-custom-desc"
+            />
+            <label htmlFor="risk-preset-custom" className="min-w-0 flex-1 cursor-pointer">
+              <span className="block text-body font-medium">
+                {t('riskScore.settings.presets.custom', 'Custom')}
+              </span>
+              <span
+                id="risk-preset-custom-desc"
+                className="mt-0.5 block text-cap text-muted-foreground text-pretty"
+              >
+                {t('riskScore.settings.presets.customDesc', 'Manually configured values')}
+              </span>
+            </label>
           </div>
-        </div>
-      )}
+        )}
+      </RadioGroup>
     </SettingsSection>
   )
 }
