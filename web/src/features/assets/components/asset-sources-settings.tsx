@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Eye, Loader2, RotateCcw, Save } from 'lucide-react'
+import { Eye, Loader2, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSection, PageStack } from '@/features/shared'
+import { SettingsSaveBar, SettingsSection, PageStack } from '@/features/shared'
 import { get } from '@/lib/api/client'
 import {
   ATTRIBUTE_LABEL,
@@ -418,22 +418,21 @@ export function AssetSourcesSettingsForm({
       {canEdit && <PreviewPanel draft={draft} onPreview={onPreview} />}
 
       {canEdit && (
-        <div className="flex items-center gap-3">
-          <Button onClick={submit} disabled={saving || !valid || !dirty}>
-            {saving ? (
-              <Loader2 className="me-1 h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="me-1 h-4 w-4" />
-            )}
-            {t('assetSources.save', 'Save changes')}
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              'assetSources.saveHint',
-              'Moving a connector down asks you to confirm your identity. Values on assets update in the background; changes appear in each asset’s timeline.'
-            )}
-          </p>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            'assetSources.saveHint',
+            'Moving a connector down asks you to confirm your identity. Values on assets update in the background; changes appear in each asset’s timeline.'
+          )}
+        </p>
+      )}
+      {canEdit && (
+        <SettingsSaveBar
+          dirty={dirty}
+          saving={saving}
+          saveDisabled={!valid}
+          onSave={() => void submit()}
+          onDiscard={() => setDraft(initial)}
+        />
       )}
     </PageStack>
   )

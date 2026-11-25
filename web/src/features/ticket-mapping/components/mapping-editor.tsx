@@ -8,7 +8,6 @@ import {
   Download,
   FlaskConical,
   RefreshCw,
-  Save,
   ShieldCheck,
   Trash2,
   TriangleAlert,
@@ -33,7 +32,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { ErrorState, FilePicker, PageHeader, PageStack, SettingsSaveBar } from '@/features/shared'
 import { confirmName } from '@/lib/confirm-name'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
@@ -117,6 +116,9 @@ export function MappingEditor({ id }: { id: string }) {
   const [busy, setBusy] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
   const [importText, setImportText] = useState('')
+  const [importFile, setImportFile] = useState<File | null>(null)
+  // Import was pressed with nothing to import: said under the document.
+  const [importTried, setImportTried] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [askDryRunOff, setAskDryRunOff] = useState(false)
   const [tab, setTab] = useState('fields')
@@ -256,7 +258,8 @@ export function MappingEditor({ id }: { id: string }) {
   }
 
   const doImport = async () => {
-    if (!profile) return
+    setImportTried(true)
+    if (!profile || !importText.trim()) return
     setBusy(true)
     try {
       const res = await mappingApi.importDoc(id, importText, profile.draft_version)
@@ -339,20 +342,11 @@ export function MappingEditor({ id }: { id: string }) {
                   {t('ticketMapping.list.draft', 'Draft v{v}', { v: profile.draft_version })}
                 </Badge>
               )}
-              {dirty && (
-                <Badge variant="secondary">
-                  {t('ticketMapping.editor.unsaved', 'Unsaved changes')}
-                </Badge>
-              )}
             </span>
           }
         >
           {canManage && (
             <div className="flex flex-wrap items-center gap-2">
-              <Button variant="outline" onClick={save} disabled={busy || !dirty}>
-                <Save className="me-1 h-4 w-4" aria-hidden />
-                {t('ticketMapping.editor.save', 'Save draft')}
-              </Button>
               <Button onClick={publish} disabled={busy || errorCount > 0}>
                 <Send className="me-1 h-4 w-4" aria-hidden />
                 {t('ticketMapping.editor.publish', 'Publish')}
@@ -502,6 +496,16 @@ export function MappingEditor({ id }: { id: string }) {
           </Tabs>
         )}
 
+        {canManage && (
+          <SettingsSaveBar
+            dirty={dirty}
+            saving={busy}
+            onSave={() => void save()}
+            onDiscard={() => setDirty(false)}
+            summary={t('ticketMapping.editor.unsaved', 'Unsaved changes')}
+          />
+        )}
+
         <Dialog open={importOpen} onOpenChange={setImportOpen}>
           <DialogContent size="lg">
             <DialogHeader>
@@ -514,18 +518,19 @@ export function MappingEditor({ id }: { id: string }) {
               </DialogDescription>
             </DialogHeader>
             <DialogBody>
-              <input
-                type="file"
+              <FilePicker
+                file={importFile}
                 accept=".json,.yaml,.yml,application/json,application/yaml"
-                aria-label={t('ticketMapping.import.file', 'File')}
-                className="text-sm"
-                onChange={async (e) => {
-                  const f = e.target.files?.[0]
-                  if (f && f.size <= 256 * 1024) setImportText(await f.text())
-                  else if (f)
+                onFile={async (f) => {
+                  if (f && f.size > 256 * 1024) {
                     toast.error(
                       t('ticketMapping.import.tooLarge', 'The file is larger than 256 KiB')
                     )
+                    setImportFile(null)
+                    return
+                  }
+                  setImportFile(f)
+                  if (f) setImportText(await f.text())
                 }}
               />
               <Textarea
@@ -534,13 +539,20 @@ export function MappingEditor({ id }: { id: string }) {
                 value={importText}
                 onChange={(e) => setImportText(e.target.value)}
                 aria-label={t('ticketMapping.import.document', 'Document')}
+                aria-invalid={importTried && !importText.trim() ? true : undefined}
+                aria-describedby={importTried && !importText.trim() ? 'tm-import-error' : undefined}
               />
+              {importTried && !importText.trim() && (
+                <p id="tm-import-error" className="mt-1 text-cap font-medium text-destructive">
+                  {t('ticketMapping.import.required', 'Choose a file or paste the document first.')}
+                </p>
+              )}
             </DialogBody>
             <DialogFooter>
               <Button variant="outline" onClick={() => setImportOpen(false)}>
                 {t('ticketMapping.common.cancel', 'Cancel')}
               </Button>
-              <Button onClick={doImport} disabled={busy || !importText.trim()}>
+              <Button onClick={doImport} disabled={busy}>
                 {t('ticketMapping.import.submit', 'Import into the draft')}
               </Button>
             </DialogFooter>

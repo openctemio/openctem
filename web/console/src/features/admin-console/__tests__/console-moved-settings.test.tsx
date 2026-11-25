@@ -62,9 +62,9 @@ async function confirmWithReason(reason = 'rotate the key') {
 describe('CAPTCHA settings', () => {
   it('never shows the stored secret, keeps it when untouched and sends the reason', async () => {
     render(<CaptchaSettingsForm settings={captcha} canEdit onSaved={() => {}} />)
-    const secret = screen.getByLabelText('Secret key') as HTMLInputElement
-    expect(secret.value).toBe('')
-    expect(secret.type).toBe('password')
+    // A stored secret is a status with Replace and Remove, never an input.
+    expect(screen.getByText('Stored, never shown')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Replace Secret key' })).toBeInTheDocument()
     expect(screen.getByText(/Changed by root@example.test/)).toBeInTheDocument()
     await userEvent.clear(screen.getByLabelText('Site key (public)'))
     await userEvent.type(screen.getByLabelText('Site key (public)'), '0x4AAAAAAAnew')
@@ -122,6 +122,7 @@ describe('Alert webhook', () => {
       />
     )
     expect(screen.getByText('Receiver: hooks.example.com')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Replace Webhook address (https)' }))
     expect((screen.getByLabelText('Webhook address (https)') as HTMLInputElement).value).toBe('')
     await userEvent.type(
       screen.getByLabelText('Webhook address (https)'),

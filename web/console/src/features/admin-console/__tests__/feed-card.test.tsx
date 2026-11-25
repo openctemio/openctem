@@ -102,7 +102,7 @@ describe('FeedCard', () => {
     expect(screen.getByText('Up to date')).toBeInTheDocument()
   })
 
-  it('a running feed disables Sync now', () => {
+  it('a running feed shows its state instead of Sync now', () => {
     render(
       <FeedCard
         feed={feed({ state: 'running' })}
@@ -112,7 +112,8 @@ describe('FeedCard', () => {
         onToggle={() => {}}
       />
     )
-    expect(screen.getByRole('button', { name: 'Running' })).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent('Running')
+    expect(screen.queryByRole('button', { name: 'Sync now' })).toBeNull()
   })
 })
 

@@ -107,6 +107,8 @@
   "common.editNamed": "Sửa {name}",
   "common.export": "Xuất",
   "common.failedToLoad": "Không tải được {title}",
+  "common.filePicker.choose": "Chọn tệp",
+  "common.filePicker.none": "Chưa chọn tệp",
   "common.filter.all": "Tất cả",
   "common.filter.clearNamed": "Bỏ lọc {name}",
   "common.filterButton.active": "{label}, {count} đang áp dụng",
