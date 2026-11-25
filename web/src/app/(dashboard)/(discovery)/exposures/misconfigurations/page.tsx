@@ -64,7 +64,7 @@ export default function MisconfigurationsPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('exposures.misconfigurations.title', 'Misconfigurations')}
+          title={t('exposures.page.title', 'Exposures')}
           description={t(
             'exposures.misconfigurations.description',
             'Infrastructure and cloud misconfigurations found by IaC and cloud posture scanning, by severity.'

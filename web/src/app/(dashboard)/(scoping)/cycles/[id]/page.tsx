@@ -136,8 +136,10 @@ function CycleDetail() {
               cycle.description ||
               t('scoping.cycleDetail.description', 'A CTEM cycle: its charter, scope and outcome.')
             }
+            // The status belongs to the name, so on a phone the title keeps
+            // its row beside the one action instead of a narrow column.
+            titleAction={<CycleStatusBadge status={cycle.status} />}
           >
-            <CycleStatusBadge status={cycle.status} />
             <CycleLifecycleAction
               cycle={cycle}
               onDone={(updated, action) => {

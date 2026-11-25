@@ -34,19 +34,18 @@ vi.mock('@/features/remediation-hub/api/use-owner-names', () => ({
   useOwnerNames: () => ownerNames,
 }))
 vi.mock('@/features/remediation-hub/components/hub-page', () => ({
+  // The frame draws the section title ("Remediation") on every tab.
   HubPage: ({
-    title,
     description,
     actions,
     children,
   }: {
-    title: string
     description: string
     actions?: React.ReactNode
     children: React.ReactNode
   }) => (
     <main>
-      <h1>{title}</h1>
+      <h1>Remediation</h1>
       <p>{description}</p>
       {actions}
       {children}
@@ -118,7 +117,7 @@ describe('CampaignList', () => {
     ]
     state.counts = { all: 2, draft: 1, active: 1, completed: 0, canceled: 0 }
     render(<CampaignList />)
-    expect(screen.getByRole('heading', { name: 'Campaigns' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Remediation' })).toBeInTheDocument()
     expect(screen.getAllByText('Active').length).toBeGreaterThan(0)
     // A draft reads "Draft", never "Open".
     expect(screen.getAllByText('Draft').length).toBeGreaterThan(0)

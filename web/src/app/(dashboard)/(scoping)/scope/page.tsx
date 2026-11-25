@@ -283,15 +283,10 @@ export default function ScopePage() {
       <PageStack>
         <PageHeader
           title={t('scope.title', 'Scope')}
-          // A list page: on a phone the list comes first (as on Certificates).
-          description={
-            <span className="max-md:hidden">
-              {t(
-                'scope.description',
-                'What scans may touch at full intensity. Assets no entry covers get what Scan unclassified assets allows, and an exclusion always wins.'
-              )}
-            </span>
-          }
+          description={t(
+            'scope.description',
+            'What scans may touch at full intensity. Assets no entry covers get what Scan unclassified assets allows, and an exclusion always wins.'
+          )}
         >
           <Button asChild variant="outline" size="sm">
             <Link href="/settings/scope">
