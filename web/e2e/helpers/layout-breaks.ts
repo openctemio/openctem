@@ -17,6 +17,7 @@ import {
   matrixWidths,
   MATRIX_KINDS,
   openedPath,
+  DETAIL_OVERLAY_WIDTHS,
   OVERLAY_WIDTHS,
   resolveRoute,
   ROUTE_STATES,
@@ -528,8 +529,16 @@ const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknow
   ],
   '/attack-surface/changes': [{ url: '**/api/v1/easm/changes?*', body: easmChanges }],
   '/remediation': [{ url: '**/api/v1/remediation/tasks?*', body: fixPlanTasks }],
-  '/remediation/campaigns': [{ url: '**/api/v1/remediation/campaigns?*', body: campaignPage }],
-  '/remediation/tasks': [{ url: '**/api/v1/remediation/tasks?*', body: taskPage }],
+  // The quick-view sheet (overlay `detail`) opens the first row: its own
+  // record answers from the same fixture, not a 404 for a made-up id.
+  '/remediation/campaigns': [
+    { url: '**/api/v1/remediation/campaigns?*', body: campaignPage },
+    { url: '**/api/v1/remediation/campaigns/*', body: () => campaignPage('rich').data[0] },
+  ],
+  '/remediation/tasks': [
+    { url: '**/api/v1/remediation/tasks?*', body: taskPage },
+    { url: '**/api/v1/remediation/tasks/*', body: () => taskPage('rich').data[0] },
+  ],
 }
 
 /**
@@ -595,7 +604,12 @@ const OVERLAYS: Record<Overlay, string> = {
     'main [data-phone-card] button[aria-haspopup]:visible, main tbody tr button[aria-haspopup]:visible',
   filters:
     'main [data-slot="filter-panel-toggle"]:visible, main [data-slot="filter-button"]:visible, main [data-slot="add-filter"]:visible',
-  detail: 'main [data-phone-card]:visible',
+  // A phone card, or a desktop table row that opens on click (its quick-view
+  // sheet): both are opened from their padding corner (openOverlay). A task
+  // or campaign card opens its sheet from its title link (its phone-card
+  // wrapper has no click of its own, so it is not the trigger).
+  detail:
+    'main [data-phone-card]:not(:has([data-slot="task-card"], [data-slot="campaign-card"])):visible, main tbody tr.cursor-pointer:visible, main [data-slot="task-card"] a:visible, main [data-slot="campaign-card"] a:visible',
   dialog: 'main [data-slot="page-header"] button:not([aria-haspopup]):visible',
 }
 
@@ -1443,6 +1457,16 @@ export function layoutMatrix({ session = 'tenant', data, ...options }: MatrixOpt
                 overlay,
               })
           }
+          if (DETAIL_OVERLAY_WIDTHS.includes(size.width) && !signedOut)
+            vs.push({
+              tag: `w${size.width}-light-en-sb-open-ov-detail`,
+              ...size,
+              lang: 'en',
+              theme: 'light',
+              scen: 'rich',
+              sidebar: 'open',
+              overlay: 'detail',
+            })
           const dir = routeSlug(route)
           const report: Record<string, (Breaks & MatrixBreaks) | string> = {}
           for (const v of vs) {

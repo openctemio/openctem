@@ -174,7 +174,7 @@ func CountHosts(assets []Asset) HostCounts {
 		if a.InternetFacing {
 			internet[key] = true
 		}
-		if strings.EqualFold(a.Criticality, "critical") {
+		if strings.EqualFold(a.Criticality, levelCritical) {
 			critical[key] = true
 		}
 	}
@@ -306,13 +306,20 @@ func serviceOfName(name string) (host, label string, ok bool) {
 	return host, label, true
 }
 
+// Criticality and severity level names, as stored on assets and vulnerabilities.
+const (
+	levelCritical = "critical"
+	levelHigh     = "high"
+	levelMedium   = "medium"
+)
+
 func criticalityRank(c string) int {
 	switch strings.ToLower(strings.TrimSpace(c)) {
-	case "critical":
+	case levelCritical:
 		return 4
-	case "high":
+	case levelHigh:
 		return 3
-	case "medium":
+	case levelMedium:
 		return 2
 	case "low":
 		return 1

@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useMemo, useState } from 'react'
-import { AlertCircle, AlertTriangle, Network, Plus } from 'lucide-react'
+import { AlertCircle, Network, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -168,25 +168,9 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
     )
   }
 
-  const warnings = coverage?.warnings ?? []
-
   return (
     <>
       <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
-
-      {warnings.length > 0 && (
-        <Alert className="mt-5" data-testid="zone-coverage-warnings">
-          <AlertTriangle className="h-4 w-4 text-warning" />
-          <AlertTitle>{t('scans.zones.coverage.attention')}</AlertTitle>
-          <AlertDescription>
-            <ul className="list-disc space-y-0.5 ps-4">
-              {warnings.map((w, i) => (
-                <li key={`${w.code}-${w.zone_id ?? i}`}>{w.message}</li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
-      )}
 
       <div className="mt-5">{body}</div>
 
