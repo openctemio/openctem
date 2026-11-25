@@ -1254,6 +1254,24 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
     confirmation, the approver's buttons). Do not build a second band.
   - The step-up dialog says the action continues right away once the identity
     is confirmed; it never describes the act.
+- Command palette (⌘K / Ctrl+K, the header's search): `CommandDialog` in
+  `src/components/ui/command.tsx`, shared by the app, the platform console and
+  the remediation "Move to task" picker. One surface: the search field on its
+  top edge, the list (the only part that scrolls), and a footer of key hints
+  (`CommandFooter`, `CommandKeyHint`; from `sm` only). From `sm` it is 640 px
+  wide, 15% from the top and at most 70% of the screen tall; on a phone it is
+  a full-height sheet from the top, above the keyboard. Rows are 36 px (44 on a
+  phone), each with a muted icon that says what it is (never one icon for
+  every row); headings are small and muted; the selected row is `bg-sel`. No
+  corner close button: Esc closes it, the search row ends with an "Esc" key
+  cap from `sm` and a Close button on a phone.
+  - The app's palette (`src/components/command-menu.tsx`) opens on a short
+    list: Recent (pages opened in this browser,
+    `features/command-palette/recent-pages.ts`: plain paths only, never an id;
+    shown only while the filtered navigation still offers the page), Go to (the
+    main sections) and Create (the header's Create menu, `useCreateActions`).
+    Typing searches every page, settings, views, help and records; `>` lists
+    the commands only.
 
 ### Forms, wizards and form dialogs
 
