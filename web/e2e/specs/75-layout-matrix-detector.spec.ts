@@ -580,3 +580,78 @@ test.describe('layout matrix: page-opened check', { tag: ['@shell'] }, () => {
     expect(new URL(page.url()).pathname).toBe(openedPath(url))
   })
 })
+
+const cut = (attrs: string, text: string, width = 90) =>
+  `<span ${attrs} style="display:block;width:${width}px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${text}</span>`
+
+test.describe('layout matrix detector: cut meaning', { tag: ['@shell'] }, () => {
+  // /sensors 2026-11-25: "takes no new jo…" in the status column, and the vi
+  // metric tile "mất kết nối, SDK, heart…".
+  test('flags a status reason cut by its ellipsis, with the visible and full text', async ({
+    page,
+  }) => {
+    const found = await at(
+      page,
+      390,
+      `<main>${cut('data-slot="status-reason"', 'takes no new jobs')}</main>`
+    )
+    expect(found.cutMeaning.join('\n')).toMatch(
+      /cut "takes no.*…" of "takes no new jobs" at span\[data-slot="status-reason"\]/
+    )
+  })
+
+  test('flags a line clamp that hides lines', async ({ page }) => {
+    const found = await at(
+      page,
+      390,
+      `<main><p style="width:120px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden">${'mất kết nối, SDK, heartbeat cũ '.repeat(3)}</p></main>`
+    )
+    expect(found.cutMeaning.join('\n')).toMatch(/cut ".*…" of "mất kết nối, SDK, heartbeat cũ/)
+  })
+
+  test('is quiet for a text that fits, and for a cut with only a title', async ({ page }) => {
+    expect((await at(page, 390, `<main>${cut('', 'Online', 200)}</main>`)).cutMeaning).toEqual([])
+    // A title alone does not make a status reason readable at a glance.
+    const titled = await at(
+      page,
+      390,
+      `<main>${cut('title="takes no new jobs"', 'takes no new jobs')}</main>`
+    )
+    expect(titled.cutMeaning).toHaveLength(1)
+  })
+
+  const nameCell = (attrs: string) =>
+    `<main><table><tbody><tr><td data-column-kind="name">${cut(attrs, 'payments-gateway.internal.example.com')}</td></tr></tbody></table></main>`
+
+  test('is quiet for a name column cell whose full text is reachable', async ({ page }) => {
+    expect(
+      (await at(page, 1024, nameCell('title="payments-gateway.internal.example.com"'))).cutMeaning
+    ).toEqual([])
+    expect((await at(page, 1024, nameCell('data-slot="tooltip-trigger"'))).cutMeaning).toEqual([])
+  })
+
+  test('flags a name column cell with no tooltip, title or label', async ({ page }) => {
+    const found = await at(page, 1024, nameCell(''))
+    expect(found.cutMeaning.join('\n')).toMatch(/name column, no tooltip or title/)
+  })
+
+  test('honours data-cut-tooltip only with the full text reachable', async ({ page }) => {
+    const withTip = `<main><button data-slot="tooltip-trigger">${cut('data-cut-tooltip', 'Last heartbeat 54 days ago')}</button></main>`
+    expect((await at(page, 390, withTip)).cutMeaning).toEqual([])
+    const without = `<main>${cut('data-cut-tooltip', 'Last heartbeat 54 days ago')}</main>`
+    expect((await at(page, 390, without)).cutMeaning.join('\n')).toMatch(
+      /marked data-cut-tooltip, no tooltip/
+    )
+  })
+
+  test('reports a column of cut cells once, with the count', async ({ page }) => {
+    const rows = Array.from(
+      { length: 3 },
+      () =>
+        `<tr><td data-column="reason" data-column-kind="text">${cut('', 'last heartbeat 54d 12h ago')}</td></tr>`
+    ).join('')
+    const found = await at(page, 1024, `<main><table><tbody>${rows}</tbody></table></main>`)
+    expect(found.cutMeaning).toHaveLength(1)
+    expect(found.cutMeaning[0]).toMatch(/td\[data-column="reason"\] > span \(3 elements\)/)
+  })
+})
