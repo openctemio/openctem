@@ -26,7 +26,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  * - controls side by side in a row (buttons, fields, selects) share one
  *   height and one centre line (probeRowMix; open rows are listed in
  *   ROW_MIX_DEBT in helpers/page-anatomy.ts, which only shrinks);
- * - a settings page (/settings, /account, console /system) shows no Save button at rest: its
+ * - a settings page (/settings, /account and its tabs, console /system) shows no Save button at rest: its
  *   form saves through the sticky SettingsSaveBar, shown while there are
  *   unsaved changes (SAVE_EXCEPTIONS lists the pages not moved yet);
  * - no hand-made "Insufficient permissions" / "Access Denied" text: a refusal
@@ -42,8 +42,10 @@ import { test, expect } from '../fixtures/authenticated-page'
  */
 
 const APP = path.resolve(__dirname, '../../src/app/(dashboard)')
+/** The account area (its own shell): its pages are settings pages too. */
+const ACCOUNT = path.resolve(__dirname, '../../src/app/(account)')
 
-/** Static routes of the dashboard shell, from its page files. */
+/** Static routes of the dashboard shell and the account area, from their page files. */
 function staticRoutes(): string[] {
   const out: string[] = []
   const walk = (dir: string, segs: string[]) => {
@@ -58,6 +60,7 @@ function staticRoutes(): string[] {
     }
   }
   walk(APP, [])
+  walk(ACCOUNT, [])
   return [...new Set(out)].filter((r) => !r.includes('[')).sort()
 }
 

@@ -21,12 +21,18 @@ vi.mock('@/components/layout', () => ({
 }))
 vi.mock('@/components/skip-to-main', () => ({ SkipToMain: () => null }))
 vi.mock('@/components/step-up-dialog', () => ({ StepUpDialogHost: () => null }))
-vi.mock('@/components/theme-switch', () => ({ ThemeSwitch: () => null }))
+vi.mock('@/components/theme-switch', () => ({
+  ThemeSwitch: () => null,
+  ThemeMenuItems: () => null,
+}))
 vi.mock('@/context/brand-provider', () => ({ useBrand: () => ({ shortName: 'X' }) }))
 vi.mock('@/context/account-space-provider', () => ({
   AccountSpaceProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }))
-vi.mock('../account-sign-out', () => ({ AccountSignOut: () => null }))
+vi.mock('../account-sign-out', () => ({
+  AccountSignOut: () => null,
+  AccountSignOutConfirm: () => null,
+}))
 vi.mock('../ownership-invitation-banner', () => ({ OwnershipInvitationBanner: () => null }))
 
 import { AccountShell } from '../account-shell'
