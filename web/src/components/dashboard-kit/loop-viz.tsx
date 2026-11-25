@@ -40,7 +40,8 @@ export function LoopViz({ result }: { result: StagesResult }) {
               className="flex min-w-0 flex-col gap-1.5 border-s border-t p-3"
             >
               <div className="flex items-baseline justify-between gap-2 text-xs">
-                <span className="truncate font-medium">{name}</span>
+                {/* A stage's name wraps ("Xác định phạm v…" said nothing). */}
+                <span className="min-w-0 font-medium break-words">{name}</span>
                 <span className="tabular-nums text-muted-foreground" aria-hidden>
                   {String(i + 1).padStart(2, '0')}
                 </span>

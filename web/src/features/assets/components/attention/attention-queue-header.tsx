@@ -174,13 +174,13 @@ export function AttentionQueueHeader({
             : `${formatNumber(count)} ${t(current.unitKey, current.unit, { count })}`
         }
       />
-      {/* A sentence, read whole: from 1280 px it wraps in what the heading
-          row has left. Below, the row has no room for it and a line of its
-          own would push the list down, so it is read at the top of the
-          reason menu, as on a phone. */}
+      {/* A sentence, read whole and never hidden behind a menu where there is
+          room for it: from 1280 px it wraps in what the heading row has left;
+          from 768 px it is the header's last line, under the heading and the
+          actions. On a phone it is read at the top of the reason menu. */}
       <p
         data-slot="attention-why"
-        className="min-w-64 flex-1 basis-0 text-sm text-muted-foreground max-xl:hidden"
+        className="min-w-64 flex-1 basis-0 text-sm text-muted-foreground max-md:hidden md:max-xl:order-last md:max-xl:basis-full"
       >
         {why}
       </p>

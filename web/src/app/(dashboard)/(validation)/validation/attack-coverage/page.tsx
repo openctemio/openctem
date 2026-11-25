@@ -679,9 +679,13 @@ function TacticHeader({ tactic }: { tactic: MitreTactic }) {
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
+        {/* A tactic's name wraps (hyphenated in a narrow column) rather than
+            end in an ellipsis: "Reconnaiss…" said nothing. */}
         <TooltipTrigger asChild>
-          <div className="bg-primary/10 rounded px-1 py-1.5 text-center">
-            <p className="text-primary truncate text-xs font-semibold">{label}</p>
+          <div className="bg-primary/10 flex h-full items-center justify-center rounded px-1 py-1.5 text-center">
+            <p className="text-primary text-xs leading-tight font-semibold hyphens-auto [overflow-wrap:anywhere]">
+              {label}
+            </p>
           </div>
         </TooltipTrigger>
         <TooltipContent>

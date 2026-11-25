@@ -40,11 +40,9 @@ export function InventoryHiddenChip({
         </LockedChipAction>
       }
     >
-      {t(
-        'assets.hidden.chipCount',
-        '{count, plural, one {Hiding # name awaiting review or not ours} other {Hiding # names awaiting review or not ours}}',
-        { count }
-      )}
+      {t('assets.hidden.chipCount', '{count, plural, one {# name hidden} other {# names hidden}}', {
+        count,
+      })}
     </LockedChip>
   )
 }

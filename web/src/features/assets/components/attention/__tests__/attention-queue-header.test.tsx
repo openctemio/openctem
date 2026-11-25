@@ -66,6 +66,14 @@ describe('AttentionQueueHeader', () => {
     )
   })
 
+  it('shows the why from 768 px as its own last line, never only in the menu', () => {
+    render(<AttentionQueueHeader reason="no_owner" count={549} />)
+    const why = document.querySelector('[data-slot="attention-why"]')
+    // Hidden only on a phone (read at the top of the reason menu there).
+    expect(why).toHaveClass('max-md:hidden', 'md:max-xl:order-last', 'md:max-xl:basis-full')
+    expect(why).not.toHaveClass('max-xl:hidden')
+  })
+
   it('has no inventory link for a reason with no inventory view', () => {
     render(<AttentionQueueHeader reason="duplicates" count={3} />)
     expect(screen.queryByRole('link', { name: /open in the inventory/i })).toBeNull()

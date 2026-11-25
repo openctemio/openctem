@@ -25,6 +25,19 @@ const base: UserNotification = {
 afterEach(cleanup)
 
 describe('NotificationRow', () => {
+  it('keeps the line breaks of the body instead of return marks', () => {
+    render(
+      <NotificationRow
+        notification={{ ...base, body: 'Coverage changed:\n- one\n- two' }}
+        onMarkAsRead={() => {}}
+      />
+    )
+    const body = screen.getByText(/Coverage changed/)
+    expect(body.textContent).toBe('Coverage changed:\n- one\n- two')
+    expect(body.textContent).not.toContain('⏎')
+    expect(body).toHaveClass('whitespace-pre-line')
+  })
+
   it('navigates on the first click of an unread linked row and marks it read', () => {
     const onMarkAsRead = vi.fn()
     render(

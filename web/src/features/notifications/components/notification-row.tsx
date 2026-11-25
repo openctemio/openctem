@@ -7,7 +7,7 @@ import type { Severity } from '@/features/shared/types'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatRelativeTime } from '@/lib/format-metric'
 import { safeInternalHref } from '@/lib/safe-href'
-import { toDisplayText } from '@/lib/untrusted-text'
+import { toDisplayBlock, toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 import type { UserNotification } from '../api/use-notification-api'
 import { NOTIFICATION_TYPE_ICONS, NOTIFICATION_TYPE_LABELS } from '../lib/notification-types'
@@ -56,7 +56,9 @@ export function NotificationRow({
     ? SERVER_TITLE_KEYS[notification.title]
     : undefined
   const title = titleKey ? t(titleKey, notification.title) : toDisplayText(notification.title)
-  const body = notification.body ? toDisplayText(notification.body) : ''
+  // The body keeps its line breaks (a list of changes reads as lines, never
+  // as one paragraph strung with return marks).
+  const body = notification.body ? toDisplayBlock(notification.body, 4000) : ''
   const unread = !notification.is_read
   const severity = (notification.severity || '').toLowerCase()
 
@@ -100,7 +102,7 @@ export function NotificationRow({
             data-cut-tooltip={compact ? '' : undefined}
             title={compact ? body : undefined}
             className={cn(
-              'break-words text-muted-foreground [unicode-bidi:isolate]',
+              'break-words whitespace-pre-line text-muted-foreground [unicode-bidi:isolate]',
               compact ? 'text-cap line-clamp-2' : 'text-xs'
             )}
           >

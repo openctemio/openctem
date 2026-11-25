@@ -7,10 +7,10 @@ vi.mock('@/lib/clipboard', () => ({ copyToClipboard: (v: string) => copyToClipbo
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 describe('ErrorState request id', () => {
-  it('shows the request id and copies it', () => {
+  it('copies the request id without printing it', () => {
     const error = Object.assign(new Error('boom'), { statusCode: 500, requestId: 'req-42' })
     render(<ErrorState title="findings" error={error} onRetry={() => {}} />)
-    expect(screen.getByText('req-42')).toBeInTheDocument()
+    expect(screen.queryByText(/req-42/)).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /copy request id/i }))
     expect(copyToClipboard).toHaveBeenCalledWith('req-42')
   })
@@ -18,12 +18,6 @@ describe('ErrorState request id', () => {
   it('shows no copy button when the error has no request id', () => {
     render(<ErrorState title="findings" error={new Error('boom')} onRetry={() => {}} />)
     expect(screen.queryByRole('button', { name: /copy request id/i })).not.toBeInTheDocument()
-  })
-
-  it('keeps the request id out of the text on a phone (copy only)', () => {
-    const error = Object.assign(new Error('boom'), { statusCode: 500, requestId: 'req-43' })
-    render(<ErrorState title="findings" error={error} onRetry={() => {}} />)
-    expect(screen.getByText('req-43')).toHaveClass('hidden', 'sm:inline')
   })
 })
 
