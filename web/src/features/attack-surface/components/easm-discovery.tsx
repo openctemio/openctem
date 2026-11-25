@@ -24,6 +24,7 @@ import {
   Meter,
   MetricStrip,
   PageHeader,
+  PageStack,
   RelativeTime,
   TonePill,
   type MetricStripItem,
@@ -399,7 +400,7 @@ export function EASMDiscovery() {
   ]
 
   return (
-    <>
+    <PageStack>
       {/* The page header holds it all (no row of its own above the stages):
           what holds the stages back is the description line under the title
           (whole, wrapped), the actions sit beside the title. The freshness
@@ -503,6 +504,6 @@ export function EASMDiscovery() {
         destructive
         handleConfirm={abortAll}
       />
-    </>
+    </PageStack>
   )
 }

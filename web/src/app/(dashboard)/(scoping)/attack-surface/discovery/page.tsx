@@ -6,15 +6,12 @@
  */
 
 import { Main } from '@/components/layout'
-import { PageStack } from '@/features/shared'
 import { EASMDiscovery } from '@/features/attack-surface'
 
 export default function AttackSurfaceDiscoveryPage() {
   return (
     <Main>
-      <PageStack>
-        <EASMDiscovery />
-      </PageStack>
+      <EASMDiscovery />
     </Main>
   )
 }
