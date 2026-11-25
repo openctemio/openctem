@@ -15,6 +15,7 @@ import {
   DataTableColumnHeader,
   DataTableRowActions,
   type DataTableSearch,
+  CellText,
 } from '@/features/shared'
 
 import type { Capability, CapabilityUsageStatsBatchResponse } from '@/lib/api/capability-types'
@@ -317,9 +318,9 @@ export function CapabilityTable({
         header: t('scans.capabilities.col.description', 'Description'),
         enableSorting: false,
         cell: ({ row }) => (
-          <span className="line-clamp-1 max-w-[300px] text-sm text-muted-foreground">
+          <CellText className="max-w-[300px] text-sm text-muted-foreground">
             {row.original.description || '-'}
-          </span>
+          </CellText>
         ),
       },
     ]

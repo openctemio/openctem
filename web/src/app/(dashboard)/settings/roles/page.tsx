@@ -239,7 +239,8 @@ export default function RolesPage() {
             <RoleSummaryLine
               summary={row.original.summary}
               max={3}
-              className="text-cap text-muted-foreground truncate"
+              clamp
+              className="text-cap text-muted-foreground"
             />
           </div>
         ) : null,

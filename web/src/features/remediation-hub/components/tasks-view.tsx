@@ -556,6 +556,7 @@ export function TaskPhoneCard({
         <Link
           href={`/remediation/tasks/${task.id}`}
           onClick={onOpen ? (e) => opensSheet(e, onOpen) : undefined}
+          data-cut-tooltip
           className="min-w-0 truncate font-medium hover:underline"
           title={task.title}
         >

@@ -45,6 +45,7 @@ import {
   type DataTableSearch,
   type DataTableSelectMode,
   type FilterPanelToggleProps,
+  CellText,
 } from '@/features/shared'
 import { AssetRowMenu } from './asset-row-menu'
 import { AssetLivenessBadge, AssetStatusBadge } from '@/features/asset-lifecycle'
@@ -632,16 +633,17 @@ export function InventoryTable({
             return (
               <div className="flex min-w-0 items-center gap-1.5">
                 <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate text-sm">{owner.name}</span>
+                <CellText className="text-sm">{owner.name}</CellText>
               </div>
             )
           }
           if (row.original.ownerRef) {
-            return <span className="truncate text-sm">{row.original.ownerRef}</span>
+            return <CellText className="text-sm">{row.original.ownerRef}</CellText>
           }
           // A gap, not a value: muted, dashed icon (Needs attention lists them).
           return (
-            <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm text-muted-foreground">
+            // It wraps in a narrow column ("Chưa có chủ sở hữu"), never cut.
+            <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
               <UserX className="h-3.5 w-3.5 shrink-0" aria-hidden />
               {t('assets.inv.noOwner', 'No owner')}
             </span>
@@ -889,7 +891,13 @@ export function InventoryTable({
                     className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 break-words text-sm font-medium">
+                    {/* The card's title: a name past two lines ends in an
+                        ellipsis, whole in its title. */}
+                    <p
+                      data-cut-tooltip
+                      title={toDisplayText(a.name)}
+                      className="line-clamp-2 break-words text-sm font-medium"
+                    >
                       <BreakText>{a.name}</BreakText>
                     </p>
                     <MetaLine className="mt-0.5" oneLine items={[typeLabel, context]} />

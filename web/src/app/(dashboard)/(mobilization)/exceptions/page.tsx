@@ -16,7 +16,7 @@ import { toast } from 'sonner'
 
 import { Main } from '@/components/layout'
 import { PageHeader } from '@/features/shared/components/page-header'
-import { DataTable, FilterSelect, PageStack, ToolbarAction } from '@/features/shared'
+import { CellText, DataTable, FilterSelect, PageStack, ToolbarAction } from '@/features/shared'
 import { MetricStrip, type MetricStripItem } from '@/features/shared/components/metric-strip'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { MetaLine } from '@/features/shared/components/text-layout'
@@ -401,11 +401,11 @@ export default function ExceptionsPage() {
           hideBelow: EXCEPTION_HIDE_BELOW.expires,
         },
         cell: ({ row }) => (
-          <span className="whitespace-nowrap">
+          <CellText>
             {row.original.expires_at
               ? relative(row.original.expires_at, locale)
               : t('exceptions.page.never', 'Never')}
-          </span>
+          </CellText>
         ),
       },
       {
@@ -416,9 +416,7 @@ export default function ExceptionsPage() {
           label: t('exceptions.page.colCreated', 'Created'),
           hideBelow: EXCEPTION_HIDE_BELOW.created,
         },
-        cell: ({ row }) => (
-          <span className="whitespace-nowrap">{relative(row.original.created_at, locale)}</span>
-        ),
+        cell: ({ row }) => <CellText>{relative(row.original.created_at, locale)}</CellText>,
       },
       {
         id: 'approvers',
@@ -429,11 +427,7 @@ export default function ExceptionsPage() {
           hideBelow: EXCEPTION_HIDE_BELOW.approvers,
         },
         enableSorting: false,
-        cell: ({ row }) => (
-          <span className="block truncate" title={approversOf(row.original)}>
-            {approversOf(row.original)}
-          </span>
-        ),
+        cell: ({ row }) => <CellText>{approversOf(row.original)}</CellText>,
       },
       {
         id: 'requested_by',
@@ -444,11 +438,7 @@ export default function ExceptionsPage() {
           hideBelow: EXCEPTION_HIDE_BELOW.requestedBy,
         },
         enableSorting: false,
-        cell: ({ row }) => (
-          <span className="block truncate" title={requesterOf(row.original)}>
-            {requesterOf(row.original)}
-          </span>
-        ),
+        cell: ({ row }) => <CellText>{requesterOf(row.original)}</CellText>,
       },
       {
         id: 'actions',
@@ -706,14 +696,16 @@ export default function ExceptionsPage() {
             mobileRow={(r) => (
               <div data-slot="exception-card" className="flex min-w-0 flex-col gap-1 px-3 py-3">
                 <div className="flex min-w-0 items-center justify-between gap-3">
-                  <span className="min-w-0 truncate font-medium" title={r.name}>
+                  <span data-cut-tooltip className="min-w-0 truncate font-medium" title={r.name}>
                     {r.name}
                   </span>
                   <span className="shrink-0">
                     <SuppressionStatusBadge status={r.status} />
                   </span>
                 </div>
-                <p className="text-meta truncate font-mono">{suppressionScopeSummary(r, t)}</p>
+                <p className="text-meta font-mono [overflow-wrap:anywhere]">
+                  {suppressionScopeSummary(r, t)}
+                </p>
                 <MetaLine
                   items={[
                     suppressionTypeLabel(r.suppression_type, t),

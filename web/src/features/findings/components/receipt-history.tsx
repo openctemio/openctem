@@ -421,7 +421,12 @@ export function ReceiptHistory() {
           mobileRow={(r) => (
             <div data-slot="receipt-card" className="flex min-w-0 flex-col gap-1 px-3 py-3">
               <div className="flex min-w-0 items-center justify-between gap-3">
-                <span className="min-w-0 truncate font-medium" dir="auto">
+                <span
+                  data-cut-tooltip
+                  title={toolLabel(r)}
+                  className="min-w-0 truncate font-medium"
+                  dir="auto"
+                >
                   {toolLabel(r)}
                 </span>
                 {statusChip(r, 'shrink-0')}

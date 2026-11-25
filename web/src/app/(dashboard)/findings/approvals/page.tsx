@@ -163,11 +163,13 @@ function JustificationCell({ approval, lines = 1 }: { approval: ApiApproval; lin
       </span>
       <span
         dir="auto"
-        className={
-          lines === 1
-            ? 'min-w-8 flex-1 truncate text-sm text-muted-foreground [unicode-bidi:isolate]'
-            : 'line-clamp-2 text-sm text-muted-foreground [unicode-bidi:isolate]'
-        }
+        // Two lines at most; a longer reason ends in an ellipsis with its
+        // full text as the title.
+        data-cut-tooltip=""
+        className={cn(
+          'line-clamp-2 break-words text-sm text-muted-foreground [unicode-bidi:isolate]',
+          lines === 1 && 'min-w-8 flex-1'
+        )}
         title={text}
       >
         {text}

@@ -223,13 +223,17 @@ function LicenseRow({ row, part }: { row: Row; part: string }) {
   return (
     <li>
       <Collapsible open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger className="flex w-full items-center gap-3 px-3 py-2 text-start hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <CollapsibleTrigger className="flex w-full items-start gap-3 px-3 py-2 text-start hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <ChevronRight
-            className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`}
+            className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`}
             aria-hidden
           />
-          <span className="min-w-0 flex-1 truncate font-mono text-code">{row.name}</span>
-          <span className="hidden w-24 shrink-0 truncate font-mono text-code text-muted-foreground sm:inline">
+          {/* A module path or a pseudo-version is a token: it wraps at any
+              character instead of hiding its end behind an ellipsis. */}
+          <span className="min-w-0 flex-1 font-mono text-code [overflow-wrap:anywhere]">
+            {row.name}
+          </span>
+          <span className="hidden w-28 shrink-0 font-mono text-code text-muted-foreground [overflow-wrap:anywhere] sm:inline">
             {row.version}
           </span>
           <span className="hidden w-20 shrink-0 text-dense text-muted-foreground md:inline">

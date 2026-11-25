@@ -97,7 +97,8 @@ export function LastRunCell({
       />
       <RelativeTime
         date={run.started_at ?? run.created_at}
-        className={cn('text-xs', inline && 'min-w-0 truncate')}
+        // In a row the time wraps between its words, never cut.
+        className={cn('text-xs', inline && 'min-w-0 whitespace-normal')}
       />
     </span>
   )
