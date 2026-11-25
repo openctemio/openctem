@@ -26,7 +26,12 @@ export function DataTableColumnHeader<TData, TValue>({
   const end = layout.align === 'end'
   if (!column.getCanSort()) {
     return (
-      <div className={cn('truncate', end && 'text-end', className)} title={title}>
+      // A header label is never cut (a table never cuts a column header): a
+      // long one ("Mức độ quan trọng") wraps to a second line.
+      <div
+        className={cn('break-words whitespace-normal', end && 'text-end', className)}
+        title={title}
+      >
         {title}
       </div>
     )
@@ -56,13 +61,14 @@ export function DataTableColumnHeader<TData, TValue>({
           else column.toggleSorting(layout.sortFirst === 'desc')
         }}
         className={cn(
-          // 28 tall ghost target; the -mx keeps the label on the column's edge.
-          'group/sort -mx-2 inline-flex h-7 min-w-0 items-center gap-1 rounded-md px-2 text-cap-m transition-colors hover:bg-hov focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          // A ghost target 28 px tall at least (a long label wraps rather than
+          // being cut); the -mx keeps the label on the column's edge.
+          'group/sort -mx-2 inline-flex min-h-7 min-w-0 items-center gap-1 rounded-md px-2 py-0.5 text-start text-cap-m transition-colors hover:bg-hov focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
           sorted ? 'text-foreground' : 'text-muted-foreground'
         )}
       >
         {end && arrow}
-        <span className="truncate">{title}</span>
+        <span className="min-w-0 break-words whitespace-normal">{title}</span>
         {!end && arrow}
       </button>
     </div>
