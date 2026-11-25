@@ -87,9 +87,12 @@ const EDITOR_KEEP_BELOW = 104
 // 2 x 28 px; from 768: help, expand, run, 3 x 24 px).
 const FIELD_CONTROLS_ROOM =
   'pe-[calc(var(--list-search-end,0.5rem)+3.75rem)] md:pe-[calc(var(--list-search-end,0.5rem)+4.75rem)]'
-// The expanded editor on a phone draws help, collapse and run (3 x 28 px).
+// The expanded editor: from 768 px its controls (3 x 24 px) sit at the end of
+// its first line. On a phone they are three of 28 px and would leave the
+// first line a few characters, so they get a strip of their own at the top
+// and the text starts under it, the field's whole width.
 const EDITOR_CONTROLS_ROOM =
-  'pe-[calc(var(--list-search-end,0.5rem)+5.5rem)] md:pe-[calc(var(--list-search-end,0.5rem)+4.75rem)]'
+  'md:pe-[calc(var(--list-search-end,0.5rem)+4.75rem)] max-md:ps-3 max-md:pe-3 max-md:pt-(--spacing-control-touch)'
 
 function reducedMotion(): boolean {
   return (
@@ -264,6 +267,8 @@ export function QueryInput({
   const [lineH, setLineH] = useState(20)
   // The height the text takes at the editor's width (paddings and borders included).
   const [textH, setTextH] = useState<number | null>(null)
+  // The phone's strip for the controls above the text (its extra top padding).
+  const [stripH, setStripH] = useState(0)
   // The room on screen below the editor's top (a phone keyboard, a zoomed
   // page), so the run icon and the top of the list stay reachable.
   const [room, setRoom] = useState(Number.POSITIVE_INFINITY)
@@ -272,14 +277,14 @@ export function QueryInput({
   useEffect(() => () => clearTimeout(timer.current ?? undefined), [])
   const frame = fieldH - lineH // the editor's paddings and borders
   const maxH = Math.max(
-    frame + 2 * lineH,
+    frame + stripH + 2 * lineH,
     Math.min(
-      frame + EDITOR_MAX_LINES * lineH,
+      frame + stripH + EDITOR_MAX_LINES * lineH,
       typeof window === 'undefined' ? Infinity : window.innerHeight / 2,
       room
     )
   )
-  const minH = Math.min(frame + EDITOR_MIN_LINES * lineH, maxH)
+  const minH = Math.min(frame + stripH + EDITOR_MIN_LINES * lineH, maxH)
   const openH = Math.round(Math.min(maxH, Math.max(minH, textH ?? minH)))
   const setBig = (on: boolean) => {
     const el = ref.current
@@ -353,6 +358,8 @@ export function QueryInput({
     const read = () => {
       const h = copy.scrollHeight + (copy.offsetHeight - copy.clientHeight)
       if (h > 0) setTextH(h)
+      // Top padding past the one-line field's (py-1.5): the phone's strip.
+      setStripH(Math.max(0, (parseFloat(getComputedStyle(el).paddingTop) || 0) - 6))
     }
     read()
     if (typeof ResizeObserver === 'undefined') return

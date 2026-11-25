@@ -596,7 +596,9 @@ reference.
     stays in the field's place and follows its text: two lines at least, eight
     at most (or half the screen), then it scrolls inside. It is monospace at
     body size and breaks lines at spaces only, never inside a condition; a
-    condition longer than the line scrolls sideways.
+    condition longer than the line scrolls sideways. On a phone its controls
+    (help, collapse, run) sit on a strip above the text, so the text has the
+    field's whole width.
   - a toolbar group that draws none of its controls at this width (the
     Display menu on a phone, tokens moved into the Filters sheet) takes no
     line: `ListToolbar` marks it `data-empty` and takes it out of the flow, so
