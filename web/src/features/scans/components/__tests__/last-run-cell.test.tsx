@@ -64,6 +64,23 @@ describe('LastRunCell', () => {
     fireEvent.click(screen.getByRole('button', { name: /open the latest run/i }))
     expect(onOpen).toHaveBeenCalledWith('r3')
   })
+
+  it('lets the fix link wrap under the state and time in a row', () => {
+    const { container } = render(
+      <LastRunCell
+        inline
+        showHint
+        run={{
+          id: 'r9',
+          status: 'blocked',
+          created_at: new Date().toISOString(),
+          refusal_code: 'NO_SENSOR_AVAILABLE',
+        }}
+      />
+    )
+    const cell = container.querySelector('[data-slot="last-run-cell"]')
+    expect(cell?.className).toContain('flex-wrap')
+  })
 })
 
 describe('RunStatusBadge', () => {
