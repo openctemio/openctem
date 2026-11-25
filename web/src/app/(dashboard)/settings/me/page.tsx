@@ -30,7 +30,7 @@ export default function MembershipPage() {
               'settings.membership.accountHint',
               'Your profile, password and two-factor authentication are in your account settings.'
             )}{' '}
-            <Link href="/account" className="text-primary underline-offset-4 hover:underline">
+            <Link href="/account" className="link-inline">
               {t('settings.membership.openAccount', 'Open account settings')}
             </Link>
           </>
@@ -43,11 +43,17 @@ export default function MembershipPage() {
               label: t('settings.membership.role', 'Your role'),
               value: currentTenant ? t(`org.role.${currentTenant.role}`, currentTenant.role) : '-',
             },
-            {
-              key: 'joined',
-              label: t('settings.membership.joined', 'Member since'),
-              value: formatDateSafe(membership?.joined_at, 'PP', '-'),
-            },
+            // Shown only when the membership list carries the date: a "-"
+            // row says nothing.
+            ...(membership?.joined_at
+              ? [
+                  {
+                    key: 'joined',
+                    label: t('settings.membership.joined', 'Member since'),
+                    value: formatDateSafe(membership.joined_at, 'PP', '-'),
+                  },
+                ]
+              : []),
             ...(membership?.access_expires_at
               ? [
                   {

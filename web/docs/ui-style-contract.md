@@ -1511,6 +1511,15 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   keep the full width; a form page uses the settings column. The layout
   matrix fails a text line or a field wider than 960 px, or a rail 400 px
   from its content, from 1900 px up.
+- An ellipsis or a line clamp never hides meaning. A status reason, a metric's
+  label, a sentence or a value shows in full: wrap it (two lines), or give it a
+  shorter plain label. Only a name or title (a DataTable column of kind `name`,
+  which the table marks `data-column-kind="name"`, and the phone card's title)
+  may end in an ellipsis, and then with its full text in a tooltip, `title` or
+  `aria-label`. Anything else that must stay on one line is marked
+  `data-cut-tooltip` and sits in a tooltip trigger (or carries the full text in
+  its `title`). The layout matrix's `cutMeaning` detector fails every other
+  cut, with the visible and the full text.
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a
   fixed column count without breakpoints.
 - `e2e/specs/75a-layout-breaks-lists.spec.ts` (and 75b settings, 75c shell, 75d detail) check the lists and their overlays at

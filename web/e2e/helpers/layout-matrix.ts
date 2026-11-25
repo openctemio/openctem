@@ -30,6 +30,16 @@ import { submitSignIn } from './auth'
  *                    bottom of its last visible content (and taller than the
  *                    window): a boxed list's height leaked into the page, or
  *                    the picture grew by a scroller nobody scrolls the page with
+ *   cutMeaning       a text that ends in an ellipsis (text-overflow) or a line
+ *                    clamp that hides lines, so part of what it says is lost:
+ *                    "takes no new jo…", "mất kết nối, SDK, heart…" (owner
+ *                    reports 2026-11-25). Exempt only (a) a cell of a name or
+ *                    title column (`data-column-kind="name"`, the DataTable's
+ *                    name kind and the phone card's title) and (b) an element
+ *                    opted out with `data-cut-tooltip`, each only while its
+ *                    full text is reachable: a `title`, `aria-label` or
+ *                    `aria-description` holding it, or a tooltip trigger. A
+ *                    line reads `cut "<visible>…" of "<full>" at <selector>`.
  */
 
 export type MatrixBreaks = {
@@ -40,6 +50,7 @@ export type MatrixBreaks = {
   wideStretch: string[]
   joined: string[]
   emptyTail: string[]
+  cutMeaning: string[]
 }
 
 export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
@@ -50,6 +61,7 @@ export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
   'wideStretch',
   'joined',
   'emptyTail',
+  'cutMeaning',
 ]
 
 /** Widths of the v2 matrix with the height of their device class. */
@@ -522,6 +534,7 @@ export async function findMatrixBreaks(
       wideStretch: [] as string[],
       joined: [] as string[],
       emptyTail: [] as string[],
+      cutMeaning: [] as string[],
     }
     const roots = Array.from(document.querySelectorAll(scope))
     if (!roots.length) return out
@@ -1059,6 +1072,163 @@ export async function findMatrixBreaks(
         }
       }
     }
+    // ---- cutMeaning: a text cut by its own ellipsis or line clamp. The
+    // ellipsis says something is missing, not what: a status reason, a
+    // metric's label or a sentence must show in full (wrap, a shorter plain
+    // label). Only a name or title (the row's identity, opened in full one
+    // click away) or an element marked `data-cut-tooltip` may end in an
+    // ellipsis, and then only with its full text reachable.
+    const flat = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim()
+    // The full text a pointer, a long press or a screen reader reaches: a
+    // title, an aria label or description on the element or around it (up to
+    // its table cell or card field), or a tooltip trigger.
+    const STOP =
+      'td, th, [role=cell], [role=gridcell], [role=columnheader], [data-slot^="mobile-card-"], [data-cut-tooltip]'
+    const reachable = (el: Element, full: string): boolean => {
+      const want = flat(full).toLowerCase()
+      for (let a: Element | null = el, up = 0; a && up < 6; a = a.parentElement, up++) {
+        if (a.matches('[data-slot="tooltip-trigger"]')) return true
+        for (const attr of ['title', 'aria-label', 'aria-description']) {
+          const v = flat(a.getAttribute(attr)).toLowerCase()
+          if (v && v.includes(want)) return true
+        }
+        if (a !== el && a.matches(STOP)) break
+      }
+      return false
+    }
+    const cssName = (a: Element) => {
+      let p = a.tagName.toLowerCase()
+      const slot = a.getAttribute('data-slot')
+      const col = a.getAttribute('data-column')
+      const kind = a.getAttribute('data-column-kind')
+      const role = a.getAttribute('role')
+      if (slot) p += `[data-slot="${slot}"]`
+      if (col) p += `[data-column="${col}"]`
+      // A table cell names its column's kind (the cells carry no id).
+      else if (kind && /^(td|th)$/i.test(a.tagName)) p += `[data-column-kind="${kind}"]`
+      if (role && !slot) p += `[role=${role}]`
+      if (a.id && /^[a-z][\w-]*$/i.test(a.id) && !/^radix/.test(a.id)) p += `#${a.id}`
+      const cls = Array.from(a.classList).filter((c) => /^(truncate|line-clamp-\d+)$/.test(c))
+      if (cls.length) p += `.${cls.join('.')}`
+      return { p, anchored: !!(slot || col || (a.id && !/^radix/.test(a.id))) }
+    }
+    const selectorOf = (el: Element) => {
+      const parts: string[] = []
+      for (
+        let a: Element | null = el;
+        a && a !== document.body && parts.length < 4;
+        a = a.parentElement
+      ) {
+        const { p, anchored } = cssName(a)
+        parts.unshift(p)
+        if (anchored) break
+      }
+      return parts.join(' > ')
+    }
+    // The characters drawn before the cut: laid out inside the box's content
+    // edge (an ellipsis) or above its bottom edge (a clamp).
+    const visibleText = (el: HTMLElement, clamp: boolean) => {
+      const r = el.getBoundingClientRect()
+      const cs = getComputedStyle(el)
+      const rtl = cs.direction === 'rtl'
+      const start = r.left + el.clientLeft + parseFloat(cs.paddingLeft)
+      const end = r.left + el.clientLeft + el.clientWidth - parseFloat(cs.paddingRight)
+      const bottom = r.top + el.clientTop + el.clientHeight - parseFloat(cs.paddingBottom)
+      let shownText = ''
+      let seen = 0
+      const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+      const rg = document.createRange()
+      for (let n = tw.nextNode(); n && seen < 400; n = tw.nextNode()) {
+        const text = n.textContent ?? ''
+        for (let i = 0; i < text.length && seen < 400; i++, seen++) {
+          rg.setStart(n, i)
+          rg.setEnd(n, i + 1)
+          const b = rg.getBoundingClientRect()
+          // A collapsed space has no box; a letter with none was not drawn
+          // (a line past the clamp).
+          if (b.width === 0 && b.height === 0) {
+            if (/\s/.test(text[i])) {
+              shownText += text[i]
+              continue
+            }
+            if (!clamp) return flat(shownText)
+            continue
+          }
+          const inside = clamp
+            ? b.bottom <= bottom + 0.5
+            : rtl
+              ? b.left >= start - 0.5
+              : b.right <= end + 0.5
+          if (inside) shownText += text[i]
+          else if (!clamp) return flat(shownText)
+        }
+      }
+      return flat(shownText)
+    }
+    // The text's laid-out extent past the content edge (the ellipsis only
+    // paints over it): rounding alone never makes a cut.
+    const overflowsBox = (el: HTMLElement) => {
+      const r = el.getBoundingClientRect()
+      const cs = getComputedStyle(el)
+      const start = r.left + el.clientLeft + parseFloat(cs.paddingLeft)
+      const end = r.left + el.clientLeft + el.clientWidth - parseFloat(cs.paddingRight)
+      const rg = document.createRange()
+      rg.selectNodeContents(el)
+      const boxes = Array.from(rg.getClientRects()).filter((b) => b.width > 0.5)
+      return boxes.some((b) => b.right > end + 1 || b.left < start - 1)
+    }
+    type Cut = { el: Element; sel: string; visible: string; full: string; note: string }
+    const cuts: Cut[] = []
+    for (const root of roots) {
+      for (const node of [root, ...Array.from(root.querySelectorAll('*'))]) {
+        if (!(node instanceof HTMLElement)) continue
+        if (node.matches('input, textarea, select, option, svg, svg *')) continue
+        const cs = getComputedStyle(node)
+        const ellipsis =
+          cs.textOverflow === 'ellipsis' &&
+          !/flex|grid/.test(cs.display) &&
+          cs.overflowX !== 'visible' &&
+          node.scrollWidth > node.clientWidth
+        // A clamped box computes to `flow-root` in current Chromium, not
+        // `-webkit-box`: the clamp itself is the sign.
+        const clamp =
+          !ellipsis &&
+          /\d/.test(cs.webkitLineClamp) &&
+          cs.overflowY !== 'visible' &&
+          node.scrollHeight > node.clientHeight + 1
+        if (!ellipsis && !clamp) continue
+        const full = flat(node.textContent)
+        if (!full || !shown(node)) continue
+        if (ellipsis && !overflowsBox(node)) continue
+        const visible = visibleText(node, clamp)
+        if (visible === full) continue
+        const kind = node.closest('[data-column-kind]')?.getAttribute('data-column-kind')
+        const optOut = node.closest('[data-cut-tooltip]')
+        const reach = reachable(node, full)
+        if ((kind === 'name' || optOut) && reach) continue
+        const note = optOut
+          ? ' (marked data-cut-tooltip, no tooltip or title holds the full text)'
+          : kind === 'name'
+            ? ' (name column, no tooltip or title holds the full text)'
+            : ''
+        cuts.push({ el: node, sel: selectorOf(node), visible, full, note })
+      }
+    }
+    // One line per element pattern (a column's cells, a strip's tiles), the
+    // first example and the count; an outer box around a reported inner one
+    // says the same cut again.
+    const inner = cuts.filter((c) => !cuts.some((o) => o !== c && c.el.contains(o.el)))
+    const groups = new Map<string, { c: Cut; n: number }>()
+    for (const c of inner) {
+      const g = groups.get(c.sel)
+      if (g) g.n++
+      else groups.set(c.sel, { c, n: 1 })
+    }
+    for (const [sel, { c, n }] of groups)
+      out.cutMeaning.push(
+        `cut "${short(c.visible, 60)}…" of "${short(c.full, 120)}" at ${sel}${n > 1 ? ` (${n} elements)` : ''}${c.note}`
+      )
+
     for (const k of Object.keys(out) as (keyof typeof out)[]) out[k] = [...new Set(out[k])]
     return out
   }, scope)

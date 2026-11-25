@@ -166,8 +166,8 @@ export default function AdminUsersPage() {
         header: t('admin.users.col.created', 'Created'),
         meta: {
           kind: 'date',
-          // "about 1 month ago" whole, like Last sign-in.
-          width: 152,
+          // "about 1 month ago" whole (vi "khoảng 1 tháng trước"), like Last sign-in.
+          width: 176,
           hideBelow: USERS_HIDE_BELOW.created,
           label: t('admin.users.col.created', 'Created'),
         },
