@@ -123,13 +123,14 @@ export default function AdminSessionsPage() {
         header: t('admin.sessions.col.method', 'Signed in with'),
         meta: {
           kind: 'text',
-          // "Mật khẩu + ứng dụng xác thực" whole.
-          width: 248,
+          width: 184,
           hideBelow: 1100,
           label: t('admin.sessions.col.method', 'Signed in with'),
         },
+        // Wraps ("Mật khẩu + ứng dụng xác thực" on two lines) instead of
+        // being cut; a wider column made the table scroll at 1440 px.
         cell: ({ row }) => (
-          <span className="block truncate">
+          <span className="block whitespace-normal break-words">
             {row.original.auth_method === 'idp'
               ? t('admin.sessions.idp', 'Identity provider')
               : t('admin.sessions.methodLocal', 'Password + authenticator')}
