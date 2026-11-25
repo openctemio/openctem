@@ -15,7 +15,7 @@ export default function AttackSurfacePagesPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('pageMonitor.pageTitle', 'Attack surface')}
+          title={t('attackSurface.title', 'Attack surface')}
           description={t(
             'pageMonitor.pageDescription',
             'The scripts and content of your web pages, and what changed on them.'

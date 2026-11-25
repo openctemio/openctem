@@ -1,6 +1,11 @@
 'use client'
 
-/** The frame of every remediation page: title, description and the section tabs. */
+/**
+ * The frame of every remediation page: one section title ("Remediation") on
+ * every tab, the tab's own one-line description, then the section tabs. The
+ * active tab names the sub-page, so the title and the tab row never move
+ * when you switch tabs.
+ */
 
 import type { ReactNode } from 'react'
 import { Main } from '@/components/layout'
@@ -12,12 +17,10 @@ import { Permission } from '@/lib/permissions'
 import { useSuggestionStats } from '../api/use-remediation-hub'
 
 export function HubPage({
-  title,
   description,
   actions,
   children,
 }: {
-  title: string
   description: string
   actions?: ReactNode
   children: ReactNode
@@ -28,7 +31,7 @@ export function HubPage({
   return (
     <Main>
       <PageStack>
-        <PageHeader title={title} description={description}>
+        <PageHeader title={t('remediationHub.plan.title', 'Remediation')} description={description}>
           {actions}
         </PageHeader>
         <SectionTabs

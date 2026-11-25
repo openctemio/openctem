@@ -79,6 +79,13 @@ describe('breadcrumb equals the page heading', () => {
       const heading = headingKey(file)
       if (!heading) continue
       const segment = route.split('/').pop()!
+      // A tab of a section keeps the section's title as its heading (the tab
+      // row names the sub-page): its crumb is the tab, under the section crumb.
+      const parentPath = route.slice(0, route.lastIndexOf('/'))
+      const parentKey = parentPath
+        ? breadcrumbLabelKey(parentPath, parentPath.split('/').pop()!)
+        : undefined
+      if (parentKey && enDict[parentKey] === enDict[heading]) continue
       const crumb = breadcrumbLabelKey(route, segment)
       for (const [lang, dict] of [
         ['en', enDict],
@@ -98,6 +105,10 @@ describe('breadcrumb equals the page heading', () => {
       if (!Array.isArray(value)) continue
       for (const tab of value as { href?: string; label?: string; labelKey?: string }[]) {
         if (!tab?.href || !tab.labelKey || tab.label === 'Overview') continue
+        // The section's root tab: its crumb names the section (the heading of
+        // every tab), so the sibling tabs read "Remediation > Tasks".
+        const siblings = value as { href?: string }[]
+        if (siblings.some((s) => s?.href?.startsWith(tab.href + '/'))) continue
         expect(breadcrumbLabelKey(tab.href, tab.href.split('/').pop()!), tab.href).toBe(
           tab.labelKey
         )

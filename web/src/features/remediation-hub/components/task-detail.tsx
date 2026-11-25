@@ -436,11 +436,9 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         facts={
           <MetaLine
             className="text-sm"
+            // The owner is in the People card beside the tabs, not here too.
             items={[
-              <MetaItem key="owner" label={t('remediationHub.detail.facts.owner')}>
-                {owner}
-              </MetaItem>,
-              <MetaItem key="deadline" label={t('remediationHub.detail.deadline')}>
+              <MetaItem key="deadline" label={t('remediationCampaigns.detail.due')}>
                 <DeadlinePill task={task} />
               </MetaItem>,
             ]}

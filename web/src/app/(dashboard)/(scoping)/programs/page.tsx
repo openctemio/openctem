@@ -126,7 +126,7 @@ export default function ProgramsPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('programs.title', 'Programs')}
+          title={t('scope.title', 'Scope')}
           description={t(
             'programs.description',
             'Bug-bounty and disclosure programs you test under their published rules. Their targets are scanned only from your own sensors.'

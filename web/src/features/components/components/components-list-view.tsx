@@ -541,16 +541,10 @@ export function ComponentsListView() {
       <PageStack>
         <PageHeader
           title={t('components.title', 'Components')}
-          // On a phone the list comes first: the description is read out but
-          // not drawn, and the tiles follow the list.
-          description={
-            <span className="max-md:sr-only">
-              {t(
-                'components.description',
-                'Open-source and third-party packages your repositories, images and hosts are built from, with where they are used and what is wrong with them.'
-              )}
-            </span>
-          }
+          description={t(
+            'components.description',
+            'Open-source and third-party packages your repositories, images and hosts are built from, with where they are used and what is wrong with them.'
+          )}
         >
           {canImport && (
             <Button size="sm" iconOnlyBelow="md" onClick={() => setImportOpen(true)}>

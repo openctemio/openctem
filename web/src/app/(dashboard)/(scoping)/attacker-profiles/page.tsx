@@ -302,7 +302,7 @@ export default function AttackerProfilesPage() {
       <Main>
         <PageStack>
           <PageHeader
-            title={t('attackerProfiles.title', 'Attacker profiles')}
+            title={t('threatModel.title', 'Threat model')}
             description={t(
               'attackerProfiles.description',
               'Threat actor profiles that exposure assessment and threat models reason about.'

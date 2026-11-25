@@ -15,7 +15,7 @@ export default function AttackSurfaceLookalikesPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('lookalikes.pageTitle', 'Attack surface')}
+          title={t('attackSurface.title', 'Attack surface')}
           description={t(
             'lookalikes.pageDescription',
             'Domains registered by others that imitate yours, found without contacting them.'

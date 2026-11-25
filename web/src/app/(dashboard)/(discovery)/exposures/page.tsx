@@ -726,16 +726,10 @@ export default function ExposuresPage() {
       <PageStack>
         <PageHeader
           title={t('exposures.page.title', 'Exposures')}
-          // On a phone the list comes first: the description is read out but
-          // not drawn, and the tiles follow the list.
-          description={
-            <span className="max-md:sr-only">
-              {t(
-                'exposures.page.description',
-                'Changes to your attack surface that need a decision. Resolve, accept or dismiss them.'
-              )}
-            </span>
-          }
+          description={t(
+            'exposures.page.description',
+            'Changes to your attack surface that need a decision. Resolve, accept or dismiss them.'
+          )}
           viewSwitcher={
             // List and analytics are two views of the same events: a view
             // switch, not a second row of tabs (research/249 R21).

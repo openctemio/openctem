@@ -77,6 +77,16 @@ const ICON_ONLY_BELOW = {
     '@max-5xl/toolbar:aspect-square @max-5xl/toolbar:px-0 @max-5xl/toolbar:has-[>svg]:px-0 group-data-[fold=true]/toolbar:aspect-square group-data-[fold=true]/toolbar:px-0 group-data-[fold=true]/toolbar:has-[>svg]:px-0',
 } as const
 
+/**
+ * The page header's actions below 640 px (PageHeader, `page-header-actions`):
+ * a button with an icon shows only its first icon, as a square. The label is
+ * still its text, so it stays the accessible name (font-size 0, not hidden),
+ * and it returns from sm. One rule for every page instead of each page
+ * choosing iconOnlyBelow; a text-only button keeps its label.
+ */
+const IN_PAGE_HEADER =
+  'max-sm:in-data-[slot=page-header-actions]:has-[>svg]:aspect-square max-sm:in-data-[slot=page-header-actions]:has-[>svg]:gap-0 max-sm:in-data-[slot=page-header-actions]:has-[>svg]:px-0 max-sm:in-data-[slot=page-header-actions]:has-[>svg]:!text-[0px] max-sm:in-data-[slot=page-header-actions]:[&>svg~svg]:hidden max-sm:in-data-[slot=page-header-actions]:has-[>svg]:[&>span]:!text-[0px]'
+
 function Button({
   className,
   variant,
@@ -99,6 +109,7 @@ function Button({
       data-variant={variant ?? 'default'}
       className={cn(
         buttonVariants({ variant, size }),
+        IN_PAGE_HEADER,
         iconOnlyBelow && ICON_ONLY_BELOW[iconOnlyBelow],
         className
       )}

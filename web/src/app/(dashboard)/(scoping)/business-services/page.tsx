@@ -475,7 +475,7 @@ export default function BusinessServicesPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('businessContext.services.title', 'Business services')}
+          title={t('nav.item.business-context', 'Business context')}
           description={t(
             'businessContext.services.description',
             'Business services and their compliance, data handling and availability requirements.'

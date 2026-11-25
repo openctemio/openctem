@@ -62,9 +62,10 @@ beforeEach(() => {
 })
 
 describe('Assets > Activity', () => {
-  it('is titled Activity and filters by kind from a token in the toolbar, with counts', async () => {
+  it('keeps the Assets title and filters by kind from a token in the toolbar, with counts', async () => {
     render(<AssetChangesPage />)
-    expect(screen.getByRole('heading', { name: 'Activity' })).toBeInTheDocument()
+    // The section title stays on every Assets tab; the tab names the page.
+    expect(screen.getByRole('heading', { name: 'Assets' })).toBeInTheDocument()
     // One tab row: the kind is a filter token, not a segmented row under the tabs.
     expect(screen.queryByRole('radiogroup')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Kind: Appeared' }))

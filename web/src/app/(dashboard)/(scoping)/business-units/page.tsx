@@ -770,7 +770,7 @@ export default function BusinessUnitsPage() {
       <Main>
         <PageStack>
           <PageHeader
-            title={t('businessContext.units.title', 'Business units')}
+            title={t('nav.item.business-context', 'Business context')}
             description={t(
               'businessContext.units.description',
               'Your organizational structure, so security priorities follow the business.'
