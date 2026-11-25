@@ -53,7 +53,7 @@ describe('tab counts', () => {
 /**
  * Governance: one tab row per screen. Tabs switch between different things
  * (objects, sections); a status is a filter and goes in the list toolbar as a
- * <SegmentedLens>. Two stacked tab rows read as two levels of navigation and
+ * filter token (<FilterSelect>). Two stacked tab rows read as two levels of navigation and
  * made the approvals page hard to scan. This fails if a file renders more than
  * one <TabsList>.
  */

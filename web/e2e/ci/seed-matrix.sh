@@ -6,6 +6,8 @@
 #     fixed label and key_prefix a made-up prefix: no usable key exists
 #   - 3 SLA policies (default, a strict one, an inactive one)
 #   - 3 notification channels (Slack, Teams, a webhook in an error state)
+#   - 200 inventory addresses outside every zone and a scan zone with no
+#     sensor (benchmarking and RFC 5737 ranges): the zones tab at real volume
 #   - one row behind each detail page the matrix opens by id: SBOM components,
 #     a CTEM cycle, an asset group, a pentest campaign in testing with a
 #     finding, an own pentest template, an own scan workflow (a copy of a
@@ -85,6 +87,19 @@ SELECT id,
        CASE provider WHEN 'teams' THEN '["critical","high","medium","low","info"]'::jsonb ELSE '["critical","high"]'::jsonb END,
        '["security_alert","new_finding","new_exposure"]'::jsonb
 FROM ch;
+
+-- Realistic volume for the scan-zone coverage card (/sensors?tab=zones):
+-- 200 inventory addresses outside every zone (benchmarking 198.18.0.0/15 and
+-- RFC 5737 203.0.113.0/24, plus three RFC 1918 ones) and a zone with no sensor.
+INSERT INTO assets (tenant_id, name, asset_type)
+SELECT :'tid', a, 'ip_address'
+FROM (SELECT '198.18.' || (n / 250) || '.' || (n % 250 + 1) AS a FROM generate_series(0, 188) AS n
+      UNION ALL SELECT '203.0.113.' || n FROM generate_series(10, 17) AS n
+      UNION ALL SELECT '192.168.50.' || n FROM generate_series(1, 3) AS n) AS s
+ON CONFLICT DO NOTHING;
+INSERT INTO scan_zones (tenant_id, name, description, ranges, created_by)
+SELECT :'tid', 'Branch office', 'Private ranges of the branch office (no sensor yet)', '{10.0.0.0/8}', :'uid'
+WHERE NOT EXISTS (SELECT 1 FROM scan_zones WHERE tenant_id = :'tid' AND name = 'Branch office');
 SQL
 
 # Detail rows through the API, as the owner (one session; bearer token).
@@ -104,7 +119,7 @@ CSRF=$(awk '$6=="csrf_token"{v=$7} END{print v}' "$W/jar")
 TOKEN=$(curl -sS -c "$W/jar" -b "$W/jar" -H "X-Forwarded-For: $XFF" -H 'Content-Type: application/json' \
   -H "X-CSRF-Token: $CSRF" -d "{\"tenant_id\":\"$TID\"}" "$API/api/v1/auth/token" | jq -r '.access_token // empty')
 [ -n "$TOKEN" ] || { echo "seed-matrix: owner sign-in failed" >&2; exit 1; }
-ASSET=$(api GET "/api/v1/assets?per_page=50" | jq -r '[.data[] | select(.name=="e2e-web.example.com")][0].id')
+ASSET=$(api GET "/api/v1/assets?types=domain&per_page=50" | jq -r '[.data[] | select(.name=="e2e-web.example.com")][0].id')
 
 cat >"$W/sbom.json" <<'J'
 {"bomFormat":"CycloneDX","specVersion":"1.5","version":1,
