@@ -218,7 +218,11 @@ export function AssigneeSelect({
                 <Avatar className="h-5 w-5">
                   <AvatarFallback className="text-xs">{getInitials(value.name)}</AvatarFallback>
                 </Avatar>
+                {/* A person's name: it may end in an ellipsis, the whole name
+                    held by its title. */}
                 <span
+                  data-cut-tooltip
+                  title={value.name}
                   className={field ? 'min-w-0 flex-1 truncate text-start' : 'max-w-[80px] truncate'}
                 >
                   {showFullName || field ? value.name : value.name.split(' ')[0]}

@@ -79,7 +79,8 @@ export function SamplePane({
             <Upload aria-hidden />
             {t('importMappings.sample.choose', 'Choose a file')}
           </Button>
-          <span className="min-w-0 truncate text-sm text-muted-foreground">
+          {/* Wraps rather than end in an ellipsis, as the shared file picker. */}
+          <span className="min-w-0 text-sm text-muted-foreground [overflow-wrap:anywhere]">
             {file ? file.name : t('importMappings.sample.none', 'No file chosen')}
           </span>
           <input

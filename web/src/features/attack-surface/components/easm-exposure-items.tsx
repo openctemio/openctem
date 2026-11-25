@@ -468,7 +468,8 @@ export function ExposureTypeSummary({
                 n === 0 && !pressed && 'text-muted-foreground'
               )}
             >
-              <span className="truncate">{labels.category(k)}</span>
+              {/* A label: it wraps rather than end in an ellipsis. */}
+              <span className="min-w-0 break-words">{labels.category(k)}</span>
               <span className="shrink-0 font-semibold tabular-nums">{loading ? '' : n}</span>
             </button>
           )

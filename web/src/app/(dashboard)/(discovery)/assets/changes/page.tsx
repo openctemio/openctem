@@ -19,6 +19,7 @@ import { ListCount, ListTitleRow } from '@/features/shared/components/list-title
 import { NoAccessState } from '@/features/shared/components/no-access-state'
 import { RowNameLink } from '@/features/shared/components/row-name-link'
 import { BreakText } from '@/features/shared/components/break-text'
+import { CellText } from '@/features/shared/components/cell-text'
 import { assetDetailHref } from '@/features/findings/lib/asset-link'
 import { accessStateOf } from '@/lib/api/access-state'
 import { RecentAssetChanges } from '@/features/assets'
@@ -156,8 +157,12 @@ function ChangeDetail({ change, t }: { change: StateChangeResponse; t: T }) {
       </span>
     )
   }
+  // A sentence: at most two lines, the whole text as its title, so a long
+  // reason never makes every row of the list five lines tall.
   return (
-    <span className="text-sm text-muted-foreground">{changeReasonLabel(change.reason, t)}</span>
+    <CellText className="text-sm text-muted-foreground">
+      {changeReasonLabel(change.reason, t)}
+    </CellText>
   )
 }
 
