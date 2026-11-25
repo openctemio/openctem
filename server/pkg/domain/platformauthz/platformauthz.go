@@ -73,6 +73,10 @@ const (
 	// outbound requests may reach, and the destination test. Owner only: an
 	// opened range is open to every organization.
 	SettingsNetworkWrite Permission = "platform.settings.network"
+	// SettingsFeedSourcesWrite: where the vulnerability feed is fetched from
+	// (release URL and mirrors) and the test fetch. Owner only: the feed reaches
+	// every organization (the pinned root still verifies every file).
+	SettingsFeedSourcesWrite Permission = "platform.settings.feed_sources"
 
 	AnnouncementsWrite Permission = "platform.announcements.write"
 
@@ -130,6 +134,7 @@ var catalog = []Definition{
 	{SettingsAIWrite, false, "Platform AI and the organizations' AI policy"},
 	{SettingsScopeGuardrailsWrite, false, "The blocked target names policy and the organizations' exceptions to the government and military rule"},
 	{SettingsNetworkWrite, false, "The private network destinations the platform may reach (open to every organization), and the destination test"},
+	{SettingsFeedSourcesWrite, false, "Where the vulnerability feed is fetched from (release URL and mirrors), and the test fetch"},
 	{AnnouncementsWrite, false, "Publish or end an announcement"},
 	{SensorsRead, true, "Shared sensors, scan zones, the job queue and the scanning settings"},
 	{SensorsJobsRead, false, "Open one shared-sensor job's details"},

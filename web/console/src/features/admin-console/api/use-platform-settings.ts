@@ -18,6 +18,8 @@ import type {
   SocialCheckResult,
   SocialLoginSettings,
   StorageQuotaSettings,
+  FeedProbeResult,
+  VulnFeedSourcesSettings,
 } from '../types'
 
 /*
@@ -38,6 +40,7 @@ const EMAIL_RELAY = '/settings/email-relay'
 const LEAKED_SECRETS = '/settings/leaked-secret-storage'
 const PRIVATE_DESTINATIONS = '/settings/private-destinations'
 const SCAN_IDENT = '/settings/scan-identification'
+const VULNFEED_SOURCES = '/settings/vulnfeed-sources'
 
 export const useCaptchaSettings = () => useSWR<CaptchaSettings>(CAPTCHA, adminFetcher)
 export const useRegionSettings = () => useSWR<RegionSettings>(REGION, adminFetcher)
@@ -53,6 +56,8 @@ export const usePrivateDestinations = () =>
   useSWR<PrivateDestinationsSettings>(PRIVATE_DESTINATIONS, adminFetcher)
 export const useScanIdentification = () =>
   useSWR<ScanIdentificationSettings>(SCAN_IDENT, adminFetcher)
+export const useVulnFeedSources = () =>
+  useSWR<VulnFeedSourcesSettings>(VULNFEED_SOURCES, adminFetcher)
 
 /** Step-up and a reason; every administrator is notified. */
 export function saveScanIdentification(input: {
@@ -107,6 +112,24 @@ export function testPrivateDestination(host: string) {
   return adminFetch<DestinationTestResult>(`${PRIVATE_DESTINATIONS}/test`, {
     method: 'POST',
     body: { host },
+  })
+}
+
+/** Platform owner, fresh step-up and a reason; every administrator is notified. */
+export function saveVulnFeedSources(input: {
+  base_url: string
+  mirrors: string[]
+  reason: string
+  version: number
+}) {
+  return adminFetch<VulnFeedSourcesSettings>(VULNFEED_SOURCES, { method: 'PUT', body: input })
+}
+
+/** Fetches and verifies the newest signed pointer at each address; imports nothing. */
+export function testVulnFeedSources(input: { base_url?: string; mirrors?: string[] }) {
+  return adminFetch<{ results: FeedProbeResult[] }>(`${VULNFEED_SOURCES}/test`, {
+    method: 'POST',
+    body: input,
   })
 }
 

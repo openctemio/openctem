@@ -365,10 +365,10 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `PROGRAMFEED_MIRRORS` | list | empty |  |  | Comma-separated https mirrors of the chunked program feed, tried after `PROGRAMFEED_URL`. |
 | `PROGRAMFEED_ROOT_KEY_ID` | string | empty |  |  | Pinned offline root key id of the public program feed. Unset: no program feed is imported. |
 | `PROGRAMFEED_URL` | url | empty |  |  | https release URL of the chunked public program feed, tried before `PROGRAMFEED_DIR`. |
-| `VULNFEED_BASE_URL` | url | `https://github.com/openctemio/vulnfeed-bundles/releases` |  |  | Release base URL of the signed vulnerability bundles. |
-| `VULNFEED_BUNDLE_DIR` | path | empty |  |  | Air-gapped platforms: local directory holding a vulnerability bundle release's files. |
-| `VULNFEED_MIRRORS` | list | empty |  |  | Comma-separated https mirrors tried after the release for chunked vulnerability bundles. |
-| `VULNFEED_ROOT_KEY_ID` | string | `official root` |  |  | Pinned root key id of the vulnerability bundles. Defaults to the root of the official feed (openctemio/vulnfeed-bundles releases); set it only for a private collector. |
+| `VULNFEED_BASE_URL` | url | `https://github.com/openctemio/vulnfeed-bundles/releases` |  |  | Release base URL of the signed vulnerability bundles. Unset: the platform owner may change it in the console (System > Threat intelligence > Vulnerability feed address); set: it pins the address and the console shows it locked. |
+| `VULNFEED_BUNDLE_DIR` | path | empty |  |  | Air-gapped platforms: local directory holding a vulnerability bundle release's files. Server only: the console shows whether it is set, never the path. |
+| `VULNFEED_MIRRORS` | list | empty |  |  | Comma-separated https mirrors tried after the release for chunked vulnerability bundles (direct mode only). Setting it, like `VULNFEED_BASE_URL`, pins the feed address; unset, the console manages the mirrors. |
+| `VULNFEED_ROOT_KEY_ID` | string | `official root` |  |  | Pinned root key id of the vulnerability bundles. Defaults to the root of the official feed (openctemio/vulnfeed-bundles releases); set it only for a private collector. A trust anchor: server only, the console shows it read-only. |
 
 ### Integrations
 
