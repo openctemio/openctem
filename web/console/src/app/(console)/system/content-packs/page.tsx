@@ -176,7 +176,8 @@ export default function ContentPacksPage() {
         accessorKey: 'digest',
         header: t('admin.cp.digest', 'Digest'),
         // The digest is on the pack's sheet too: it gives way first on a tablet.
-        meta: { kind: 'id', hideBelow: 720 },
+        // "sha256:" and the digest's first 8 characters, whole.
+        meta: { kind: 'id', width: 176, hideBelow: 720 },
         cell: ({ row }) => (
           <span className="font-mono text-xs" title={row.original.digest}>
             {shortDigest(row.original.digest)}
