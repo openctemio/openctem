@@ -19,4 +19,4 @@
   (with `min_version`, v0.36.0), `no_signing_key`, `relay_off` (`SENSOR_FEED_RELAY=0` on its
   host) or `no_capability` (the sensor reports too little to tell). The reason is read from the
   sensor's own report and only explains; it never makes a sensor eligible.
-- Docs: openctemio/docs operations/vulnerability-feed-setup.md (troubleshooting tables)
+- Docs: https://docs.openctem.io/operations/vulnerability-feed-setup/
