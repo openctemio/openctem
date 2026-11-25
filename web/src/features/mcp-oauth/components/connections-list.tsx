@@ -1,13 +1,17 @@
 'use client'
 
 import { useState } from 'react'
-import { Bot, Database, Loader2, ShieldQuestion, Terminal, Unplug } from 'lucide-react'
+import { Bot, Database, Loader2, ShieldMinus, ShieldQuestion, Terminal, Unplug } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState, ErrorState } from '@/features/shared'
+import {
+  DataTableRowActions,
+  type RowAction,
+} from '@/features/shared/components/data-table-row-actions'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatDateSafe, formatRelative } from '@/lib/format-date'
 
@@ -31,6 +35,9 @@ interface ConnectionsListProps {
   emptyDescription: string
 }
 
+/** Rows shown at first, and added by each "Show more". */
+const STEP = 20
+
 /**
  * Connected AI applications (RFC-062 §12): which application, where it is
  * published, what it may read, since when, last use, and a disconnect that
@@ -53,6 +60,7 @@ export function ConnectionsList({
   const [pending, setPending] = useState<McpConnection | null>(null)
   const [busy, setBusy] = useState(false)
   const [scoping, setScoping] = useState<string | null>(null)
+  const [shown, setShown] = useState(STEP)
 
   if (isLoading) {
     return (
@@ -115,15 +123,34 @@ export function ConnectionsList({
     }
   }
 
+  // One row menu, as on the other lists: limiting to the person's own data
+  // (only for a connection that reads everything) and disconnecting.
+  const rowActions = (c: McpConnection): RowAction[] => [
+    ...(c.full_data && onScope
+      ? [
+          {
+            label: t('mcp.connections.limit', 'Limit to own data'),
+            icon: scoping === c.id ? Loader2 : ShieldMinus,
+            disabled: scoping === c.id,
+            onClick: () => void limit(c),
+          },
+        ]
+      : []),
+    {
+      label: t('mcp.connections.disconnect', 'Disconnect'),
+      icon: Unplug,
+      destructive: true,
+      separatorBefore: !!(c.full_data && onScope),
+      onClick: () => setPending(c),
+    },
+  ]
+
   return (
     <>
       <ul className="divide-y rounded-md border">
-        {connections.map((c) => (
-          <li
-            key={c.id}
-            className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
-          >
-            <div className="min-w-0 space-y-1">
+        {connections.slice(0, shown).map((c) => (
+          <li key={c.id} className="flex items-start justify-between gap-3 p-4">
+            <div className="min-w-0 flex-1 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium break-words">{c.client_name}</span>
                 {c.flow === 'device' ? (
@@ -185,28 +212,33 @@ export function ConnectionsList({
                 ].join(', ')}
               </p>
             </div>
-            <div className="flex shrink-0 flex-wrap gap-2">
-              {c.full_data && onScope && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void limit(c)}
-                  disabled={scoping === c.id}
-                >
-                  {scoping === c.id && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />
-                  )}
-                  {t('mcp.connections.limit', 'Limit to own data')}
-                </Button>
-              )}
-              <Button variant="outline" size="sm" onClick={() => setPending(c)}>
-                <Unplug className="mr-2 h-4 w-4" aria-hidden />
-                {t('mcp.connections.disconnect', 'Disconnect')}
-              </Button>
+            <div className="shrink-0">
+              <DataTableRowActions
+                title={c.client_name}
+                label={t('mcp.connections.actionsFor', 'Actions for {name}', {
+                  name: c.client_name,
+                })}
+                actions={rowActions(c)}
+              />
             </div>
           </li>
         ))}
       </ul>
+      {connections.length > shown && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-cap text-muted-foreground">
+            {t('mcp.connections.shownOf', '{shown} of {total}', {
+              shown,
+              total: connections.length,
+            })}
+          </p>
+          <Button variant="outline" onClick={() => setShown((n) => n + STEP)}>
+            {t('mcp.connections.showMore', 'Show {count} more', {
+              count: Math.min(STEP, connections.length - shown),
+            })}
+          </Button>
+        </div>
+      )}
 
       <ConfirmDialog
         open={pending !== null}

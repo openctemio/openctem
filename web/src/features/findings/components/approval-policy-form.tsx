@@ -14,10 +14,11 @@
  */
 
 import { memo, useId, useState } from 'react'
-import { Clock } from 'lucide-react'
+import { ChevronDown, Clock } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -315,7 +316,7 @@ export const ApprovalPolicySections = memo(function ApprovalPolicySections({
             role="group"
             aria-label={t('findingApprovals.policy.tiersTitle', 'Who approves')}
           >
-            <div className="hidden @[45rem]:grid @[45rem]:grid-cols-[minmax(10rem,14rem)_repeat(3,minmax(0,1fr))] @[45rem]:gap-3 text-cap font-medium text-muted-foreground">
+            <div className="hidden @[45rem]:grid @[45rem]:grid-cols-[minmax(8rem,11rem)_repeat(3,minmax(0,1fr))] @[45rem]:gap-3 text-cap font-medium text-muted-foreground">
               <span>{t('findingApprovals.policy.kindColumn', 'Request')}</span>
               {RISK_CLASSES.map((c) => (
                 <span key={c}>{riskClassLabel(t, c)}</span>
@@ -324,7 +325,7 @@ export const ApprovalPolicySections = memo(function ApprovalPolicySections({
             {APPROVAL_KINDS.map((kind) => (
               <div
                 key={kind}
-                className="grid gap-3 border-t border-border-subtle pt-4 @[45rem]:grid-cols-[minmax(10rem,14rem)_repeat(3,minmax(0,1fr))] @[45rem]:border-t-0 @[45rem]:pt-0"
+                className="grid gap-3 border-t border-border-subtle pt-4 @[45rem]:grid-cols-[minmax(8rem,11rem)_repeat(3,minmax(0,1fr))] @[45rem]:border-t-0 @[45rem]:pt-0"
               >
                 <div className="text-body font-medium @[45rem]:pt-1.5">
                   {kindLabel(t, kind)}
@@ -354,17 +355,26 @@ export const ApprovalPolicySections = memo(function ApprovalPolicySections({
             ))}
           </div>
         </SettingsBlock>
+        {/* The glossary is reference, folded under the grid: open on demand. */}
         <SettingsBlock>
-          <p className="text-body font-medium">
-            {t('findingApprovals.policy.tiersMeaning', 'What the tiers mean')}
-          </p>
-          <KeyValueList
-            items={APPROVAL_TIERS.map((tier) => ({
-              key: tier,
-              label: tierLabel(t, tier),
-              value: tierHelp(t, tier),
-            }))}
-          />
+          <Collapsible>
+            <CollapsibleTrigger className="group inline-flex min-h-control-touch items-center gap-1 rounded-sm text-body font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:min-h-0">
+              <ChevronDown
+                className="size-4 transition-transform group-data-[state=open]:rotate-180 motion-reduce:transition-none"
+                aria-hidden
+              />
+              {t('findingApprovals.policy.tiersMeaning', 'What the tiers mean')}
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pt-2">
+              <KeyValueList
+                items={APPROVAL_TIERS.map((tier) => ({
+                  key: tier,
+                  label: tierLabel(t, tier),
+                  value: tierHelp(t, tier),
+                }))}
+              />
+            </CollapsibleContent>
+          </Collapsible>
         </SettingsBlock>
       </SettingsSection>
 
@@ -728,7 +738,15 @@ export function TierCell({
           data-testid={`tier-${kind}.${cls}`}
           className="w-full"
         >
-          <SelectValue>{shown === DEFAULT_CELL ? defaultText : tierLabel(t, shown)}</SelectValue>
+          {/* The closed select names the tier alone, so it never cuts; that it
+              is the default is said in the line under it and in the list. */}
+          <SelectValue>
+            {shown === DEFAULT_CELL
+              ? isFP
+                ? t('findingApprovals.policy.defaultShort', 'Default')
+                : tierLabel(t, platformDefault ?? '')
+              : tierLabel(t, shown)}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={DEFAULT_CELL}>{defaultText}</SelectItem>
@@ -740,9 +758,13 @@ export function TierCell({
         </SelectContent>
       </Select>
       <p className="text-cap text-muted-foreground">
-        {t('findingApprovals.policy.floorHint', 'Minimum: {tier}', {
-          tier: tierLabel(t, floor ?? ''),
-        })}
+        {shown === DEFAULT_CELL && !isFP
+          ? t('findingApprovals.policy.defaultFloorHint', 'Default, minimum: {tier}', {
+              tier: tierLabel(t, floor ?? ''),
+            })
+          : t('findingApprovals.policy.floorHint', 'Minimum: {tier}', {
+              tier: tierLabel(t, floor ?? ''),
+            })}
       </p>
     </div>
   )

@@ -5,6 +5,8 @@
   "account.activity.pageOf": "Page {page} of {total}",
   "account.activity.prev": "Previous page",
   "account.activity.showing": "Showing {from} to {to} of {total, plural, one {# activity} other {# activities}}",
+  "account.activity.tip": "Something you do not recognise? Change your password and sign out your other sessions.",
+  "account.activity.tipLink": "Open account security",
   "account.area.back": "Back",
   "account.area.backTo": "Back to {name}",
   "account.area.backToOrganization": "Back to your organization",

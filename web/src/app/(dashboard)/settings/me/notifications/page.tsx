@@ -1,11 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
   SelectContent,
@@ -13,9 +9,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Bell, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
-import { ErrorState, PageStack, SettingsSaveBar } from '@/features/shared'
+import {
+  ErrorState,
+  SettingsRow,
+  SettingsSaveBar,
+  SettingsSection,
+  SettingsSwitchRow,
+} from '@/features/shared'
 import {
   useNotificationPreferencesApi,
   updateNotificationPreferences,
@@ -46,6 +47,10 @@ const MIN_SEVERITY_FALLBACK: Record<SeverityLevel, string> = {
  *
  * Organization-wide channels (Slack, Teams, webhooks) are configured under
  * Settings > Integrations > Notification channels.
+ *
+ * Layout: the shared settings frame (the /settings/me layout), two flat
+ * sections divided by hairlines (what reaches you, and which kinds), one row
+ * per setting, the save bar only while something changed.
  */
 export default function NotificationsSettingsPage() {
   const { t } = useTranslation()
@@ -111,11 +116,11 @@ export default function NotificationsSettingsPage() {
 
   if (isLoading) {
     return (
-      <PageStack>
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-64 w-full" />
-      </PageStack>
+      <div className="flex flex-col gap-3" aria-busy="true">
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-40 w-full" />
+      </div>
     )
   }
 
@@ -132,140 +137,81 @@ export default function NotificationsSettingsPage() {
   }
 
   return (
-    <PageStack>
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bell className="h-5 w-5" />
-            {t('account.notifications.inApp', 'In-app notifications')}
-          </CardTitle>
-          <CardDescription>
-            {t('account.notifications.inAppHint', 'The bell in the top bar.')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <Label htmlFor="in-app-enabled">
-                {t('account.notifications.inAppShow', 'Show in-app notifications')}
-              </Label>
-            </div>
-            <Switch
-              id="in-app-enabled"
-              checked={inAppEnabled}
-              onCheckedChange={edit(setInAppEnabled)}
-            />
-          </div>
-        </CardContent>
-      </Card>
+    <>
+      <SettingsSection
+        framed
+        id="in-app"
+        title={t('account.notifications.inApp', 'In-app notifications')}
+        description={t('account.notifications.inAppHint', 'The bell in the top bar.')}
+      >
+        <SettingsSwitchRow
+          id="in-app-enabled"
+          label={t('account.notifications.inAppShow', 'Show in-app notifications')}
+          checked={inAppEnabled}
+          onCheckedChange={edit(setInAppEnabled)}
+        />
+        <SettingsRow
+          wide
+          labelId="min-severity-label"
+          label={t('account.notifications.minSeverity', 'Minimum severity')}
+          hint={t(
+            'account.notifications.severityFilterHint',
+            'Only notify me at or above this severity.'
+          )}
+        >
+          <Select value={minSeverity} onValueChange={edit(setMinSeverity)}>
+            <SelectTrigger
+              id="min-severity"
+              aria-labelledby="min-severity-label"
+              className="w-full"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[...SEVERITY_LEVELS].reverse().map((s) => (
+                <SelectItem key={s} value={s}>
+                  {t(`account.notifications.min.${s}`, MIN_SEVERITY_FALLBACK[s])}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+        <SettingsSwitchRow
+          id="auto-watch"
+          label={t('notificationTypes.autoWatch.label', 'Watch what I take part in')}
+          hint={t(
+            'notificationTypes.autoWatch.description',
+            'Starts when you comment, change a status, claim a fix or are assigned. Unwatching one item sticks.'
+          )}
+          checked={autoWatch}
+          onCheckedChange={edit(setAutoWatch)}
+        />
+      </SettingsSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5" />
-            {t('account.notifications.severityFilter', 'Severity filter')}
-          </CardTitle>
-          <CardDescription>
-            {t(
-              'account.notifications.severityFilterHint',
-              'Only notify me at or above this severity.'
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <Label htmlFor="min-severity">
-                {t('account.notifications.minSeverity', 'Minimum severity')}
-              </Label>
-            </div>
-            <Select value={minSeverity} onValueChange={edit(setMinSeverity)}>
-              <SelectTrigger id="min-severity" className="w-[180px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {[...SEVERITY_LEVELS].reverse().map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {t(`account.notifications.min.${s}`, MIN_SEVERITY_FALLBACK[s])}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bell className="h-5 w-5" />
-            {t('notificationTypes.autoWatch.title', 'Watching')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <Label htmlFor="auto-watch">
-                {t('notificationTypes.autoWatch.label', 'Watch what I take part in')}
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                {t(
-                  'notificationTypes.autoWatch.description',
-                  'Starts when you comment, change a status, claim a fix or are assigned. Unwatching one item sticks.'
-                )}
-              </p>
-            </div>
-            <Switch id="auto-watch" checked={autoWatch} onCheckedChange={edit(setAutoWatch)} />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bell className="h-5 w-5" />
-            {t('notificationTypes.title', 'Notification types')}
-          </CardTitle>
-          <CardDescription>
-            {t('notificationTypes.subtitle', 'Turn each kind on or off.')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {NOTIFICATION_TYPES.map((notifType, index) => {
-              const isMuted = mutedTypes.includes(notifType.id)
-              return (
-                <div key={notifType.id}>
-                  {index > 0 && <Separator className="mb-4" />}
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <Label htmlFor={`type-${notifType.id}`}>
-                        {t(`notificationTypes.${notifType.id}.name`, notifType.name)}
-                      </Label>
-                      {notifType.description && (
-                        <p className="text-sm text-muted-foreground">
-                          {t(
-                            `notificationTypes.${notifType.id}.description`,
-                            notifType.description
-                          )}
-                        </p>
-                      )}
-                    </div>
-                    <Switch
-                      id={`type-${notifType.id}`}
-                      checked={!isMuted}
-                      onCheckedChange={() => toggleMutedType(notifType.id)}
-                      // The digest also comes by email, so it can be muted with
-                      // in-app notifications off.
-                      disabled={!inAppEnabled && notifType.id !== 'finding_approval_digest'}
-                    />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
+      <SettingsSection
+        framed
+        id="notification-types"
+        title={t('notificationTypes.title', 'Notification types')}
+        description={t('notificationTypes.subtitle', 'Turn each kind on or off.')}
+      >
+        {NOTIFICATION_TYPES.map((notifType) => (
+          <SettingsSwitchRow
+            key={notifType.id}
+            id={`type-${notifType.id}`}
+            label={t(`notificationTypes.${notifType.id}.name`, notifType.name)}
+            hint={
+              notifType.description
+                ? t(`notificationTypes.${notifType.id}.description`, notifType.description)
+                : undefined
+            }
+            checked={!mutedTypes.includes(notifType.id)}
+            onCheckedChange={() => toggleMutedType(notifType.id)}
+            // The digest also comes by email, so it can be muted with
+            // in-app notifications off.
+            disabled={!inAppEnabled && notifType.id !== 'finding_approval_digest'}
+          />
+        ))}
+      </SettingsSection>
 
       <SettingsSaveBar
         dirty={dirty}
@@ -273,6 +219,6 @@ export default function NotificationsSettingsPage() {
         onSave={() => void handleSave()}
         onDiscard={reset}
       />
-    </PageStack>
+    </>
   )
 }

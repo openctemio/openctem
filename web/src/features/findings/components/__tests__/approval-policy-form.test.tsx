@@ -106,8 +106,10 @@ describe('FindingApprovalsForm, policy — tier grid', () => {
 
   it('shows the floor and marks a cell equal to the default as Default', () => {
     render(<ApprovalPolicyForm settings={settings()} canEdit />)
-    expect(screen.getByTestId('tier-accepted.high')).toHaveTextContent('Default (Security review)')
-    expect(screen.getAllByText('Minimum: Security review').length).toBeGreaterThan(0)
+    // The closed select names the tier alone (it never cuts); the line under
+    // it says it is the default.
+    expect(screen.getByTestId('tier-accepted.high')).toHaveTextContent(/^Security review$/)
+    expect(screen.getAllByText('Default, minimum: Security review').length).toBeGreaterThan(0)
   })
 
   it('saves the whole policy with only the cells that differ from the default', async () => {

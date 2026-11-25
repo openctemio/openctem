@@ -121,8 +121,8 @@ describe('account pages in Vietnamese', () => {
   it('notifications page', () => {
     inVi(<NotificationsPage />)
     expect(screen.getByText('Thông báo trong ứng dụng')).toBeInTheDocument()
-    expect(screen.getByText('Bộ lọc mức độ nghiêm trọng')).toBeInTheDocument()
-    expect(screen.queryByText('Severity filter')).toBeNull()
+    expect(screen.getByText('Mức độ tối thiểu')).toBeInTheDocument()
+    expect(screen.queryByText('Minimum severity')).toBeNull()
   })
 
   it('password and sessions cards', () => {
