@@ -605,9 +605,8 @@ reference.
 - **The list's name and count are never a row of their own**: `ListTitleRow`
   carries the list's actions; a list without any passes the name and count as
   the toolbar's `title` (`DataTable` `toolbarTitle`), before the search box.
-  On a phone a title row that draws only the name and count, and has no
-  view-state slot (`start`: a Modified mark can appear there), is read to
-  assistive technology only (the footer says "25 of 200").
+  On a phone a title row with no `start` and no actions (it can only ever
+  draw the name and count) is read to assistive technology only (the footer says "25 of 200").
 - **An automatic phone card is compact.** A table without `mobileRow` draws
   short lines of 20 px each, whatever its cells draw (one line, cut with an
   ellipsis); only the title may take two:
