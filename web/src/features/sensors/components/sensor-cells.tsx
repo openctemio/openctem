@@ -10,6 +10,7 @@ import { Tag } from '@/components/ui/tag'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DetailChipList } from '@/features/shared/components/detail-sheet'
 import type { Sensor, SensorSdkStatus, SensorVersionStatus } from '@/lib/api/sensor-types'
+import type { HealthState } from '@/lib/health-colors'
 
 import { configHealthMeta, configHealthNeedsAttention } from '../lib/config-report'
 import { capacityLabel, sensorJobLoad, type SensorToolRow } from '../lib/capabilities'
@@ -169,28 +170,21 @@ export function SensorNameCell({
   const ip = sensor.ip_address || null
   const fallback = isOneShotSensor(sensor) ? t('sensors.cells.oneShot') : t('sensors.cells.noHost')
   if (inline) {
+    // The name on its own line, its marks on the line under it in one look
+    // (the most serious first, the rest as "+N" with every mark in the hover
+    // text): a mark never pushes the name aside or sits cut at the cell's edge.
+    const flags = sensorFlags(sensor, grant, t)
     return (
-      // One line high; a mark that does not fit beside the name's 4rem wraps
-      // under it and is clipped away whole (it is whole in the sensor's drawer),
-      // never a chip cut at the cell's edge.
-      <span
-        className="flex h-5 min-w-0 flex-wrap items-center gap-x-1.5 overflow-hidden"
-        data-slot="sensor-name-cell"
-      >
+      <span className="flex min-w-0 flex-col" data-slot="sensor-name-cell">
         <span
           dir="auto"
-          className="min-w-16 flex-1 basis-16 truncate font-medium [unicode-bidi:isolate]"
+          className="block min-w-0 truncate font-medium [unicode-bidi:isolate]"
           data-slot="sensor-name"
           title={sensor.name}
         >
           {sensor.name}
         </span>
-        <span className="flex shrink-0 items-center gap-1.5 empty:hidden">
-          <ProtocolTag sensor={sensor} />
-          <ConfigHealthTag health={sensor.config_health} />
-          <SensorPostureTag sensor={sensor} />
-          {sensor.status !== 'revoked' && <SensorGrantTags grant={grant} />}
-        </span>
+        <SensorFlags flags={flags} max={1} />
       </span>
     )
   }
@@ -239,13 +233,16 @@ export function SensorHostCell({ sensor }: { sensor: Sensor }) {
   const host = distinctHostname(sensor)
   const ip = sensor.ip_address || null
   if (!host && !ip) {
+    if (sensor.hostname) {
+      return <span className="block truncate text-sm">{sensor.hostname}</span>
+    }
+    // Nothing reported: a quiet dash, the words in the hover text and for a
+    // screen reader (the same words on every such row read as noise).
+    const words = isOneShotSensor(sensor) ? t('sensors.cells.oneShot') : t('sensors.cells.noHost')
     return (
-      <span className={cn('block truncate text-sm', muted)}>
-        {sensor.hostname
-          ? sensor.hostname
-          : isOneShotSensor(sensor)
-            ? t('sensors.cells.oneShot')
-            : t('sensors.cells.noHost')}
+      <span className={cn('text-sm', muted)} title={words} data-slot="sensor-host-none">
+        <span aria-hidden>—</span>
+        <span className="sr-only">{words}</span>
       </span>
     )
   }
@@ -321,6 +318,143 @@ export function ProtocolTag({ sensor }: { sensor: Pick<Sensor, 'protocol'> }) {
   )
 }
 
+/** One mark on a sensor's name: protocol, setup, posture or grant. */
+export interface SensorFlag {
+  key: string
+  label: string
+  /** What it means, for the hover text. */
+  title?: string
+  tone: 'muted' | 'info' | 'warning' | 'destructive'
+}
+
+const FLAG_RANK: Record<SensorFlag['tone'], number> = {
+  destructive: 0,
+  warning: 1,
+  info: 2,
+  muted: 3,
+}
+
+/**
+ * The marks a sensor's name carries, the most serious first: the same set as
+ * ProtocolTag, ConfigHealthTag, SensorPostureTag and SensorGrantTags, as data
+ * so the list and the phone card draw them in one look.
+ */
+export function sensorFlags(
+  sensor: Pick<Sensor, 'protocol' | 'config_health' | 'posture' | 'status'>,
+  grant: SensorGrantSummary | undefined,
+  t: Tr
+): SensorFlag[] {
+  const out: SensorFlag[] = []
+  const p = sensor.protocol
+  if (p && (p.deprecated || p.version < 2)) {
+    out.push({
+      key: 'protocol',
+      tone: 'warning',
+      label: `v${p.version}, ${t('sensors.edit.about.deprecated')}`,
+      title: t('sensors.cells.protocolDeprecatedTitle', undefined, {
+        version: p.version,
+        minVersion: PROTOCOL_V2_SENSOR_VERSION,
+        date: PROTOCOL_V1_SUNSET,
+      }),
+    })
+  }
+  if (configHealthNeedsAttention(sensor.config_health)) {
+    const meta = configHealthMeta(sensor.config_health)
+    out.push({
+      key: 'setup',
+      tone: meta.tone === 'destructive' ? 'destructive' : 'warning',
+      label: t(meta.key, meta.label),
+      title: t('sensors.setup.healthTitle', 'Setup checks'),
+    })
+  }
+  const issues = postureIssues(sensor)
+  if (issues.length > 0) {
+    out.push({
+      key: 'posture',
+      tone: 'warning',
+      label: t('sensors.posture.tag', 'Unhardened'),
+      title: issues.map((i) => t(i.fixKey, i.fix)).join('\n'),
+    })
+  }
+  // A revoked sensor's grant no longer matters.
+  if (grant && sensor.status !== 'revoked') {
+    if (grant.legacy_broad) {
+      out.push({
+        key: 'legacy-broad',
+        tone: 'warning',
+        label: t('sensors.grantEdit.profile.legacy-broad'),
+        title: t('sensors.cells.legacyBroadTitle'),
+      })
+    }
+    if (grant.trust_level === 'new') {
+      out.push({
+        key: 'passive-only',
+        tone: 'info',
+        label: t('sensors.cells.passiveOnly'),
+        title: t('sensors.cells.newTitle'),
+      })
+    }
+  }
+  return out.sort((a, b) => FLAG_RANK[a.tone] - FLAG_RANK[b.tone])
+}
+
+// One look for every mark: the state glyph and plain text, no container. A
+// mark that needs nobody (Passive only) is the quiet neutral glyph.
+const FLAG_STATE: Record<SensorFlag['tone'], HealthState> = {
+  destructive: 'down',
+  warning: 'warn',
+  info: 'off',
+  muted: 'off',
+}
+
+/**
+ * A sensor's marks in one look. `max` (the list's one line under the name):
+ * the first marks, then "+N", every mark with its meaning in the hover text
+ * and for a screen reader. Without `max` (the phone card) every mark, wrapping.
+ */
+export function SensorFlags({ flags, max }: { flags: SensorFlag[]; max?: number }) {
+  const { t } = useTranslation()
+  if (flags.length === 0) return null
+  const shown = max ? flags.slice(0, max) : flags
+  const rest = flags.length - shown.length
+  const all = flags.map((f) => (f.title ? `${f.label}: ${f.title}` : f.label)).join('\n')
+  return (
+    <span
+      data-slot="sensor-flags"
+      className={cn(
+        'flex min-w-0 items-center gap-x-3 gap-y-1',
+        max ? 'flex-nowrap overflow-hidden' : 'flex-wrap'
+      )}
+      title={rest > 0 ? all : undefined}
+    >
+      {shown.map((f) => (
+        <HealthStatus
+          key={f.key}
+          state={FLAG_STATE[f.tone]}
+          value={f.key}
+          label={f.label}
+          title={rest > 0 ? all : f.title}
+          className="min-w-0 shrink"
+        />
+      ))}
+      {rest > 0 && (
+        <span data-slot="sensor-flags-more" className={cn('shrink-0 text-xs tabular-nums', muted)}>
+          <span aria-hidden>+{rest}</span>
+          <span className="sr-only">
+            {t('sensors.cells.moreMarks', '{count} more: {list}', {
+              count: rest,
+              list: flags
+                .slice(shown.length)
+                .map((f) => f.label)
+                .join(', '),
+            })}
+          </span>
+        </span>
+      )}
+    </span>
+  )
+}
+
 const VERSION_TAG: Record<
   SensorVersionStatus,
   { key: string; label: string; tone: 'success' | 'info' | 'destructive' } | null
@@ -354,6 +488,45 @@ const SDK_TAG: Record<
     label: 'SDK unsupported',
     tone: 'destructive',
   },
+}
+
+/**
+ * The list's one version signal: unsupported (the release or its SDK) over a
+ * security update (an SDK advisory) over an update (a newer release or SDK)
+ * over latest. Null when nothing is known.
+ */
+export function inlineVersionSignal(
+  status: SensorVersionStatus,
+  sdkStatus: SensorSdkStatus
+): { key: string; label: string; state: HealthState; value: string } | null {
+  if (status === 'unsupported' || sdkStatus === 'unsupported') {
+    return {
+      key: 'sensors.cells.versionTag.unsupported',
+      label: 'Unsupported',
+      state: 'down',
+      value: 'unsupported',
+    }
+  }
+  if (sdkStatus === 'advisory') {
+    return {
+      key: 'sensors.cells.versionTag.securityUpdate',
+      label: 'Security update',
+      state: 'warn',
+      value: 'security_update',
+    }
+  }
+  if (status === 'update_available' || sdkStatus === 'outdated') {
+    return {
+      key: 'sensors.cells.versionTag.update',
+      label: 'Update available',
+      state: 'queued',
+      value: 'update_available',
+    }
+  }
+  if (status === 'latest') {
+    return { key: 'sensors.cells.versionTag.latest', label: 'Latest', state: 'ok', value: 'latest' }
+  }
+  return null
 }
 
 export type SensorVersionFields = Pick<
@@ -499,16 +672,19 @@ export function SensorVersionCell({
   const build = sensorBuildTooltip(sensor, t, locale)
   const sdkShown = showSdk === 'when-flagged' ? !!sdkTag : showSdk
   if (inline) {
+    // One signal at most, the worst of the release and its SDK, so the row
+    // never carries two chips cut at the cell's edge; every fact behind it is
+    // in the hover text. The signal wraps under the version when the column
+    // is narrow (two short lines, never a cut chip).
+    const signal = inlineVersionSignal(v ? status : 'unknown', sdk ? sdkStatus : 'unknown')
     return (
       <span
-        // A second tag that does not fit is cut at the cell's edge, never
-        // drawn over the next column; the hover text has both.
-        className="flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap"
+        className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5"
         title={[build, title, sdkTitle].filter(Boolean).join('\n') || undefined}
         data-slot="sensor-version-cell"
       >
         {v ? (
-          <span className="text-sm tabular-nums" data-slot="sensor-version">
+          <span className="whitespace-nowrap text-sm tabular-nums" data-slot="sensor-version">
             {v}
           </span>
         ) : (
@@ -518,15 +694,14 @@ export function SensorVersionCell({
             </span>
           )
         )}
-        {tag && (
-          <SensorTag tone={tag.tone} title={title}>
-            {t(tag.key, tag.label)}
-          </SensorTag>
-        )}
-        {sdk && sdkTag && (
-          <SensorTag tone={sdkTag.tone} title={sdkTitle}>
-            {t(sdkTag.key, sdkTag.label)}
-          </SensorTag>
+        {signal && (
+          <HealthStatus
+            state={signal.state}
+            value={signal.value}
+            label={t(signal.key, signal.label)}
+            title={[title, sdkTitle].filter(Boolean).join('\n') || undefined}
+            className="min-w-0 shrink"
+          />
         )}
       </span>
     )
@@ -586,15 +761,22 @@ export function SensorJobsCell({ sensor }: { sensor: Sensor }) {
   const title = over
     ? `${t('sensors.detail.overCapacity', undefined, { count: jobs.over })}. ${capacityLabel(sensor, t)}`
     : capacityLabel(sensor, t)
+  // The bar only while something runs: an empty bar on every idle row is noise.
   return (
     <span className="inline-flex items-center gap-2 tabular-nums" title={title}>
-      <span className="h-1.5 w-11 overflow-hidden rounded-full bg-muted" aria-hidden>
+      {jobs.running > 0 && (
         <span
-          className={cn('block h-full', over ? 'bg-warning' : 'bg-info')}
-          style={{ width: `${pct}%` }}
-        />
-      </span>
-      <span className={cn('text-sm', over && 'text-warning')}>
+          className="h-1.5 w-11 overflow-hidden rounded-full bg-muted"
+          aria-hidden
+          data-slot="sensor-jobs-bar"
+        >
+          <span
+            className={cn('block h-full', over ? 'bg-warning' : 'bg-info')}
+            style={{ width: `${pct}%` }}
+          />
+        </span>
+      )}
+      <span className={cn('text-sm', over ? 'text-warning' : jobs.running === 0 && muted)}>
         {jobs.running}/{jobs.capacity}
       </span>
     </span>
@@ -742,8 +924,14 @@ export function SensorToolsCell({
   }
   const shown = list.slice(0, max).join(', ')
   const more = list.length - max
+  // Up to two short lines in a narrow column: "+N" is never cut away, and
+  // every tool is in the hover text.
   return (
-    <span className={cn('text-sm', muted)} title={list.join(', ')}>
+    <span
+      className={cn('line-clamp-2 text-sm whitespace-normal break-words', muted)}
+      title={list.join(', ')}
+      data-slot="sensor-tools"
+    >
       {shown}
       {more > 0 ? ` +${more}` : ''}
     </span>
