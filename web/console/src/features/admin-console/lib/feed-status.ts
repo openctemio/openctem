@@ -104,9 +104,84 @@ export interface FeedProblem {
  */
 export function feedProblem(f: ThreatIntelFeed, t: Translate): FeedProblem | null {
   if (!f.error_code || f.state === 'running' || f.state === 'up_to_date') return null
-  const p = f.error_params ?? {}
+  return codeProblem(f.error_code, f.error_params, t)
+}
+
+/** An error code (with its params) as a plain message and the fix to take. */
+export function codeProblem(
+  code: string,
+  params: Record<string, string> | undefined,
+  t: Translate
+): FeedProblem {
+  const p = params ?? {}
   const host = p.host ?? ''
-  switch (f.error_code) {
+  // A server setting refused at start-up: the import stays off until the
+  // setting is fixed and the API restarted.
+  const restart = p.setting
+    ? ' ' +
+      t('admin.ti.action.restart', 'Fix {setting} on the server, then restart the API.', {
+        setting: p.setting,
+      })
+    : ''
+  switch (code) {
+    case 'blocked_address':
+      return {
+        message: host
+          ? t(
+              'admin.ti.error.blocked_address',
+              '{host} is on a private address that is not allowed.',
+              { host }
+            )
+          : t(
+              'admin.ti.error.blocked_addressNoHost',
+              'The source is on a private address that is not allowed.'
+            ),
+        action:
+          t(
+            'admin.ti.action.blocked_address',
+            'Allow the smallest range that holds the mirror in OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS (or System > Private networks for VULNFEED_MIRRORS), or use a public address.'
+          ) + restart,
+      }
+    case 'proxy_refused':
+      return {
+        message: t(
+          'admin.ti.error.proxy_refused',
+          'The feed proxy refused the connection ({status}).',
+          {
+            status: p.status ?? '',
+          }
+        ),
+        action:
+          p.status === '407'
+            ? t(
+                'admin.ti.action.proxy_auth',
+                'The proxy wants a sign-in: put the user name and password in OPENCTEM_HTTPSEC_FEED_PROXY.'
+              )
+            : t(
+                'admin.ti.action.proxy_refused',
+                'Ask for the GitHub download hosts to be allowed on the proxy, or list an internal mirror in OPENCTEM_HTTPSEC_FEED_NO_PROXY.'
+              ),
+      }
+    case 'proxy_unreachable':
+      return {
+        message: t('admin.ti.error.proxy_unreachable', 'The feed proxy cannot be reached.'),
+        action: t(
+          'admin.ti.action.proxy_unreachable',
+          'Check the address and port in OPENCTEM_HTTPSEC_FEED_PROXY, and that the API host can reach it.'
+        ),
+      }
+    case 'config_invalid':
+      return {
+        message: t(
+          'admin.ti.error.config_invalid',
+          'The feed address set on the server ({setting}) is not valid, so the import is off.',
+          { setting: p.setting ?? '' }
+        ),
+        action: t(
+          'admin.ti.action.config_invalid',
+          'Use an https address without a user name, password, query or fragment, then restart the API. Or remove the setting to use the built-in address.'
+        ),
+      }
     case 'publisher_empty':
       return {
         message: t('admin.ti.error.publisher_empty', 'No bundle has been published yet.'),
