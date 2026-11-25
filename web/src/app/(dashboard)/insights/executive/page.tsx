@@ -115,6 +115,8 @@ function useTopRiskColumns(): ColumnDef<TopRiskRow>[] {
         accessorKey: 'epss_score',
         enableSorting: false,
         header: t('insights.executive.colEpss', 'Exploit likelihood (EPSS)'),
+        // Likelihood and known-exploited give way first on a narrow frame.
+        meta: { hideBelow: 1000 },
         cell: ({ row }) => (
           <span className="text-sm tabular-nums">
             {formatEpssScore(row.original.epss_score, 2, t('insights.executive.na', 'N/A'))}
@@ -125,6 +127,7 @@ function useTopRiskColumns(): ColumnDef<TopRiskRow>[] {
         accessorKey: 'is_in_kev',
         enableSorting: false,
         header: t('insights.executive.colKev', 'Known exploited (KEV)'),
+        meta: { hideBelow: 800 },
         cell: ({ row }) =>
           row.original.is_in_kev ? (
             <KevBadge />
