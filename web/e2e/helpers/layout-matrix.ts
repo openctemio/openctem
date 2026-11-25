@@ -341,7 +341,9 @@ async function expandQueryEditor(page: Page) {
   const expand = controls.locator('button[aria-pressed]')
   if (await expand.isVisible()) await expand.click()
   else {
-    await controls.locator('button[aria-haspopup]').first().click()
+    // The More menu's trigger: the only popup button drawn on a phone (help
+    // and expand are inside that menu there).
+    await controls.locator('button[aria-haspopup]:visible').first().click()
     await page
       .locator('[data-slot="action-sheet-row"], [role="menuitem"]')
       .nth(1)
