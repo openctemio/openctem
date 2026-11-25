@@ -15,6 +15,7 @@ import { RouteGuard } from '@/components/route-guard'
 import { OrgLinkGate } from '@/components/layout/org-link-gate'
 import { LazyStepUpDialogHost } from '@/components/step-up-dialog-lazy'
 import { SettingsAnchorHighlighter } from '@/components/layout/settings-anchor-highlighter'
+import { RecentPagesRecorder } from '@/features/command-palette/recent-pages-recorder'
 import { PlatformAnnouncementBanner } from '@/features/announcements/components/platform-announcement-banner'
 import { SupportAccessBanner } from '@/features/support-access/components/support-access-banner'
 import {
@@ -100,6 +101,8 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
           <LazyStepUpDialogHost />
           {hasPendingLink && <LazyPendingLinkPrompt />}
           <SettingsAnchorHighlighter />
+          {/* Pages opened, for the command palette's Recent group. */}
+          <RecentPagesRecorder />
         </LayoutProvider>
       </SearchProvider>
     </DashboardProviders>
