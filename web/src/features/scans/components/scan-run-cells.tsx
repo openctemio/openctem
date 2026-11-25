@@ -67,6 +67,8 @@ export function RunScanCell({ run }: { run: ScanRun }) {
         href={scanDetailHref(run.scan_id)}
         dir="auto"
         title={run.scan_name}
+        // The run's name: it may end in an ellipsis, its full text the title.
+        data-cut-tooltip=""
         className="min-w-16 truncate rounded-sm font-medium [unicode-bidi:isolate] hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset"
         onClick={(e) => e.stopPropagation()}
       >
