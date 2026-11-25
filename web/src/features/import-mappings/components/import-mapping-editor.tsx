@@ -374,14 +374,16 @@ export function ImportMappingEditor({ id }: { id?: string }) {
             </p>
           }
           primary={
-            draft && canManage ? (
+            // A saved mapping offers a new version only once it has changes:
+            // never an idle, disabled main action.
+            draft && canManage && (isNew || dirty) ? (
               <Button
                 onClick={() => {
                   setSaveErrors([])
                   if (isNew) setCreateOpen(true)
                   else setVersionOpen(true)
                 }}
-                disabled={busy || (!isNew && !dirty)}
+                disabled={busy}
               >
                 <Save aria-hidden />
                 {isNew

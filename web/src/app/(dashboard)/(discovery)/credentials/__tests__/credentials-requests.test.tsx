@@ -31,11 +31,13 @@ vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   usePermissions: () => ({ can: () => true }),
 }))
+// The list's total (the strip is not drawn over an empty, unfiltered list).
+const listTotal = vi.hoisted(() => ({ value: 0 }))
 vi.mock('@/features/credentials', async (orig) => ({
   ...(await orig<typeof import('@/features/credentials')>()),
   useCredentialsApi: (_f: unknown, _c: unknown, enabled = true) => {
     calls.list.push(enabled)
-    return { data: { items: [], total: 0 }, isLoading: false, mutate: vi.fn() }
+    return { data: { items: [], total: listTotal.value }, isLoading: false, mutate: vi.fn() }
   },
   useCredentialIdentitiesApi: (_f: unknown, _c: unknown, enabled = true) => {
     calls.identities.push(enabled)
@@ -60,6 +62,7 @@ import CredentialsPage from '../page'
 
 beforeEach(() => {
   calls.list = []
+  listTotal.value = 0
   calls.identities = []
   calls.stats = 0
 })
@@ -81,6 +84,7 @@ describe('Credentials page requests', () => {
   })
 
   it('the strip counts the whole set from the stats, past 100 rows', () => {
+    listTotal.value = 250
     window.history.replaceState(null, '', '/credentials')
     render(<CredentialsPage />)
     expect(screen.getAllByText('250').length).toBeGreaterThan(0)

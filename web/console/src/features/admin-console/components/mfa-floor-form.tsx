@@ -13,7 +13,6 @@ import {
   SettingsFieldGrid,
   SettingsSaveBar,
   SettingsSection,
-  TonePill,
 } from '@/features/shared'
 import { saveMFAFloor } from '../api/use-platform-settings'
 import type { MFAFloor, MFAFloorSettings } from '../types'
@@ -128,12 +127,6 @@ export function MFAFloorForm({ settings, canEdit, onSaved }: MFAFloorFormProps) 
           'admin.mfaFloor.description',
           'Who must use two-factor in every organization. Organizations can require more, never less.'
         )}
-        actions={
-          <TonePill
-            tone={settings.floor === 'none' ? 'warning' : 'success'}
-            label={label[settings.floor]}
-          />
-        }
         meta={<SettingChangedLine change={settings} />}
       >
         {settings.recommend_raise && settings.floor === 'none' && (

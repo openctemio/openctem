@@ -38,24 +38,29 @@ const NAMES: Record<SocialProvider['provider'], string> = {
 /** A read-only value to paste into the provider's console, with a copy button. */
 function CopyField({ label, value }: { label: string; value: string }) {
   const { t } = useTranslation()
+  const id = useId()
   return (
-    <SettingsField label={label}>
-      {(control) => (
-        <div className="flex gap-2">
-          <Input {...control} value={value} readOnly className="font-mono text-xs" />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              void navigator.clipboard?.writeText(value)
-              toast.success(t('admin.socialLogin.copied', 'Copied'))
-            }}
-          >
-            {t('admin.socialLogin.copy', 'Copy')}
-          </Button>
-        </div>
-      )}
-    </SettingsField>
+    <div className="grid min-w-0 gap-1.5">
+      <p id={id} className="text-dense font-medium">
+        {label}
+      </p>
+      <div className="flex min-w-0 items-center gap-2">
+        <code aria-labelledby={id} className="min-w-0 flex-1 break-all font-mono text-dense">
+          {value}
+        </code>
+        <Button
+          type="button"
+          variant="outline"
+          aria-label={t('admin.socialLogin.copyNamed', 'Copy {name}', { name: label })}
+          onClick={() => {
+            void navigator.clipboard?.writeText(value)
+            toast.success(t('admin.socialLogin.copied', 'Copied'))
+          }}
+        >
+          {t('admin.socialLogin.copy', 'Copy')}
+        </Button>
+      </div>
+    </div>
   )
 }
 
@@ -301,7 +306,8 @@ function ProviderCard({ settings, provider: p, canEdit, onSaved }: CardProps) {
               )}
             </SettingsField>
           </SettingsBlock>
-          {canEdit && (
+          {/* Shown once there is something to test: no idle, disabled button. */}
+          {canEdit && (p.secret_set || (clientId.trim() !== '' && secret.trim() !== '')) && (
             <SettingsRow
               label={t('admin.socialLogin.checkLabel', 'Check the configuration')}
               hint={t(
@@ -310,13 +316,7 @@ function ProviderCard({ settings, provider: p, canEdit, onSaved }: CardProps) {
                 { name }
               )}
             >
-              <Button
-                variant="outline"
-                onClick={() => void check()}
-                disabled={
-                  checking || (!p.secret_set && (clientId.trim() === '' || secret.trim() === ''))
-                }
-              >
+              <Button variant="outline" onClick={() => void check()} disabled={checking}>
                 {checking && <Loader2 className="animate-spin" aria-hidden />}
                 {t('admin.socialLogin.check', 'Test configuration')}
               </Button>

@@ -13,6 +13,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { drawsSomething } from './draws-something'
 
 /**
  * On a phone a list toolbar's filter tokens (`ListToolbar` `start`) are not
@@ -46,11 +47,34 @@ export function useFilterSheetTokensHost(owner: string): HTMLElement | null {
   return s.owner === owner ? s.host : null
 }
 
+/** The facet panel's "Clear all", lent to the sheet's header. */
+type SheetClearAll = { activeCount: number; onClearAll: () => void }
+
+/**
+ * Inside a `FilterSheet`, a `FacetPanel` draws no heading of its own (the
+ * sheet's title already names the filters) and hands its "Clear all" to the
+ * sheet, which shows it beside the title.
+ */
+const FilterSheetContext = React.createContext<((clear: SheetClearAll | null) => void) | null>(null)
+
+/** The setter for the sheet's Clear all, or null outside a `FilterSheet`. */
+export function useFilterSheetClearAll() {
+  return React.useContext(FilterSheetContext)
+}
+
+/**
+ * Selects in the sheet take the whole width (a token sized for the toolbar
+ * stopped at half the sheet on a phone), with the value at the start and the
+ * chevron at the end.
+ */
+const SHEET_FIELDS_CLASS =
+  '[&_[data-slot=filter-select]]:flex [&_[data-slot=filter-select]]:w-full [&_[data-slot=filter-select]>button]:flex-1 [&_[data-slot=filter-select]>button>svg:last-child]:ms-auto'
+
 /**
  * The filter panel below `lg`, opened by `FilterPanelToggle`'s sheet button.
- * One markup for every list page (it was the Findings sheet): the title and
- * close button in the fixed header, the facet list scrolling between it and a
- * footer that closes the sheet.
+ * One markup for every list page (it was the Findings sheet): the title, Clear
+ * all and the close button in the fixed header, the facet list scrolling
+ * between it and a footer that closes the sheet.
  *
  * On a phone it is a bottom sheet as tall as what it holds (two filters take
  * two rows, not the whole screen), up to the screen less a strip of page at
@@ -75,10 +99,40 @@ export function FilterSheet({
 }) {
   const { t } = useTranslation()
   const phone = useIsMobile()
+  const [clearAll, setClearAll] = React.useState<SheetClearAll | null>(null)
   // The host leaves with the sheet, and so does the claim on it.
+  const hostElRef = React.useRef<HTMLDivElement | null>(null)
   const hostRef = React.useCallback((el: HTMLDivElement | null) => {
+    hostElRef.current = el
     setTokensHost(el ? { host: el } : { host: null, owner: null })
   }, [])
+  // The tokens' band (with its divider) is drawn only while a token draws
+  // something: a token that renders an empty box left a blank band and a
+  // divider under the title.
+  React.useLayoutEffect(() => {
+    if (!open) return
+    let frame = 0
+    let observer: MutationObserver | null = null
+    const mark = () => {
+      const el = hostElRef.current
+      if (!el) return
+      el.removeAttribute('data-empty')
+      const empty = !drawsSomething(el)
+      el.toggleAttribute('data-empty', empty)
+    }
+    // The sheet's content mounts in a portal after this effect: wait a frame.
+    frame = requestAnimationFrame(() => {
+      mark()
+      const el = hostElRef.current
+      if (!el || typeof MutationObserver === 'undefined') return
+      observer = new MutationObserver(mark)
+      observer.observe(el, { subtree: true, childList: true })
+    })
+    return () => {
+      cancelAnimationFrame(frame)
+      observer?.disconnect()
+    }
+  }, [open])
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -89,17 +143,30 @@ export function FilterSheet({
         <SheetHeader>
           <SheetTitle>{title}</SheetTitle>
         </SheetHeader>
-        <SheetBody>
+        <SheetBody className={SHEET_FIELDS_CLASS}>
           {/* The list toolbar's filter tokens, on a phone (see above). */}
           <div
             ref={hostRef}
             data-slot="filter-sheet-tokens"
-            className="mb-4 flex flex-wrap items-center gap-2 border-b pb-4 empty:hidden"
+            className="mb-4 flex flex-col items-stretch gap-2 border-b pb-4 empty:hidden data-[empty]:hidden"
           />
-          {children}
+          <FilterSheetContext.Provider value={setClearAll}>{children}</FilterSheetContext.Provider>
         </SheetBody>
-        <SheetFooter>
-          <Button className="w-full" onClick={() => onOpenChange(false)}>
+        {/* Clear all beside the main action: one height on the row (beside the
+            44 px close button in the header it would not be). */}
+        <SheetFooter className="flex-row">
+          {clearAll ? (
+            <Button
+              variant="outline"
+              className="flex-1"
+              data-slot="filter-sheet-clear-all"
+              onClick={clearAll.onClearAll}
+              disabled={clearAll.activeCount === 0}
+            >
+              {t('common.clearAll', 'Clear all')}
+            </Button>
+          ) : null}
+          <Button className="flex-1" onClick={() => onOpenChange(false)}>
             {resultLabel ?? t('common.filterSheet.showResults', 'Show results')}
           </Button>
         </SheetFooter>

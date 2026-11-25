@@ -115,4 +115,33 @@ describe('pager', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(onRetryCount).toHaveBeenCalledTimes(1)
   })
+
+  it('a list that fits one page has no pager: no "Showing 1 to 4 of 4", no "Page 1 of 1"', () => {
+    render(
+      <DataTable columns={columns} data={rows(4)} getRowId={(r) => r.id} paginationNoun="rules" />
+    )
+    expect(screen.queryByText(/Showing 1 to 4/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Page 1 of 1')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Next page' })).not.toBeInTheDocument()
+  })
+
+  it('a list past the smallest page size keeps its pager on the one page it shows', () => {
+    render(
+      <DataTable
+        columns={columns}
+        data={rows(30)}
+        getRowId={(r) => r.id}
+        paginationNoun="rules"
+        pageSize={50}
+      />
+    )
+    expect(screen.getByText('Page 1 of 1')).toBeInTheDocument()
+  })
+
+  it('a table with no toolbar control offers Display in its pager, not on a row of its own', () => {
+    render(<DataTable {...server(0, 25, { showSearch: false })} />)
+    expect(screen.queryByTestId('data-table-toolbar')).not.toBeInTheDocument()
+    const pager = document.querySelector('[data-slot="data-table-pager"]')!
+    expect(pager.querySelector('[aria-label="Display: density and columns"]')).not.toBeNull()
+  })
 })

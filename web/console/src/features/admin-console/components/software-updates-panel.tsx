@@ -6,10 +6,9 @@ import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { SafeExternalLink } from '@/components/safe-external-link'
-import { RelativeTime } from '@/features/shared'
+import { FilePicker, RelativeTime } from '@/features/shared'
 import { TonePill, type PillTone } from '@/features/shared/components/tone-pill'
 import { useTranslation } from '@/context/i18n-provider'
 import { AdminApiError } from '@console/lib/admin-api/client'
@@ -474,22 +473,26 @@ export function SoftwareUpdatesPanel({ status, canImport, onChanged }: Props) {
               )}
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <Label htmlFor={fileId}>
-                {t('admin.versionCheck.import.file', 'Release feed file (JSON, up to 256 KiB)')}
-              </Label>
-              <Input
+          <CardContent className="space-y-1.5">
+            <Label htmlFor={fileId}>
+              {t('admin.versionCheck.import.file', 'Release feed file (JSON, up to 256 KiB)')}
+            </Label>
+            {/* Import appears beside the chosen file: no idle, disabled button at rest. */}
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <FilePicker
                 id={fileId}
-                type="file"
+                file={file}
                 accept=".json,application/json"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onFile={setFile}
+                className="flex-1"
               />
+              {file && (
+                <Button disabled={busy} onClick={() => void doImport()}>
+                  <Upload aria-hidden />
+                  {t('admin.versionCheck.import.submit', 'Import')}
+                </Button>
+              )}
             </div>
-            <Button disabled={!file || busy} onClick={() => void doImport()}>
-              <Upload className="me-2 size-4" />
-              {t('admin.versionCheck.import.submit', 'Import')}
-            </Button>
           </CardContent>
         </Card>
       )}

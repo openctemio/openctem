@@ -205,7 +205,7 @@ export default function IntegrationsPage() {
           ))}
         </div>
 
-        <MetricStrip loading={isLoading} items={metrics} />
+        <MetricStrip loading={isLoading} items={metrics} listFirst />
 
         {error ? (
           <ErrorState

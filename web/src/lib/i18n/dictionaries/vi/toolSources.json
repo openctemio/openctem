@@ -35,6 +35,7 @@
   "toolSources.saveFailed": "Không thể lưu khóa",
   "toolSources.saved": "Đã lưu khóa cho {name}",
   "toolSources.set": "Đặt khóa",
+  "toolSources.setNamed": "Đặt khóa cho {name}",
   "toolSources.title": "Khóa nguồn công cụ",
   "toolSources.toggleFailed": "Không thể thay đổi khóa",
   "toolSources.updatedBy": "bởi {name}",

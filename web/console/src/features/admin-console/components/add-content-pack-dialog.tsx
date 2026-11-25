@@ -22,6 +22,7 @@ import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import { Textarea } from '@/components/ui/textarea'
+import { FilePicker } from '@/features/shared'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { REASON_MAX, REASON_MIN, stepUpErrorMessage } from './admin-confirm-dialog'
 import { importContentPack, uploadContentPack } from '../api/use-content-packs'
@@ -245,11 +246,11 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
                     <Label htmlFor={id.file}>
                       {t('admin.cp.archive', 'Archive (tar or tar.gz, up to 128 MiB)')}
                     </Label>
-                    <Input
+                    <FilePicker
                       id={id.file}
-                      type="file"
+                      file={file}
                       accept=".tar,.tgz,.tar.gz,application/gzip,application/x-tar"
-                      onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                      onFile={setFile}
                     />
                   </div>
                 </TabsContent>

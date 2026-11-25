@@ -7,6 +7,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { ListSearch, type ListSearchProps, type ListSearchStatusSlot } from './list-search'
 import { FilterButton, FilterPanelToggle, type FilterPanelToggleProps } from './filter-button'
 import { FilterSheet, claimFilterSheetTokens, useFilterSheetTokensHost } from './filter-sheet'
+import { drawsSomething } from './draws-something'
 
 /**
  * The one toolbar above a list (research/244 §2.4, research/267). `DataTable`
@@ -74,7 +75,11 @@ import { FilterSheet, claimFilterSheetTokens, useFilterSheetTokensHost } from '.
  * whose own popover answers `f` there.
  */
 export interface ListToolbarProps {
-  /** The list's name and count (`ListToolbarTitle`), for a list with no search box. */
+  /**
+   * The list's name and count (`ListToolbarTitle`) at the row's start: before
+   * the search box (read to assistive technology only on a phone), or beside
+   * the filters of a list with no search box.
+   */
   title?: React.ReactNode
   /** The list's search box. */
   search?: ListSearchProps
@@ -210,16 +215,6 @@ function useToolbarFold(
  */
 const EMPTY_GROUP_CLASS =
   'data-[empty]:pointer-events-none data-[empty]:absolute data-[empty]:size-0 data-[empty]:overflow-hidden'
-
-// An icon counts by its own box: the shapes inside it are often a line with no
-// area (an icon-only Add filter draws only such lines), which is not "nothing".
-function drawsSomething(group: HTMLElement): boolean {
-  return Array.from(group.querySelectorAll<Element>('*')).some((el) => {
-    const icon = el.closest('svg')
-    if (icon ? icon !== el : el.children.length > 0) return false
-    return Array.from(el.getClientRects()).some((r) => r.width > 0 && r.height > 0)
-  })
-}
 
 function useEmptyGroups(
   region: React.RefObject<HTMLElement | null>,
@@ -392,7 +387,18 @@ export function ListToolbar({
   const statusShown = queryActive && statusDrawn
 
   const lead = search ? (
-    <ListSearch {...search} filter={filter} statusSlot={hasQuery ? statusSlot : undefined} />
+    <>
+      {/* The list's name and count start the row, before the search box
+          (never a row of their own above the toolbar). A phone reads them to
+          assistive technology only: the search keeps the line, and the list's
+          footer says how many rows there are. */}
+      {title ? (
+        <div data-slot="list-toolbar-title-slot" className="flex shrink-0 @max-md/toolbar:sr-only">
+          {title}
+        </div>
+      ) : null}
+      <ListSearch {...search} filter={filter} statusSlot={hasQuery ? statusSlot : undefined} />
+    </>
   ) : title ? (
     <>
       {title}

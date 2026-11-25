@@ -114,11 +114,19 @@ export function FeedCard({
           </Row>
         </dl>
         <div className="flex flex-wrap items-center gap-2">
-          {canWrite && (
-            <Button size="sm" variant="outline" disabled={busy || running} onClick={onSync}>
-              <RefreshCw className={running ? 'me-2 size-4 animate-spin' : 'me-2 size-4'} />
-              {running ? t('admin.ti.running', 'Running') : t('admin.ti.syncOne', 'Sync now')}
-            </Button>
+          {/* A running sync is a status line, not a disabled button. */}
+          {running ? (
+            <p className="flex items-center gap-2 text-body text-muted-foreground" role="status">
+              <RefreshCw className="size-4 animate-spin" aria-hidden />
+              {t('admin.ti.running', 'Running')}
+            </p>
+          ) : (
+            canWrite && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={onSync}>
+                <RefreshCw className="me-2 size-4" />
+                {t('admin.ti.syncOne', 'Sync now')}
+              </Button>
+            )
           )}
           {feed.last_error && problem && (
             <Collapsible className="w-full">

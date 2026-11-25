@@ -396,7 +396,7 @@ export default function SCMConnectionsPage() {
             </div>
           ) : (
             <>
-              <MetricStrip loading={isLoading} items={metrics} />
+              <MetricStrip loading={isLoading} items={metrics} listFirst />
 
               <div>
                 {isLoading ? (
