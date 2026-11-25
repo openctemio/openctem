@@ -23,6 +23,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
+import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
+import { FieldError } from '@/features/shared/components/forms/field-error'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -215,16 +217,23 @@ export function GroupExceptionDialog({
   const noteLength = note.trim().length
   const noteTooShort = noteLength > 0 && noteLength < minNote
   const included = preview?.included ?? 0
-  const canSubmit =
-    !!reason &&
-    expiryValid &&
-    noteLength >= minNote &&
-    !!preview &&
-    included > 0 &&
-    !previewing &&
-    !submitting
+  // Pressing the button checks these in order and says what is missing; the
+  // button itself is only off while the request runs.
+  const [tried, setTried] = useState(false)
+  const problem = !reason
+    ? ('reason' as const)
+    : !expiryValid
+      ? ('expiry' as const)
+      : noteLength < minNote
+        ? ('note' as const)
+        : previewing || !preview
+          ? ('preview' as const)
+          : included === 0
+            ? ('empty' as const)
+            : null
 
   const reset = () => {
+    setTried(false)
     setStatus('accepted')
     setReason('')
     setNote('')
@@ -239,7 +248,17 @@ export function GroupExceptionDialog({
   }
 
   const submit = async () => {
-    if (!canSubmit) return
+    if (submitting) return
+    if (problem) {
+      setTried(true)
+      const target: Record<string, string> = {
+        reason: 'group-exception-reason',
+        expiry: 'group-exception-end',
+        note: 'group-exception-note',
+      }
+      if (target[problem]) document.getElementById(target[problem])?.focus()
+      return
+    }
     setSubmitting(true)
     try {
       const batch = await requestCall({
@@ -326,7 +345,13 @@ export function GroupExceptionDialog({
                   {t('findings.approvalDialog.reason', 'Reason')}
                 </Label>
                 <Select value={reason} onValueChange={setReason}>
-                  <SelectTrigger id="group-exception-reason">
+                  <SelectTrigger
+                    id="group-exception-reason"
+                    aria-invalid={tried && problem === 'reason' ? true : undefined}
+                    aria-describedby={
+                      tried && problem === 'reason' ? 'group-exception-reason-error' : undefined
+                    }
+                  >
                     <SelectValue
                       placeholder={t(
                         'findings.approvalDialog.reasonPlaceholder',
@@ -342,6 +367,14 @@ export function GroupExceptionDialog({
                     ))}
                   </SelectContent>
                 </Select>
+                <FieldError
+                  id="group-exception-reason-error"
+                  error={
+                    tried && problem === 'reason'
+                      ? t('findings.approvalDialog.reasonRequired', 'Choose a reason.')
+                      : null
+                  }
+                />
               </div>
               {accepted && (
                 <div className="grid gap-2">
@@ -357,6 +390,18 @@ export function GroupExceptionDialog({
                     max={maxDate}
                     onChange={(e) => setExpiresAt(e.target.value)}
                     aria-invalid={!expiryValid}
+                    aria-describedby={!expiryValid ? 'group-exception-end-error' : undefined}
+                  />
+                  <FieldError
+                    id="group-exception-end-error"
+                    error={
+                      tried && !expiryValid
+                        ? t(
+                            'findingApprovals.group.endInvalid',
+                            'Pick a date within a year from today.'
+                          )
+                        : null
+                    }
                   />
                   <p className="text-xs text-muted-foreground">
                     {t(
@@ -374,6 +419,7 @@ export function GroupExceptionDialog({
               </Label>
               <Textarea
                 id="group-exception-note"
+                aria-invalid={(tried && problem === 'note') || noteTooShort ? true : undefined}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={3}
@@ -391,7 +437,7 @@ export function GroupExceptionDialog({
                   count: minNote,
                 })}`}
               </p>
-              {noteTooShort && (
+              {(noteTooShort || (tried && problem === 'note')) && (
                 <p className="text-xs text-destructive" role="alert">
                   {t(
                     'findingApprovals.evaluation.noteTooShort',
@@ -451,11 +497,27 @@ export function GroupExceptionDialog({
             </p>
           )}
         </DialogBody>
+        <DialogSubmitError
+          message={
+            tried && problem === 'preview'
+              ? (previewError ??
+                t(
+                  'findingApprovals.group.previewPending',
+                  'Still checking who decides. Try again in a moment.'
+                ))
+              : tried && problem === 'empty'
+                ? t(
+                    'findingApprovals.group.nothingCovered',
+                    'No open finding is covered by this exception.'
+                  )
+                : null
+          }
+        />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
             {t('findings.approvalDialog.cancel', 'Cancel')}
           </Button>
-          <Button onClick={() => void submit()} disabled={!canSubmit}>
+          <Button onClick={() => void submit()} disabled={submitting}>
             {submitting && <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden />}
             {needsConfirm
               ? t('findingApprovals.group.submitConfirmed', 'Confirm and request')

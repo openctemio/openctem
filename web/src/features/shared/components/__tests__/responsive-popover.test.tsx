@@ -94,7 +94,7 @@ describe('ResponsivePopover', () => {
     // A search keyboard, and 16px text so iOS does not zoom.
     expect(field).toHaveAttribute('inputmode', 'search')
     expect(field).toHaveAttribute('enterkeyhint', 'search')
-    expect(field).toHaveClass('text-base', 'md:text-sm')
+    expect(field).toHaveClass('text-base', 'md:text-body')
     const body = screen.getByTestId('responsive-popover-body')
     expect(body.className).toContain('[&_[data-slot=command-input-wrapper]]:sticky')
     expect(body.className).toContain('[&_[data-slot=command-list]]:max-h-none')

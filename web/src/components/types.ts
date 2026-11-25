@@ -72,7 +72,11 @@ type BaseNavItem = {
  */
 type NavSectionLink = {
   label: string
+  /** i18n key of the label; `label` is the English fallback. */
+  labelKey?: string
   href: string
+  /** The tab's icon, also shown beside its command palette row. */
+  icon?: React.ElementType
   /**
    * Module the tab's route needs (the route guard's module). A tab whose module
    * is off is hidden from the page's tab strip, the command palette and the

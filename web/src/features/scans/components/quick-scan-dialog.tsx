@@ -80,6 +80,11 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
   const [started, setStarted] = useState<QuickScanResponse | null>(null)
   const [saveName, setSaveName] = useState('')
   const [savedName, setSavedName] = useState<string | null>(null)
+  // What stopped the last press of Start: the button stays enabled, the dialog says why.
+  const [problem, setProblem] = useState<{
+    field: 'targets' | 'scanner' | 'fix'
+    text: string
+  } | null>(null)
 
   const { trigger: quickScan } = useQuickScan()
   const { trigger: saveQuickScan, isMutating: isSaving } = useSaveQuickScan(
@@ -135,7 +140,25 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
     }
   }
 
+  const startPressed = () => {
+    const invalid =
+      targetList.length === 0
+        ? { field: 'targets' as const, text: t('scans.quick.needTarget') }
+        : pasted.invalid.length > 0 || readiness?.state === 'blocked'
+          ? { field: 'fix' as const, text: t('scans.quick.fixFirst') }
+          : !scannerName
+            ? { field: 'scanner' as const, text: t('scans.err.scanner') }
+            : null
+    setProblem(invalid)
+    if (invalid) {
+      if (invalid.field === 'scanner') document.getElementById('quick-scanner')?.focus()
+      return
+    }
+    void handleSubmit()
+  }
+
   const handleClose = () => {
+    setProblem(null)
     setRefused([])
     setTargets([])
     setScannerName('')
@@ -144,13 +167,6 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
     setSavedName(null)
     onOpenChange(false)
   }
-
-  const formReason =
-    targetList.length === 0
-      ? t('scans.quick.needTarget')
-      : !scannerName
-        ? t('scans.err.scanner')
-        : undefined
 
   return (
     <FormDialog
@@ -168,14 +184,9 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
             cancelLabel: null,
           }
         : {
-            onSubmit: () => void handleSubmit(),
+            onSubmit: startPressed,
             submitting: isSubmitting,
-            canSubmit:
-              targetList.length > 0 &&
-              pasted.invalid.length === 0 &&
-              !!scannerName &&
-              readiness?.state !== 'blocked',
-            reason: formReason,
+            error: problem && problem.field !== 'scanner' ? problem.text : null,
             submitLabel: isSubmitting ? (
               t('scans.common.starting')
             ) : (
@@ -249,12 +260,29 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
       ) : (
         <FormStack>
           {/* Targets: the same paste source and summary as New Scan */}
-          <PasteSource value={targets} onChange={setTargets} />
+          <PasteSource
+            value={targets}
+            onChange={(v) => {
+              setTargets(v)
+              setProblem(null)
+            }}
+          />
 
           {/* Scanner: the tool registry's active scanners */}
-          <FormField id="quick-scanner" label={t('scans.basic.scanner')}>
+          <FormField
+            id="quick-scanner"
+            label={t('scans.basic.scanner')}
+            error={problem?.field === 'scanner' ? problem.text : undefined}
+          >
             {(control) => (
-              <ScannerSelect {...control} value={scannerName} onChange={setScannerName} />
+              <ScannerSelect
+                {...control}
+                value={scannerName}
+                onChange={(v) => {
+                  setScannerName(v)
+                  setProblem(null)
+                }}
+              />
             )}
           </FormField>
 
