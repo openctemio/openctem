@@ -122,7 +122,7 @@ describe('Health page', () => {
     expect(screen.getByText('3 online')).toBeInTheDocument()
     expect(screen.getByText('Not configured')).toBeInTheDocument()
     expect(screen.getByText('Unhealthy')).toBeInTheDocument()
-    expect(screen.getByText('attachments')).toBeInTheDocument()
+    expect(screen.getByText('Attachments')).toBeInTheDocument()
     expect(screen.getByText('8% free')).toBeInTheDocument()
     expect(screen.getByText('5.0 GiB')).toBeInTheDocument()
     expect(screen.getByText('Older than 26 h')).toBeInTheDocument()
@@ -179,7 +179,7 @@ describe('Health page', () => {
     // Summary first: the schema and the build with the services.
     expect(screen.getByText('Database schema')).toBeInTheDocument()
     expect(screen.getByText(/abc1234/)).toBeInTheDocument()
-    expect(screen.getByText(/Pool 1 in use of 2 open/)).toBeInTheDocument()
+    expect(screen.getByText(/Database connections: 1 in use of 2 open/)).toBeInTheDocument()
     expect(screen.queryByText('Version')).not.toBeInTheDocument()
     expect(screen.queryByText('Work queues')).not.toBeInTheDocument()
     await user.click(screen.getByRole('tab', { name: /Queues and sensors/ }))
