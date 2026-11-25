@@ -102,6 +102,8 @@ export interface AIRunAction {
 export interface AIRun {
   id: string
   ai_agent_id?: string
+  /** The AI agent's name now (empty once it is deleted). */
+  ai_agent_name?: string
   kind: string
   /** builtin or tenant_worker (runs on the organization's AI workers). */
   executor: string
@@ -123,7 +125,10 @@ export interface AIRun {
 
 /**
  * The AI agent runs on a finding, newest first. Needs findings:read and
- * ai_triage:read; pass enabled=false without them (no request is sent).
+ * ai_triage:read; pass enabled=false without them (no request is sent). On
+ * the finding page the answer comes from the page view
+ * (GET /findings/{id}/view carries this URL as a part), so it costs no
+ * request of its own.
  */
 export function useFindingAIRuns(findingId: string, enabled: boolean) {
   return useSWR<AIRun[]>(
