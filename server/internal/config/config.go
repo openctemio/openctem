@@ -1225,6 +1225,10 @@ type SensorConfig struct {
 	VulnFeedBaseURL   string
 	VulnFeedBundleDir string
 	VulnFeedMirrors   []string
+	// VulnFeedSourcesPinned: VULNFEED_BASE_URL or VULNFEED_MIRRORS is set,
+	// so the console shows the feed address locked (otherwise the
+	// environment is only the default the console may override).
+	VulnFeedSourcesPinned bool
 
 	// VersionCheckEnabled turns on the daily version check: one anonymous
 	// download of the signed release feed, compared with the running version
@@ -1617,6 +1621,7 @@ func workerConfigFromEnv() SensorConfig {
 		VulnFeedBaseURL:                   getEnv("VULNFEED_BASE_URL", "https://github.com/openctemio/vulnfeed-bundles/releases"),
 		VulnFeedBundleDir:                 getEnv("VULNFEED_BUNDLE_DIR", ""),
 		VulnFeedMirrors:                   feedURLs("", getEnv("VULNFEED_MIRRORS", "")),
+		VulnFeedSourcesPinned:             os.Getenv("VULNFEED_BASE_URL") != "" || os.Getenv("VULNFEED_MIRRORS") != "",
 		VersionCheckEnabled:               getEnvBool("VERSION_CHECK_ENABLED", true),
 		VersionCheckURL:                   getEnv("VERSION_CHECK_URL", "https://github.com/openctemio/openctem/releases/latest/download/openctem-releases.json"),
 		CertMonitorEnabled:                getEnvBool("CERT_MONITOR_ENABLED", true),

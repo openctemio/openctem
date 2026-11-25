@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -107,7 +108,100 @@ type Importer struct {
 	vulnIDs VulnIDAliasWriter
 	// intel applies the release's KEV and EPSS streams (nil: not applied).
 	intel IntelApplier
+
+	// sources answers the release base URL and the mirrors in force (the
+	// console setting over the environment); nil: the configuration's.
+	sources Sources
+	// fetcherMetrics: the network fetcher's counters were registered (once
+	// per process; a fetcher rebuilt after a source change is not).
+	fetcherMetrics bool
 }
+
+// Sources answers where the feed is fetched from in direct mode: the
+// release base URL and the mirrors tried after it. Every value it returns
+// was validated (https, public, no credentials) when it was saved; the
+// importer checks it again before use.
+type Sources interface {
+	FeedSources(ctx context.Context) (baseURL string, mirrors []string)
+}
+
+// WithSources makes the importer read its network origins from s at the
+// start of every run, so a console change applies without a restart.
+func (im *Importer) WithSources(s Sources) *Importer {
+	im.sources = s
+	return im
+}
+
+// refreshOrigins applies the origins in force before a network run. A
+// change drops the network fetcher (rebuilt with the new origins on first
+// use); a value that does not validate is ignored and the previous origins
+// stay (logged).
+func (im *Importer) refreshOrigins(ctx context.Context) {
+	if im.sources == nil || im.cfg.BundleDir != "" {
+		return
+	}
+	base, mirrors := im.sources.FeedSources(ctx)
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	if base == "" {
+		return
+	}
+	if err := ValidateOrigin(base); err != nil {
+		im.logger.Warn("vulnfeed: release URL in force refused; keeping the previous one", "error", err)
+		return
+	}
+	clean := make([]string, 0, len(mirrors))
+	for _, m := range mirrors {
+		m = strings.TrimRight(strings.TrimSpace(m), "/")
+		if err := ValidateOrigin(m); err != nil {
+			im.logger.Warn("vulnfeed: mirror in force refused; skipped", "error", err)
+			continue
+		}
+		clean = append(clean, m)
+	}
+	im.fetchMu.Lock()
+	defer im.fetchMu.Unlock()
+	if base == im.cfg.BaseURL && slices.Equal(clean, im.transfer.Mirrors) {
+		return
+	}
+	im.cfg.BaseURL, im.transfer.Mirrors, im.fetcher = base, clean, nil
+	im.logger.Info("vulnfeed: feed origins changed", "mirrors", len(clean))
+}
+
+// BaseURL is the release base URL in force.
+func (im *Importer) BaseURL() string {
+	im.fetchMu.Lock()
+	defer im.fetchMu.Unlock()
+	return im.cfg.BaseURL
+}
+
+// MaxOriginLength bounds one origin URL.
+const MaxOriginLength = 512
+
+// ValidateOrigin checks a release base URL or a mirror: an https URL with a
+// host, no credentials, query or fragment, at most MaxOriginLength bytes,
+// whose host is not an internal address (the feed client's SSRF guard
+// refuses those again at connect time).
+func ValidateOrigin(raw string) error {
+	if raw == "" || len(raw) > MaxOriginLength {
+		return ErrOriginLength
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery ||
+		u.Fragment != "" || u.Opaque != "" {
+		return ErrOriginNotHTTPS
+	}
+	if err := httpsec.ValidateFeedURL(raw); err != nil {
+		return ErrOriginInternal
+	}
+	return nil
+}
+
+// Refusals of ValidateOrigin (their text is shown to the administrator).
+var (
+	ErrOriginLength   = errors.New("must be an https URL of at most 512 characters")
+	ErrOriginNotHTTPS = errors.New("must be an https URL without a user name, password, query or fragment")
+	ErrOriginInternal = errors.New("must not point to an internal network address")
+)
 
 // NewImporter creates an importer. It refuses a base URL that is not a
 // public https URL.
@@ -207,6 +301,7 @@ func (im *Importer) Run(ctx context.Context) (Result, error) {
 		return res, nil
 	}
 	defer im.release(ctx)
+	im.refreshOrigins(ctx)
 	cur := readState(st.Metadata())
 	dir := im.cfg.BundleDir
 	if relay := im.relaySpool(ctx); relay != "" {
@@ -349,7 +444,8 @@ func (im *Importer) stage(ctx context.Context, opt vulnbundle.Options) (string, 
 		cleanup()
 		return "", "", nil, err
 	}
-	latestURL := im.cfg.BaseURL + "/latest/download/"
+	base := im.BaseURL()
+	latestURL := base + "/latest/download/"
 	for _, name := range []string{vulnbundle.KeySetFile, vulnbundle.LatestFile} {
 		if err := im.download(ctx, latestURL+name, filepath.Join(dir, name), vulnbundle.MaxManifestBytes); err != nil {
 			return fail(publisherEmpty(err))
@@ -360,7 +456,7 @@ func (im *Importer) stage(ctx context.Context, opt vulnbundle.Options) (string, 
 		return fail(tagPointer(err))
 	}
 	kind := partOf(v, opt)
-	tagURL := im.cfg.BaseURL + "/download/" + url.PathEscape(v.Latest.Tag) + "/"
+	tagURL := base + "/download/" + url.PathEscape(v.Latest.Tag) + "/"
 	name := vulnbundle.ManifestName(kind)
 	if err := im.download(ctx, tagURL+name, filepath.Join(dir, name), vulnbundle.MaxManifestBytes); err != nil {
 		return fail(err)

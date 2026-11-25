@@ -1561,23 +1561,23 @@ vars:
     group: "Discovery feeds and background jobs"
     type: url
     default: "https://github.com/openctemio/vulnfeed-bundles/releases"
-    description: "Release base URL of the signed vulnerability bundles."
+    description: "Release base URL of the signed vulnerability bundles. Unset: the platform owner may change it in the console (System > Threat intelligence > Vulnerability feed address); set: it pins the address and the console shows it locked."
   - name: VULNFEED_BUNDLE_DIR
     component: api
     group: "Discovery feeds and background jobs"
     type: path
-    description: "Air-gapped platforms: local directory holding a vulnerability bundle release's files."
+    description: "Air-gapped platforms: local directory holding a vulnerability bundle release's files. Server only: the console shows whether it is set, never the path."
   - name: VULNFEED_MIRRORS
     component: api
     group: "Discovery feeds and background jobs"
     type: list
-    description: "Comma-separated https mirrors tried after the release for chunked vulnerability bundles."
+    description: "Comma-separated https mirrors tried after the release for chunked vulnerability bundles (direct mode only). Setting it, like `VULNFEED_BASE_URL`, pins the feed address; unset, the console manages the mirrors."
   - name: VULNFEED_ROOT_KEY_ID
     component: api
     group: "Discovery feeds and background jobs"
     type: string
     default: "official root"
-    description: "Pinned root key id of the vulnerability bundles. Defaults to the root of the official feed (openctemio/vulnfeed-bundles releases); set it only for a private collector."
+    description: "Pinned root key id of the vulnerability bundles. Defaults to the root of the official feed (openctemio/vulnfeed-bundles releases); set it only for a private collector. A trust anchor: server only, the console shows it read-only."
   - name: GITHUB_APP_ID
     component: api
     group: "Integrations"
