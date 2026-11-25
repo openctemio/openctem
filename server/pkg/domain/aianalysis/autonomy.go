@@ -100,7 +100,11 @@ type AutonomyRepository interface {
 	// GetAutonomy returns the stored setting; ok is false when the
 	// organization never saved one.
 	GetAutonomy(ctx context.Context, tenantID shared.ID) (Autonomy, bool, error)
-	SaveAutonomy(ctx context.Context, tenantID shared.ID, a Autonomy) error
+	// SaveAutonomy writes next only while the stored setting is still
+	// expected (nil: none saved yet), so a change decided on a stale read
+	// (for example a raise judged against an older, higher limit) is never
+	// written; false when it was not written.
+	SaveAutonomy(ctx context.Context, tenantID shared.ID, expected *Autonomy, next Autonomy) (bool, error)
 	// ReserveAutoChange counts one automatic change at now when the changes
 	// of the current clock hour stay within perHour and those of the last
 	// 24 clock hours within perDay (nil: unlimited); false when a limit is

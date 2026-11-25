@@ -49,20 +49,44 @@ func (r *TenantAISettingsRepository) GetAutonomy(ctx context.Context, tenantID s
 		UpdatedAt: j.UpdatedAt, UpdatedBy: j.UpdatedBy}, true, nil
 }
 
-// SaveAutonomy writes the setting. A missing settings row is created with
-// the column defaults (AI stays off until an administrator consents).
-func (r *TenantAISettingsRepository) SaveAutonomy(ctx context.Context, tenantID shared.ID, a aidom.Autonomy) error {
+func autonomyDoc(a aidom.Autonomy) ([]byte, error) {
 	raw, err := json.Marshal(autonomyJSON{Version: 1, Paused: a.Paused, PausedAt: a.PausedAt, PausedBy: a.PausedBy,
 		PerHour: a.PerHour, PerDay: a.PerDay, UpdatedAt: a.UpdatedAt, UpdatedBy: a.UpdatedBy})
 	if err != nil {
-		return fmt.Errorf("encode AI autonomy: %w", err)
+		return nil, fmt.Errorf("encode AI autonomy: %w", err)
 	}
-	if _, err := r.db.ExecContext(ctx, `
-		INSERT INTO tenant_ai_settings (tenant_id, autonomy) VALUES ($1, $2::jsonb)
-		ON CONFLICT (tenant_id) DO UPDATE SET autonomy = EXCLUDED.autonomy`, tenantID.String(), raw); err != nil {
-		return fmt.Errorf("save AI autonomy: %w", err)
+	return raw, nil
+}
+
+// SaveAutonomy writes next only while the stored setting still equals
+// expected (JSON equality; nil: none saved yet). A missing settings row is
+// created with the column defaults (AI stays off until an administrator
+// consents).
+func (r *TenantAISettingsRepository) SaveAutonomy(ctx context.Context, tenantID shared.ID, expected *aidom.Autonomy, next aidom.Autonomy) (bool, error) {
+	raw, err := autonomyDoc(next)
+	if err != nil {
+		return false, err
 	}
-	return nil
+	var res sql.Result
+	if expected == nil {
+		res, err = r.db.ExecContext(ctx, `
+			INSERT INTO tenant_ai_settings (tenant_id, autonomy) VALUES ($1, $2::jsonb)
+			ON CONFLICT (tenant_id) DO UPDATE SET autonomy = EXCLUDED.autonomy
+			WHERE tenant_ai_settings.autonomy IS NULL`, tenantID.String(), raw)
+	} else {
+		exp, eerr := autonomyDoc(*expected)
+		if eerr != nil {
+			return false, eerr
+		}
+		res, err = r.db.ExecContext(ctx, `
+			UPDATE tenant_ai_settings SET autonomy = $2::jsonb
+			WHERE tenant_id = $1 AND autonomy = $3::jsonb`, tenantID.String(), raw, exp)
+	}
+	if err != nil {
+		return false, fmt.Errorf("save AI autonomy: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
 }
 
 // ReserveAutoChange counts one automatic change when the organization is

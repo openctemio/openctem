@@ -139,7 +139,7 @@ func (w *WorkerExecutor) take(ctx context.Context, run *aidom.Run, output []byte
 		if run.Outcome == "" {
 			run.Outcome = aidom.OutcomeAbstained
 		}
-		w.b.finish(ctx, run, status, nil)
+		w.finishClaimed(ctx, run, status)
 		return &RunDetail{Run: run, Actions: []Action{}}, code
 	}
 	if outErr != "" {
@@ -214,8 +214,27 @@ func (w *WorkerExecutor) take(ctx context.Context, run *aidom.Run, output []byte
 		// What validated is applied; the run says why it is partial.
 		run.ErrorCode = aidom.WorkerErrorCode(res.ErrorCode)
 	}
-	w.b.finish(ctx, run, aidom.RunCompleted, nil)
+	w.finishClaimed(ctx, run, aidom.RunCompleted)
 	return &RunDetail{Run: run, Actions: actions}, ""
+}
+
+// finishClaimed ends a run this caller claimed, only while it is still that
+// claim: a run the deadline sweep ended meanwhile keeps the sweep's outcome.
+func (w *WorkerExecutor) finishClaimed(ctx context.Context, run *aidom.Run, status aidom.RunStatus) {
+	run.Status = status
+	done := w.b.now().UTC()
+	run.CompletedAt = &done
+	if run.StartedAt != nil {
+		d := int(done.Sub(*run.StartedAt).Milliseconds())
+		run.DurationMS = &d
+	}
+	ok, err := w.b.svc.runs.FinishClaimedRun(context.WithoutCancel(ctx), run)
+	switch {
+	case err != nil:
+		w.logger.Error("failed to record the AI run outcome", "run_id", run.ID.String(), "error", logger.SanitizeError(err))
+	case !ok:
+		w.logger.Warn("AI run ended meanwhile; its outcome was not overwritten", "run_id", run.ID.String())
+	}
 }
 
 // recordUsage puts the worker's account of the run on it (provider, model,
