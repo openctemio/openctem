@@ -98,7 +98,7 @@ export function OverridesSection({ policies }: { policies: ScanWindowPolicy[] })
     >
       {/* The action shares the heading's line; on a phone the hint takes the whole width
           under them (never a button alone on a row). */}
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 sm:grid-cols-[minmax(0,max-content)_auto] sm:gap-x-6">
         <h2 id="overrides-heading" className="text-base font-semibold">
           {t('scanWindows.override.heading', 'Overrides')}
         </h2>
