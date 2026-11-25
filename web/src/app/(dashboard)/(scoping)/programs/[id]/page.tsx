@@ -181,7 +181,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
             </Badge>
           }
           description={
-            <SafeExternalLink href={p.program_url} className="break-all underline">
+            <SafeExternalLink href={p.program_url} className="break-words underline">
               {p.program_url}
             </SafeExternalLink>
           }
