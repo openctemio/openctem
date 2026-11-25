@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { DangerZone, DangerZoneItem } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { fetcher, fetcherWithOptions } from '@/lib/api/client'
 import { formatDate } from '@/lib/app-locale'
@@ -58,29 +58,33 @@ export function DeleteAccountCard({ email }: { email?: string }) {
   }
 
   return (
-    <Card className="border-destructive/40">
-      <CardHeader>
-        <CardTitle>{t('settings.accountDelete.title')}</CardTitle>
-        <CardDescription>{t('settings.accountDelete.desc')}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {data?.scheduled && data.erase_after && (
-          <p className="text-sm text-destructive">
-            {t('settings.accountDelete.pending', undefined, {
-              date: formatDate(new Date(data.erase_after)),
-            })}
-          </p>
-        )}
-        {soleOwnerOf && (
-          <p className="text-sm text-destructive" role="alert">
-            {t('settings.accountDelete.soleOwner', undefined, { orgs: soleOwnerOf.join(', ') })}
-          </p>
-        )}
-        <Button variant="destructive" size="sm" onClick={() => setOpen(true)}>
-          <Trash2 className="h-4 w-4" />
-          {t('settings.accountDelete.button')}
-        </Button>
-      </CardContent>
+    <DangerZone id="delete-account">
+      <DangerZoneItem
+        title={t('settings.accountDelete.title')}
+        description={
+          <>
+            {t('settings.accountDelete.desc')}
+            {data?.scheduled && data.erase_after && (
+              <span className="mt-1 block text-destructive">
+                {t('settings.accountDelete.pending', undefined, {
+                  date: formatDate(new Date(data.erase_after)),
+                })}
+              </span>
+            )}
+            {soleOwnerOf && (
+              <span className="mt-1 block text-destructive" role="alert">
+                {t('settings.accountDelete.soleOwner', undefined, { orgs: soleOwnerOf.join(', ') })}
+              </span>
+            )}
+          </>
+        }
+        action={
+          <Button variant="destructive" onClick={() => setOpen(true)}>
+            <Trash2 aria-hidden />
+            {t('settings.accountDelete.button')}
+          </Button>
+        }
+      />
       <ConfirmDialog
         open={open}
         onOpenChange={setOpen}
@@ -92,6 +96,6 @@ export function DeleteAccountCard({ email }: { email?: string }) {
         isLoading={busy}
         handleConfirm={handleDelete}
       />
-    </Card>
+    </DangerZone>
   )
 }

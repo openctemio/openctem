@@ -107,9 +107,34 @@ describe('DetailSheet + DetailHeader', () => {
     expect(line.className).not.toContain('truncate')
   })
 
-  it('renders the action row', () => {
+  it('ends the meta line with the actions, never a row of their own', () => {
+    renderSheet({ meta: ['Scanner', '10.0.0.5'], actions: <button>Edit</button> })
+    const line = document.querySelector('[data-slot="detail-header-line"]') as HTMLElement
+    expect(within(line).getByText('Scanner')).toBeInTheDocument()
+    expect(within(line).getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+  })
+
+  it('moves the badges under the title beside the actions when there is no meta line', () => {
+    renderSheet({ badges: <span>Active</span>, actions: <button>Edit</button> })
+    const line = document.querySelector('[data-slot="detail-header-line"]') as HTMLElement
+    expect(within(line).getByText('Active')).toBeInTheDocument()
+    expect(within(line).getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+  })
+
+  it('puts the actions beside the header icons when there is nothing under the title', () => {
     renderSheet({ actions: <button>Edit</button> })
-    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+    expect(document.querySelector('[data-slot="detail-header-line"]')).toBeNull()
+    const header = document.querySelector('[data-slot="detail-header"]') as HTMLElement
+    const close = within(header).getByRole('button', { name: 'Close' })
+    expect(close.parentElement).toContainElement(
+      within(header).getByRole('button', { name: 'Edit' })
+    )
+  })
+
+  it('keeps the meta line under the title without actions', () => {
+    renderSheet({ badges: <span>Active</span>, meta: ['Scanner'] })
+    expect(document.querySelector('[data-slot="detail-header-line"]')).toBeNull()
+    expect(screen.getByText('Active')).toBeInTheDocument()
   })
 
   it('closes from the close button', async () => {

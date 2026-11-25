@@ -124,10 +124,23 @@ describe('EASMPostureCard', () => {
       'hijackable_subdomains',
       'misconfiguration',
     ])
-    expect(screen.getByRole('link', { name: 'What to fix to raise the grade' })).toHaveAttribute(
+    // The first fixes of the plan, under their heading.
+    const fixFirst = screen.getByTestId('posture-fix-first')
+    expect(fixFirst).toHaveTextContent('What to fix to raise the grade')
+    expect(fixFirst.querySelectorAll('li').length).toBeGreaterThan(0)
+    expect(screen.getByRole('link', { name: 'View posture details' })).toHaveAttribute(
       'href',
       '/attack-surface/posture'
     )
+  })
+
+  it('draws no fix heading when nothing is left to fix', async () => {
+    api.get.mockResolvedValue(body({ plan: { reached: true, steps: [] } }))
+    wrap(<EASMPostureCard />)
+    expect(await screen.findByTestId('posture-score')).toBeInTheDocument()
+    expect(screen.queryByTestId('posture-fix-first')).toBeNull()
+    expect(screen.queryByText('What to fix to raise the grade')).toBeNull()
+    expect(screen.getByRole('link', { name: 'View posture details' })).toBeInTheDocument()
   })
 
   it('says when the first computation is still running', async () => {
