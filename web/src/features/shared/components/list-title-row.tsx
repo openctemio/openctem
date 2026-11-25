@@ -217,6 +217,12 @@ export function ListTitleRow({
   ref?: React.Ref<HTMLDivElement>
   'data-testid'?: string
 }) {
+  // On a phone a row that can only ever draw the name and the count (no
+  // `start`, no actions) is a wasted row above the toolbar: it is read to
+  // assistive technology only, and the list's footer says how many rows
+  // there are ("25 of 200"). Decided from the props, never from what is drawn,
+  // so nothing appearing later (a Modified mark) moves the toolbar.
+  const metaOnly = !start && React.Children.toArray(children).length === 0
   // Nothing to draw (a hidden name, no count, nothing after it, no actions):
   // the heading stays for assistive technology and the row takes no room, so
   // the page never shows an empty line.
@@ -232,7 +238,12 @@ export function ListTitleRow({
       ref={ref}
       data-slot="list-title-row"
       data-testid={testId}
-      className={cn('flex min-h-control items-center gap-2', className)}
+      data-meta-only={metaOnly || undefined}
+      className={cn(
+        'flex min-h-control items-center gap-2',
+        metaOnly && 'max-md:sr-only',
+        className
+      )}
     >
       <div data-slot="list-title-start" className="flex min-w-0 items-center gap-3">
         {/* The name gives way first: what follows it keeps its width. */}

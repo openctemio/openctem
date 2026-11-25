@@ -102,7 +102,7 @@ globalThis.ResizeObserver ??= class {
 }
 
 describe('Members page (vi)', () => {
-  it('renders Vietnamese copy, a translated pagination noun and labelled filters', () => {
+  it('renders Vietnamese copy and labelled filters (one member: no pager)', () => {
     render(
       <I18nProvider locale="vi">
         <UsersPage />
@@ -112,7 +112,7 @@ describe('Members page (vi)', () => {
     expect(screen.getByText('Mời người dùng')).toBeInTheDocument()
     expect(screen.getByText('Thêm người dùng')).toBeInTheDocument()
     expect(screen.getByText('Hoạt động gần nhất')).toBeInTheDocument()
-    expect(screen.getByText(/trên 1 thành viên/)).toBeInTheDocument()
+    expect(screen.queryByText(/trên 1 thành viên/)).toBeNull()
     // The filters are filter tokens: "Status: Current members", whole.
     expect(
       screen.getByRole('button', { name: 'Trạng thái: Thành viên hiện tại' })
