@@ -195,7 +195,8 @@ export function MetricStrip({
     >
       <div
         data-slot="metric-strip"
-        data-detailed={detailed || undefined}
+        // Marks the halves layout on a phone (a detail line, or a long label).
+        data-detailed={detailed || longLabels || undefined}
         className={cn(
           'grid grid-cols-6 overflow-hidden',
           embedded ? '-mx-3 sm:-mx-4' : 'rounded-lg border bg-card',
