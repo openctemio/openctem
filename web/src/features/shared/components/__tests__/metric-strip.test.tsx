@@ -318,4 +318,18 @@ describe('MetricStrip over a list', () => {
     expect(label.className).not.toContain('sm:truncate')
     expect(label.className).toContain('min-h-8')
   })
+  it('never cuts a label by an ellipsis or a line clamp, at any width', () => {
+    const { container } = render(
+      <MetricStrip
+        items={[
+          { key: 'a', label: 'Mất kết nối, SDK, heartbeat cũ', value: 4 },
+          { key: 'b', label: 'Online', value: 2 },
+        ]}
+      />
+    )
+    for (const label of Array.from(container.querySelectorAll('[data-slot="metric-label"]'))) {
+      expect(label.className).not.toMatch(/truncate|line-clamp|text-ellipsis/)
+      expect(label.className).toContain('break-words')
+    }
+  })
 })

@@ -31,13 +31,12 @@ function FleetBarSkeleton() {
 }
 
 /**
- * A tile's detail line: one line from 768 px, cut with an ellipsis and whole
- * in its tooltip, so the strip is as tall loaded as while loading. On a
- * phone, where the strip follows the list, it wraps.
+ * A tile's detail line. It wraps at every width: an ellipsis hid what the
+ * count is made of ("mất kết nối, SDK, heart…"). Its text is also the tooltip.
  */
 function oneLine(text: string, className?: string) {
   return (
-    <span data-slot="fleet-detail-line" className={cn('block md:truncate', className)} title={text}>
+    <span data-slot="fleet-detail-line" className={cn('block break-words', className)} title={text}>
       {text}
     </span>
   )
