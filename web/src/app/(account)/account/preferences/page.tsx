@@ -1,10 +1,10 @@
 'use client'
 
+import { useEffect, useMemo, useState } from 'react'
+import { useTheme } from 'next-themes'
+import { toast } from 'sonner'
+
 import { useTranslation } from '@/context/i18n-provider'
-import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
   SelectContent,
@@ -13,15 +13,23 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Palette, Save, Loader2, RotateCcw, Bug } from 'lucide-react'
-import { toast } from 'sonner'
+import { LOCALE_LABELS, selectLocale } from '@/components/language-switcher'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { useTheme } from 'next-themes'
+import { supportedLocales } from '@/lib/i18n'
 import { usePreferences, useUpdatePreferences } from '@/features/account'
 import type { FindingsInformationalPreference, UpdatePreferencesInput } from '@/features/account'
-import { PageStack } from '@/features/shared'
+import { ErrorState, SettingsRow, SettingsSaveBar, SettingsSection } from '@/features/shared'
 
-const THEME_FALLBACK = { light: 'Light', dark: 'Dark', system: 'System' } as const
+type Theme = 'light' | 'dark' | 'system'
+type PreferencesForm = Required<
+  Pick<UpdatePreferencesInput, 'theme' | 'language' | 'findings_informational'>
+>
+
+const THEMES: ReadonlyArray<{ value: Theme; fallback: string }> = [
+  { value: 'light', fallback: 'Light' },
+  { value: 'dark', fallback: 'Dark' },
+  { value: 'system', fallback: 'System' },
+]
 
 const INFORMATIONAL_CHOICES: ReadonlyArray<{
   value: FindingsInformationalPreference
@@ -32,211 +40,210 @@ const INFORMATIONAL_CHOICES: ReadonlyArray<{
   { value: 'include', fallback: 'Show informational findings' },
 ]
 
+/**
+ * Account > Preferences: theme, language and how findings views open. A new
+ * theme shows at once (Discard puts the saved one back); every change is kept
+ * through the save bar, shown only while there are unsaved changes. Saving a
+ * new language reloads the page in it.
+ */
 export default function PreferencesPage() {
-  const { t } = useTranslation()
-  const { theme, setTheme } = useTheme()
-  const { preferences, isLoading, mutate } = usePreferences()
+  const { t, locale } = useTranslation()
+  const { setTheme } = useTheme()
+  const { preferences, isLoading, isError, error, mutate } = usePreferences()
   const { updatePreferences, isUpdating } = useUpdatePreferences()
 
-  // Form state
-  const [formData, setFormData] = useState<UpdatePreferencesInput>({
-    theme: 'system',
-    language: 'en',
-    findings_informational: 'default',
-  })
-  const [hasChanges, setHasChanges] = useState(false)
+  // A personal time zone and date or time format come back when one date
+  // formatter honours them (research 273 D9); until then the browser's own
+  // zone and locale apply.
+  const saved = useMemo<PreferencesForm>(
+    () => ({
+      theme: preferences?.theme || 'system',
+      language: preferences?.language || locale,
+      findings_informational: preferences?.findings_informational || 'default',
+    }),
+    [preferences?.theme, preferences?.language, preferences?.findings_informational, locale]
+  )
+  const [form, setForm] = useState<PreferencesForm>(saved)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
-  // Populate form when preferences load. A personal time zone and date or
-  // time format come back when one date formatter honours them (research
-  // 273 D9); until then the browser's own zone and locale apply.
   useEffect(() => {
-    if (preferences) {
-      setFormData({
-        theme: preferences.theme || 'system',
-        language: preferences.language || 'en',
-        findings_informational: preferences.findings_informational || 'default',
-      })
-      setHasChanges(false)
-    }
-  }, [preferences])
+    setForm(saved)
+  }, [saved])
 
-  // Sync theme with next-themes
-  useEffect(() => {
-    if (formData.theme && formData.theme !== theme) {
-      // Only sync if different to avoid loops
-    }
-  }, [formData.theme, theme])
+  const changes = [
+    form.theme !== saved.theme && t('account.preferences.theme', 'Theme'),
+    form.language !== saved.language && t('common.language', 'Language'),
+    form.findings_informational !== saved.findings_informational &&
+      t('account.preferences.findingsInformational', 'Informational findings'),
+  ].filter((c): c is string => !!c)
 
-  // Handle field change
-  const handleChange = <K extends keyof UpdatePreferencesInput>(
-    field: K,
-    value: UpdatePreferencesInput[K]
-  ) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
-    setHasChanges(true)
-
-    // Immediately apply theme change
-    if (field === 'theme' && typeof value === 'string') {
-      setTheme(value)
-    }
+  const change = <K extends keyof PreferencesForm>(field: K, value: PreferencesForm[K]) => {
+    setForm((prev) => ({ ...prev, [field]: value }))
+    // The theme shows at once, so the choice can be judged before saving.
+    if (field === 'theme') setTheme(value as Theme)
   }
 
-  // Save preferences (theme, language and the findings default are stored
-  // on the server).
   const handleSave = async () => {
+    setSaveError(null)
     try {
-      await updatePreferences({
-        theme: formData.theme,
-        language: formData.language,
-        findings_informational: formData.findings_informational,
-      })
+      await updatePreferences(form)
       // Re-read the preferences from the server rather than caching the PUT
       // response: an older API returned the whole user object there, which
       // reset this form to its defaults (23a B4).
       await mutate()
-      setHasChanges(false)
+      if (form.language !== locale) {
+        // The page is drawn again in the new language.
+        selectLocale(form.language)
+        return
+      }
       toast.success(t('account.preferences.saved', 'Preferences saved'))
     } catch (error) {
-      toast.error(
+      setSaveError(
         getErrorMessage(error, t('account.preferences.saveFailed', 'Could not save preferences'))
       )
     }
   }
 
-  // Reset to defaults
-  const handleReset = () => {
-    const defaults: UpdatePreferencesInput = {
-      theme: 'system',
-      language: 'en',
-      findings_informational: 'default',
-    }
-    setFormData(defaults)
-    setTheme('system')
-    setHasChanges(true)
-    toast.info(t('account.preferences.resetDone', 'Preferences reset to defaults (not saved yet)'))
+  const discard = () => {
+    setForm(saved)
+    setTheme(saved.theme)
+    setSaveError(null)
   }
 
-  // Loading state
   if (isLoading) {
     return (
-      <PageStack>
-        <Skeleton className="h-48 w-full" />
-        <Skeleton className="h-48 w-full" />
-        <Skeleton className="h-64 w-full" />
-      </PageStack>
+      <div aria-busy="true" className="flex flex-col">
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="flex items-center justify-between gap-8 border-t border-border-subtle py-3.5 first:border-t-0"
+          >
+            <div className="min-w-0 flex-1 space-y-2">
+              <Skeleton className="h-4 w-48 max-w-full" />
+              <Skeleton className="h-3 w-80 max-w-full" />
+            </div>
+            <Skeleton className="h-8 w-32" />
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // A failed load never shows the defaults as if they were saved.
+  if (isError) {
+    return (
+      <ErrorState
+        title={t('account.area.nav.preferences', 'Preferences')}
+        error={error}
+        onRetry={() => void mutate()}
+      />
     )
   }
 
   return (
-    <PageStack>
-      {/* Appearance */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Palette className="h-5 w-5" />
-            {t('account.preferences.appearance', 'Appearance')}
-          </CardTitle>
-          <CardDescription>
-            {t(
-              'settings.preferences.appearanceDescription',
-              'Customize how {product} looks on your device'
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label id="theme-label">{t('account.preferences.theme', 'Theme')}</Label>
-            <div className="flex gap-2" role="group" aria-labelledby="theme-label">
-              {(['light', 'dark', 'system'] as const).map((mode) => (
-                <Button
-                  key={mode}
-                  variant={formData.theme === mode ? 'default' : 'outline'}
-                  size="sm"
-                  aria-pressed={formData.theme === mode}
-                  onClick={() => handleChange('theme', mode)}
-                  className="flex-1"
-                >
-                  {t(`account.preferences.theme.${mode}`, THEME_FALLBACK[mode])}
-                </Button>
+    <>
+      <SettingsSection
+        framed
+        id="appearance"
+        title={t('account.preferences.appearance', 'Appearance')}
+      >
+        <SettingsRow
+          wide
+          labelId="theme-label"
+          label={t('account.preferences.theme', 'Theme')}
+          hint={t(
+            'account.preferences.theme.systemHint',
+            'System follows the light or dark setting of your device.'
+          )}
+        >
+          <Select value={form.theme} onValueChange={(v) => change('theme', v as Theme)}>
+            <SelectTrigger aria-labelledby="theme-label" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {THEMES.map((mode) => (
+                <SelectItem key={mode.value} value={mode.value}>
+                  {t(`account.preferences.theme.${mode.value}`, mode.fallback)}
+                </SelectItem>
               ))}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {formData.theme === 'system'
-                ? t(
-                    'account.preferences.theme.systemHint',
-                    'Automatically switch based on your system settings'
-                  )
-                : formData.theme === 'dark'
-                  ? t('account.preferences.theme.darkHint', 'Always use dark mode')
-                  : t('account.preferences.theme.lightHint', 'Always use light mode')}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+        <SettingsRow
+          wide
+          labelId="language-label"
+          label={t('common.language', 'Language')}
+          hint={t(
+            'account.preferences.languageHint',
+            'The page opens again in the new language when you save.'
+          )}
+        >
+          <Select value={form.language} onValueChange={(v) => change('language', v)}>
+            <SelectTrigger aria-labelledby="language-label" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {supportedLocales.map((l) => (
+                <SelectItem key={l} value={l}>
+                  {LOCALE_LABELS[l] ?? l}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+      </SettingsSection>
 
       {/* Findings: the default every organization's findings views open with. */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bug className="h-5 w-5" />
-            {t('account.preferences.findings', 'Findings')}
-          </CardTitle>
-          <CardDescription>
-            {t(
-              'account.preferences.findingsDescription',
-              'How your findings work views (Active, My queue, SLA breached) open'
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2 sm:max-w-sm">
-            <Label htmlFor="findings-informational">
-              {t('account.preferences.findingsInformational', 'Informational findings')}
-            </Label>
-            <Select
-              value={formData.findings_informational}
-              onValueChange={(value) =>
-                handleChange('findings_informational', value as FindingsInformationalPreference)
-              }
-            >
-              <SelectTrigger id="findings-informational">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {INFORMATIONAL_CHOICES.map((c) => (
-                  <SelectItem key={c.value} value={c.value}>
-                    {t(`account.preferences.findingsInformational.${c.value}`, c.fallback)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              {t(
-                'account.preferences.findingsInformationalHint',
-                'Needs triage never lists them. All findings and an Informational severity filter always do.'
-              )}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Actions */}
-      <div className="flex justify-between">
-        <Button variant="outline" onClick={handleReset}>
-          <RotateCcw className="me-2 h-4 w-4" />
-          {t('account.preferences.reset', 'Reset to defaults')}
-        </Button>
-        <Button onClick={handleSave} disabled={!hasChanges || isUpdating}>
-          {isUpdating ? (
-            <Loader2 className="me-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="me-2 h-4 w-4" />
+      <SettingsSection
+        framed
+        id="findings"
+        title={t('account.preferences.findings', 'Findings')}
+        description={t(
+          'account.preferences.findingsDescription',
+          'How your findings work views (Active, My queue, SLA breached) open'
+        )}
+      >
+        <SettingsRow
+          wide
+          labelId="findings-informational-label"
+          label={t('account.preferences.findingsInformational', 'Informational findings')}
+          hint={t(
+            'account.preferences.findingsInformationalHint',
+            'Needs triage never lists them. All findings and an Informational severity filter always do.'
           )}
-          {isUpdating
-            ? t('account.saving', 'Saving...')
-            : t('account.preferences.save', 'Save preferences')}
-        </Button>
-      </div>
-    </PageStack>
+        >
+          <Select
+            value={form.findings_informational}
+            onValueChange={(value) =>
+              change('findings_informational', value as FindingsInformationalPreference)
+            }
+          >
+            <SelectTrigger
+              id="findings-informational"
+              aria-labelledby="findings-informational-label"
+              className="w-full"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {INFORMATIONAL_CHOICES.map((c) => (
+                <SelectItem key={c.value} value={c.value}>
+                  {t(`account.preferences.findingsInformational.${c.value}`, c.fallback)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingsRow>
+      </SettingsSection>
+
+      <SettingsSaveBar
+        dirty={changes.length > 0}
+        saving={isUpdating}
+        onSave={handleSave}
+        onDiscard={discard}
+        changes={changes}
+        error={saveError}
+      />
+    </>
   )
 }

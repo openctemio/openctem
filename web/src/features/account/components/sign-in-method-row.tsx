@@ -19,7 +19,10 @@ export function SignInMethodRow({
   testId?: string
 }) {
   return (
-    <li className="flex items-center justify-between gap-4 p-4" data-testid={testId}>
+    <li
+      className="flex items-center justify-between gap-4 border-t border-border-subtle py-3.5"
+      data-testid={testId}
+    >
       <div className="flex min-w-0 items-center gap-3">
         <span className="shrink-0 [&>svg]:h-5 [&>svg]:w-5">{icon}</span>
         <div className="min-w-0 space-y-0.5">
