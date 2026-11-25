@@ -105,6 +105,8 @@
   "common.dangerZone": "Vùng nguy hiểm",
   "common.detailSheet.description": "Chi tiết",
   "common.editNamed": "Sửa {name}",
+  "common.empty.noResults": "Không có kết quả",
+  "common.empty.noResultsHint": "Không có mục nào khớp với tìm kiếm hoặc bộ lọc.",
   "common.export": "Xuất",
   "common.failedToLoad": "Không tải được {title}",
   "common.filePicker.choose": "Chọn tệp",

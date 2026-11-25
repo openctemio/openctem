@@ -76,7 +76,7 @@ function StatusBadge({ t }: { t: ScimToken }) {
   if (!isActive(t)) {
     return <Badge variant="secondary">{tr('settings.scim.status.revoked', 'Revoked')}</Badge>
   }
-  return <Badge variant="default">{tr('settings.scim.status.active', 'Active')}</Badge>
+  return <Badge variant="outline">{tr('settings.scim.status.active', 'Active')}</Badge>
 }
 
 // ─────────────────────────────────────────────────────────

@@ -264,14 +264,6 @@ export function SecretStoreSection() {
           'scans.credentials.empty.description',
           'Add credentials to authenticate with template sources.'
         )}
-        action={
-          <Can permission={Permission.SecretStoreWrite}>
-            <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-              <Plus className="h-4 w-4" />
-              {t('scans.credentials.add', 'Add credential')}
-            </Button>
-          </Can>
-        }
       />
     )
   } else {

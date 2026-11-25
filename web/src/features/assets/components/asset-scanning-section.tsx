@@ -186,7 +186,8 @@ export function AssetScanningSection({ asset, onShowDetails }: AssetScanningSect
         {(canAddScope || canConfirm || canExclude || canScan || tenableType) && (
           <div className="flex flex-wrap items-center gap-2">
             {canScan && (
-              <Button size="sm" onClick={() => setScanOpen(true)}>
+              // A section action: the sheet's and the page's main action is Edit.
+              <Button variant="outline" size="sm" onClick={() => setScanOpen(true)}>
                 <Play className="me-1.5 h-3.5 w-3.5" aria-hidden />
                 {t('assets.scanning.scanNow', 'Scan now')}
               </Button>

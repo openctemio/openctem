@@ -178,7 +178,7 @@ export default function RolesPage() {
   )
 
   const dataAccess = (role: Role) => (
-    <Badge variant={role.has_full_data_access ? 'default' : 'secondary'}>
+    <Badge variant={role.has_full_data_access ? 'outline' : 'secondary'}>
       {role.has_full_data_access
         ? t('org.rolesPage.fullAccess', 'Full access')
         : t('org.rolesPage.teamBased', 'Team-based')}

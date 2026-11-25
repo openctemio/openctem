@@ -1,6 +1,8 @@
 'use client'
 
 import { Main } from '@/components/layout'
+import Link from '@/components/link'
+import { Button } from '@/components/ui/button'
 import { PageHeader, PageStack, EmptyState, ErrorState } from '@/features/shared'
 import { useDashboardStats } from '@/features/dashboard/hooks/use-dashboard-stats'
 import { useFindingTypeStats } from '@/features/exposures/hooks'
@@ -65,8 +67,13 @@ export default function CodeWeaknessesPage() {
             title={t('exposures.code.emptyTitle', 'No code weaknesses yet')}
             description={t(
               'exposures.code.emptyDescription',
-              'Configure static analysis (SAST) scanners to detect security weaknesses in your code.'
+              'Scan your code repositories to find security weaknesses in the code.'
             )}
+            action={
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/scans">{t('exposures.empty.setUpScan', 'Set up a scan')}</Link>
+              </Button>
+            }
           />
         ) : !typeStats.scoped ? (
           <TypeBreakdownUnavailable

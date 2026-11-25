@@ -137,12 +137,6 @@ export function SCMConnectionsSection({
               icon={Link2}
               title="No SCM Connections"
               description="Connect your GitHub, GitLab, or Bitbucket account to import repositories"
-              action={
-                <Button onClick={() => setAddDialogOpen(true)}>
-                  <Plus className="me-2 h-4 w-4" />
-                  Add Your First Connection
-                </Button>
-              }
             />
           )}
         </CollapsibleContent>

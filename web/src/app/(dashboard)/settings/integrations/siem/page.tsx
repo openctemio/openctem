@@ -250,14 +250,6 @@ export default function SIEMIntegrationPage() {
               'siemIntegration.empty.description',
               'Add a Splunk HTTP Event Collector to start forwarding security events to your SIEM.'
             )}
-            action={
-              <Can route="PUT /api/v1/integrations/{id}">
-                <Button size="sm" onClick={() => setShowForm(true)}>
-                  <Plus className="me-2 h-4 w-4" />
-                  {t('siemIntegration.add', 'Add Splunk HEC')}
-                </Button>
-              </Can>
-            }
           />
         ) : (
           <DataTable

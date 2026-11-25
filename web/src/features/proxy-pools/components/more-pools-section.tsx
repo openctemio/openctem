@@ -49,9 +49,11 @@ export function MorePoolsSection({ pools, canWrite, canDelete }: MorePoolsSectio
         'Pools for one network segment or a few sensors. Pick them on a sensor under Network path.'
       )}
       actions={
+        // The page's main action is the default pool's: this one is secondary.
         <GatedButton
           allowed={canWrite}
           reason={noWrite}
+          variant="outline"
           size="sm"
           onClick={() => setEditing('new')}
         >

@@ -38,9 +38,10 @@ describe('programs page', () => {
     ).toBeGreaterThan(0)
   })
 
-  it('offers Import program inside the empty state for writers only', () => {
+  it('offers Import program once, in the header, for writers only', () => {
     const { unmount } = render(<ProgramsPage />)
-    expect(screen.getAllByRole('link', { name: /import program/i })).toHaveLength(2)
+    // The empty state does not repeat the header's main action.
+    expect(screen.getAllByRole('link', { name: /import program/i })).toHaveLength(1)
     unmount()
     granted = new Set(['attack_surface:programs:read'])
     render(<ProgramsPage />)
