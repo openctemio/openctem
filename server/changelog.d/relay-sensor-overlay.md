@@ -9,3 +9,6 @@
   `-relay` image (sensor v0.42.0 or later); its tag follows `sensor.latest` like the bundled sensor's.
 - `install.sh` verifies a sensor profile image (`<version>-relay` and the like) against the sensor release
   workflow at its release tag.
+- The bundled sensor's default (`sensor.latest`) moves to v0.42.0, the first sensor release that publishes the
+  `-relay` image. It scans each target host under a per-host budget, at the Standard pacing level by default; its
+  seccomp profile is unchanged from v0.41.1.

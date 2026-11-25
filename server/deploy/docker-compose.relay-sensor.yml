@@ -76,7 +76,7 @@ services:
         max-file: "5"
 
   relay-sensor:
-    image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.41.1}-relay
+    image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.42.0}-relay
     environment:
       SENSOR_API_URL: https://${OPENCTEM_HOSTNAME:?OPENCTEM_HOSTNAME is required (DNS name or IP clients use)}
       SENSOR_CA_CERT_FILE: ${SENSOR_CA_CERT_FILE-/ca/openctem-root-ca.crt}
