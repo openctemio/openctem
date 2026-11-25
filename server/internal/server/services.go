@@ -992,6 +992,9 @@ type Services struct {
 	AIKnowledge *aiknowledge.Service
 	// AIExecutor runs single-shot AI kinds in the API process.
 	AIExecutor *aianalysis.BuiltinExecutor
+	// AIWorker sends AI agents' runs to the organization's AI workers and
+	// applies their results (nil when AI or the command queue is off).
+	AIWorker *aianalysis.WorkerExecutor
 
 	// WebSocket
 	WebSocketHub *websocket.Hub
@@ -2190,6 +2193,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Per-use-case settings: off refuses, suggest never applies, the data
 		// class ceiling and minimum confidence (docs/architecture/ai-use-cases.md).
 		s.AIExecutor.SetUseCases(s.TenantAI)
+		// The organization's switch and limits on changes without a person
+		// (docs/architecture/ai-autonomy.md).
+		s.AIExecutor.SetAutonomy(s.TenantAI)
 		s.AITriage.SetUseCases(s.TenantAI)
 		if s.PlatformAI != nil {
 			s.AIExecutor.SetOwnProviderPolicy(s.PlatformAI.OrgProviderAllowed)
@@ -3494,8 +3500,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// queue (docs/architecture/ai-analysis.md).
 		if s.Command != nil {
 			jobs := analysisJobQueue{cmds: s.Command}
-			aianalysis.NewWorkerExecutor(s.AIExecutor, jobs, s.Audit, log)
+			s.AIWorker = aianalysis.NewWorkerExecutor(s.AIExecutor, jobs, s.Audit, log)
 			s.AIAnalysis.SetJobCanceler(jobs)
+			// A result left untaken (its request ended first) is taken by
+			// the run sweep before it ends runs for lack of a result.
+			s.AIAnalysis.SetResultApplier(s.AIWorker)
 		}
 	}
 

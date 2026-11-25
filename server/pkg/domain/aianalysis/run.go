@@ -55,6 +55,17 @@ type Run struct {
 	// stored so a worker's result, applied in a later request, is held to
 	// the same rule.
 	InjectionSuspected bool
+	// SubjectRowVersion is the finding's row version when the run built its
+	// bundle (nil: unknown). A worker's result is applied against it, so a
+	// change someone made in between turns the AI agent's changes into
+	// comments.
+	SubjectRowVersion *int64
+	// ModelFamily is the model family a worker reported (lower case).
+	ModelFamily string
+	// Outcome is what the run did to its subject ("" while live).
+	Outcome RunOutcome
+	// ActionLog is each suggestion and what became of it (codes only).
+	ActionLog []ActionLogEntry
 
 	FieldsSent           []string
 	FieldsWithheld       []string
@@ -85,4 +96,71 @@ type Run struct {
 	StartedAt   *time.Time
 	CompletedAt *time.Time
 	CreatedAt   time.Time
+}
+
+// RunOutcome is what a finished run did to its subject, in one word.
+type RunOutcome string
+
+const (
+	// OutcomeApplied: the AI agent changed the subject.
+	OutcomeApplied RunOutcome = "applied"
+	// OutcomeProposed: a suggestion or a request waits for a person.
+	OutcomeProposed RunOutcome = "proposed"
+	// OutcomeNoChange: the run only added information (a summary, a plan,
+	// a verdict that agrees with the current state).
+	OutcomeNoChange RunOutcome = "no_change"
+	// OutcomeAbstained: nothing usable came back.
+	OutcomeAbstained RunOutcome = "abstained"
+)
+
+// MaxActionLog bounds a run's action log (also a database constraint).
+const MaxActionLog = 32
+
+// ActionLogEntry is one suggestion of a run and what became of it. Codes
+// only: the text the AI agent wrote is in its comments.
+type ActionLogEntry struct {
+	Kind    string `json:"kind"`
+	Outcome string `json:"outcome"`
+	Reason  string `json:"reason,omitempty"`
+}
+
+// Error codes of a worker result the platform refused or that failed
+// (docs/architecture/ai-analysis.md, "Applying a worker's result").
+const (
+	// ErrorJobMismatch: the result names another job than the one the
+	// platform sent for the run.
+	ErrorJobMismatch = "job_mismatch"
+	// ErrorNoResult: the job completed without a result document.
+	ErrorNoResult = "no_result"
+	// ErrorResultTooLarge: the result is over the document limit.
+	ErrorResultTooLarge = "result_too_large"
+	// ErrorAIAgentUnavailable: the AI agent can no longer act (paused,
+	// disabled, deleted, no permission left, the finding out of its scope).
+	ErrorAIAgentUnavailable = "ai_agent_unavailable"
+)
+
+// workerErrorCodes are the error codes a worker may report on a refused,
+// failed or incomplete result; any other code is recorded as
+// ErrorWorkerError. A code starting with "not_assessable_" is kept too.
+var workerErrorCodes = map[string]bool{
+	"unsupported_kind": true, "policy_restricted": true, "bundle_too_large": true, "model_refused": true,
+	"budget_exhausted": true, "invalid_output": true, "provider_error": true, "deadline_exceeded": true,
+}
+
+// WorkerErrorCode is the code recorded for a worker's error code: the
+// allow-listed code, a not_assessable_<reason> code, or ErrorWorkerError.
+func WorkerErrorCode(code string) string {
+	if workerErrorCodes[code] {
+		return code
+	}
+	const prefix = "not_assessable_"
+	if len(code) > len(prefix) && len(code) <= 64 && code[:len(prefix)] == prefix {
+		for _, r := range code[len(prefix):] {
+			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+				return ErrorWorkerError
+			}
+		}
+		return code
+	}
+	return ErrorWorkerError
 }
