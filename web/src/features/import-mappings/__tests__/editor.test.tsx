@@ -204,7 +204,8 @@ describe('permission gating', () => {
     perms = new Set(['integrations:read', 'integrations:manage'])
     const user = userEvent.setup({ delay: null })
     render(<ImportMappingEditor id="m1" />)
-    expect(screen.getByRole('button', { name: /Save as new version/ })).toBeDisabled()
+    // Nothing changed: no idle "Save as new version"; it appears with a change.
+    expect(screen.queryByRole('button', { name: /Save as new version/ })).toBeNull()
     await user.click(screen.getByRole('button', { name: 'More actions' }))
     expect(await screen.findByRole('menuitem', { name: /Check/ })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /Rename/ })).toBeInTheDocument()

@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
+import { FilePicker } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { importVexDocument, type VexImportResult } from '../api/vex'
 import { AssetChooser, type ChosenAsset } from './asset-chooser'
@@ -66,9 +67,12 @@ export function VexImportDialog({
   const [result, setResult] = useState<VexImportResult | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Preview was pressed without a file: said under the picker.
+  const [tried, setTried] = useState(false)
 
   useEffect(() => {
     if (!open) {
+      setTried(false)
       setStep('choose')
       setAsset(null)
       setFile(null)
@@ -89,6 +93,7 @@ export function VexImportDialog({
           )
 
   const run = async (dryRun: boolean) => {
+    setTried(true)
     if (!file) return
     setBusy(true)
     setError(null)
@@ -125,13 +130,17 @@ export function VexImportDialog({
             <>
               <div className="space-y-2">
                 <Label htmlFor="vex-file">{t('components.vexImport.file', 'VEX document')}</Label>
-                <input
+                <FilePicker
                   id="vex-file"
-                  type="file"
+                  file={file}
                   accept=".json,application/json"
-                  className="block w-full text-sm file:me-3 file:rounded-md file:border file:bg-muted file:px-3 file:py-1.5 file:text-sm"
-                  onChange={(e) => {
-                    setFile(e.target.files?.[0] ?? null)
+                  error={
+                    tried && !file
+                      ? t('components.vexImport.fileRequired', 'Choose the VEX document first.')
+                      : undefined
+                  }
+                  onFile={(f) => {
+                    setFile(f)
                     setDoc(null)
                     setError(null)
                   }}
@@ -176,7 +185,7 @@ export function VexImportDialog({
               <Button variant="outline" onClick={() => onOpenChange(false)}>
                 {t('common.cancel', 'Cancel')}
               </Button>
-              <Button onClick={() => run(true)} disabled={!file || busy}>
+              <Button onClick={() => run(true)} disabled={busy}>
                 {busy && <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden />}
                 {t('components.vexImport.preview', 'Preview')}
               </Button>
