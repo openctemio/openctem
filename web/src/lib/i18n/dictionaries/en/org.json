@@ -382,7 +382,6 @@
   "org.leave.desc": "You lose access to this organization at once. Your account and your other organizations are kept. The only owner cannot leave.",
   "org.leave.done": "You left {name}",
   "org.leave.failed": "Could not leave the organization",
-  "org.leave.section": "Organization membership",
   "org.leave.soleOwner": "Transfer ownership to another member first.",
   "org.leave.title": "Leave this organization",
   "org.lifecycle.chooseOwner": "Choose a new owner",
