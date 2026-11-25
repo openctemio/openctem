@@ -1123,7 +1123,6 @@
   "settings.pentest.typeRequired": "Cần ít nhất một loại chiến dịch",
   "settings.pentest.typeValuePlaceholder": "ví dụ: red_team",
   "settings.pentest.valueColumn": "Giá trị (khóa API)",
-  "settings.preferences.appearanceDescription": "Tùy chỉnh giao diện {product} trên thiết bị của bạn",
   "settings.saveBar.count": "{count, plural, other {# thay đổi chưa lưu}}",
   "settings.saveBar.discard": "Hủy thay đổi",
   "settings.saveBar.failed": "Không lưu được. Các thay đổi của bạn vẫn được giữ.",

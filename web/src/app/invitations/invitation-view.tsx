@@ -150,7 +150,6 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
       setIsLoading(false)
       return
     }
-    setToken(found)
 
     async function fetchInvitation(tok: string) {
       try {
@@ -164,7 +163,15 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
           }
           return
         }
-        setInvitation(await response.json())
+        const data = (await response.json()) as InvitationData
+        // The token goes into state together with the invitation, in the same
+        // update: Accept and Decline are drawn only once both are there. Set
+        // earlier, at the top of this effect, it was a separate update that
+        // could commit after the invitation (the fragment's replaceState above
+        // starts a router transition, and the footer's language menu loading
+        // late held it back), so a click on Accept in between did nothing.
+        setToken(tok)
+        setInvitation(data)
       } catch {
         setError(t('org.acceptInvite.loadFailed'))
       } finally {

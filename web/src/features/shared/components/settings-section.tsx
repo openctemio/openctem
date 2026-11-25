@@ -22,6 +22,8 @@ interface SettingsSectionProps {
    * above every section but the first. Use it inside `SettingsPage`.
    */
   framed?: boolean
+  /** A test hook on the section element. */
+  testId?: string
 }
 
 /**
@@ -68,12 +70,14 @@ export function SettingsSection({
   className,
   id,
   framed = false,
+  testId,
 }: SettingsSectionProps) {
   if (framed) {
     return (
       <section
         aria-labelledby={id}
         data-slot="settings-section"
+        data-testid={testId}
         className={cn(SETTINGS_SECTION_FRAME, className)}
       >
         <div className={SETTINGS_SECTION_HEAD}>
@@ -95,7 +99,7 @@ export function SettingsSection({
     )
   }
   return (
-    <section aria-labelledby={id} className={cn('space-y-3', className)}>
+    <section aria-labelledby={id} data-testid={testId} className={cn('space-y-3', className)}>
       <div className="flex min-w-0 flex-wrap items-end justify-between gap-x-4 gap-y-2">
         <div className={SETTINGS_SECTION_TITLE}>
           <h2 id={id} className="text-base font-semibold">

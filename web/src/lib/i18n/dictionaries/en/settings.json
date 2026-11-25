@@ -1123,7 +1123,6 @@
   "settings.pentest.typeRequired": "At least one campaign type is required",
   "settings.pentest.typeValuePlaceholder": "e.g., red_team",
   "settings.pentest.valueColumn": "Value (API key)",
-  "settings.preferences.appearanceDescription": "Customize how {product} looks on your device",
   "settings.saveBar.count": "{count, plural, one {# unsaved change} other {# unsaved changes}}",
   "settings.saveBar.discard": "Discard",
   "settings.saveBar.failed": "Couldn't save. Your changes are kept.",

@@ -8,7 +8,7 @@ import { navigateAfterSessionChange } from '@/lib/session-navigation'
 import { CONTINUE_FAILED_PARAM, CONTINUE_PATH } from '@/features/auth/lib/continue-href'
 
 import { Button } from '@/components/ui/button'
-import { EntryActions, EntryCard, EntryHeader } from '@/components/entry'
+import { EntryActions } from '@/components/entry'
 import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
@@ -20,7 +20,7 @@ import {
 import { onboardingDeclineAction } from '@/features/auth/actions/account-space-actions'
 import { ResendVerification } from '@/features/auth/components/resend-verification'
 import { CreateTeamForm } from '@/features/tenant/components/create-team-form'
-import { ErrorState, PageStack } from '@/features/shared'
+import { ErrorState, SettingsBlock, SettingsSection } from '@/features/shared'
 import { useMyTenants } from '@/lib/api/user-tenant-hooks'
 import { readTenantCookieId } from '@/lib/tenant-epoch'
 import { safeText } from '@/lib/api/error-message'
@@ -30,7 +30,7 @@ import type { WelcomeNotice as Notice } from '@/lib/auth/refresh-failure'
 
 import { useProfile } from '../api'
 import { welcomeView } from '../lib/welcome-view'
-import { MembershipsCard } from './memberships-card'
+import { HUB_ROW, MembershipsCard } from './memberships-card'
 import { WelcomeNotice } from './welcome-notice'
 
 interface OrganizationsHubProps {
@@ -160,9 +160,13 @@ export function OrganizationsHub({ needsSession, notice }: OrganizationsHubProps
   }
 
   const loading = (starting || (!options && !failed)) && !failed
+  const createOpen =
+    showCreate || (!!options && view.invitations.length === 0 && view.organizations.length === 0)
 
+  // The blocks sit in the account page's settings column (flat sections
+  // divided by hairlines), like every other account page.
   return (
-    <PageStack>
+    <>
       {firstRun && (
         <div data-testid="organizations-first-run">
           <h2 className="text-section">
@@ -208,52 +212,40 @@ export function OrganizationsHub({ needsSession, notice }: OrganizationsHubProps
       )}
 
       {options && view.verifyFirst && (
-        <EntryCard>
-          <EntryHeader
-            level={2}
-            title={t('auth.welcome.verifyTitle', 'Verify your email address')}
-            description={
-              email
-                ? t(
-                    'auth.welcome.verifyDesc',
-                    'Verify {email} to see the invitations sent to it.',
-                    {
-                      email,
-                    }
-                  )
-                : t(
-                    'auth.welcome.verifyDescNoEmail',
-                    'Verify your email address to see the invitations sent to it.'
-                  )
-            }
-          />
-          <ResendVerification email={email} />
-        </EntryCard>
+        <SettingsSection
+          framed
+          id="verify-email"
+          title={t('auth.welcome.verifyTitle', 'Verify your email address')}
+          description={
+            email
+              ? t('auth.welcome.verifyDesc', 'Verify {email} to see the invitations sent to it.', {
+                  email,
+                })
+              : t(
+                  'auth.welcome.verifyDescNoEmail',
+                  'Verify your email address to see the invitations sent to it.'
+                )
+          }
+        >
+          <SettingsBlock>
+            <ResendVerification email={email} />
+          </SettingsBlock>
+        </SettingsSection>
       )}
 
       {options && view.invitations.length > 0 && (
-        <EntryCard>
-          <EntryHeader
-            level={2}
-            title={
-              <>
-                {t('auth.welcome.invitations', 'Your invitations')}
-                <Badge variant="secondary" className="ms-2">
-                  {view.invitations.length}
-                </Badge>
-              </>
-            }
-            // A label without its value reads as broken: no address, no line.
-            description={
-              email ? t('auth.welcome.invitationsDesc', 'Sent to {email}', { email }) : undefined
-            }
-          />
-          <div className="divide-y">
+        <SettingsSection
+          framed
+          id="invitations"
+          title={t('auth.welcome.invitations', 'Your invitations')}
+          // A label without its value reads as broken: no address, no line.
+          description={
+            email ? t('auth.welcome.invitationsDesc', 'Sent to {email}', { email }) : undefined
+          }
+        >
+          <ul>
             {view.invitations.map((inv) => (
-              <div
-                key={inv.ref}
-                className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
-              >
+              <li key={inv.ref} className={HUB_ROW}>
                 <div className="min-w-0">
                   <p className="text-body truncate font-medium">{inv.organization_name}</p>
                   <p className="text-cap text-muted-foreground">
@@ -285,25 +277,22 @@ export function OrganizationsHub({ needsSession, notice }: OrganizationsHubProps
                     {t('org.onboarding.join', 'Join')}
                   </Button>
                 </EntryActions>
-              </div>
+              </li>
             ))}
-          </div>
-        </EntryCard>
+          </ul>
+        </SettingsSection>
       )}
 
       {options && view.organizations.length > 0 && (
-        <EntryCard>
-          <EntryHeader
-            level={2}
-            title={t('org.onboarding.yourCompany')}
-            description={t('org.onboarding.yourCompanyDesc')}
-          />
-          <div className="divide-y">
+        <SettingsSection
+          framed
+          id="company-organizations"
+          title={t('org.onboarding.yourCompany')}
+          description={t('org.onboarding.yourCompanyDesc')}
+        >
+          <ul>
             {view.organizations.map((org) => (
-              <div
-                key={org.ref}
-                className="flex flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
-              >
+              <li key={org.ref} className={HUB_ROW}>
                 <div className="flex min-w-0 items-center gap-3">
                   <span className="bg-surface-sunken flex size-8 shrink-0 items-center justify-center rounded-sm">
                     <Building2 className="size-4" aria-hidden />
@@ -325,32 +314,37 @@ export function OrganizationsHub({ needsSession, notice }: OrganizationsHubProps
                     {org.mode === 'join' ? t('org.onboarding.join') : t('org.onboarding.askToJoin')}
                   </Button>
                 )}
-              </div>
+              </li>
             ))}
-          </div>
-        </EntryCard>
+          </ul>
+        </SettingsSection>
       )}
 
       {options && view.canCreate && (
-        <EntryCard>
-          <EntryHeader
-            level={2}
-            title={t('auth.welcome.createTitle', 'Create an organization')}
-            description={t(
-              'auth.welcome.createDesc',
-              'An organization is where you manage exposure across a company. You can invite teammates after this.'
-            )}
-          />
-          <div>
-            {showCreate || (view.invitations.length === 0 && view.organizations.length === 0) ? (
-              <CreateTeamForm showCancel={false} isFirstTeam={true} />
-            ) : (
+        <SettingsSection
+          framed
+          id="create-organization"
+          title={t('auth.welcome.createTitle', 'Create an organization')}
+          description={t(
+            'auth.welcome.createDesc',
+            'An organization is where you manage exposure across a company. You can invite teammates after this.'
+          )}
+          // With other ways in listed, the form opens on demand: its button
+          // sits on the heading row, never on a row of its own.
+          actions={
+            !createOpen && (
               <Button variant="outline" onClick={() => setShowCreate(true)}>
                 {t('auth.welcome.createCta', 'Create an organization')}
               </Button>
-            )}
-          </div>
-        </EntryCard>
+            )
+          }
+        >
+          {createOpen && (
+            <SettingsBlock>
+              <CreateTeamForm showCancel={false} isFirstTeam={true} />
+            </SettingsBlock>
+          )}
+        </SettingsSection>
       )}
 
       {options && view.askAdministrator && !view.verifyFirst && (
@@ -380,6 +374,6 @@ export function OrganizationsHub({ needsSession, notice }: OrganizationsHubProps
         handleConfirm={decline}
         className="sm:max-w-sm"
       />
-    </PageStack>
+    </>
   )
 }
