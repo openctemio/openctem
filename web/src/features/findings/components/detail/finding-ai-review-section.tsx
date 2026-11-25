@@ -5,7 +5,11 @@ import { Bot } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
-import { useAIAgents, useFindingAIRuns } from '@/features/ai-triage/api/use-ai-agents'
+import useSWR from 'swr'
+
+import { AI_CONFIG_ENDPOINT } from '@/features/ai-triage/lib/ai-config'
+import type { AIConfig } from '@/features/ai-triage/types'
+import { useFindingAIRuns } from '@/features/ai-triage/api/use-ai-agents'
 import { aiReviewOf, codeWords, type AIReviewState } from '@/features/ai-triage/lib/ai-review'
 import { RelativeTime } from '@/features/shared'
 import { AIBadge } from '@/features/shared/components/ai-badge'
@@ -55,12 +59,16 @@ export function FindingAIReviewSection({ findingId }: { findingId: string }) {
   // Safe outside a permission provider (no permission: no request).
   const { hasPermission } = usePermissionsSafe()
   const canRead = hasPermission(Permission.AITriageRead)
-  const { data: runs } = useFindingAIRuns(findingId, canRead)
-  const { data: aiAgents } = useAIAgents(canRead)
+  // Whether AI is on for the organization comes from the AI setup the
+  // session bootstrap already put in the cache: read with no fetcher, so it
+  // never sends a request. With AI off there is nothing to review and
+  // nothing is asked.
+  const { data: aiConfig } = useSWR<AIConfig>(AI_CONFIG_ENDPOINT, null)
+  const aiOn = !!aiConfig && aiConfig.mode !== 'disabled' && aiConfig.reason !== 'not_enabled'
+  const { data: runs } = useFindingAIRuns(findingId, canRead && aiOn)
   const review = useMemo(() => aiReviewOf(runs), [runs])
   if (!review) return null
   const { run } = review
-  const aiAgent = aiAgents?.find((a) => a.id === run.ai_agent_id)
   const accountable = run.accountable.map((o) => o.name).filter(Boolean)
   const onWorker = run.executor === 'tenant_worker' || run.executor === 'platform_worker'
   const model = [run.provider, run.model].filter(Boolean).map((v) => toDisplayText(v ?? '', 128))
@@ -80,7 +88,7 @@ export function FindingAIReviewSection({ findingId }: { findingId: string }) {
         </span>
       }
     >
-      <AIBadge source="ai_agent" name={aiAgent?.name} accountable={accountable} />
+      <AIBadge source="ai_agent" name={run.ai_agent_name || undefined} accountable={accountable} />
       {review.state === 'not_reviewed' && review.reason && (
         <p className="text-sm text-muted-foreground">
           {t('findings.aiReview.notReviewedBecause', 'Not reviewed: {reason}', {

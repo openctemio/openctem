@@ -17,12 +17,22 @@ vi.mock('@/features/ai-triage/api/use-ai-agents', async (orig) => ({
     runsHook(id, enabled)
     return { data: enabled ? runs : undefined }
   },
-  useAIAgents: () => ({ data: [{ id: 'a1', name: 'Triage analyst', owners: [] }] }),
+}))
+let aiConfig: { mode: string; reason?: string } | undefined = { mode: 'platform' }
+const swrKeys: unknown[] = []
+vi.mock('swr', async (orig) => ({
+  ...(await orig<typeof import('swr')>()),
+  // The section reads the AI setup the bootstrap seeded, never fetching it.
+  default: (key: unknown, fetcher: unknown) => {
+    swrKeys.push([key, fetcher])
+    return { data: aiConfig }
+  },
 }))
 
 const base: AIRun = {
   id: 'r1',
   ai_agent_id: 'a1',
+  ai_agent_name: 'Triage analyst',
   kind: 'triage.v1',
   executor: 'tenant_worker',
   sensor_id: 's1',
@@ -45,6 +55,7 @@ describe('FindingAIReviewSection', () => {
   beforeEach(() => {
     runs = [base]
     canRead = true
+    aiConfig = { mode: 'platform' }
     runsHook.mockClear()
   })
 
@@ -80,6 +91,23 @@ describe('FindingAIReviewSection', () => {
 
   it('sends no request and shows nothing without ai_triage:read', () => {
     canRead = false
+    const { container } = render(<FindingAIReviewSection findingId="f1" />)
+    expect(runsHook).toHaveBeenCalledWith('f1', false)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('names the AI agent from the run', () => {
+    render(<FindingAIReviewSection findingId="f1" />)
+    expect(screen.getByTestId('ai-badge')).toHaveTextContent('Triage analyst')
+  })
+
+  it('reads the AI setup from the cache without a fetcher', () => {
+    render(<FindingAIReviewSection findingId="f1" />)
+    expect(swrKeys).toContainEqual(['/api/v1/findings/ai-triage/config', null])
+  })
+
+  it('sends no request while AI is off for the organization', () => {
+    aiConfig = { mode: 'disabled', reason: 'not_enabled' }
     const { container } = render(<FindingAIReviewSection findingId="f1" />)
     expect(runsHook).toHaveBeenCalledWith('f1', false)
     expect(container).toBeEmptyDOMElement()

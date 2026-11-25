@@ -350,7 +350,7 @@ levels.
 | `POST /api/v1/ai/agents/{id}/disable` | `service_accounts:manage` |
 | `POST /api/v1/ai/agents/{id}/suspend` | `ai_triage:read`; an accountable person or `service_accounts:manage` |
 | `POST /api/v1/ai/agents/{id}/attest` | `ai_triage:read` + recent sign-in; an accountable person or an administrator |
-| `GET /api/v1/ai/runs/{id}`, `GET /api/v1/findings/{id}/ai/runs` | `findings:read` + `ai_triage:read`; the subject in the caller's scope |
+| `GET /api/v1/ai/runs/{id}`, `GET /api/v1/findings/{id}/ai/runs` | `findings:read` + `ai_triage:read`; the subject in the caller's scope. Each run names its AI agent (`ai_agent_name`); the finding's runs are also a part of the finding page view |
 | `POST /api/v1/findings/{id}/ai/analyze` | `findings:read` + `ai_triage:trigger`, rate-limited; the finding in the caller's scope; the AI agent acts within its own principal |
 
 ## Tests
