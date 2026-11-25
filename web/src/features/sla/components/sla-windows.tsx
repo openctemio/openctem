@@ -112,7 +112,7 @@ export function SlaWindows({ policy }: { policy: SlaWindowValues }) {
             title={t(SEVERITY_LABEL_KEYS[w.dot], w.label)}
           >
             <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS[w.dot])} />
-            <span>{w.short}</span>
+            <span>{t(SEVERITY_LABEL_KEYS[w.dot], w.label)}</span>
             <span>
               {policy[w.key] === NO_SLA
                 ? t('settings.slaPolicies.windows.noSla', 'no SLA')

@@ -108,7 +108,7 @@ describe('TargetMappingDialog', () => {
     render(
       <TargetMappingDialog open onOpenChange={() => {}} defaultTargetType="url" onSaved={vi.fn()} />
     )
-    expect(screen.getByRole('alert')).toHaveTextContent(/already mapped to Web Application/)
+    expect(screen.getByRole('alert')).toHaveTextContent(/already mapped to Web application/)
     const submit = screen.getByRole('button', { name: 'Create mapping' })
     expect(submit).toBeDisabled()
     await user.click(submit)
@@ -162,7 +162,7 @@ describe('TargetMappingDialog', () => {
     expect(onSaved).toHaveBeenCalled()
     expect(onOpenChange).toHaveBeenCalledWith(false)
 
-    await user.click(screen.getByLabelText('Primary mapping'))
+    await user.click(screen.getByLabelText('First choice'))
     expect(screen.getByLabelText('Priority')).toHaveValue(10)
   })
 
@@ -310,7 +310,7 @@ describe('TargetMappingsPage', () => {
     asRole('super_admin')
     render(<TargetMappingsPage />)
     expect(
-      screen.getAllByRole('button', { name: /^Actions for the mapping .+ → Web Application$/ })
+      screen.getAllByRole('button', { name: /^Actions for the mapping .+ → Web application$/ })
         .length
     ).toBeGreaterThan(0)
   })

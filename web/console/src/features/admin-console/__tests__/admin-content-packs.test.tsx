@@ -83,7 +83,7 @@ describe('AddContentPackDialog', () => {
     await user.click(screen.getByRole('tab', { name: 'Import from a URL' }))
     await enter(user, screen.getByLabelText('Name'), 'nuclei-core')
     await enter(user, screen.getByLabelText('Version'), '10.2.4')
-    await enter(user, screen.getByLabelText('Release URL (https)'), 'https://example.test/p.tgz')
+    await enter(user, screen.getByLabelText('Release address'), 'https://example.test/p.tgz')
     await enter(user, screen.getByLabelText('Expected digest'), DIGEST)
   }
 

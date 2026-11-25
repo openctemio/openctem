@@ -23,7 +23,7 @@
   "assetSources.default.list": "Thứ tự nguồn mặc định",
   "assetSources.default.scope": "mọi thuộc tính",
   "assetSources.default.title": "Mặc định cho mọi thuộc tính",
-  "assetSources.description": "Tài sản nhận dữ liệu từ lần quét, tệp nhập, trình kết nối, nguồn cấp và con người. Chọn nguồn quyết định từng loại giá trị.",
+  "assetSources.description": "Tài sản nhận dữ liệu từ lượt quét, tệp nhập, trình kết nối, nguồn cấp và con người. Chọn nguồn quyết định từng loại giá trị.",
   "assetSources.dragHandle": "Sắp xếp lại {name}",
   "assetSources.errorTitle": "cài đặt nguồn tài sản",
   "assetSources.inherits": "Dùng thứ tự mặc định.",

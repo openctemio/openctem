@@ -121,9 +121,6 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
                   <DetailField label={t('admin.users.field.created', 'Created')}>
                     <RelativeTime date={user.created_at} />
                   </DetailField>
-                  <DetailField label={t('admin.users.field.id', 'User ID')}>
-                    <code className="text-xs break-all select-all">{user.id}</code>
-                  </DetailField>
                 </DetailFieldGrid>
               </CardContent>
             </Card>

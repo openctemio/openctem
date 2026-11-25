@@ -14,7 +14,7 @@ const viT = (key: string, fallback?: string, vars?: TranslateVars) =>
 
 describe('suppression labels', () => {
   it('render English without a translator', () => {
-    expect(suppressionTypeLabel('wont_fix')).toBe("Won't Fix")
+    expect(suppressionTypeLabel('wont_fix')).toBe("Won't fix")
     expect(suppressionStatusLabel('pending')).toBe('Pending')
   })
 

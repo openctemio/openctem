@@ -160,7 +160,7 @@ describe('ApprovalDialog', () => {
       )
       // The title and description say it is a decision, not a request.
       expect(screen.getByRole('heading', { name: 'Mark as false positive' })).toBeInTheDocument()
-      expect(screen.queryByText('Request Status Approval')).not.toBeInTheDocument()
+      expect(screen.queryByText('Request status approval')).not.toBeInTheDocument()
       expect(screen.queryByText(/needs approval/)).not.toBeInTheDocument()
       await chooseReason(user, 'Test or example code')
       await user.type(screen.getByLabelText(/^Note/), 'fixture')
@@ -217,7 +217,7 @@ describe('ApprovalDialog', () => {
       render(<ApprovalDialog {...defaultProps} targetStatus="accepted" />)
       expect(screen.getByRole('status')).toHaveTextContent(/the risk is accepted at once/)
       expect(screen.getByRole('heading', { name: 'Accept the risk' })).toBeInTheDocument()
-      expect(screen.queryByText('Request Status Approval')).not.toBeInTheDocument()
+      expect(screen.queryByText('Request status approval')).not.toBeInTheDocument()
       await user.type(screen.getByLabelText(/^Note/), 'Compensating control')
       await chooseReason(user, 'Compensating control')
       await user.click(screen.getByText('Review'))
@@ -251,7 +251,7 @@ describe('ApprovalDialog', () => {
       }
       render(<ApprovalDialog {...defaultProps} targetStatus="accepted" />)
       expect(screen.queryByRole('status')).not.toBeInTheDocument()
-      expect(screen.getByRole('heading', { name: 'Request Status Approval' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Request status approval' })).toBeInTheDocument()
     })
   })
 
@@ -263,13 +263,13 @@ describe('ApprovalDialog', () => {
     it('renders dialog when open is true', () => {
       render(<ApprovalDialog {...defaultProps} />)
 
-      expect(screen.getByText('Request Status Approval')).toBeInTheDocument()
+      expect(screen.getByText('Request status approval')).toBeInTheDocument()
     })
 
     it('does not render dialog content when open is false', () => {
       render(<ApprovalDialog {...defaultProps} open={false} />)
 
-      expect(screen.queryByText('Request Status Approval')).not.toBeInTheDocument()
+      expect(screen.queryByText('Request status approval')).not.toBeInTheDocument()
     })
 
     it('shows the target status label in the description', () => {
@@ -384,8 +384,8 @@ describe('ApprovalDialog', () => {
       const reviewButton = screen.getByText('Review')
       await user.click(reviewButton)
 
-      // Step 2: Click Submit for Approval on confirmation step
-      const submitButton = screen.getByText('Submit for Approval')
+      // Step 2: Click Submit for approval on confirmation step
+      const submitButton = screen.getByText('Submit for approval')
       await user.click(submitButton)
 
       expect(mockRequestApproval).toHaveBeenCalledWith({
@@ -407,7 +407,7 @@ describe('ApprovalDialog', () => {
       await user.type(screen.getByLabelText(/^Note/), 'Compensating control')
       await chooseReason(user, 'Compensating control')
       await user.click(screen.getByText('Review'))
-      await user.click(screen.getByText('Submit for Approval'))
+      await user.click(screen.getByText('Submit for approval'))
 
       const body = mockRequestApproval.mock.calls[0][0]
       expect(body.requested_status).toBe('accepted')
@@ -481,7 +481,7 @@ describe('ApprovalDialog approval policy', () => {
     expect(banner).toHaveTextContent('Two approvers: 2 approval(s) needed')
     expect(banner).toHaveTextContent('Why: critical severity, known exploited (KEV).')
     expect(banner).toHaveTextContent('Set by the platform default.')
-    expect(banner).toHaveTextContent('5 approvers, 2 in the security pool')
+    expect(banner).toHaveTextContent('5 approvers, 2 in the security reviewer group')
     expect(banner).toHaveTextContent('Approvers confirm their identity before they decide.')
     expect(banner).toHaveTextContent('at most 30 days')
     expect(screen.queryByTestId('approval-evaluation-unsatisfiable')).not.toBeInTheDocument()

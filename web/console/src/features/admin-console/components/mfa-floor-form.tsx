@@ -72,7 +72,7 @@ export function MFAFloorForm({ settings, canEdit, onSaved }: MFAFloorFormProps) 
   const lowering = RANK[floor] < RANK[settings.floor]
 
   const label: Record<MFAFloor, string> = {
-    none: t('admin.mfaFloor.none', 'No floor'),
+    none: t('admin.mfaFloor.none', 'No minimum'),
     admins: t('admin.mfaFloor.admins', 'Owners and administrators'),
     everyone: t('admin.mfaFloor.everyone', 'Everyone'),
   }
@@ -95,7 +95,7 @@ export function MFAFloorForm({ settings, canEdit, onSaved }: MFAFloorFormProps) 
         reason,
         version: settings.version,
       })
-      toast.success(t('admin.mfaFloor.saved', 'Two-factor floor saved'))
+      toast.success(t('admin.mfaFloor.saved', 'Minimum two-factor rule saved'))
       onSaved()
     } catch (e) {
       if (
@@ -122,7 +122,7 @@ export function MFAFloorForm({ settings, canEdit, onSaved }: MFAFloorFormProps) 
       <SettingsSection
         framed
         id="mfa-floor"
-        title={t('admin.mfaFloor.title', 'Two-factor floor')}
+        title={t('admin.mfaFloor.title', 'Minimum two-factor rule')}
         description={t(
           'admin.mfaFloor.description',
           'Who must use two-factor in every organization. Organizations can require more, never less.'
@@ -146,7 +146,7 @@ export function MFAFloorForm({ settings, canEdit, onSaved }: MFAFloorFormProps) 
             value={floor}
             onValueChange={(v) => setFloor(v as MFAFloor)}
             disabled={!canEdit}
-            aria-label={t('admin.mfaFloor.title', 'Two-factor floor')}
+            aria-label={t('admin.mfaFloor.title', 'Minimum two-factor rule')}
           >
             {(['none', 'admins', 'everyone'] as const).map((f) => (
               <div key={f} className="flex items-start gap-3">
@@ -238,8 +238,8 @@ export function MFAFloorForm({ settings, canEdit, onSaved }: MFAFloorFormProps) 
         destructive={lowering}
         title={
           lowering
-            ? t('admin.mfaFloor.confirmLowerTitle', 'Lower the two-factor floor?')
-            : t('admin.mfaFloor.confirmTitle', 'Change the two-factor floor?')
+            ? t('admin.mfaFloor.confirmLowerTitle', 'Lower the minimum two-factor rule?')
+            : t('admin.mfaFloor.confirmTitle', 'Change the minimum two-factor rule?')
         }
         desc={
           lowering
@@ -252,7 +252,7 @@ export function MFAFloorForm({ settings, canEdit, onSaved }: MFAFloorFormProps) 
                 'Applies at once to every organization. Recorded in the admin audit log and sent to every administrator.'
               )
         }
-        confirmText={t('admin.mfaFloor.confirmButton', 'Save two-factor floor')}
+        confirmText={t('admin.mfaFloor.confirmButton', 'Save minimum')}
         onConfirm={save}
       />
     </>

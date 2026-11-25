@@ -127,7 +127,9 @@ function ResultBadge({ result }: { result: AuditResult }) {
 
 const actorText = (log: AuditLog, t: TFn) =>
   log.actor_email ? toDisplayText(log.actor_email, 200) : t('auditLog.system', 'System')
-const resourceText = (log: AuditLog) => toDisplayText(log.resource_name || log.resource_id, 200)
+// An event without a resource name shows the kind of resource, never its id.
+const resourceText = (log: AuditLog, typeLabel: (type: string) => string) =>
+  toDisplayText(log.resource_name || typeLabel(log.resource_type), 200)
 
 // Frame widths (px) under which a column gives way, so the table fits its
 // frame instead of cutting a header: the severity first, then the actor, then
@@ -283,10 +285,14 @@ export default function AuditLogPage() {
         header: ({ column }) => <DataTableColumnHeader column={column} title={resourceLabel} />,
         cell: ({ row }) => (
           <div className="flex min-w-0 flex-col">
-            <span className="truncate text-sm">{resourceText(row.original)}</span>
-            <span className="truncate text-xs text-muted-foreground">
-              {resourceTypeLabel(row.original.resource_type)}
+            <span className="truncate text-sm">
+              {resourceText(row.original, resourceTypeLabel)}
             </span>
+            {row.original.resource_name ? (
+              <span className="truncate text-xs text-muted-foreground">
+                {resourceTypeLabel(row.original.resource_type)}
+              </span>
+            ) : null}
           </div>
         ),
       },
@@ -592,7 +598,7 @@ export default function AuditLogPage() {
             mobileRow={(log) => (
               <PersonPhoneCard
                 title={formatAction(log.action, t)}
-                address={`${actorText(log, t)}, ${resourceText(log)}`}
+                address={`${actorText(log, t)}, ${resourceText(log, resourceTypeLabel)}`}
                 onOpen={() => setSelectedLog(log)}
                 facts={
                   <>

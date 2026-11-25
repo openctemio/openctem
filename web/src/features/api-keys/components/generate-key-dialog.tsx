@@ -33,6 +33,7 @@ import {
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { copyToClipboard } from '@/lib/clipboard'
 import { useTranslation } from '@/context/i18n-provider'
+import { usePermissionLabel } from '@/lib/use-permission-label'
 import { useApiKeyPolicy } from '../api/use-api-keys'
 import { expiryOptionsFor } from '../lib/expiry'
 import type { CreateAPIKeyRequest } from '../types/api-key.types'
@@ -66,6 +67,7 @@ export function GenerateKeyDialog({
   namePlaceholder?: string
 }) {
   const { t } = useTranslation()
+  const permissionLabel = usePermissionLabel()
   const [name, setName] = useState('')
   const [desc, setDesc] = useState('')
   const policy = useApiKeyPolicy(open)
@@ -179,7 +181,7 @@ export function GenerateKeyDialog({
                 {API_KEY_SCOPES.map((s) => (
                   <label key={s} className="flex items-center gap-2 text-sm">
                     <Checkbox checked={scopes.includes(s)} onCheckedChange={() => toggleScope(s)} />
-                    <span className="font-mono text-xs">{s}</span>
+                    <span className="text-sm">{permissionLabel(s)}</span>
                   </label>
                 ))}
               </div>

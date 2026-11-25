@@ -48,7 +48,6 @@ import {
   Plus,
   MoreHorizontal,
   ExternalLink,
-  Copy,
   Globe,
   Server,
   Database,
@@ -596,11 +595,6 @@ function AssetGroupDetailContent({ params }: PageProps) {
   const envLabel = (env: string) => t(`assetGroups.environment.${env}`, env)
 
   // Handlers
-  const handleCopyId = () => {
-    copyToClipboard(group.id)
-    toast.success(t('assetGroups.idCopied', 'Group ID copied'))
-  }
-
   const handleCopyLink = () => {
     copyToClipboard(shareableLink(`/assets/groups/${group.id}`))
     toast.success(t('assetGroups.linkCopied', 'Link copied'))
@@ -756,10 +750,6 @@ function AssetGroupDetailContent({ params }: PageProps) {
               </div>
             }
           >
-            <Button variant="outline" size="sm" onClick={handleCopyId}>
-              <Copy className="me-2 h-4 w-4" />
-              {t('assetGroups.detail.copyId', 'Copy ID')}
-            </Button>
             <Can permission={Permission.AssetGroupsWrite}>
               <Button variant="outline" size="sm" onClick={handleEdit}>
                 <Pencil className="me-2 h-4 w-4" />
@@ -970,13 +960,6 @@ function AssetGroupDetailContent({ params }: PageProps) {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                          {t('assetGroups.detail.info.id', 'Group ID')}
-                        </span>
-                        <span className="font-mono">{group.id}</span>
-                      </div>
-                      <Separator />
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">
                           {t('assetGroups.detail.info.created', 'Created')}

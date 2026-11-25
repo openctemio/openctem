@@ -67,7 +67,7 @@ export default function MisconfigurationsPage() {
           title={t('exposures.page.title', 'Exposures')}
           description={t(
             'exposures.misconfigurations.description',
-            'Infrastructure and cloud misconfigurations found by IaC and cloud posture scanning, by severity.'
+            'Infrastructure and cloud misconfigurations found by infrastructure-as-code and cloud scans, by severity.'
           )}
         >
           <ViewFindingsButton

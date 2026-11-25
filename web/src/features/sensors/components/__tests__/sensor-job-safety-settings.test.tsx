@@ -111,10 +111,11 @@ describe('Settings › Sensor job safety', () => {
     open()
     const oob = screen.getByRole('switch', { name: 'Out-of-band callbacks' })
     expect(screen.getByRole('switch', { name: 'Custom templates' })).toBeInTheDocument()
+    // The wording pass hides code and environment names on purpose: no mono
+    // "tech" line under the hint any more.
     const hint = document.getElementById(oob.getAttribute('aria-describedby')!)!
-    const tech = hint.querySelector('[data-slot=settings-row-tech] .font-mono')
-    expect(tech).toHaveTextContent('interactsh, allow_interactsh, SENSOR_OOB_SERVER')
-    // Outside that line, no label or hint on the page carries an identifier.
+    expect(hint.querySelector('[data-slot=settings-row-tech]')).toBeNull()
+    // No label or hint on the page carries an identifier.
     const main = document.body.cloneNode(true) as HTMLElement
     main.querySelectorAll('[data-slot=settings-row-tech]').forEach((e) => e.remove())
     expect(main.textContent).not.toMatch(/interactsh|allow_|SENSOR_[A-Z]/)

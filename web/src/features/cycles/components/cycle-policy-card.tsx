@@ -39,7 +39,7 @@ export function CyclePolicyCard() {
         <Label htmlFor="cycle-enforce-coverage-slo" className="font-medium">
           {t(
             'validation.cyclePolicy.enforceLabel',
-            'Require the validation coverage SLO to close a cycle'
+            'Require the validation coverage target to close a cycle'
           )}
         </Label>
         <p className="text-sm text-muted-foreground">
@@ -56,7 +56,7 @@ export function CyclePolicyCard() {
         onCheckedChange={(checked) => void onChange(checked)}
         aria-label={t(
           'validation.cyclePolicy.enforceLabel',
-          'Require the validation coverage SLO to close a cycle'
+          'Require the validation coverage target to close a cycle'
         )}
       />
     </div>

@@ -47,7 +47,8 @@ export function NotificationRow({
   const Icon = NOTIFICATION_TYPE_ICONS[notification.notification_type] || Info
   const typeLabel = t(
     `notificationTypes.${notification.notification_type}.name`,
-    NOTIFICATION_TYPE_LABELS[notification.notification_type] || notification.notification_type
+    NOTIFICATION_TYPE_LABELS[notification.notification_type] ||
+      t('notificationTypes.other.name', 'Notification')
   )
   // The server writes a notification's text in English. A fixed title shows in
   // the reader's language; any other title and the body are stored text.

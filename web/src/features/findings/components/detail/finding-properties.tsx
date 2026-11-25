@@ -17,7 +17,9 @@ import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
 import { ArrowUpRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { DetailCopyId } from '@/features/shared/components/detail-sheet'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { copyToClipboard } from '@/lib/clipboard'
 import {
   PropertyFold,
   PropertyGroup,
@@ -43,7 +45,7 @@ import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { findingDetailHref } from '../../lib/finding-link'
 import { findingSourceText, isTriageLocked } from '../../lib/finding-detail'
 import { closureReasonLabel, verificationLabel } from '../../lib/closure'
-import { CRITICALITY_LABELS } from '@/lib/criticality'
+import { CRITICALITY_LABEL_KEYS, CRITICALITY_LABELS } from '@/lib/criticality'
 import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 const CLOSED = new Set<string>(findingStatusesInCategory('closed'))
@@ -233,11 +235,14 @@ export function FindingProperties({
             ? t('findings.properties.critNotRated', 'Criticality not rated')
             : crit
               ? t('findings.properties.critLevel', '{level} criticality', {
-                  level: CRITICALITY_LABELS[crit],
+                  level: t(CRITICALITY_LABEL_KEYS[crit], CRITICALITY_LABELS[crit]),
                 })
               : null,
         asset.exposure && asset.exposure !== 'unknown'
-          ? asset.exposure.charAt(0).toUpperCase() + asset.exposure.slice(1)
+          ? t(
+              `assets.exposure.${asset.exposure}`,
+              asset.exposure.charAt(0).toUpperCase() + asset.exposure.slice(1)
+            )
           : null,
       ].filter((part): part is string => Boolean(part))
     : []
@@ -485,10 +490,17 @@ export function FindingProperties({
           )}
           {!hideTriage && (
             <PropertyRow label={t('findings.properties.id', 'ID')}>
-              <DetailCopyId
-                id={finding.id}
-                label={t('findings.properties.findingId', 'Finding ID')}
-              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  copyToClipboard(finding.id)
+                  toast.success(t('findings.properties.idCopied', 'ID copied'))
+                }}
+              >
+                {t('findings.properties.copyId', 'Copy ID')}
+              </Button>
             </PropertyRow>
           )}
         </PropertyGroup>

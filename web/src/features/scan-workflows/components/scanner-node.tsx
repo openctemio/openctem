@@ -317,12 +317,12 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
         {data.capabilityName ? (
           <div className="space-y-1 rounded-md border border-dashed px-1.5 py-1">
             <div className="flex items-center gap-1 text-xs font-medium">
-              <span className="truncate">{data.capabilityName}</span>
-              {data.capabilityTier && (
-                <Badge variant="outline" className="px-1 py-0 text-xs">
-                  {data.capabilityTier}
-                </Badge>
-              )}
+              <span className="truncate">
+                {t(
+                  `workflowStages.capability.${data.capabilityName}`,
+                  data.capabilityName.replace(/[._]+/g, ' ').replace(/^./, (c) => c.toUpperCase())
+                )}
+              </span>
             </div>
             <PortChips
               label={t('workflowStages.node.takesLower')}

@@ -20,7 +20,7 @@ describe('SharedSensorEnroll', () => {
     const user = userEvent.setup()
     render(<SharedSensorEnroll canEdit={false} onIssue={vi.fn()} />)
     await user.click(screen.getByRole('button', { name: 'Enroll a sensor' }))
-    expect(await screen.findByText('Enroll a shared sensor')).toBeInTheDocument()
+    expect(await screen.findByText('Enroll a platform sensor')).toBeInTheDocument()
     // The token is short-lived and single use: issue it right before enrolling.
     expect(screen.getByText(/right before you start the sensor/)).toBeInTheDocument()
     expect(screen.queryByLabelText('Sensor name (optional)')).not.toBeInTheDocument()

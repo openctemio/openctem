@@ -290,7 +290,7 @@ function ProviderCard({ settings, provider: p, canEdit, onSaved }: CardProps) {
               label={t('admin.socialLogin.scopes', 'Scopes')}
               hint={t(
                 'admin.socialLogin.scopesHelp',
-                'Separated by spaces. Leave empty to use the defaults shown. The scopes that identify the person cannot be removed.'
+                'Separated by spaces. Leave empty to use the defaults shown. The permissions that identify the person cannot be removed.'
               )}
             >
               {(control) => (

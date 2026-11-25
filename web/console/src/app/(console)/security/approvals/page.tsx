@@ -236,7 +236,7 @@ export default function AdminApprovalsPage() {
                   <p>
                     {t(
                       'admin.approvals.offBody',
-                      'No other super admin can approve, so these actions run on your confirmation alone. Each one is recorded as critical in the admin activity log and e-mailed to every administrator. Add a second named super admin to turn approvals on; break-glass accounts do not count, because their credentials are often held by the same people.'
+                      'No other super admin can approve, so these actions run on your confirmation alone. Each one is recorded as critical in the admin activity log and e-mailed to every administrator. Add a second named super admin to turn approvals on; emergency access accounts do not count, because their credentials are often held by the same people.'
                     )}
                   </p>
                   <Button asChild size="sm" variant="outline">
@@ -289,7 +289,7 @@ export default function AdminApprovalsPage() {
               <p className="text-sm text-muted-foreground">
                 {t(
                   'admin.approvals.breakGlassNote',
-                  'This account is a break-glass account: it can ask and reject, but never approve.'
+                  'This account is an emergency access account: it can ask and reject, but never approve.'
                 )}
               </p>
             )}

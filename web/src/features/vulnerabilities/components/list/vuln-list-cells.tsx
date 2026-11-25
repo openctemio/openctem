@@ -75,7 +75,7 @@ export function VulnTitleCell({ item }: { item: VulnListItem }) {
         <span className="min-w-0 truncate">{title}</span>
       ) : !item.in_catalog ? (
         <span className="min-w-0 truncate text-muted-foreground">
-          {t('vulnPage.list.notInCatalog', 'Not in the feed yet')}
+          {t('vulnPage.list.notInCatalog', 'Not in the catalog yet')}
         </span>
       ) : aliases ? null : (
         <span className="text-muted-foreground">—</span>

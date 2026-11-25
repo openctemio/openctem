@@ -289,7 +289,7 @@ export function ReadyToCloseList({
                 title={t('findings.closureReview.emptyTitle', 'Nothing waits for review')}
                 hint={t(
                   'findings.closureReview.emptyDescription',
-                  'When a covered scan no longer finds an issue and your closing mode asks for review, the finding waits here.'
+                  'When a scan that checked the asset no longer finds an issue and your closing mode asks for review, the finding waits here.'
                 )}
               />
             }

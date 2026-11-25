@@ -36,7 +36,7 @@ const STATE_LABELS: Record<PlatformUserState, string> = {
   unverified: 'Not verified',
   locked: 'Locked',
   blocked: 'Blocked',
-  mfa_off: 'No MFA',
+  mfa_off: 'Two-factor off',
   platform_admins: 'Console administrators',
 }
 
@@ -225,7 +225,7 @@ export default function AdminUsersPage() {
               search={{
                 value: list.q,
                 onChange: list.setSearch,
-                placeholder: t('admin.users.search', 'Search email, name or user id…'),
+                placeholder: t('admin.users.search', 'Search email or name…'),
                 label: t('admin.users.searchLabel', 'Search accounts'),
               }}
               toolbarStart={

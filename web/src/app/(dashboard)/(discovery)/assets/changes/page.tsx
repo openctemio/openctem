@@ -123,6 +123,14 @@ function sentence(value: string | undefined): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
+const EXPOSURE_VALUES = ['public', 'private', 'restricted', 'isolated', 'unknown']
+
+/** An exposure level in the page's language; an unknown value reads "Unknown", never the raw word. */
+function exposureLabel(t: T, value: string): string {
+  const key = EXPOSURE_VALUES.includes(value) ? value : 'unknown'
+  return t(`assets.exposure.${key}`, sentence(key))
+}
+
 /** A field change's value in words: booleans of is_internet_accessible read as reachability. */
 function valueLabel(t: T, field: string | undefined, value: string | undefined): string {
   if (field === 'is_internet_accessible') {
@@ -130,6 +138,7 @@ function valueLabel(t: T, field: string | undefined, value: string | undefined):
       ? t('assetTimeline.activity.internetFacing', 'Internet-facing')
       : t('assetTimeline.activity.notInternetFacing', 'Not internet-facing')
   }
+  if (field === 'exposure' && value) return exposureLabel(t, value)
   return sentence(value)
 }
 
@@ -157,7 +166,7 @@ function ExposureNow({ change, t }: { change: StateChangeResponse; t: T }) {
   const facing = change.asset_internet_accessible || change.asset_exposure === 'public'
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-      <span className="text-sm">{sentence(change.asset_exposure)}</span>
+      <span className="text-sm">{exposureLabel(t, change.asset_exposure)}</span>
       {facing && (
         <Badge variant="outline" className="font-normal">
           {t('assetTimeline.activity.internetFacing', 'Internet-facing')}

@@ -165,9 +165,9 @@ export function expiryText(
 }
 
 export const TIER_LABEL: Record<string, string> = {
-  t0: 'T0 passive',
-  t1: 'T1 safe active',
-  t2: 'T2 intrusive',
+  t0: 'Passive',
+  t1: 'Safe active',
+  t2: 'Intrusive',
 }
 
 export const TIER_HINT: Record<string, string> = {
