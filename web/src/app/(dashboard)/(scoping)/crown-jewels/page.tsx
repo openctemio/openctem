@@ -585,7 +585,7 @@ export default function CrownJewelsPage() {
       <Main>
         <PageStack>
           <PageHeader
-            title={t('crownJewels.title', 'Crown jewels')}
+            title={t('nav.item.business-context', 'Business context')}
             description={t(
               'crownJewels.description',
               'The assets whose compromise would hurt the business most.'

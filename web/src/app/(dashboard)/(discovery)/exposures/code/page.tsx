@@ -41,7 +41,7 @@ export default function CodeWeaknessesPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('exposures.code.title', 'Code weaknesses')}
+          title={t('exposures.page.title', 'Exposures')}
           description={t(
             'exposures.code.description',
             'Weaknesses found in your source code by code scans, by severity and over time.'

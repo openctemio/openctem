@@ -21,8 +21,10 @@ import {
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import {
+  breadcrumbIsNamed,
   breadcrumbLabel,
   breadcrumbLabelKey,
+  CRUMB_PARENTS,
   recordLabel,
   recordLabelKey,
 } from './breadcrumb-labels'
@@ -75,6 +77,21 @@ function crumbsFromUrl(
   const segments = pathname.split('/').filter(Boolean)
   if (segments.length === 0) return []
 
+  // A page filed under another level: that level's trail, then this page.
+  const parent = CRUMB_PARENTS[pathname]
+  if (parent) {
+    const above = crumbsFromUrl(parent, { ...opts, pageTitle: undefined })
+    return [
+      ...above.map((item) => ({ ...item, isLast: false })),
+      {
+        path: pathname,
+        label: crumb(pathname, segments[segments.length - 1]),
+        isLast: true,
+        hasPage: true,
+      },
+    ]
+  }
+
   // For detail pages (trailing id), keep the parent as a link and add the
   // record's name as the current page.
   const filteredSegments = [...segments]
@@ -94,14 +111,17 @@ function crumbsFromUrl(
   // All segments were ids: home only.
   if (filteredSegments.length === 0) return []
 
-  const items: CrumbItem[] = filteredSegments.map((segment, index) => {
+  const items: CrumbItem[] = filteredSegments.flatMap((segment, index) => {
     const path = '/' + filteredSegments.slice(0, index + 1).join('/')
+    // On a detail page the parent (e.g. "Findings") is a link, not the current page.
+    const isLast = index === filteredSegments.length - 1 && detailPageLabel === null
+    const hasPage = breadcrumbHasPage(path)
+    // A folder with no page and no name of its own is not a level anyone sees.
+    if (!isLast && !hasPage && !isIdSegment(segment) && !breadcrumbIsNamed(path, segment)) return []
     const label = isIdSegment(segment)
       ? (titles.get(path) ?? record(filteredSegments[index - 1]))
       : crumb(path, segment)
-    // On a detail page the parent (e.g. "Findings") is a link, not the current page.
-    const isLast = index === filteredSegments.length - 1 && detailPageLabel === null
-    return { path, label, isLast, hasPage: breadcrumbHasPage(path) }
+    return [{ path, label, isLast, hasPage }]
   })
   if (detailPageLabel) {
     items.push({ path: pathname, label: detailPageLabel, isLast: true, hasPage: true })
@@ -122,7 +142,13 @@ export function BreadcrumbNav({
   const titles = useBreadcrumbTitles()
 
   const breadcrumbItems = trail
-    ? trail.levels.map((level, i) => ({ ...level, isLast: i === trail.levels.length - 1 }))
+    ? // A shell's own trail takes the names pages gave their records too, so
+      // a record level reads as its name ("Acme"), not its kind.
+      trail.levels.map((level, i) => ({
+        ...level,
+        label: titles.get(level.path) ?? level.label,
+        isLast: i === trail.levels.length - 1,
+      }))
     : crumbsFromUrl(pathname, {
         hideIdSegment,
         pageTitle,

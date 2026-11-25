@@ -1110,12 +1110,7 @@ export function SensorsSection({
 
   return (
     <PageStack>
-      <PageHeader
-        title={title}
-        // From 768 px. On a phone the title row holds the title and the
-        // tab's action as an icon, so the list starts higher.
-        description={<span className="max-md:hidden">{description}</span>}
-      >
+      <PageHeader title={title} description={description}>
         {tokensTab ? null : zonesTab ? (
           <Can permission={Permission.ScanZonesWrite}>
             <Button size="sm" onClick={() => setZoneCreateOpen(true)}>

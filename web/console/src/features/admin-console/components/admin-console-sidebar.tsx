@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { ArrowLeft, Fingerprint, LogOut, Settings, ShieldCheck } from 'lucide-react'
-import Link from '@/components/link'
+import { ArrowLeft, Settings, ShieldCheck } from 'lucide-react'
 import {
   Sidebar,
   SidebarContent,
@@ -28,7 +27,7 @@ import { SidebarFooterLinks } from '@/components/layout/sidebar-footer-links'
 import { ADMIN_API_VERSION_PATH, setAdminApiVersionFetcher } from '@/hooks/use-build-versions'
 import { adminFetch } from '@console/lib/admin-api/client'
 import { useTranslation } from '@/context/i18n-provider'
-import { ConsoleLanguagePicker } from './console-language-picker'
+import { ConsoleAccountMenu } from './console-account-menu'
 import { safeConsolePath } from '../lib/console-navigation'
 import {
   activeNavUrl,
@@ -75,7 +74,8 @@ interface AdminConsoleSidebarProps {
 /**
  * Console sidebar: the shared brand row, then a fixed "Platform administration"
  * context row (with what the session acts as) where the tenant shell has its
- * organization switcher, then the console navigation and the signed-in admin.
+ * organization switcher, then the console navigation, with Help and the
+ * signed-in admin's account menu pinned under it.
  * On a settings page the navigation is the settings rail, led by "Back to
  * console", the same model as the tenant app's settings shell.
  */
@@ -196,40 +196,11 @@ export function AdminConsoleSidebar({ admin, onSignOut }: AdminConsoleSidebarPro
         </nav>
       </SidebarContent>
 
-      {/* The tenant app's footer (Help; an admin has no tenant Settings), with
-          the signed-in admin and sign-out under it. */}
+      {/* The tenant app's footer (Help; an admin has no tenant Settings), then
+          the signed-in admin as one row that opens the account menu. */}
       <SidebarFooterLinks shell="admin">
         <SidebarMenuItem>
-          <div className="grid px-2 py-1 text-sm leading-tight group-data-[collapsible=icon]:hidden">
-            <span className="truncate font-medium">{admin.name}</span>
-            <span className="truncate text-xs text-muted-foreground">{admin.email}</span>
-          </div>
-        </SidebarMenuItem>
-        <SidebarMenuItem>
-          <SidebarMenuButton
-            asChild
-            isActive={pathname === '/security/keys'}
-            tooltip={t('admin.nav.securityKeys', 'My security keys')}
-            className={NAV_BUTTON_CLASS}
-          >
-            <Link href="/security/keys">
-              <Fingerprint />
-              <span>{t('admin.nav.securityKeys', 'My security keys')}</span>
-            </Link>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-        <SidebarMenuItem>
-          <ConsoleLanguagePicker />
-        </SidebarMenuItem>
-        <SidebarMenuItem>
-          <SidebarMenuButton
-            onClick={onSignOut}
-            tooltip={t('admin.shell.signOut', 'Sign out')}
-            className={NAV_BUTTON_CLASS}
-          >
-            <LogOut />
-            <span>{t('admin.shell.signOut', 'Sign out')}</span>
-          </SidebarMenuButton>
+          <ConsoleAccountMenu admin={admin} onSignOut={onSignOut} />
         </SidebarMenuItem>
       </SidebarFooterLinks>
       <SidebarRail />

@@ -23,7 +23,6 @@ function renderDoc(doc: (typeof LEGAL_DOCS)[number], languageNote?: string) {
       title={doc.title}
       effective="Effective 1 January 2026"
       sections={legalSections(doc.doc, cfg.values)}
-      contactLine="Contact: privacy@example.com."
       languageNote={languageNote}
       labels={labels}
     />

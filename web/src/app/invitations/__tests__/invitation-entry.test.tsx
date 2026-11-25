@@ -87,13 +87,17 @@ describe('InvitationView on the entry parts', () => {
     expect(document.querySelector('[data-slot="tone-chip"]')).not.toBeNull()
   })
 
-  it('error: one h1 and the reason in one banner with the alert role', async () => {
+  it('error: one card titled by the problem, the reason as a status, the way back', async () => {
     stubLookup(404, {})
     render(<InvitationView hasSession />)
-    await waitFor(() => expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1))
-    const banners = document.querySelectorAll('[data-slot="entry-banner"]')
-    expect(banners).toHaveLength(1)
-    expect(banners[0]).toHaveAttribute('role', 'alert')
+    await waitFor(() =>
+      expect(screen.getAllByRole('heading', { level: 1 }).map((h) => h.textContent)).toEqual([
+        'This invitation link does not work',
+      ])
+    )
+    expect(document.querySelectorAll('[data-slot="entry-banner"]')).toHaveLength(0)
+    expect(screen.getByRole('status')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Go to the dashboard' })).toHaveAttribute('href', '/')
   })
 
   it('already accepted: one h1 and the organization row', async () => {

@@ -21,7 +21,9 @@ test('the Exploration page loads its groups', { tag: ['@scans'] }, async ({ page
     await expect(page.getByRole('button', { name: 'Steps: Running' })).toBeVisible()
     // Either the empty state or at least one step.
     await expect(
-      page.getByText(/^Nothing is running\.?$/).or(page.getByTestId('exploration-lead').first())
+      page
+        .getByText('Nothing is running', { exact: true })
+        .or(page.getByTestId('exploration-lead').first())
     ).toBeVisible()
     const sideways = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth

@@ -183,10 +183,7 @@ export function CampaignList() {
   ) : undefined
 
   return (
-    <HubPage
-      title={t('remediationCampaigns.title')}
-      description={t('remediationCampaigns.description')}
-    >
+    <HubPage description={t('remediationCampaigns.description')}>
       <PageStack>
         <DataTable
           columns={columns}

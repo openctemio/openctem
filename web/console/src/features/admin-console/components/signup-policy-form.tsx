@@ -4,14 +4,17 @@ import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Switch } from '@/components/ui/switch'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
-import { RelativeTime } from '@/features/shared'
+import {
+  RelativeTime,
+  SettingsBlock,
+  SettingsSaveBar,
+  SettingsSection,
+  SettingsSwitchRow,
+} from '@/features/shared'
 import type { SignupPolicyResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveSignupPolicy } from '../api/use-signup-policy'
@@ -141,63 +144,94 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
 
   return (
     <>
-      <Card>
-        {/* The question is asked once, above its choices; the page header names the page. */}
-        <CardHeader>
-          <CardDescription>{t('admin.signup.desc')}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
+      <SettingsSection
+        framed
+        id="signup-policy"
+        title={t('admin.signup.sectionTitle', 'Who can join')}
+        description={t('admin.signup.desc')}
+        meta={
+          <>
+            {t('admin.signup.current', undefined, {
+              mode: t(MODE_KEY[(policy.mode as Mode) ?? 'admin_only']),
+              source: t(SOURCE_KEY[policy.source ?? 'default'] ?? 'admin.signup.source.default'),
+            })}
+            {policy.updated_at && (
+              <>
+                {t('admin.signup.changed')}{' '}
+                <RelativeTime date={policy.updated_at} className="text-cap" />
+              </>
+            )}
+            {effectiveMode !== policy.mode && (
+              <>
+                {' '}
+                {t('admin.signup.limitedByDeployment', undefined, {
+                  mode: t(MODE_KEY[effectiveMode]),
+                })}
+              </>
+            )}
+          </>
+        }
+      >
+        <SettingsBlock>
           <Alert>
             <AlertTitle>{t('admin.signup.deployment.title')}</AlertTitle>
             <AlertDescription>
               {t(DEPLOYMENT_KEY[deploymentMode] ?? 'admin.signup.deployment.disabled')}
             </AlertDescription>
           </Alert>
+          {!canEdit && (
+            <p className="text-cap text-muted-foreground">{t('admin.signup.readOnly')}</p>
+          )}
+        </SettingsBlock>
 
-          <div className="space-y-3">
-            <p className="text-sm font-medium">{t('admin.signup.accounts.title')}</p>
-            <RadioGroup
-              value={accounts}
-              onValueChange={(v) => chooseAccounts(v as Accounts)}
-              disabled={!canEdit}
-              aria-label={t('admin.signup.accounts.title')}
-            >
-              {ACCOUNTS.map((a) => {
-                const locked = ACCOUNTS_RANK[a] > ACCOUNTS_RANK[maxAccounts]
-                return (
-                  <div key={a} className="flex items-start gap-3">
-                    <RadioGroupItem
-                      value={a}
-                      id={`${codeId}-acc-${a}`}
-                      className="mt-1"
-                      disabled={locked}
-                    />
-                    <Label htmlFor={`${codeId}-acc-${a}`} className="grid gap-1 font-normal">
-                      <span className="font-medium">{t(`admin.signup.accounts.${a}`)}</span>
-                      <span className="text-sm text-muted-foreground">
-                        {locked
-                          ? t('admin.signup.accounts.locked')
-                          : t(`admin.signup.accounts.${a}Hint`)}
-                      </span>
-                    </Label>
-                  </div>
-                )
-              })}
-            </RadioGroup>
-          </div>
+        <SettingsBlock>
+          <p id={`${codeId}-acc-title`} className="text-body font-medium">
+            {t('admin.signup.accounts.title')}
+          </p>
+          <RadioGroup
+            value={accounts}
+            onValueChange={(v) => chooseAccounts(v as Accounts)}
+            disabled={!canEdit}
+            aria-labelledby={`${codeId}-acc-title`}
+          >
+            {ACCOUNTS.map((a) => (
+              <div key={a} className="flex items-start gap-3">
+                <RadioGroupItem
+                  value={a}
+                  id={`${codeId}-acc-${a}`}
+                  className="mt-1"
+                  disabled={ACCOUNTS_RANK[a] > ACCOUNTS_RANK[maxAccounts]}
+                />
+                <Label htmlFor={`${codeId}-acc-${a}`} className="grid gap-1 font-normal">
+                  <span className="font-medium">{t(`admin.signup.accounts.${a}`)}</span>
+                  <span className="text-cap text-muted-foreground">
+                    {t(`admin.signup.accounts.${a}Hint`)}
+                  </span>
+                </Label>
+              </div>
+            ))}
+          </RadioGroup>
+          {/* One line for every option the server configuration locks, not one under each. */}
+          {ACCOUNTS.some((a) => ACCOUNTS_RANK[a] > ACCOUNTS_RANK[maxAccounts]) && (
+            <p className="text-cap text-muted-foreground">{t('admin.signup.accounts.locked')}</p>
+          )}
+        </SettingsBlock>
 
-          <p className="text-sm font-medium">{t('admin.signup.title')}</p>
+        <SettingsBlock>
+          <p id={`${codeId}-mode-title`} className="text-body font-medium">
+            {t('admin.signup.title')}
+          </p>
           <RadioGroup
             value={mode}
             onValueChange={(v) => chooseMode(v as Mode)}
             disabled={!canEdit}
-            aria-label={t('admin.signup.title')}
+            aria-labelledby={`${codeId}-mode-title`}
           >
             <div className="flex items-start gap-3">
               <RadioGroupItem value="admin_only" id={`${codeId}-admin`} className="mt-1" />
               <Label htmlFor={`${codeId}-admin`} className="grid gap-1 font-normal">
                 <span className="font-medium">{t(MODE_KEY.admin_only)}</span>
-                <span className="text-sm text-muted-foreground">
+                <span className="text-cap text-muted-foreground">
                   {t('admin.signup.mode.adminOnlyHint')}
                 </span>
               </Label>
@@ -211,7 +245,7 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
               />
               <Label htmlFor={`${codeId}-self`} className="grid gap-1 font-normal">
                 <span className="font-medium">{t(MODE_KEY.self_service)}</span>
-                <span className="text-sm text-muted-foreground">
+                <span className="text-cap text-muted-foreground">
                   {selfServiceLocked
                     ? t('admin.signup.mode.selfServiceLocked')
                     : accounts !== 'open'
@@ -221,75 +255,32 @@ export function SignupPolicyForm({ policy, canEdit, onSaved }: SignupPolicyFormP
               </Label>
             </div>
           </RadioGroup>
+        </SettingsBlock>
 
-          <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
-            <Label htmlFor={`${codeId}-po`} className="grid gap-1 font-normal">
-              <span className="font-medium">{t('admin.signup.personalOrg')}</span>
-              <span className="text-body text-muted-foreground">
-                {mode === 'self_service'
-                  ? t('admin.signup.personalOrgHint')
-                  : t('admin.signup.personalOrgNeedsSelfService')}
-              </span>
-            </Label>
-            <Switch
-              id={`${codeId}-po`}
-              checked={personalOrg}
-              onCheckedChange={setPersonalOrg}
-              disabled={!canEdit || mode !== 'self_service'}
-            />
-          </div>
-
-          <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
-            <Label htmlFor={`${codeId}-ra`} className="grid gap-1 font-normal">
-              <span className="font-medium">{t('admin.signup.requestAccess')}</span>
-              <span className="text-sm text-muted-foreground">
-                {t('admin.signup.requestAccessHint')}
-              </span>
-            </Label>
-            <Switch
-              id={`${codeId}-ra`}
-              checked={requestAccess}
-              onCheckedChange={setRequestAccess}
-              disabled={!canEdit}
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-muted-foreground">
-              {t('admin.signup.current', undefined, {
-                mode: t(MODE_KEY[(policy.mode as Mode) ?? 'admin_only']),
-                source: t(SOURCE_KEY[policy.source ?? 'default'] ?? 'admin.signup.source.default'),
-              })}
-              {policy.updated_at && (
-                <>
-                  {t('admin.signup.changed')}{' '}
-                  <RelativeTime date={policy.updated_at} className="text-xs" />
-                </>
-              )}
-              {effectiveMode !== policy.mode && (
-                <>
-                  {' '}
-                  {t('admin.signup.limitedByDeployment', undefined, {
-                    mode: t(MODE_KEY[effectiveMode]),
-                  })}
-                </>
-              )}
-            </p>
-            {canEdit && (
-              <SettingsSaveBar
-                className="basis-full"
-                dirty={dirty}
-                saving={busy}
-                onSave={openConfirm}
-                onDiscard={reset}
-              />
-            )}
-          </div>
-          {!canEdit && (
-            <p className="text-sm text-muted-foreground">{t('admin.signup.readOnly')}</p>
-          )}
-        </CardContent>
-      </Card>
+        <SettingsSwitchRow
+          id={`${codeId}-po`}
+          label={t('admin.signup.personalOrg')}
+          hint={
+            mode === 'self_service'
+              ? t('admin.signup.personalOrgHint')
+              : t('admin.signup.personalOrgNeedsSelfService')
+          }
+          checked={personalOrg}
+          onCheckedChange={setPersonalOrg}
+          disabled={!canEdit || mode !== 'self_service'}
+        />
+        <SettingsSwitchRow
+          id={`${codeId}-ra`}
+          label={t('admin.signup.requestAccess')}
+          hint={t('admin.signup.requestAccessHint')}
+          checked={requestAccess}
+          onCheckedChange={setRequestAccess}
+          disabled={!canEdit}
+        />
+      </SettingsSection>
+      {canEdit && (
+        <SettingsSaveBar dirty={dirty} saving={busy} onSave={openConfirm} onDiscard={reset} />
+      )}
 
       <ConfirmDialog
         open={confirmOpen}

@@ -11,3 +11,9 @@ export {
   type EntryHeaderProps,
   type EntryTone,
 } from './entry-card'
+export {
+  EntryBackLink,
+  EntryLinkProblem,
+  type EntryExit,
+  type EntryLinkProblemProps,
+} from './entry-exits'

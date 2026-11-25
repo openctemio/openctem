@@ -33,12 +33,7 @@ export function ScansSectionTabs() {
 export function ScansPageHeader({ children }: { children?: ReactNode }) {
   const { t } = useTranslation()
   return (
-    <PageHeader
-      title={t('scans.header.title')}
-      // From 768 px. On a phone the title row holds the title and the tab's
-      // actions as icons, so the list starts higher.
-      description={<span className="max-md:hidden">{t('scans.header.description')}</span>}
-    >
+    <PageHeader title={t('scans.header.title')} description={t('scans.header.description')}>
       {children}
     </PageHeader>
   )

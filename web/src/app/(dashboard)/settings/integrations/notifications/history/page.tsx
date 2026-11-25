@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useUrlParam } from '@/hooks/use-url-param'
@@ -16,18 +16,21 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { toast } from 'sonner'
-import { ArrowLeft, Bell, ExternalLink } from 'lucide-react'
+import { Bell, ExternalLink } from 'lucide-react'
 import {
   DataTable,
   EmptyState,
   ErrorState,
-  PageHeader,
   PageStack,
   RunStatusBadge,
   SeverityBadge,
 } from '@/features/shared'
 import type { Severity } from '@/features/shared/types'
 import { RefreshButton } from '@/components/list-page-parts'
+import {
+  NOTIFICATION_PROVIDER_LABELS,
+  NotificationSectionHeader,
+} from '@/features/integrations/components/notification-sections'
 import { Can } from '@/lib/permissions'
 import {
   useNotificationIntegrationsApi,
@@ -144,7 +147,14 @@ function buildColumns(t: Translate): ColumnDef<NotificationEventEntry>[] {
   ]
 }
 
-function HistoryList({ integrationId }: { integrationId: string }) {
+function HistoryList({
+  integrationId,
+  picker,
+}: {
+  integrationId: string
+  /** The channel picker, at the start of the table's toolbar. */
+  picker: ReactNode
+}) {
   const { t } = useTranslation()
   const columns = useMemo(() => buildColumns(t), [t])
   // Server pagination over the channel's events (page / per_page).
@@ -184,6 +194,7 @@ function HistoryList({ integrationId }: { integrationId: string }) {
         getRowId={(e) => e.id}
         isLoading={isLoading}
         showSearch={false}
+        toolbarStart={picker}
         toolbarEnd={<RefreshButton onClick={() => void handleRefresh()} loading={isLoading} />}
         manualPagination
         rowCount={total}
@@ -216,80 +227,60 @@ function HistoryContent() {
   // The channel picked here, else the one in the link, else the first.
   const selectedId = pickedId || urlId || integrations[0]?.id || ''
 
+  const picker = (
+    <Select value={selectedId} onValueChange={setPickedId}>
+      <SelectTrigger
+        className="w-[16rem] max-w-full"
+        aria-label={t('notificationChannels.history.channel', 'Channel')}
+      >
+        <SelectValue
+          placeholder={t('notificationChannels.history.selectChannel', 'Select channel…')}
+        />
+      </SelectTrigger>
+      <SelectContent>
+        {integrations.map((i) => (
+          <SelectItem key={i.id} value={i.id}>
+            {/* A long channel name ends in an ellipsis in the trigger;
+                the full name is in the list and the title. */}
+            <div className="flex min-w-0 items-center gap-2">
+              <span data-slot="select-text" title={i.name}>
+                {i.name}
+              </span>
+              <Badge variant="outline" className="shrink-0">
+                {NOTIFICATION_PROVIDER_LABELS[i.provider] ?? i.provider}
+              </Badge>
+            </div>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+
+  // The section's header stays as on Channels; the tabs show this sub-page,
+  // and the breadcrumb and the Channels tab lead back (no back-link row).
   return (
     <PageStack>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="-ms-2"
-        onClick={() => router.push('/settings/integrations/notifications')}
-      >
-        <ArrowLeft className="me-2 h-4 w-4" />
-        {t('notificationChannels.history.back', 'Back to channels')}
-      </Button>
-      <PageHeader
-        title={t('notificationChannels.history.title', 'Notification events')}
-        description={t(
-          'notificationChannels.history.description',
-          'What each notification channel sent, and whether delivery succeeded.'
-        )}
-        className="mb-6"
-      >
-        {loadingIntegrations ? (
-          <Skeleton className="h-9 w-[220px]" />
-        ) : integrations.length === 0 ? (
-          <Can route="POST /api/v1/integrations/notifications">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push('/settings/integrations/notifications')}
-            >
-              {t('notificationChannels.history.addChannel', 'Add channel')}
-            </Button>
-          </Can>
-        ) : (
-          <Select value={selectedId} onValueChange={setPickedId}>
-            <SelectTrigger
-              className="w-[220px] max-w-full"
-              aria-label={t('notificationChannels.history.channel', 'Channel')}
-            >
-              <SelectValue
-                placeholder={t('notificationChannels.history.selectChannel', 'Select channel…')}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {integrations.map((i) => (
-                <SelectItem key={i.id} value={i.id}>
-                  {/* A long channel name ends in an ellipsis in the trigger;
-                      the full name is in the list and the title. */}
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span data-slot="select-text" title={i.name}>
-                      {i.name}
-                    </span>
-                    <Badge variant="outline" className="shrink-0 text-xs">
-                      {t(
-                        `automations.notificationType.${i.provider}`,
-                        t('notificationChannels.history.providerOther', 'Other')
-                      )}
-                    </Badge>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </PageHeader>
-
-      {selectedId ? (
-        <HistoryList integrationId={selectedId} />
-      ) : (
+      <NotificationSectionHeader />
+      {loadingIntegrations ? (
+        <Skeleton className="h-64 w-full" />
+      ) : integrations.length === 0 ? (
         <EmptyState
           icon={Bell}
-          title={t(
-            'notificationChannels.history.selectPrompt',
-            'Select a channel to view its notification events'
+          title={t('notificationChannels.history.noChannels', 'No channels yet')}
+          description={t(
+            'notificationChannels.history.noChannelsDescription',
+            'Add a channel; the events it sends are listed here.'
           )}
+          action={
+            <Can route="POST /api/v1/integrations/notifications">
+              <Button onClick={() => router.push('/settings/integrations/notifications')}>
+                {t('notificationChannels.history.addChannel', 'Add channel')}
+              </Button>
+            </Can>
+          }
         />
+      ) : (
+        <HistoryList integrationId={selectedId} picker={picker} />
       )}
     </PageStack>
   )

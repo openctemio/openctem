@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useId, useState } from 'react'
 import { toast } from 'sonner'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
+import { SettingsBlock, SettingsSaveBar, SettingsSection } from '@/features/shared'
 import { saveEmailRelay } from '../api/use-platform-settings'
 import type { EmailRelayMode, EmailRelaySettings } from '../types'
 import {
@@ -77,58 +76,57 @@ export function EmailRelayForm({ settings, canEdit, onSaved }: EmailRelayFormPro
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('admin.emailRelay.title', 'Organization mail servers')}</CardTitle>
-          <CardDescription>
-            {t(
-              'admin.emailRelay.description',
-              'When an organization’s own server sends its invitations, notices and reports. Sign-in and account security mail always uses this deployment’s server.'
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
+      <SettingsSection
+        framed
+        id="organization-mail-servers"
+        title={t('admin.emailRelay.title', 'Organization mail servers')}
+        description={t(
+          'admin.emailRelay.description',
+          'When an organization’s own server sends its invitations, notices and reports. Sign-in and account security mail always uses this deployment’s server.'
+        )}
+        meta={
+          <>
+            {settings.source === 'default'
+              ? t('admin.emailRelay.sourceDefault', 'Server default ({name}).', {
+                  name: settings.env_var,
+                })
+              : t('admin.emailRelay.sourceConsole', 'Set in this console.')}{' '}
+            <SettingChangedLine change={settings} />
+          </>
+        }
+      >
+        <SettingsBlock>
           <RadioGroup
             value={mode}
             onValueChange={(v) => setMode(v as EmailRelayMode)}
             disabled={!canEdit}
             aria-label={t('admin.emailRelay.title', 'Organization mail servers')}
-            className="gap-2"
           >
             {MODES.map((m) => (
-              <div key={m} className="flex items-start gap-3 rounded-lg border p-3">
-                <RadioGroupItem value={m} id={`${id}-${m}`} className="mt-0.5" />
-                <div className="space-y-0.5">
-                  <Label htmlFor={`${id}-${m}`} className="font-medium">
-                    {label[m]}
-                  </Label>
-                  <p className="text-xs text-muted-foreground">{hint[m]}</p>
+              <div key={m} className="flex items-start gap-3">
+                <RadioGroupItem
+                  value={m}
+                  id={`${id}-${m}`}
+                  className="mt-1"
+                  aria-describedby={`${id}-${m}-hint`}
+                />
+                <div className="grid gap-1">
+                  <Label htmlFor={`${id}-${m}`}>{label[m]}</Label>
+                  <span
+                    id={`${id}-${m}-hint`}
+                    className="text-cap text-muted-foreground text-pretty"
+                  >
+                    {hint[m]}
+                  </span>
                 </div>
               </div>
             ))}
           </RadioGroup>
-          <p className="text-xs text-muted-foreground">
-            {settings.source === 'default'
-              ? t('admin.emailRelay.sourceDefault', 'Server default ({name}).', {
-                  name: settings.env_var,
-                })
-              : t('admin.emailRelay.sourceConsole', 'Set in this console.')}
-          </p>
-          <SettingChangedLine change={settings} />
-          {canEdit ? (
-            <SettingsSaveBar
-              className="basis-full"
-              dirty={dirty}
-              onSave={() => setConfirmOpen(true)}
-              onDiscard={reset}
-            />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {t('admin.settings.superAdminOnly', 'Only a super admin can change this setting.')}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+        </SettingsBlock>
+      </SettingsSection>
+      {canEdit && (
+        <SettingsSaveBar dirty={dirty} onSave={() => setConfirmOpen(true)} onDiscard={reset} />
+      )}
       <ReasonConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}

@@ -510,7 +510,10 @@ export function ProgramHealthView() {
           )}
         >
           <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
-            <SelectTrigger className="w-[150px]" aria-label={t('insights.period.label', 'Period')}>
+            <SelectTrigger
+              className="w-auto sm:w-[150px]"
+              aria-label={t('insights.period.label', 'Period')}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

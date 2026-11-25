@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react'
 
-import { EntryActions, EntryCard, EntryHeader } from '@/components/entry'
+import { EntryActions, EntryCard, EntryHeader, EntryLinkProblem } from '@/components/entry'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -638,17 +638,11 @@ function TerminalDone({ approved, client }: { approved: boolean; client: string 
 function Unavailable({ message }: { message: string }) {
   const { t } = useTranslation()
   return (
-    <EntryCard>
-      <EntryHeader
-        title={t('mcp.consent.cannotConnect', 'Cannot connect the application')}
-        description={message}
-      />
-      {/* A way out of the dead end: nothing was connected. */}
-      <EntryActions>
-        <Button asChild variant="outline">
-          <Link href="/">{t('common.access.toDashboard', 'Go to the dashboard')}</Link>
-        </Button>
-      </EntryActions>
-    </EntryCard>
+    // A way out of the dead end: nothing was connected.
+    <EntryLinkProblem
+      title={t('mcp.consent.cannotConnect', 'Cannot connect the application')}
+      description={message}
+      exit="app"
+    />
   )
 }

@@ -8,10 +8,8 @@ import {
 import { EmptyCell } from '@/features/shared/components/empty-cell'
 import { use } from 'react'
 import Link from '@/components/link'
-import { ChevronLeft } from 'lucide-react'
-import { Main } from '@/components/layout'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -53,16 +51,12 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
   // Why the account offers no actions, said once under its name (no row of
   // greyed-out buttons).
   const unavailableNote = user ? platformUserUnavailableNote(t, user) : undefined
+  // The breadcrumb names the account and is the way back to the list.
+  useBreadcrumbTitle(user ? user.name || user.email : undefined)
 
   return (
     <Main>
       <PageStack>
-        <Button asChild variant="ghost" size="sm" className="-ms-2 self-start">
-          <Link href="/users">
-            <ChevronLeft className="me-1 size-4" />
-            {t('admin.nav.users', 'Users')}
-          </Link>
-        </Button>
         {error ? (
           <ErrorState title="the account" error={error} onRetry={refresh} />
         ) : isLoading || !user ? (

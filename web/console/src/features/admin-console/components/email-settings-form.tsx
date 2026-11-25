@@ -6,13 +6,18 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
+import {
+  SettingsBlock,
+  SettingsField,
+  SettingsFieldGrid,
+  SettingsRow,
+  SettingsSaveBar,
+  SettingsSection,
+  SettingsSwitchRow,
+} from '@/features/shared'
 import type { EmailSettingsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveEmailSettings, sendTestEmail } from '../api/use-email-settings'
@@ -179,42 +184,43 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
     label: string,
     props: Record<string, unknown> = {}
   ) => (
-    <div className="grid gap-1.5">
-      <Label htmlFor={`${id}-${key}`}>{label}</Label>
-      <Input
-        id={`${id}-${key}`}
-        value={form[key]}
-        onChange={(e) => set(key, e.target.value)}
-        disabled={!canEdit}
-        {...props}
-      />
-    </div>
+    <SettingsField id={`${id}-${key}`} label={label}>
+      {(control) => (
+        <Input
+          {...control}
+          value={form[key]}
+          onChange={(e) => set(key, e.target.value)}
+          disabled={!canEdit}
+          {...props}
+        />
+      )}
+    </SettingsField>
   )
 
   return (
     <>
-      <Card>
-        {/* No card title: the page header already names this form. */}
-        <CardContent className="space-y-6">
-          <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
-            <Label htmlFor={`${id}-enabled`} className="grid gap-1 font-normal">
-              <span className="font-medium">{t('admin.email.enabled', 'Send e-mail')}</span>
-              <span className="text-sm text-muted-foreground">
-                {t(
-                  'admin.email.enabledHelp',
-                  'Off: no e-mail is sent; set-password links are shown to the administrator instead.'
-                )}
-              </span>
-            </Label>
-            <Switch
-              id={`${id}-enabled`}
-              checked={form.enabled}
-              onCheckedChange={(v) => set('enabled', v)}
-              disabled={!canEdit}
-            />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
+      <SettingsSection
+        framed
+        id="platform-email"
+        title={t('admin.email.title', 'Platform e-mail')}
+        description={t(
+          'admin.email.description',
+          'The SMTP server for sign-up, invitation, verification and password e-mails. An organization with its own e-mail integration sends through that instead.'
+        )}
+      >
+        <SettingsSwitchRow
+          id={`${id}-enabled`}
+          label={t('admin.email.enabled', 'Send e-mail')}
+          hint={t(
+            'admin.email.enabledHelp',
+            'Off: no e-mail is sent; set-password links are shown to the administrator instead.'
+          )}
+          checked={form.enabled}
+          onCheckedChange={(v) => set('enabled', v)}
+          disabled={!canEdit}
+        />
+        <SettingsBlock>
+          <SettingsFieldGrid>
             {field('host', t('admin.email.host', 'SMTP server'), {
               placeholder: 'smtp.example.com',
               autoComplete: 'off',
@@ -240,102 +246,95 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
             {field('fromName', t('admin.email.fromName', 'Sender name'), {
               placeholder: brand.name,
             })}
-          </div>
-
-          <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
-            <Label htmlFor={`${id}-starttls`} className="grid gap-1 font-normal">
-              <span className="font-medium">{t('admin.email.starttls', 'Use STARTTLS')}</span>
-              <span className="text-sm text-muted-foreground">
-                {t(
-                  'admin.email.starttlsHelp',
-                  'Encrypt the connection to the server (TLS 1.2 or later). Leave on unless the server cannot do it.'
-                )}
-              </span>
-            </Label>
-            <Switch
-              id={`${id}-starttls`}
-              checked={form.starttls}
-              onCheckedChange={(v) => set('starttls', v)}
-              disabled={!canEdit}
-            />
-          </div>
-
-          <div className="grid gap-1.5">
-            <Label htmlFor={`${id}-ca`}>{t('admin.email.ca', 'Internal CA certificate')}</Label>
-            <Textarea
-              id={`${id}-ca`}
-              value={caPem}
-              onChange={(e) => {
-                setCaPem(e.target.value)
-                setClearCa(false)
-              }}
-              disabled={!canEdit || clearCa}
-              rows={4}
-              spellCheck={false}
-              autoComplete="off"
-              className="font-mono text-xs"
-              placeholder={
-                settings.ca_set
-                  ? t('admin.email.caKeep', 'Stored. Paste a new PEM bundle to replace it.')
-                  : '-----BEGIN CERTIFICATE-----'
-              }
-            />
-            <p className="text-sm text-muted-foreground">
-              {t(
-                'admin.email.caHelp',
-                'Only if your mail server uses a certificate from your own certificate authority. Paste the CA certificate (PEM, certificates only, never a private key). It is used only to verify this server and is never shown again.'
-              )}
-            </p>
-            {settings.ca_set && (
-              <p className="text-sm text-muted-foreground">
-                {t(
-                  'admin.email.caFingerprint',
-                  'Stored bundle fingerprint (SHA-256): {fp}'
-                ).replace('{fp}', settings.ca_fingerprint ?? '')}
-              </p>
+          </SettingsFieldGrid>
+        </SettingsBlock>
+        <SettingsSwitchRow
+          id={`${id}-starttls`}
+          label={t('admin.email.starttls', 'Use STARTTLS')}
+          hint={t(
+            'admin.email.starttlsHelp',
+            'Encrypt the connection to the server (TLS 1.2 or later). Leave on unless the server cannot do it.'
+          )}
+          checked={form.starttls}
+          onCheckedChange={(v) => set('starttls', v)}
+          disabled={!canEdit}
+        />
+        <SettingsBlock>
+          <SettingsField
+            id={`${id}-ca`}
+            label={t('admin.email.ca', 'Internal CA certificate')}
+            hint={t(
+              'admin.email.caHelp',
+              'Only if your mail server uses a certificate from your own certificate authority. Paste the CA certificate (PEM, certificates only, never a private key). It is used only to verify this server and is never shown again.'
             )}
-            {settings.ca_set && canEdit && (
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={clearCa}
-                  onChange={(e) => {
-                    setClearCa(e.target.checked)
-                    setCaPem('')
-                  }}
-                />
-                {t('admin.email.caClear', 'Remove the stored CA certificate')}
-              </label>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            {/* Shown only when it can run: e-mail on and the form saved. */}
-            {canEdit && settings.enabled && !dirty && (
-              <Button variant="outline" onClick={() => void test()} disabled={testing}>
-                {testing && <Loader2 className="me-1.5 size-4 animate-spin" />}
-                {t('admin.email.sendTest', 'Send a test e-mail')}
-              </Button>
-            )}
-            {canEdit && (
-              <SettingsSaveBar
-                className="basis-full"
-                dirty={dirty}
-                saving={busy}
-                onSave={() => {
-                  setConfirmOpen(true)
+          >
+            {(control) => (
+              <Textarea
+                {...control}
+                value={caPem}
+                onChange={(e) => {
+                  setCaPem(e.target.value)
+                  setClearCa(false)
                 }}
-                onDiscard={reset}
+                disabled={!canEdit || clearCa}
+                rows={4}
+                spellCheck={false}
+                autoComplete="off"
+                className="font-mono text-code"
+                placeholder={
+                  settings.ca_set
+                    ? t('admin.email.caKeep', 'Stored. Paste a new PEM bundle to replace it.')
+                    : '-----BEGIN CERTIFICATE-----'
+                }
               />
             )}
-          </div>
-          {!canEdit && (
-            <p className="text-sm text-muted-foreground">
-              {t('admin.email.superAdminOnly', 'Only a super admin can change these settings.')}
+          </SettingsField>
+          {settings.ca_set && (
+            <p className="text-cap text-muted-foreground">
+              {t('admin.email.caFingerprint', 'Stored bundle fingerprint (SHA-256): {fp}').replace(
+                '{fp}',
+                settings.ca_fingerprint ?? ''
+              )}
             </p>
           )}
-        </CardContent>
-      </Card>
+          {settings.ca_set && canEdit && (
+            <label className="flex items-center gap-2 text-dense text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={clearCa}
+                onChange={(e) => {
+                  setClearCa(e.target.checked)
+                  setCaPem('')
+                }}
+              />
+              {t('admin.email.caClear', 'Remove the stored CA certificate')}
+            </label>
+          )}
+        </SettingsBlock>
+        {/* Shown only when it can run: e-mail on and the form saved. */}
+        {canEdit && settings.enabled && !dirty && (
+          <SettingsRow
+            label={t('admin.email.sendTest', 'Send a test e-mail')}
+            hint={t(
+              'admin.email.sendTestHint',
+              'Sends an e-mail to your address with the saved settings. Save your changes first.'
+            )}
+          >
+            <Button variant="outline" onClick={() => void test()} disabled={testing}>
+              {testing && <Loader2 className="animate-spin" aria-hidden />}
+              {t('admin.email.sendTestButton', 'Send test')}
+            </Button>
+          </SettingsRow>
+        )}
+      </SettingsSection>
+      {canEdit && (
+        <SettingsSaveBar
+          dirty={dirty}
+          saving={busy}
+          onSave={() => setConfirmOpen(true)}
+          onDiscard={reset}
+        />
+      )}
 
       <ConfirmDialog
         open={confirmOpen}

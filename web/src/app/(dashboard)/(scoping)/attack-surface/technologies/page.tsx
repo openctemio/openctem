@@ -17,16 +17,10 @@ export default function AttackSurfaceTechnologiesPage() {
       <PageStack>
         <PageHeader
           title={t('attackSurface.title', 'Attack surface')}
-          // A list page: on a phone the list comes first, so the sentence
-          // under the title is left to wider screens (as on Scans).
-          description={
-            <span className="max-md:hidden">
-              {t(
-                'attackSurface.technologies.pageDescription',
-                'The technologies your external assets run, by version, with the CVEs known for each version and the assets that run it.'
-              )}
-            </span>
-          }
+          description={t(
+            'attackSurface.technologies.pageDescription',
+            'The technologies your external assets run, by version, with the CVEs known for each version and the assets that run it.'
+          )}
         />
         <AttackSurfaceSectionTabs />
         <EASMTechnologies />

@@ -2,10 +2,7 @@
 
 import { use } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from '@/components/link'
-import { ChevronLeft } from 'lucide-react'
-import { Main } from '@/components/layout'
-import { Button } from '@/components/ui/button'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -139,17 +136,13 @@ export default function AdminOrganizationPage({
   // The tab lives in the URL, so a support link can open "SSO of org X".
   const [rawTab, setTab] = useUrlFilter('tab', 'overview')
   const tab = (TABS as readonly string[]).includes(rawTab) ? rawTab : 'overview'
+  // The breadcrumb names the organization (it is the way back to the list,
+  // so the page has no back link of its own).
+  useBreadcrumbTitle(org?.name)
 
   return (
     <Main>
       <PageStack>
-        <Button asChild variant="ghost" size="sm" className="-ms-2 self-start">
-          <Link href="/organizations">
-            <ChevronLeft className="me-1 size-4" />
-            {t('admin.nav.organizations', 'Organizations')}
-          </Link>
-        </Button>
-
         {error ? (
           <ErrorState
             title={t('admin.organizationsDetailPage.theOrganization', 'the organization')}
@@ -163,7 +156,11 @@ export default function AdminOrganizationPage({
           </div>
         ) : (
           <>
-            <PageHeader title={org.name} description={org.description || undefined}>
+            <PageHeader
+              title={org.name}
+              // The slug is in the summary just below: no description repeats it.
+              description={org.description || undefined}
+            >
               <OrganizationStatusBadge org={org} />
               {/* Lifting a suspension restores access: a neutral header action. */}
               {canSuspend && org.status === 'suspended' && (
