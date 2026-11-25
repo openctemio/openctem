@@ -586,9 +586,16 @@ reference.
     included, with no exemption. A list that refreshes on its own needs no Refresh. A labelled end action (Export CSV) is `<ToolbarAction>` from
     `@/features/shared`, labelled from a 42rem toolbar and a named icon with a
     tooltip below it, so it fits beside the search.
-    In Query mode on a phone the field takes the whole first line (its text
-    keeps at least 55 % of the field at 375 px): the end actions step down to
-    the second line's end and the tokens, inert in that mode, are not drawn.
+    In Query mode the text owns the filter and the tokens are not drawn (their
+    values are in the text). From a 28rem toolbar the field takes the row's
+    whole free width, up to the end actions, which keep their place (no 28rem
+    cap), so a query reads on one long line. On a phone the field takes the
+    whole first line (its text keeps at least 55 % of the field at 375 px) and
+    the end actions step down to the second line's end. The expanded editor
+    stays in the field's place and follows its text: two lines at least, eight
+    at most (or half the screen), then it scrolls inside. It is monospace at
+    body size and breaks lines at spaces only, never inside a condition; a
+    condition longer than the line scrolls sideways.
   - a toolbar group that draws none of its controls at this width (the
     Display menu on a phone, tokens moved into the Filters sheet) takes no
     line: `ListToolbar` marks it `data-empty` and takes it out of the flow, so

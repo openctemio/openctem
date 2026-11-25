@@ -73,37 +73,20 @@ export const VALUES_DELAY_MS = 300
 export const VALUES_MIN_PREFIX = 2
 const MAX_OPTIONS = 10
 
-/** The expanded editor: lines at least, at most (or half the screen), at first. */
-export const EDITOR_MIN_LINES = 4
-export const EDITOR_MAX_LINES = 16
-const EDITOR_DEFAULT_LINES = 10
+/**
+ * The expanded editor follows its text: two lines at least (room for the next
+ * condition), eight at most (or half the screen), then it scrolls inside.
+ */
+export const EDITOR_MIN_LINES = 2
+export const EDITOR_MAX_LINES = 8
 /** Its height animates this long when it opens or folds (none with reduced motion). */
 export const EDITOR_ANIMATION_MS = 200
 /** Room kept under it on a short screen: the top of the list stays in reach. */
 const EDITOR_KEEP_BELOW = 104
-const EDITOR_HEIGHT_KEY = 'query-editor-height'
 // Room for the field's own controls and the host's (phone: overflow and run,
 // 2 x 28 px; from 768: help, expand, run, 3 x 24 px).
 const FIELD_CONTROLS_ROOM =
   'pe-[calc(var(--list-search-end,0.5rem)+3.75rem)] md:pe-[calc(var(--list-search-end,0.5rem)+4.75rem)]'
-
-/** The height the person last dragged the expanded editor to (this browser). */
-function readEditorHeight(): number | null {
-  try {
-    const v = Number(window.localStorage.getItem(EDITOR_HEIGHT_KEY))
-    return Number.isFinite(v) && v > 0 ? v : null
-  } catch {
-    return null
-  }
-}
-
-function writeEditorHeight(h: number) {
-  try {
-    window.localStorage.setItem(EDITOR_HEIGHT_KEY, String(Math.round(h)))
-  } catch {
-    // A preference only.
-  }
-}
 
 function reducedMotion(): boolean {
   return (
@@ -269,14 +252,15 @@ export function QueryInput({
   // The list field's expanded editor: the field itself grows in place, in
   // the page's flow (what is below moves down), and the text it opened with
   // (Escape folds it back when unchanged). Opening and folding animate the
-  // height (`animating`); the size the person drags it to is remembered.
+  // height (`animating`); open, its height follows its text (`textH`).
   const [phase, setPhase] = useState<'closed' | 'opening' | 'open' | 'closing'>('closed')
   const big = phase !== 'closed'
   const [animating, setAnimating] = useState(false)
   const [bigFrom, setBigFrom] = useState('')
   const [fieldH, setFieldH] = useState(32)
   const [lineH, setLineH] = useState(20)
-  const [prefH, setPrefH] = useState<number | null>(readEditorHeight)
+  // The height the text takes at the editor's width (paddings and borders included).
+  const [textH, setTextH] = useState<number | null>(null)
   // The room on screen below the editor's top (a phone keyboard, a zoomed
   // page), so the run icon and the top of the list stay reachable.
   const [room, setRoom] = useState(Number.POSITIVE_INFINITY)
@@ -293,9 +277,7 @@ export function QueryInput({
     )
   )
   const minH = Math.min(frame + EDITOR_MIN_LINES * lineH, maxH)
-  const openH = Math.round(
-    Math.min(maxH, Math.max(minH, prefH ?? frame + EDITOR_DEFAULT_LINES * lineH))
-  )
+  const openH = Math.round(Math.min(maxH, Math.max(minH, textH ?? minH)))
   const setBig = (on: boolean) => {
     const el = ref.current
     const from = el?.selectionStart ?? value.length
@@ -358,20 +340,28 @@ export function QueryInput({
       vv.removeEventListener('scroll', fit)
     }
   }, [big])
-  // A drag of the resize handle: kept for next time (this browser).
-  useEffect(() => {
+  // The text's height, read from the coloured copy behind the editor (same
+  // box, same width, never cut short by the editor's own height): on every
+  // edit, and again when the editor's width changes (the lines wrap anew).
+  useLayoutEffect(() => {
     const el = ref.current
-    if (phase !== 'open' || animating || !el || typeof ResizeObserver === 'undefined') return
+    const copy = el?.previousElementSibling
+    if (!big || !el || !(copy instanceof HTMLElement)) return
+    const read = () => {
+      const h = copy.scrollHeight + (copy.offsetHeight - copy.clientHeight)
+      if (h > 0) setTextH(h)
+    }
+    read()
+    if (typeof ResizeObserver === 'undefined') return
+    let width = el.offsetWidth
     const ro = new ResizeObserver(() => {
-      const h = el.offsetHeight
-      if (h > 0 && Math.abs(h - openH) > 2) {
-        setPrefH(h)
-        writeEditorHeight(h)
-      }
+      if (el.offsetWidth === width) return
+      width = el.offsetWidth
+      read()
     })
     ro.observe(el)
     return () => ro.disconnect()
-  }, [phase, animating, openH])
+  }, [big, value])
   // The server's answer to the text it was asked about on Apply.
   const [answer, setAnswer] = useState<{ text: string; result: ParseResult } | null>(null)
   // Apply refused before asking (quotes or parentheses do not pair up).
@@ -704,7 +694,7 @@ export function QueryInput({
                 textareaRef={ref}
                 style={{ height: phase === 'open' ? openH : fieldH, maxHeight: maxH }}
                 className={cn(
-                  'min-h-0 resize-y py-1.5 font-mono',
+                  'min-h-0 resize-none py-1.5 font-mono',
                   inputClassName,
                   FIELD_CONTROLS_ROOM,
                   animating &&
@@ -851,6 +841,8 @@ export function QueryInput({
  * values): the coloured copy sits behind a text area with transparent text
  * and the same box, so the caret, selection and editing stay native. The
  * copy is React text, never markup, and is hidden from assistive technology.
+ * Lines break at spaces only, never inside a condition (`state=open`): a
+ * condition longer than the line scrolls sideways, the copy with it.
  */
 function HighlightedTextarea({
   textareaRef,
@@ -863,7 +855,8 @@ function HighlightedTextarea({
 }) {
   const back = useRef<HTMLDivElement>(null)
   const tokens = useMemo(() => queryTokens(value), [value])
-  const box = 'rounded-md border px-3 py-2 text-base md:text-sm [scrollbar-gutter:stable]'
+  const box =
+    'rounded-md border px-3 py-2 text-base break-normal whitespace-pre-wrap md:text-sm [scrollbar-gutter:stable]'
   return (
     <div className="relative">
       <div
@@ -873,7 +866,7 @@ function HighlightedTextarea({
         className={cn(
           box,
           className,
-          'dark:bg-input/30 pointer-events-none absolute inset-0 max-h-none min-h-0 resize-none overflow-hidden border-transparent break-words whitespace-pre-wrap'
+          'dark:bg-input/30 pointer-events-none absolute inset-0 max-h-none min-h-0 resize-none overflow-hidden border-transparent'
         )}
       >
         {tokens.map((tok, i) => (
@@ -893,7 +886,9 @@ function HighlightedTextarea({
           'caret-foreground relative bg-transparent text-transparent dark:bg-transparent'
         )}
         onScroll={(e) => {
-          if (back.current) back.current.scrollTop = e.currentTarget.scrollTop
+          if (!back.current) return
+          back.current.scrollTop = e.currentTarget.scrollTop
+          back.current.scrollLeft = e.currentTarget.scrollLeft
         }}
         {...props}
       />

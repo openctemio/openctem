@@ -94,8 +94,9 @@ for (const [width, height, touch] of [
         // Same slot: left edge and width; taller.
         expect(Math.abs(open.x - before.x)).toBeLessThanOrEqual(1)
         expect(Math.abs(open.width - before.width)).toBeLessThanOrEqual(1)
+        // At least the second line it keeps for the next condition.
         const growth = open.height - before.height
-        expect(growth).toBeGreaterThan(40)
+        expect(growth).toBeGreaterThanOrEqual(18)
         // The list moved down by the growth and nothing overlaps it.
         expect(Math.abs(listOpen.y - listBefore.y - growth)).toBeLessThanOrEqual(2)
         expect(open.y + open.height).toBeLessThanOrEqual(listOpen.y)
@@ -121,27 +122,61 @@ for (const [width, height, touch] of [
 }
 
 test.describe('Expanded query editor height', { tag: ['@findings'] }, () => {
-  test('a dragged height is kept for next time, within 4 to 16 lines', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 })
+  test('follows its text within 2 to 8 lines and breaks lines at spaces only', async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 768 })
     await page.goto('/findings')
-    await page.getByRole('button', { name: /^query$/i }).click()
+    await page
+      .locator(
+        '[data-slot="list-search-mode-query"]:visible, button[data-slot="list-search-mode"]:visible'
+      )
+      .click()
     const field = page.locator('[data-slot="list-search-query"] [role="combobox"]')
     await expect(field).toBeEnabled({ timeout: 20_000 })
     await page.getByRole('button', { name: /expand the editor/i }).click()
     const editor = page.locator('[data-slot="query-editor-expanded"] textarea')
     await settled(page)
-    // A drag, as the resize handle does it.
-    await editor.evaluate((el: HTMLTextAreaElement) => (el.style.height = '120px'))
+    const lineH = await editor.evaluate((el) => parseFloat(getComputedStyle(el).lineHeight))
+    // Two lines for a short text (20 px lines, 6 px paddings, 1 px borders).
+    await editor.fill('state=open')
     await settled(page)
-    expect(await page.evaluate(() => localStorage.getItem('query-editor-height'))).toBe('120')
-    await page.getByRole('button', { name: /collapse the editor/i }).click()
+    expect(Math.round((await box(editor)).height)).toBe(2 * lineH + 14)
+    // A long text: eight lines at most, then it scrolls inside.
+    await editor.fill(Array(40).fill('severity>=high state=open').join(' '))
     await settled(page)
-    await page.getByRole('button', { name: /expand the editor/i }).click()
-    await settled(page)
-    expect(Math.round((await box(editor)).height)).toBe(120)
-    // 16 lines at most (20 px lines, 6 px paddings, 1 px borders).
-    await editor.evaluate((el: HTMLTextAreaElement) => (el.style.height = '2000px'))
-    await settled(page)
-    expect((await box(editor)).height).toBeLessThanOrEqual(16 * 20 + 14)
+    expect(Math.round((await box(editor)).height)).toBe(8 * lineH + 14)
+    expect(
+      await editor.evaluate((el: HTMLTextAreaElement) => el.scrollHeight > el.clientHeight)
+    ).toBe(true)
+    // No condition is cut across two lines: each one's boxes share one top.
+    const split = await page.evaluate(() => {
+      const copy = document.querySelector('[data-slot="query-highlight"]')!
+      const text = copy.textContent ?? ''
+      const walker = document.createTreeWalker(copy, NodeFilter.SHOW_TEXT)
+      const nodes: { node: Text; start: number }[] = []
+      let at = 0
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        nodes.push({ node: n as Text, start: at })
+        at += (n as Text).length
+      }
+      const point = (i: number) => {
+        let hit = nodes[0]
+        for (const x of nodes) if (x.start <= i) hit = x
+        return [hit.node, i - hit.start] as const
+      }
+      const cut: string[] = []
+      for (const m of text.matchAll(/\S+/g)) {
+        const range = document.createRange()
+        range.setStart(...point(m.index))
+        range.setEnd(...point(m.index + m[0].length - 1))
+        const tops = new Set(
+          Array.from(range.getClientRects())
+            .filter((r) => r.width > 0)
+            .map((r) => Math.round(r.top))
+        )
+        if (tops.size > 1) cut.push(m[0])
+      }
+      return cut
+    })
+    expect(split).toEqual([])
   })
 })
