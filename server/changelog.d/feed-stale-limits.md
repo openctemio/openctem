@@ -11,4 +11,4 @@
   A release older than 7 days is still refused.
 - The KEV and EPSS cards show the bundle import's next run (every 20 minutes), not an hourly or
   daily one.
-- Docs: openctemio/docs operations/vulnerability-feed-setup.md (Offline, Troubleshooting)
+- Docs: https://docs.openctem.io/operations/vulnerability-feed-setup/
