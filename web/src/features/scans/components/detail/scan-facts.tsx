@@ -112,7 +112,6 @@ export function ScanFacts({
               t('scanDetail.details.never')
             )
           }
-          wrapCaption
           caption={
             last ? (
               <>
@@ -129,7 +128,6 @@ export function ScanFacts({
               ? formatScanDate(config.next_run_at)
               : t('scanDetail.fact.notScheduled', 'Not scheduled')
           }
-          wrapCaption
           caption={
             <>
               {nextCaption}
@@ -144,7 +142,6 @@ export function ScanFacts({
               {total}
             </Link>
           }
-          wrapCaption
           caption={
             <>
               {parts.map((p, i) => (
@@ -172,7 +169,6 @@ export function ScanFacts({
         <DetailStat
           label={t('scans.list.successRate')}
           value={rate === null ? t('scans.list.notAvailable') : `${rate}%`}
-          wrapCaption
           caption={
             rate === null
               ? t('scanDetail.fact.rateTooFew', 'Shown after {count} finished runs', {

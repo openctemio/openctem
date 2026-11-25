@@ -3,8 +3,14 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import { NotAffectedDialog } from '../components/not-affected-dialog'
-import { AlertActions, OutOfScopeHint, scanCandidates } from '../components/alert-actions'
-import { splitTaskable, taskTitle } from '../types'
+import {
+  AlertActions,
+  OutOfScopeHint,
+  pickPrimary,
+  scanCandidates,
+  type AlertAction,
+} from '../components/alert-actions'
+import { splitTaskable, taskTitle, type AlertState, type RecommendedAction } from '../types'
 import { asset, detail } from './fixtures'
 
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }))
@@ -96,6 +102,25 @@ describe('AlertActions', () => {
     )
   })
 
+  it('picks the main action from the state and the recommendation', () => {
+    const acts = (...ids: AlertAction['id'][]): AlertAction[] =>
+      ids.map((id) => ({ id, label: id, run: () => {} }))
+    const all = acts('acknowledge', 'remediating', 'not-affected', 'task', 'scan')
+    const pick = (state: AlertState, rec: RecommendedAction, list = all) =>
+      pickPrimary({ state, recommended_action: rec }, list)?.id ?? null
+    expect(pick('new', 'patch_now')).toBe('task')
+    // The version is not certain: check it first.
+    expect(pick('new', 'confirm')).toBe('scan')
+    // Nothing to plan: the next state move.
+    const noTask = all.map((a) => (a.id === 'task' ? { ...a, disabledReason: 'none' } : a))
+    expect(pick('new', 'patch_now', noTask)).toBe('acknowledge')
+    expect(pick('acknowledged', 'patch_now', noTask)).toBe('remediating')
+    // Remediating: scan again to check the fix.
+    expect(pick('remediating', 'patch_now', acts('not-affected', 'reopen', 'scan'))).toBe('scan')
+    // Closed: no main action, Reopen stays in the menu.
+    expect(pick('resolved', 'patch_now', acts('reopen'))).toBeNull()
+  })
+
   it('keeps one main action below xl: the state moves and the scan are in More actions', async () => {
     mobile.phone = true
     wrap(<AlertActions alert={detail()} />)
@@ -154,7 +179,7 @@ describe('create remediation task', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('finding already in a task')
   })
 
-  it('is replaced by a reason when there is nothing to add', () => {
+  it('is not drawn as a dead button when there is nothing to add', () => {
     wrap(
       <AlertActions
         alert={detail({ assets: [asset({ task_id: 't1' }), asset({ finding_id: '' })] })}
@@ -163,7 +188,6 @@ describe('create remediation task', () => {
     expect(
       screen.queryByRole('button', { name: /Create remediation task/ })
     ).not.toBeInTheDocument()
-    expect(screen.getByText(/No open finding without a task to add/)).toBeInTheDocument()
     expect(api.post).not.toHaveBeenCalled()
   })
 })
@@ -186,13 +210,8 @@ describe('scan affected assets', () => {
     expect(scanCandidates(d).map((c) => c.id)).toEqual(['d1', 'i1'])
   })
 
-  it('shows the scan button disabled with a reason when nothing can be scanned', () => {
+  it('leaves out the scan button when nothing can be scanned (no greyed button)', () => {
     wrap(<AlertActions alert={detail({ assets: [asset({ asset_type: 'host' })] })} />)
-    const btn = screen.getByRole('button', { name: /Scan affected assets/ })
-    expect(btn).toBeDisabled()
-    expect(btn).toHaveAttribute(
-      'title',
-      'No affected asset is a domain or IP address that can be scanned.'
-    )
+    expect(screen.queryByRole('button', { name: /Scan affected assets/ })).toBeNull()
   })
 })

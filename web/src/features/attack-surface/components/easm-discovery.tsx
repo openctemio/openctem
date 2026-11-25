@@ -10,7 +10,7 @@
  * budget still decide every target. The API is the only authority.
  */
 
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Download, Info, Play, RefreshCw, ShieldX, Square } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -235,7 +235,7 @@ function StageCard({ index, row, canRun, blockedReason, busy, onRun }: StageCard
   )
 }
 
-export function EASMDiscovery({ lens }: { lens?: ReactNode } = {}) {
+export function EASMDiscovery() {
   const { t } = useTranslation()
   const text = useStageText()
   const { can } = usePermissions()
@@ -344,29 +344,23 @@ export function EASMDiscovery({ lens }: { lens?: ReactNode } = {}) {
 
   if (!enabled) {
     return (
-      <>
-        {lens}
-        <EmptyState
-          icon={ShieldX}
-          title={t('attackSurface.discovery.noAccess.title', 'Access denied')}
-          description={t(
-            'attackSurface.discovery.noAccess.description',
-            "You don't have permission to view scans. Ask your administrator for access."
-          )}
-        />
-      </>
+      <EmptyState
+        icon={ShieldX}
+        title={t('attackSurface.discovery.noAccess.title', 'Access denied')}
+        description={t(
+          'attackSurface.discovery.noAccess.description',
+          "You don't have permission to view scans. Ask your administrator for access."
+        )}
+      />
     )
   }
   if (error && !overview) {
     return (
-      <>
-        {lens}
-        <ErrorState
-          title={t('attackSurface.discovery.error', 'the discovery stages')}
-          error={error}
-          onRetry={() => mutate()}
-        />
-      </>
+      <ErrorState
+        title={t('attackSurface.discovery.error', 'the discovery stages')}
+        error={error}
+        onRetry={() => mutate()}
+      />
     )
   }
 
@@ -404,12 +398,11 @@ export function EASMDiscovery({ lens }: { lens?: ReactNode } = {}) {
 
   return (
     <>
-      {/* One toolbar row (MVP v2: no row of its own above the stages): the
-          lens, what holds the stages back (cut with an ellipsis, whole in its
+      {/* One toolbar row (MVP v2: no row of its own above the stages): what
+          holds the stages back (cut with an ellipsis, whole in its
           tooltip; each stage card says it too), then the actions. The
           freshness line is the caption under the stages. */}
       <div className="flex flex-wrap items-center gap-2">
-        {lens}
         {blockedReason || !canRun ? (
           <p
             role="status"

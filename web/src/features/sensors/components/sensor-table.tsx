@@ -39,6 +39,7 @@ import { sensorPolicyOf, type ReleaseChannel } from '../lib/fleet'
 import { sensorFacts, sensorReason, VERSION_FACT_KEYS } from '../lib/sensor-facts'
 import { cn } from '@/lib/utils'
 import { SensorLocalPolicyBadge } from './sensor-local-policy-section'
+import { TABLE_PAGE_SIZES } from '@/lib/page-size-options'
 
 interface SensorTableProps extends SensorRowHandlers {
   sensors: Sensor[]
@@ -457,6 +458,9 @@ export function SensorTable({
       initialColumnVisibility={HIDDEN_BY_DEFAULT}
       // A fleet is small; grouping reads best on one page.
       pageSize={50}
+      // A pager only when the fleet does not fit the smallest page: never
+      // "Showing 1 to 1 of 1" and "Page 1 of 1" over one sensor.
+      showPagination={sensors.length > TABLE_PAGE_SIZES[0]}
       paginationNoun={t('sensors.list.noun', 'sensors')}
       rowGroups={rowGroups}
       mobileRow={(sensor, selection) => (

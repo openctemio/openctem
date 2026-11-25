@@ -34,7 +34,6 @@ function Cell({
       label={label}
       value={value ?? ''}
       caption={children}
-      wrapCaption
       className={cn('content-start', className)}
     />
   )
