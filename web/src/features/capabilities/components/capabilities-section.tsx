@@ -275,16 +275,6 @@ export function CapabilitiesSection() {
               )
       }
       card={false}
-      action={
-        !hasFilter && isCustomMode ? (
-          <Can route="POST /api/v1/capabilities">
-            <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
-              <Plus className="h-4 w-4" />
-              {t('scans.capabilities.add', 'Add capability')}
-            </Button>
-          </Can>
-        ) : undefined
-      }
     />
   )
 

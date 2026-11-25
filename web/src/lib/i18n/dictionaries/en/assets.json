@@ -294,7 +294,7 @@
   "assets.dedup.card.keep": "Keep {name} ({findings})",
   "assets.dedup.card.merge": "Merge {names} into it ({assets}, {findings})",
   "assets.dedup.empty": "No duplicates to review",
-  "assets.dedup.emptyHint": "The correlator hasn't flagged any assets as likely duplicates.",
+  "assets.dedup.emptyHint": "No assets look like copies of each other right now.",
   "assets.dedup.errorTitle": "duplicate reviews",
   "assets.dedup.evidence": "Evidence",
   "assets.dedup.findingMany": "{count, plural, one {# finding} other {# findings}}",

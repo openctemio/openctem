@@ -322,7 +322,7 @@ export function DedupReviewPage() {
                   title={t('assets.dedup.empty', 'No duplicates to review')}
                   hint={t(
                     'assets.dedup.emptyHint',
-                    "The correlator hasn't flagged any assets as likely duplicates."
+                    'No assets look like copies of each other right now.'
                   )}
                 />
               ),
@@ -372,13 +372,16 @@ export function DedupReviewPage() {
           />
         )}
 
-        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Check className="h-3 w-3" />
-          {t(
-            'assets.dedup.footnote',
-            'Merging preserves findings from all assets on the kept asset; rejecting leaves them separate.'
-          )}
-        </p>
+        {/* It explains the Merge and Reject buttons: only while a review shows them. */}
+        {reviews.length > 0 && (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Check className="h-3 w-3" />
+            {t(
+              'assets.dedup.footnote',
+              'Merging preserves findings from all assets on the kept asset; rejecting leaves them separate.'
+            )}
+          </p>
+        )}
         {region}
         <ConfirmDialog
           open={pendingMerge !== null}

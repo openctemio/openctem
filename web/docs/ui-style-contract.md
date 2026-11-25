@@ -1060,8 +1060,16 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
     motion. A list that is not a `DataTable` puts `TableRefreshBar` as the
     first child of its own `relative` frame. Never draw a bar above the
     toolbar or between the toolbar and the frame.
-- **Empty**: the shared `<EmptyState>` (icon, title, why it is empty and the
-  next step, optional primary action, optional secondary link such as docs).
+- **Empty**: the shared `<EmptyState>` (optional small icon, title, one line
+  on why it is empty and the next step, at most one action). It is sized to
+  its content (no minimum height, no tall blank box), and inside a card, a
+  table or a list frame it drops its own border and background, so it never
+  draws a box in a box. Leave the action out when the page header already
+  shows the same action (one button per job); when the next step is on another
+  page, the action is an outline link to it. `filtered` (with
+  `onClearFilters`) switches it to the no-results kind below, and
+  `NoResultsState` draws that kind on its own. Every queue and table empty
+  body (`QueueEmpty`, the `DataTable` defaults) is drawn by it.
   **One filled button per screen**: the empty state's action is filled only
   when no other filled button is shown (`OneFilledAction`, before paint); beside
   the page's main action in the header it is an outline button. A page whose

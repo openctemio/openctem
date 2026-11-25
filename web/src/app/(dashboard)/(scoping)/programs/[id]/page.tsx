@@ -174,7 +174,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
           title={p.name}
           description={
             <span className="flex flex-wrap items-center gap-2">
-              <Badge variant={p.status === 'active' ? 'default' : 'secondary'}>
+              <Badge variant={p.status === 'active' ? 'outline' : 'secondary'}>
                 {t(`programs.status.${p.status}`, PROGRAM_STATUS_LABEL[p.status])}
               </Badge>
               <SafeExternalLink href={p.program_url} className="text-sm underline">
@@ -315,7 +315,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
                         {e.target_type}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={e.in_effect ? 'default' : 'secondary'}>
+                        <Badge variant={e.in_effect ? 'outline' : 'secondary'}>
                           {e.in_effect ? t('programs.inEffect', 'In effect') : e.status}
                         </Badge>
                       </TableCell>

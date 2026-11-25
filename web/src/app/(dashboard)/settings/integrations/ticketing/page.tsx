@@ -1421,14 +1421,6 @@ export default function TicketingIntegrationPage() {
                     'ticketingIntegration.page.emptyDescription',
                     'Connect a ticketing system to automatically create and track remediation tickets.'
                   )}
-                  action={
-                    <Can route="POST /api/v1/integrations">
-                      <Button size="sm" onClick={() => setDialogOpen(true)}>
-                        <Plus className="me-2 h-4 w-4" />
-                        {t('ticketingIntegration.connect.title', 'Connect Jira')}
-                      </Button>
-                    </Can>
-                  }
                 />
               ) : (
                 <DataTable

@@ -968,12 +968,6 @@ export default function ControlTestingPage() {
                 'validation.controlTesting.emptyDesc',
                 'Add control tests to track security control effectiveness across frameworks.'
               )}
-              action={
-                <Button size="sm" onClick={() => setDialogOpen(true)}>
-                  <Plus className="me-2 h-4 w-4" />
-                  {t('validation.controlTesting.add', 'Add control test')}
-                </Button>
-              }
             />
           ) : (
             <DataTable

@@ -294,7 +294,7 @@
   "assets.dedup.card.keep": "Giữ {name} ({findings})",
   "assets.dedup.card.merge": "Gộp {names} vào nó ({assets}, {findings})",
   "assets.dedup.empty": "Không có bản trùng cần xem xét",
-  "assets.dedup.emptyHint": "Bộ đối chiếu chưa gắn cờ tài sản nào là có khả năng trùng lặp.",
+  "assets.dedup.emptyHint": "Hiện không có tài sản nào trông như bản sao của nhau.",
   "assets.dedup.errorTitle": "danh sách tài sản có thể trùng lặp",
   "assets.dedup.evidence": "Bằng chứng",
   "assets.dedup.findingMany": "{count} phát hiện",

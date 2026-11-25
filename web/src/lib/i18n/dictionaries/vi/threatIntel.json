@@ -66,6 +66,7 @@
   "threatIntel.detections.emptyTitle": "Chưa có phát hiện thời gian chạy",
   "threatIntel.detections.loadFailed": "Không tải được phát hiện thời gian chạy",
   "threatIntel.detections.logged": "Đã ghi nhận",
+  "threatIntel.detections.openSensors": "Mở danh sách sensor",
   "threatIntel.detections.reopened": "Đã mở lại phát hiện",
   "threatIntel.detections.retry": "Thử lại",
   "threatIntel.detections.search": "Tìm phát hiện xâm nhập…",

@@ -105,6 +105,8 @@
   "common.dangerZone": "Danger zone",
   "common.detailSheet.description": "Details",
   "common.editNamed": "Edit {name}",
+  "common.empty.noResults": "No results",
+  "common.empty.noResultsHint": "Nothing matches the search or filters.",
   "common.export": "Export",
   "common.failedToLoad": "Couldn't load {title}",
   "common.filter.all": "All",
