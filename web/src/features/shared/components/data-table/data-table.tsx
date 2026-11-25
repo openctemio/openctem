@@ -887,6 +887,7 @@ function AutoMobileCard<TData>({
           <div
             ref={titleRef}
             data-slot="mobile-card-title"
+            data-column-kind="name"
             className={cn('min-w-0 flex-1', CARD_TITLE_CLASS)}
           >
             {flexRender(title.column.columnDef.cell, title.getContext())}
@@ -927,6 +928,7 @@ function AutoMobileCard<TData>({
         <div
           ref={subtitleRef}
           data-slot="mobile-card-subtitle"
+          data-column-kind={kindOf(subtitle)}
           className={cn(
             'mt-1 h-5 truncate text-sm leading-5 text-muted-foreground',
             CARD_LINE_CLASS,
@@ -955,6 +957,7 @@ function AutoMobileCard<TData>({
               key={cell.id}
               data-slot="mobile-card-field"
               data-column={cell.column.id}
+              data-column-kind={kindOf(cell)}
               data-figure={
                 CARD_FIGURE_KINDS.has(kindOf(cell)) ||
                 (cell.column.columnDef.meta as DataTableColumnMeta | undefined)?.cardFigure
@@ -1639,6 +1642,9 @@ export function DataTable<TData, TValue>({
         : declared
     return {
       'data-pinned-actions': columnId === 'actions' && actionsPinned ? '' : undefined,
+      // The column's kind, for the layout checks: a name may end in an
+      // ellipsis (with its full text reachable), no other value may.
+      'data-column-kind': layout.kind,
       className: cn(
         pin.className,
         ALIGN_CLASS[layout.align],
