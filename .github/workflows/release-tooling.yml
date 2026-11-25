@@ -47,6 +47,7 @@ on:
       - server/internal/app/sensor/seccomp/**
       - server/deploy/sensor/**
       - server/deploy/docker-compose.sensor.yml
+      - server/deploy/docker-compose.relay-sensor.yml
       - server/deploy/*.sh
       - server/deploy/lib/**
       - web/src/features/ci-runners/lib/ci.ts
@@ -72,6 +73,7 @@ on:
       - server/internal/app/sensor/seccomp/**
       - server/deploy/sensor/**
       - server/deploy/docker-compose.sensor.yml
+      - server/deploy/docker-compose.relay-sensor.yml
       - server/deploy/*.sh
       - server/deploy/lib/**
       - web/src/features/ci-runners/lib/ci.ts

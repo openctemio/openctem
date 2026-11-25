@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck source-path=SCRIPTDIR
 # Tests for install.sh, setup.sh and lib/common.sh with a stub docker and stub
 # host tools (no containers, no network, no real keys).
 # Run: bash server/deploy/install.test.sh
@@ -313,6 +314,13 @@ rc="$(STUB_PS_DIR="$d/deploy" STUB_PS_FILES="$running" run_install "$d" --yes)"
 check "sensor running, .env edited without it, no flag: kept (rerun keeps the running set)" bash -c "[ '$rc' != 0 ] && grep -q 'COMPOSE_FILE=docker-compose.yml:docker-compose.sensor.yml' '$d/out'"
 rc="$(STUB_PS_DIR="$d/deploy" STUB_PS_FILES="$running" run_install "$d" --yes --no-sensor)"
 check "sensor running, explicit --no-sensor: allowed" bash -c "[ '$rc' = 0 ] && grep -qx 'COMPOSE_FILE=docker-compose.yml' '$d/deploy/.env'"
+
+# 23. A sensor profile image is verified against its release tag's identity.
+# shellcheck source=lib/common.sh
+id_of() { (source "$src/lib/common.sh" >/dev/null 2>&1; signing_identity "$1"); }
+check "relay profile image: release tag identity" [ "$(id_of ghcr.io/openctemio/sensor:v0.42.0-relay)" = "https://github.com/openctemio/sensor/.github/workflows/docker-publish.yml@refs/tags/v0.42.0" ]
+check "plain sensor image: unchanged identity" [ "$(id_of ghcr.io/openctemio/sensor:v0.41.1)" = "https://github.com/openctemio/sensor/.github/workflows/docker-publish.yml@refs/tags/v0.41.1" ]
+check "server image: unchanged identity" [ "$(id_of ghcr.io/openctemio/openctem-server:v0.24.1)" = "https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/v0.24.1" ]
 
 echo "${pass} passed, ${failed} failed"
 [ "$failed" -eq 0 ]
