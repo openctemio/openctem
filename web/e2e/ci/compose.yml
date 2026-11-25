@@ -110,6 +110,13 @@ services:
       NODE_ENV: production
       BACKEND_API_URL: http://api:8080
       SECURE_COOKIES: 'false'
+      # The web is published on the runner's loopback only, and the test
+      # runner is the front proxy: the sign-in journeys spec gives each
+      # simulated person's browser one X-Forwarded-For address, the way the
+      # gateway writes one per client. The web passes that address on (the
+      # right-most entry only) and the API, which trusts the web, limits
+      # sign-ins per person as in production.
+      TRUST_PROXY_HEADERS: 'true'
     healthcheck:
       test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1:3000/api/health']
       interval: 2s
