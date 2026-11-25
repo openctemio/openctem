@@ -39,8 +39,11 @@ export function ClosingModeSection() {
   if (!canManage) return null
 
   return (
+    // The settings reading width: on a wide screen the switch rows keep their
+    // switch beside the text instead of at the far end of the page.
     <SettingsSection
       id="closing-mode"
+      className="max-w-settings"
       title={t('settings.closing.title', 'Closing findings')}
       description={t(
         'settings.closing.description',
