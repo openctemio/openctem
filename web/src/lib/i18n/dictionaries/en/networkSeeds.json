@@ -9,11 +9,12 @@
   "networkSeeds.emptyTitle": "No network seeds",
   "networkSeeds.errorTitle": "network seeds",
   "networkSeeds.expanding": "Looking it up in public routing data…",
-  "networkSeeds.intro": "AS numbers and organization names that are yours. Each is looked up in public routing data (RIPEstat; the value is sent there): an AS number lists the address ranges it announces, which you can add as scope entries; an organization name lists the AS numbers registered to it. A seed never lets a scan reach anything by itself, scope entries do.",
+  "networkSeeds.intro": "AS numbers and organization names that are yours. Each is looked up in public routing data (RIPEstat; the value is sent there): an AS number lists the address ranges it announces, which you can add as scope entries; an organization name lists the AS numbers registered to it.",
   "networkSeeds.kind": "Kind",
   "networkSeeds.kindAsn": "AS number",
   "networkSeeds.kindOrg": "Organization",
   "networkSeeds.lastLookup": "Looked up",
+  "networkSeeds.limitReached": "You have reached the limit of {max, plural, one {# seed} other {# seeds}}. Remove one to add another.",
   "networkSeeds.lookupFailed": "The last lookup failed; it is retried later.",
   "networkSeeds.lookups.description": "Your AS numbers and organization names are sent to RIPEstat to find your address ranges. Turn this off to keep them private; network seeds are then not looked up.",
   "networkSeeds.lookups.title": "Network seed lookups",
@@ -35,5 +36,6 @@
   "networkSeeds.showFewer": "Show fewer",
   "networkSeeds.tab": "Networks",
   "networkSeeds.tooLarge": "Larger than the platform allows",
-  "networkSeeds.value": "Value"
+  "networkSeeds.value": "Value",
+  "networkSeeds.valueRequired": "Enter an AS number or an organization name."
 }

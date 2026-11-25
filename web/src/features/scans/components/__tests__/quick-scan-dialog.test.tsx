@@ -60,10 +60,15 @@ describe('QuickScanDialog', () => {
     })
     render(<QuickScanDialog open onOpenChange={vi.fn()} />)
     const start = screen.getByRole('button', { name: /Start scan/ })
-    expect(start).toBeDisabled()
+    expect(start).toBeEnabled()
+    await userEvent.click(start)
+    expect(await screen.findByText('Please enter at least one target')).toBeInTheDocument()
+    expect(quickScan).not.toHaveBeenCalled()
 
     await userEvent.type(screen.getByLabelText('Targets'), 'example.com, api.example.com')
-    expect(start).toBeDisabled() // no scanner yet: nothing is hardcoded
+    await userEvent.click(start) // no scanner yet: nothing is hardcoded
+    expect(await screen.findByText('Please choose a scanner')).toBeInTheDocument()
+    expect(quickScan).not.toHaveBeenCalled()
     await userEvent.click(screen.getByLabelText('Scanner'))
     await userEvent.click(await screen.findByRole('option', { name: 'Nuclei' }))
     await userEvent.click(start)

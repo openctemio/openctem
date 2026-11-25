@@ -1,12 +1,10 @@
 {
-  "account.activity.description": "View your recent account activity and security events",
   "account.activity.empty": "No activity found",
   "account.activity.loadFailed": "your activity",
   "account.activity.next": "Next page",
   "account.activity.pageOf": "Page {page} of {total}",
   "account.activity.prev": "Previous page",
   "account.activity.showing": "Showing {from} to {to} of {total, plural, one {# activity} other {# activities}}",
-  "account.activity.title": "Activity log",
   "account.area.back": "Back",
   "account.area.backTo": "Back to {name}",
   "account.area.backToOrganization": "Back to your organization",
