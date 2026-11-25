@@ -121,7 +121,8 @@ export function OrganizationSummary({
           ) : (
             <ul className="space-y-0.5">
               {org.owner_emails.slice(0, 3).map((e) => (
-                <li key={e} className="truncate">
+                // An address is read whole: it wraps at any character.
+                <li key={e} data-token className="[overflow-wrap:anywhere]">
                   {e}
                 </li>
               ))}

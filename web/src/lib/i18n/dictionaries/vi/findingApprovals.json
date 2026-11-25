@@ -138,6 +138,8 @@
   "findingApprovals.policy.decideWithin": "Thời hạn quyết định (ngày)",
   "findingApprovals.policy.decideWithinHelp": "Yêu cầu đang chờ sẽ hết hạn sau số ngày này, từ {min} đến {max}.",
   "findingApprovals.policy.defaultFP": "Giống mức ở trên",
+  "findingApprovals.policy.defaultFloorHint": "Mặc định, tối thiểu: {tier}",
+  "findingApprovals.policy.defaultShort": "Mặc định",
   "findingApprovals.policy.defaultTier": "Mặc định: {tier}",
   "findingApprovals.policy.description": "Bao nhiêu người phê duyệt mỗi yêu cầu, đó là ai, và một quyết định kéo dài bao lâu. Mọi thay đổi đều được kiểm toán và mọi người phê duyệt đều được báo.",
   "findingApprovals.policy.epss": "Ngưỡng khả năng bị khai thác (EPSS)",

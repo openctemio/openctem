@@ -138,6 +138,8 @@
   "findingApprovals.policy.decideWithin": "Decision deadline (days)",
   "findingApprovals.policy.decideWithinHelp": "A pending request expires after this many days, from {min} to {max}.",
   "findingApprovals.policy.defaultFP": "Same as the level above",
+  "findingApprovals.policy.defaultFloorHint": "Default, minimum: {tier}",
+  "findingApprovals.policy.defaultShort": "Default",
   "findingApprovals.policy.defaultTier": "Default: {tier}",
   "findingApprovals.policy.description": "How many people approve each request, who they are, and how long a decision lasts. Changes are audited and every approver is told.",
   "findingApprovals.policy.epss": "Exploit likelihood (EPSS) threshold",

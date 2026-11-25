@@ -127,8 +127,10 @@ export default function AdminSessionsPage() {
           hideBelow: 1100,
           label: t('admin.sessions.col.method', 'Signed in with'),
         },
+        // Wraps ("Mật khẩu + ứng dụng xác thực" on two lines) instead of
+        // being cut; a wider column made the table scroll at 1440 px.
         cell: ({ row }) => (
-          <span className="block truncate">
+          <span className="block whitespace-normal break-words">
             {row.original.auth_method === 'idp'
               ? t('admin.sessions.idp', 'Identity provider')
               : t('admin.sessions.methodLocal', 'Password + authenticator')}
@@ -145,7 +147,14 @@ export default function AdminSessionsPage() {
           label: t('admin.sessions.col.ip', 'IP address'),
         },
         cell: ({ row }) => (
-          <span className="block truncate tabular-nums" title={row.original.user_agent}>
+          // One line (the phone card's field is one line): a long IPv6
+          // address ends in an ellipsis, whole in the hover text with the
+          // browser.
+          <span
+            data-cut-tooltip
+            className="block truncate tabular-nums"
+            title={[row.original.ip_address, row.original.user_agent].filter(Boolean).join('\n')}
+          >
             {row.original.ip_address || (
               <EmptyCell title={t('admin.sessions.noIp', 'No address recorded')} />
             )}
