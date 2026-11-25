@@ -544,7 +544,10 @@ export function DetailHeader({
           <div className="flex min-w-0 flex-[1_1_8rem] flex-wrap items-center gap-2">
             {factsBelow}
           </div>
-          <div className="ms-auto">{actionsGroup}</div>
+          {/* The facts grow to fill the line, which puts the actions at its
+              end; a toolbar that drops to the next line starts it, under
+              the facts, instead of floating to the far edge. */}
+          {actionsGroup}
         </div>
       )}
     </div>

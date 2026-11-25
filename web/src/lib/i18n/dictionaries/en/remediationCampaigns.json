@@ -133,7 +133,7 @@
   "remediationCampaigns.sheet.noTasks": "No tasks yet",
   "remediationCampaigns.sheet.prev": "Previous campaign (k)",
   "remediationCampaigns.sheet.status": "Where it stands",
-  "remediationCampaigns.sheet.tasksError": "The tasks could not be loaded",
+  "remediationCampaigns.sheet.tasksError": "the tasks",
   "remediationCampaigns.status.active": "Active",
   "remediationCampaigns.status.canceled": "Canceled",
   "remediationCampaigns.status.completed": "Completed",
