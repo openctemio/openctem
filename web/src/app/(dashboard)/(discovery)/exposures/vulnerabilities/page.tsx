@@ -148,17 +148,11 @@ export default function VulnerabilitiesPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('exposures.vulnerabilities.title', 'Vulnerabilities')}
-          // On a phone the catalog list comes first: the description is read
-          // out but not drawn there.
-          description={
-            <span className={tab === 'catalog' ? 'max-md:sr-only' : undefined}>
-              {t(
-                'exposures.vulnerabilities.description',
-                'Vulnerability findings across your assets, the CVEs behind them, and the CVE catalog.'
-              )}
-            </span>
-          }
+          title={t('exposures.page.title', 'Exposures')}
+          description={t(
+            'exposures.vulnerabilities.description',
+            'Vulnerability findings across your assets, the CVEs behind them, and the CVE catalog.'
+          )}
           viewSwitcher={
             canReadCatalog ? (
               <ViewSwitcher

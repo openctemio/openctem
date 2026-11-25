@@ -857,10 +857,7 @@ export default function AssetGroupsPage() {
     <>
       <Main>
         <PageStack>
-          <PageHeader
-            title={t('assetGroups.title', 'Asset groups')}
-            description={t('assetGroups.description', 'Organize and monitor assets by group.')}
-          >
+          <PageHeader title={t('assets.overview.title', 'Assets')}>
             <Can permission={Permission.AssetGroupsWrite} mode="disable">
               <Button
                 size="sm"

@@ -8,10 +8,7 @@ import { TasksView } from '@/features/remediation-hub/components/tasks-view'
 export default function RemediationTasksPage() {
   const { t } = useTranslation()
   return (
-    <HubPage
-      title={t('remediationHub.tasks.title')}
-      description={t('remediationHub.tasks.description')}
-    >
+    <HubPage description={t('remediationHub.tasks.description')}>
       <Suspense>
         <TasksView />
       </Suspense>

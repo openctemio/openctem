@@ -14,6 +14,8 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ActionMenu } from '@/components/ui/action-menu'
+import { CircleStop, MoreHorizontal, Pause, RefreshCw } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -172,31 +174,59 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
       <PageStack>
         <PageHeader
           title={p.name}
+          // The status belongs to the name: on its line, never under the actions.
+          titleAction={
+            <Badge variant={p.status === 'active' ? 'outline' : 'secondary'}>
+              {t(`programs.status.${p.status}`, PROGRAM_STATUS_LABEL[p.status])}
+            </Badge>
+          }
           description={
-            <span className="flex flex-wrap items-center gap-2">
-              <Badge variant={p.status === 'active' ? 'outline' : 'secondary'}>
-                {t(`programs.status.${p.status}`, PROGRAM_STATUS_LABEL[p.status])}
-              </Badge>
-              <SafeExternalLink href={p.program_url} className="text-sm underline">
-                {p.program_url}
-              </SafeExternalLink>
-            </span>
+            <SafeExternalLink href={p.program_url} className="break-words underline">
+              {p.program_url}
+            </SafeExternalLink>
           }
         >
           {canWrite && p.status !== 'ended' && (
             <>
               <Button variant="outline" onClick={() => setReimport((x) => !x)} disabled={busy}>
+                <RefreshCw aria-hidden />
                 {t('programs.reimport', 'Re-import scope')}
               </Button>
-              {p.status === 'active' && (
-                <Button variant="outline" disabled={busy} onClick={() => setPending('suspend')}>
-                  {t('programs.suspend', 'Suspend')}
-                </Button>
-              )}
-              <span aria-hidden className="mx-1 h-6 w-px shrink-0 bg-border" />
-              <Button variant="destructive" disabled={busy} onClick={() => setPending('end')}>
-                {t('programs.end', 'End')}
-              </Button>
+              {/* Suspend and End (irreversible) wait behind "More actions": no
+                  filled destructive button at rest. */}
+              <ActionMenu
+                title={p.name}
+                label={t('common.actionMenu.more', 'More actions')}
+                items={[
+                  ...(p.status === 'active'
+                    ? [
+                        {
+                          id: 'suspend',
+                          label: t('programs.suspend', 'Suspend'),
+                          icon: Pause,
+                          onSelect: () => setPending('suspend'),
+                        },
+                      ]
+                    : []),
+                  {
+                    id: 'end',
+                    label: t('programs.end', 'End'),
+                    icon: CircleStop,
+                    destructive: true,
+                    onSelect: () => setPending('end'),
+                  },
+                ]}
+                trigger={
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={busy}
+                    aria-label={t('common.actionMenu.more', 'More actions')}
+                  >
+                    <MoreHorizontal aria-hidden />
+                  </Button>
+                }
+              />
             </>
           )}
         </PageHeader>

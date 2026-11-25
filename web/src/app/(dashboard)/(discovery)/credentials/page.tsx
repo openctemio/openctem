@@ -886,16 +886,10 @@ export default function CredentialsPage() {
         <PageStack>
           <PageHeader
             title={t('credentials.page.title', 'Credential leaks')}
-            // On a phone the list comes first: the description is read out
-            // but not drawn, and the tiles follow the list.
-            description={
-              <span className="max-md:sr-only">
-                {t(
-                  'credentials.page.description',
-                  'Leaked passwords, keys and tokens tied to your organization, from breaches, code and the dark web.'
-                )}
-              </span>
-            }
+            description={t(
+              'credentials.page.description',
+              'Leaked passwords, keys and tokens tied to your organization, from breaches, code and the dark web.'
+            )}
           />
 
           <MetricStrip

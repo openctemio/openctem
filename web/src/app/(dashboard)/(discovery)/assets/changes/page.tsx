@@ -363,17 +363,11 @@ export default function AssetChangesPage() {
     [t, router]
   )
 
-  const title = t('assetTimeline.activity.title', 'Activity')
-  const description = t(
-    'assetTimeline.activity.description',
-    'What changed on your assets: new, gone and newly exposed assets over a period, and every change of an asset value.'
-  )
-
   if (!canRead) {
     return (
       <Main>
         <PageStack>
-          <PageHeader title={title} description={description} />
+          <PageHeader title={t('assets.overview.title', 'Assets')} />
           <NoAccessState
             title={t('assetTimeline.activity.subject', 'asset activity')}
             permission={Permission.AssetsRead}
@@ -469,7 +463,7 @@ export default function AssetChangesPage() {
   return (
     <Main>
       <PageStack>
-        <PageHeader title={title} description={description} />
+        <PageHeader title={t('assets.overview.title', 'Assets')} />
         <AssetsSectionTabs />
 
         {/* The list's title row: the kind on screen and its one count (the
