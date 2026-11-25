@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 
+import { focusFirstInvalid } from '@/features/shared/components/forms/field-error'
 import { ConsentError, enterDeviceCode } from '../api/consent'
 import { formatUserCodeInput, normalizeUserCode } from '../lib/device-code'
 
@@ -32,10 +33,11 @@ export function DeviceCodeView() {
 
   const normalized = normalizeUserCode(code)
 
-  const submit = async (e: FormEvent) => {
+  const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!normalized) {
       setError(t('mcp.device.malformed', 'Enter the 8 characters your terminal shows.'))
+      focusFirstInvalid(e.currentTarget)
       return
     }
     setBusy(true)
@@ -108,7 +110,7 @@ export function DeviceCodeView() {
         >
           {t(
             'mcp.device.warning',
-            'Enter a code only if you just started the sign-in yourself, on a machine you control. Never enter a code someone sent you or asked you to type.'
+            'Use a machine you control, and only right after you started the sign-in. Never enter a code someone sent you or asked you to type.'
           )}
         </EntryBanner>
         {error && (
@@ -117,7 +119,7 @@ export function DeviceCodeView() {
           </EntryBanner>
         )}
         <EntryActions>
-          <Button variant="signal" type="submit" disabled={busy || !normalized}>
+          <Button variant="signal" type="submit" disabled={busy}>
             {busy && <Loader2 className="size-4 animate-spin" aria-hidden />}
             {t('mcp.device.continue', 'Continue')}
           </Button>

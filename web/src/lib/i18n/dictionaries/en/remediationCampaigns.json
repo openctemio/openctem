@@ -17,6 +17,7 @@
   "remediationCampaigns.actions.start": "Start",
   "remediationCampaigns.addTasks.aTask": "A task",
   "remediationCampaigns.addTasks.cannotMove": "you cannot move it",
+  "remediationCampaigns.addTasks.chooseOne": "Choose at least one task.",
   "remediationCampaigns.addTasks.conflictDescription": "A task is in one campaign at a time. Move the tasks you may change into this campaign, or cancel.",
   "remediationCampaigns.addTasks.conflictTitle": "Some tasks are in another campaign",
   "remediationCampaigns.addTasks.description": "Open tasks that are in no campaign. A task is in one campaign at a time.",
