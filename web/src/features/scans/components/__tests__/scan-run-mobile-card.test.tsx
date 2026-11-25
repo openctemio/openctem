@@ -44,7 +44,7 @@ describe('ScanRunMobileCard', () => {
     )
     const stateLine = container.querySelector('[data-slot="run-state"]')!
     expect(stateLine.textContent).toContain('Partial')
-    expect(stateLine.textContent).toContain('Active')
+    expect(stateLine.textContent).toContain('Probing')
     expect(stateLine.textContent).toContain('2 of 6 steps did not finish')
     expect(stateLine.getAttribute('title')).toContain('Scan run completed partially')
     const lines = container.querySelectorAll('[data-slot="meta-line"]')

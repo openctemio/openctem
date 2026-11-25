@@ -111,7 +111,7 @@ export function FindingTicketLinks({
       default:
         return t(
           'findings.ticketHolds.belowThreshold',
-          'Not sent to Jira — below the create policy'
+          'Not sent to Jira: below the create policy'
         )
     }
   }

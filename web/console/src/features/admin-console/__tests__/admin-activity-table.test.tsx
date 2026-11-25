@@ -36,12 +36,13 @@ describe('AdminActivityTable', () => {
     expect(screen.queryByText('IP address')).not.toBeInTheDocument()
   })
 
-  it('is a named table whose action is the row name, on one line', () => {
+  it('is a named table whose action is the row name, without the event code', () => {
     render(<AdminActivityTable entries={[entry({ action: 'organization.idp_create' })]} />)
     const table = screen.getByRole('table', { name: 'Administrator activity' })
     const row = within(table).getAllByRole('row')[1]
     expect(within(row).getByText('Identity provider added')).toBeInTheDocument()
-    expect(within(row).getByText('organization.idp_create')).toBeInTheDocument()
+    // The internal event code is not shown to people.
+    expect(within(row).queryByText('organization.idp_create')).not.toBeInTheDocument()
   })
 
   it('shows a failed read in the table with Retry, the toolbar staying', async () => {

@@ -179,7 +179,7 @@
   "scans.assetsDialog.noAddress": "Không tài sản nào đã chọn có địa chỉ quét được.",
   "scans.assetsDialog.noTargets": "Các tài sản đã chọn không có đích nào quét được",
   "scans.assetsDialog.overCap": "{count} đích vượt quá giới hạn — chỉ {max} đích đầu tiên được quét.",
-  "scans.assetsDialog.rateLimit": "Đã đạt giới hạn tần suất — vui lòng chờ một lát rồi mới bắt đầu lượt quét khác.",
+  "scans.assetsDialog.rateLimit": "Đã đạt giới hạn tần suất. Hãy chờ một lát rồi mới bắt đầu lượt quét khác.",
   "scans.assetsDialog.rejected": "Trình quét đã từ chối một số đích.",
   "scans.assetsDialog.runMany": "Chạy quét ngay trên {count} đích.",
   "scans.assetsDialog.runOne": "Chạy quét ngay trên 1 đích.",

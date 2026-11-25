@@ -91,7 +91,7 @@ describe('ScimTokensPage', () => {
   it('is available to tenant admins who are not application administrators', () => {
     render(<ScimTokensPage />)
     expect(screen.queryByText('Application administrator only')).not.toBeInTheDocument()
-    expect(screen.getByText('SCIM endpoint')).toBeInTheDocument()
+    expect(screen.getByText('Directory sync address')).toBeInTheDocument()
   })
 
   it('shows the empty state when there are no tokens', () => {
@@ -101,7 +101,7 @@ describe('ScimTokensPage', () => {
 
   it('renders the SCIM endpoint base URL card', () => {
     render(<ScimTokensPage />)
-    expect(screen.getByText('SCIM endpoint')).toBeInTheDocument()
+    expect(screen.getByText('Directory sync address')).toBeInTheDocument()
   })
 
   it('lists existing tokens with status', () => {

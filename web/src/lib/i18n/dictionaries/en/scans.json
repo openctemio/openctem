@@ -179,7 +179,7 @@
   "scans.assetsDialog.noAddress": "None of the selected assets have a scannable address.",
   "scans.assetsDialog.noTargets": "No scannable targets in the selected assets",
   "scans.assetsDialog.overCap": "{count, plural, one {# target exceeds} other {# targets exceed}} the limit. Only the first {max} will be scanned.",
-  "scans.assetsDialog.rateLimit": "Rate limit reached — please wait a moment before starting another scan.",
+  "scans.assetsDialog.rateLimit": "Rate limit reached. Wait a moment before starting another scan.",
   "scans.assetsDialog.rejected": "Some targets were rejected by the scanner.",
   "scans.assetsDialog.runMany": "Run an immediate scan against {count, plural, one {# target} other {# targets}}.",
   "scans.assetsDialog.runOne": "Run an immediate scan against 1 target.",
