@@ -19,6 +19,7 @@ export function NotificationSectionHeader({ children }: { children?: ReactNode }
   const { t } = useTranslation()
   return (
     <>
+      {/* anatomy-ok: inside a PageStack (each notification page renders this first in its own) */}
       <PageHeader
         title={t('notificationChannels.page.title', 'Notification channels')}
         description={t(
