@@ -13,6 +13,7 @@ import {
 } from '@/features/shared'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { EmptyCell } from '@/features/shared/components/empty-cell'
+import { CellText } from '@/features/shared/components/cell-text'
 import { auditActionLabel } from '../lib/audit-action-label'
 import type { AdminAuditEntry } from '../types'
 
@@ -95,17 +96,16 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
     {
       accessorKey: 'admin_email',
       header: t('admin.adminActivityTable.administrator', 'Administrator'),
+      // Room for an address on two lines at most, broken at its separators
+      // (a 176 px column broke one into three lines and made every row tall);
+      // it gives way down to its floor on a narrow frame.
       meta: {
         kind: 'text',
-        width: 176,
+        width: 240,
+        minWidth: 160,
         label: t('admin.adminActivityTable.administrator', 'Administrator'),
       },
-      cell: ({ row }) => (
-        // An address wraps at any character rather than lose its domain.
-        <span data-token className="block whitespace-normal [overflow-wrap:anywhere]">
-          {toDisplayText(row.original.admin_email)}
-        </span>
-      ),
+      cell: ({ row }) => <CellText dir="auto">{toDisplayText(row.original.admin_email)}</CellText>,
     },
     {
       accessorKey: 'success',
@@ -139,8 +139,10 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
       header: t('admin.adminActivityTable.when', 'When'),
       meta: {
         kind: 'datetime-recent',
-        // "less than a minute ago" whole.
+        // "less than a minute ago" whole; on a narrow frame it wraps rather
+        // than push the column, and its header, past the frame's edge.
         width: 176,
+        minWidth: 120,
         label: t('admin.adminActivityTable.when', 'When'),
       },
       cell: ({ row }) => <RelativeTime date={row.original.created_at} />,

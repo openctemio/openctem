@@ -589,6 +589,8 @@ function PackPhoneCard({ pack }: { pack: PlatformContentPackResponse }) {
  *   2026.11.1   2 days ago
  */
 function ChannelPhoneCard({ channel }: { channel: ContentChannelResponse }) {
+  // The channel in words, as in the table ("Ổn định", never the raw "stable").
+  const { channelLabel } = usePackLabels()
   return (
     <div data-slot="channel-card" className="flex w-full min-w-0 flex-col gap-1 px-3 py-3">
       <div className="flex min-w-0 items-center gap-2">
@@ -596,7 +598,7 @@ function ChannelPhoneCard({ channel }: { channel: ContentChannelResponse }) {
           {channel.name}
         </span>
         <Badge variant={channel.channel === 'stable' ? 'secondary' : 'outline'}>
-          {channel.channel}
+          {channelLabel(channel.channel)}
         </Badge>
       </div>
       <MetaLine
