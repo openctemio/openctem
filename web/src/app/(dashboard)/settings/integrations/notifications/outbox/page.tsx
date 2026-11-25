@@ -13,7 +13,6 @@ import {
   RotateCcw,
   Trash2,
   ExternalLink,
-  CheckCircle2,
   AlertCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -75,20 +74,9 @@ function QueueHealthStatus({
   const hasPending = stats.pending > 0 || stats.processing > 0
   const isHealthy = !hasIssues && !hasPending
 
-  if (isHealthy) {
-    return (
-      <Alert>
-        <CheckCircle2 className={cn('h-4 w-4', HEALTH_ICON_CLASS.ok)} />
-        <AlertTitle>{t('notificationChannels.outbox.healthy', 'Queue is healthy')}</AlertTitle>
-        <AlertDescription>
-          {t(
-            'notificationChannels.outbox.healthyDesc',
-            'All notifications are being delivered normally'
-          )}
-        </AlertDescription>
-      </Alert>
-    )
-  }
+  // A healthy queue needs no banner: the table under it says the queue is
+  // empty (a box of its own above the list was a wasted row).
+  if (isHealthy) return null
 
   // Build status parts
   const parts: string[] = []
@@ -251,6 +239,7 @@ export default function NotificationOutboxPage() {
     {
       accessorKey: 'title',
       header: t('notificationChannels.outbox.col.title', 'Title'),
+      meta: { kind: 'name' },
       cell: ({ row }) => {
         const entry = row.original
         return (
@@ -274,6 +263,7 @@ export default function NotificationOutboxPage() {
     {
       accessorKey: 'event_type',
       header: t('notificationChannels.outbox.col.event', 'Event'),
+      meta: { kind: 'text', hideBelow: 960 },
       cell: ({ row }) => (
         <div className="flex flex-col">
           <span className="font-medium">{row.original.event_type}</span>
@@ -284,6 +274,7 @@ export default function NotificationOutboxPage() {
     {
       accessorKey: 'severity',
       header: t('notificationChannels.outbox.col.severity', 'Severity'),
+      meta: { kind: 'severity' },
       cell: ({ row }) => {
         return (
           <SeverityBadge severity={row.original.severity}>
@@ -295,6 +286,7 @@ export default function NotificationOutboxPage() {
     {
       accessorKey: 'status',
       header: t('notificationChannels.outbox.col.status', 'Status'),
+      meta: { kind: 'status' },
       cell: ({ row }) => {
         const entry = row.original
         const health = OUTBOX_HEALTH[entry.status]
@@ -329,6 +321,7 @@ export default function NotificationOutboxPage() {
     {
       id: 'retries',
       header: t('notificationChannels.outbox.col.retries', 'Retries'),
+      meta: { kind: 'number', hideBelow: 1100 },
       cell: ({ row }) => (
         <span className="text-sm tabular-nums">
           {row.original.retry_count} / {row.original.max_retries}
@@ -338,6 +331,7 @@ export default function NotificationOutboxPage() {
     {
       accessorKey: 'scheduled_at',
       header: t('notificationChannels.outbox.col.scheduled', 'Scheduled'),
+      meta: { kind: 'datetime-recent' },
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground">
           <RelativeTime date={row.original.scheduled_at} />
@@ -468,6 +462,7 @@ export default function NotificationOutboxPage() {
               data={entries}
               getRowId={(e) => e.id}
               isLoading={entriesLoading}
+              pinActions
               showSearch={false}
               toolbarEnd={
                 <RefreshButton

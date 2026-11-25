@@ -73,7 +73,13 @@ function buildColumns(t: TFn): ColumnDef<Integration>[] {
               </Link>
             }
             secondary={
-              problem ? <span className="text-destructive">{problem}</span> : i.description
+              problem ? (
+                <span className="block truncate text-destructive" title={problem}>
+                  {problem}
+                </span>
+              ) : (
+                i.description
+              )
             }
             truncate
           />
