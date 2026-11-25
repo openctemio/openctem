@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { SettingsSaveBar, SettingsSection } from '@/features/shared'
+import { SettingsBlock, SettingsSaveBar, SettingsSection } from '@/features/shared'
 import { updateCredentialSettings } from '../api/use-credentials-api'
 import type { ApiCredentialSettings } from '../api/credential-api.types'
 
@@ -86,6 +86,7 @@ export function CredentialStorageSettingsForm({
   return (
     <>
       <SettingsSection
+        framed
         id={`${id}-title`}
         title={t('credentials.settings.storageTitle', 'Secret values')}
         description={t(
@@ -93,30 +94,39 @@ export function CredentialStorageSettingsForm({
           'Whether the password, token or key of an imported leaked credential is kept. The fingerprint is keyed to your organization, so the same secret matches across your own leaks only.'
         )}
       >
-        <RadioGroup
-          value={choice}
-          onValueChange={(v) => setChoice(v as Choice)}
-          aria-labelledby={`${id}-title`}
-          className="gap-2"
-        >
-          {CHOICES.map((c) => (
-            <div key={c} className="flex items-start gap-3 rounded-lg border p-3">
-              <RadioGroupItem value={c} id={`${id}-${c}`} className="mt-0.5" />
-              <div className="space-y-0.5">
-                <Label htmlFor={`${id}-${c}`} className="font-medium">
-                  {label[c]}
-                </Label>
-                <p className="text-xs text-muted-foreground">{hint[c]}</p>
+        <SettingsBlock>
+          <RadioGroup
+            value={choice}
+            onValueChange={(v) => setChoice(v as Choice)}
+            aria-labelledby={`${id}-title`}
+          >
+            {CHOICES.map((c) => (
+              <div key={c} className="flex items-start gap-3">
+                <RadioGroupItem
+                  value={c}
+                  id={`${id}-${c}`}
+                  className="mt-1"
+                  aria-describedby={`${id}-${c}-hint`}
+                />
+                <div className="grid gap-1">
+                  <Label htmlFor={`${id}-${c}`}>{label[c]}</Label>
+                  <span
+                    id={`${id}-${c}-hint`}
+                    className="text-cap text-muted-foreground text-pretty"
+                  >
+                    {hint[c]}
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
-        </RadioGroup>
-        <p className="text-xs text-muted-foreground">
-          {t(
-            'credentials.settings.appliesNext',
-            'Applies to the next import. Values already kept stay until the credential is deleted.'
-          )}
-        </p>
+            ))}
+          </RadioGroup>
+          <p className="text-cap text-muted-foreground">
+            {t(
+              'credentials.settings.appliesNext',
+              'Applies to the next import. Values already kept stay until the credential is deleted.'
+            )}
+          </p>
+        </SettingsBlock>
       </SettingsSection>
       <SettingsSaveBar
         dirty={dirty}
