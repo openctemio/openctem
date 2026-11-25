@@ -169,7 +169,10 @@ function ChangeDetail({ change, t }: { change: StateChangeResponse; t: T }) {
 
 function ExposureNow({ change, t }: { change: StateChangeResponse; t: T }) {
   if (!change.asset_exposure) return <span className="text-sm text-muted-foreground">—</span>
-  const facing = change.asset_internet_accessible || change.asset_exposure === 'public'
+  // "Public" already says it is reachable from the internet: the mark is
+  // added only to a level that does not say so (a restricted asset that is
+  // internet-facing), so the value fits one line of a phone card.
+  const facing = change.asset_internet_accessible && change.asset_exposure !== 'public'
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
       <span className="text-sm">{exposureLabel(t, change.asset_exposure)}</span>

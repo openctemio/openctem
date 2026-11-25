@@ -6,4 +6,7 @@
 - The header breadcrumb folds its parent levels into the "…" menu by measured width, so the names that show are whole (tenant app and platform console).
 - Detail pages (finding, task, asset): the properties rail is 21rem, and a value that does not fit beside its label goes under it instead of being cut (assignee e-mail, watchers).
 - Ready to close: the "how the platform knows" sentence wraps instead of being cut.
+- Needs attention queues: the "why" sentence sits in the heading row from 768 px (it starts the next line only when the row has no room), not on a row of its own above the list.
+- Phone cards: a two-line table value (a long reason) is one line with an ellipsis and its full text as the title, not cut at the card's edge. Asset activity no longer adds "Internet-facing" beside "Public" (it says so already).
+- Filter options wrap instead of being cut; the finding's assignee shows the whole name in its properties.
 - Docs: none (layout and wording of existing pages; web/docs/ui-style-contract.md already states the cut-meaning rule)

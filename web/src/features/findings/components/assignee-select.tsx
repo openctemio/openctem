@@ -206,7 +206,9 @@ export function AssigneeSelect({
           variant={variant}
           size={size}
           className={
-            field ? 'w-full justify-start gap-2 font-normal' : size === 'sm' ? 'gap-1' : 'gap-2'
+            field
+              ? 'w-full justify-start gap-2 font-normal'
+              : cn(size === 'sm' ? 'gap-1' : 'gap-2', showFullName && 'max-w-full')
           }
           disabled={disabled || loading}
         >
@@ -223,7 +225,16 @@ export function AssigneeSelect({
                 <span
                   data-cut-tooltip
                   title={value.name}
-                  className={field ? 'min-w-0 flex-1 truncate text-start' : 'max-w-[80px] truncate'}
+                  // The whole name where it is shown in full (the finding's
+                  // properties): its row gives it a line of its own when it
+                  // does not fit beside the label; the first name is capped.
+                  className={
+                    field
+                      ? 'min-w-0 flex-1 truncate text-start'
+                      : showFullName
+                        ? 'min-w-0 truncate'
+                        : 'max-w-[80px] truncate'
+                  }
                 >
                   {showFullName || field ? value.name : value.name.split(' ')[0]}
                 </span>

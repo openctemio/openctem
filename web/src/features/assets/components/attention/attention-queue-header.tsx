@@ -175,12 +175,14 @@ export function AttentionQueueHeader({
         }
       />
       {/* A sentence, read whole and never hidden behind a menu where there is
-          room for it: from 1280 px it wraps in what the heading row has left;
-          from 768 px it is the header's last line, under the heading and the
-          actions. On a phone it is read at the top of the reason menu. */}
+          room for it: from 768 px it wraps in what the heading row has left
+          (at least 16rem). Where the row has less, it starts the next line
+          and the inventory link follows it there, so it never takes a row of
+          its own above the list. On a phone it is read at the top of the
+          reason menu. */}
       <p
         data-slot="attention-why"
-        className="min-w-64 flex-1 basis-0 text-sm text-muted-foreground max-md:hidden md:max-xl:order-last md:max-xl:basis-full"
+        className="min-w-64 flex-1 basis-0 text-sm text-muted-foreground max-md:hidden"
       >
         {why}
       </p>
