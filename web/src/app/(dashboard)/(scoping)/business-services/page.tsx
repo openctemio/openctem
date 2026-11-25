@@ -493,7 +493,7 @@ export default function BusinessServicesPage() {
           label={t('businessContext.sectionsLabel', 'Business context sections')}
         />
 
-        <MetricStrip loading={isLoading} items={metrics} />
+        <MetricStrip loading={isLoading} items={metrics} listFirst />
 
         {isLoading ? (
           <div className="space-y-2 rounded-xl border p-3">

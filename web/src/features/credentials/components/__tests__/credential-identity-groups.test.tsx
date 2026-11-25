@@ -53,7 +53,8 @@ describe('CredentialIdentityGroups', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Expand d@x.io' }))
     await screen.findByText('d@x.io leak')
-    expect(document.body.textContent).toContain('of 4 identities')
+    // Four groups fit one page: no pager.
+    expect(document.body.textContent).not.toContain('of 4 identities')
   })
 
   it('pages through identities', () => {

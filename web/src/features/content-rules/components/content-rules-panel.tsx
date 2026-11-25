@@ -6,7 +6,14 @@ import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -118,33 +125,33 @@ export function ContentRulesPanel() {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
-          <div className="space-y-1">
-            <CardTitle className="text-base">
-              {t('contentRules.yours.title', 'Your rules')}
-            </CardTitle>
-            <CardDescription>
-              {t(
-                'contentRules.yours.description',
-                'Name your own products, or find your own key formats and internal names. They apply to your organization only.'
-              )}
-            </CardDescription>
-          </div>
-          <GatedButton
-            allowed={canWrite && !atLimit}
-            reason={
-              canWrite
-                ? t('contentRules.atLimit', 'An organization has at most {count} rules', {
-                    count: data?.limit ?? 0,
-                  })
-                : noWrite
-            }
-            size="sm"
-            onClick={() => setEditing('new')}
-          >
-            <Plus className="size-4" aria-hidden />
-            {t('contentRules.new', 'New rule')}
-          </GatedButton>
+        {/* The action shares the title's line; the description takes the
+            whole width under them (never a button alone on a row). */}
+        <CardHeader>
+          <CardTitle className="text-base">{t('contentRules.yours.title', 'Your rules')}</CardTitle>
+          <CardDescription>
+            {t(
+              'contentRules.yours.description',
+              'Name your own products, or find your own key formats and internal names. They apply to your organization only.'
+            )}
+          </CardDescription>
+          <CardAction>
+            <GatedButton
+              allowed={canWrite && !atLimit}
+              reason={
+                canWrite
+                  ? t('contentRules.atLimit', 'An organization has at most {count} rules', {
+                      count: data?.limit ?? 0,
+                    })
+                  : noWrite
+              }
+              size="sm"
+              onClick={() => setEditing('new')}
+            >
+              <Plus className="size-4" aria-hidden />
+              {t('contentRules.new', 'New rule')}
+            </GatedButton>
+          </CardAction>
         </CardHeader>
         <CardContent>
           {rules.length === 0 ? (
