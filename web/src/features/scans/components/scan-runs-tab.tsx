@@ -123,7 +123,9 @@ const RUNS_WIDTH = {
   duration: 104,
   // "Nov 25, 09:58 AM" whole at 14px, plus the cell padding.
   started: 152,
-  trigger: 136,
+  // Who started it wraps (an e-mail at its separators): the start time took
+  // the room it gave up.
+  trigger: 116,
 }
 const RUNS_HIDE_BELOW = { intensity: 1100, trigger: 1000, tasks: 900, duration: 780 } as const
 
@@ -397,11 +399,7 @@ function ScanRunsTable() {
           const who =
             runTriggeredByLabel(row.original, t) ??
             runTriggerTypeLabel(row.original.trigger_type, t)
-          return (
-            <span className="block truncate text-sm text-muted-foreground" title={who}>
-              {who}
-            </span>
-          )
+          return <CellText className="text-sm text-muted-foreground">{who}</CellText>
         },
       },
     ],
