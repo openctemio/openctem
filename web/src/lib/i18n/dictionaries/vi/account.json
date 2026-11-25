@@ -5,6 +5,8 @@
   "account.activity.pageOf": "Trang {page} / {total}",
   "account.activity.prev": "Trang trước",
   "account.activity.showing": "Hiển thị {from} đến {to} trong {total} hoạt động",
+  "account.activity.tip": "Thấy hoạt động lạ? Hãy đổi mật khẩu và đăng xuất các phiên khác.",
+  "account.activity.tipLink": "Mở bảo mật tài khoản",
   "account.area.back": "Quay lại",
   "account.area.backTo": "Quay lại {name}",
   "account.area.backToOrganization": "Quay lại tổ chức của bạn",
