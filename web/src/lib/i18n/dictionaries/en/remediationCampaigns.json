@@ -59,7 +59,7 @@
   "remediationCampaigns.detail.hiddenTasks.one": "1 task of this campaign is outside your data scope and is not listed.",
   "remediationCampaigns.detail.hiddenTasks.other": "{count, plural, one {# task} other {# tasks}} of this campaign are outside your data scope and are not listed.",
   "remediationCampaigns.detail.jira": "Jira",
-  "remediationCampaigns.detail.loadError": "The campaign could not be loaded",
+  "remediationCampaigns.detail.loadError": "the campaign",
   "remediationCampaigns.detail.noProgress": "Progress shows once the campaign has tasks.",
   "remediationCampaigns.detail.owner": "Owner",
   "remediationCampaigns.detail.priority": "Priority",
