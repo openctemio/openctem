@@ -1,11 +1,10 @@
 'use client'
 
 import Link from '@/components/link'
-import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { useFindingApprovalSettings } from '@/features/findings/api/use-findings-api'
 import { FindingApprovalsForm } from '@/features/findings/components/finding-approvals-form'
-import { SettingsPage, SettingsRow, SettingsSection } from '@/features/shared'
+import { SettingsPage, SettingsSection } from '@/features/shared'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { useNavItemAccess } from '@/lib/permissions/use-filtered-sidebar'
 
@@ -59,25 +58,18 @@ export default function ApprovalsSettingsPage() {
               framed
               id="scans"
               title={t('settings.approvals.scansTitle', 'Scans')}
-              description={t(
-                'settings.approvals.scansDesc',
-                'Which scans wait for a person’s approval before they run is set on its own page, with its own permission.'
-              )}
-            >
-              <SettingsRow
-                label={t('settings.item.scan-approval', 'Scan approval')}
-                hint={t(
-                  'settings.desc.scan-approval',
-                  'Which scans need a person’s approval before they run: off by default.'
-                )}
-              >
-                <Button variant="outline" asChild>
-                  <Link href="/settings/scanning/scan-approval">
+              description={
+                <>
+                  {t(
+                    'settings.desc.scan-approval',
+                    'Which scans need a person’s approval before they run: off by default.'
+                  )}{' '}
+                  <Link href="/settings/scanning/scan-approval" className="link-inline">
                     {t('settings.approvals.scansOpen', 'Open scan approval')}
                   </Link>
-                </Button>
-              </SettingsRow>
-            </SettingsSection>
+                </>
+              }
+            />
           )
         }
       />

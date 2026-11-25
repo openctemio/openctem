@@ -6,11 +6,12 @@ import { AlertTriangle, Loader2, Plus, Trash2 } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
 import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
+import { SettingsBlock } from '@/features/shared/components/settings-fields'
+import { SettingsSection } from '@/features/shared/components/settings-section'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { savePrivateDestinations, testPrivateDestination } from '../api/use-platform-settings'
 import type {
@@ -261,194 +262,197 @@ export function PrivateDestinationsPanel({
 
   return (
     <>
-      <Card>
-        {/* No title: the page header names it; the description says what opening costs. */}
-        <CardHeader>
-          <CardDescription>
+      {settings.signup_open && (
+        <Alert>
+          <AlertTriangle className="size-4" aria-hidden />
+          <AlertTitle>
+            {t('admin.privateNetworks.signupOpenTitle', 'Closed while sign-up is open')}
+          </AlertTitle>
+          <AlertDescription>
             {t(
-              'admin.privateNetworks.description',
-              'For example a self-managed GitLab or a mail relay. Every organization’s webhooks, integrations and CI connections can reach an address opened here, so open only the hosts the platform needs.'
+              'admin.privateNetworks.signupOpenDesc',
+              'Anyone may create an organization on this server (SIGNUP_MODE=open), so no private range can be opened. Ranges can only be removed.'
             )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {settings.signup_open && (
-            <Alert>
-              <AlertTriangle className="size-4" aria-hidden />
-              <AlertTitle>
-                {t('admin.privateNetworks.signupOpenTitle', 'Closed while sign-up is open')}
-              </AlertTitle>
-              <AlertDescription>
-                {t(
-                  'admin.privateNetworks.signupOpenDesc',
-                  'Anyone may create an organization on this server (SIGNUP_MODE=open), so no private range can be opened. Ranges can only be removed.'
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-          {settings.all_private_open && (
-            <Alert>
-              <AlertTriangle className="size-4" aria-hidden />
-              <AlertTitle>
-                {t('admin.privateNetworks.allOpenTitle', 'Every private range is open')}
-              </AlertTitle>
-              <AlertDescription>
-                {t(
-                  'admin.privateNetworks.allOpenDesc',
-                  'This server runs with the development switch that opens every private range. The list below adds nothing until it is turned off.'
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
+          </AlertDescription>
+        </Alert>
+      )}
+      {settings.all_private_open && (
+        <Alert>
+          <AlertTriangle className="size-4" aria-hidden />
+          <AlertTitle>
+            {t('admin.privateNetworks.allOpenTitle', 'Every private range is open')}
+          </AlertTitle>
+          <AlertDescription>
+            {t(
+              'admin.privateNetworks.allOpenDesc',
+              'This server runs with the development switch that opens every private range. The list below adds nothing until it is turned off.'
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
 
-          <section className="space-y-2" aria-labelledby={`${id}-server`}>
-            <h3 id={`${id}-server`} className="text-body font-medium">
-              {t('admin.privateNetworks.serverTitle', 'Set on the server')}
-            </h3>
-            {settings.server_ranges.length === 0 ? (
-              <p className="text-body text-muted-foreground">
-                {t('admin.privateNetworks.serverNone', 'None.')}
-              </p>
-            ) : (
-              <ul className="flex flex-wrap gap-2" data-testid="server-ranges">
-                {settings.server_ranges.map((r) => (
-                  <li key={r.cidr}>
-                    <Badge variant="outline" className="font-mono">
-                      {r.cidr}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <p className="text-cap text-muted-foreground">
-              {/* The variable name may wrap only at its underscores. */}
-              {t(
-                'admin.privateNetworks.serverHint',
-                'Changed only in the server’s environment ({name}) and a restart.',
-                { name: '\u0000' }
-              )
-                .split('\u0000')
-                .map((part, i) =>
-                  i === 0 ? (
-                    part
-                  ) : (
-                    <span key={i}>
-                      <code className="font-mono">
-                        {SERVER_CIDRS_VAR.split('_').map((w, j) => (
-                          <span key={j}>
-                            {j > 0 && (
-                              <>
-                                _<wbr />
-                              </>
-                            )}
-                            {w}
-                          </span>
-                        ))}
-                      </code>
-                      {part}
-                    </span>
-                  )
-                )}
+      {/* Opened here: what the owner edits, first. The section heading
+          carries "Add range", so the button never sits alone on a row. */}
+      <SettingsSection
+        framed
+        id={`${id}-console`}
+        title={t('admin.privateNetworks.consoleTitle', 'Opened here')}
+        description={t(
+          'admin.privateNetworks.description',
+          'For example a self-managed GitLab or a mail relay. Every organization’s webhooks, integrations and CI connections can reach an address opened here, so open only the hosts the platform needs.'
+        )}
+        meta={<SettingChangedLine change={settings} />}
+        actions={
+          canEdit &&
+          !settings.signup_open &&
+          rows.length < settings.max_ranges && (
+            <Button variant="outline" onClick={() => addRow()}>
+              <Plus className="me-1.5 size-4" aria-hidden />
+              {t('admin.privateNetworks.add', 'Add range')}
+            </Button>
+          )
+        }
+      >
+        <SettingsBlock>
+          {rows.length === 0 && (
+            <p className="text-body text-muted-foreground">
+              {t('admin.privateNetworks.consoleNone', 'No range is opened here.')}
             </p>
-          </section>
-
-          <section className="space-y-2" aria-labelledby={`${id}-console`}>
-            <h3 id={`${id}-console`} className="text-body font-medium">
-              {t('admin.privateNetworks.consoleTitle', 'Opened here')}
-            </h3>
-            {rows.length === 0 && (
-              <p className="text-body text-muted-foreground">
-                {t('admin.privateNetworks.consoleNone', 'No range is opened here.')}
-              </p>
-            )}
-            <ul className="space-y-2" data-testid="console-ranges">
-              {rows.map((r) => {
-                const idx = rowIndex(r.key)
-                const error = rowError && rowError.index === idx ? rowError.text : null
-                return (
-                  <li key={r.key} className="space-y-1">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <Input
-                        value={r.cidr}
-                        onChange={(e) => update(r.key, { cidr: e.target.value })}
-                        disabled={!canEdit}
-                        placeholder="192.168.10.0/24"
-                        aria-label={t('admin.privateNetworks.rangeLabel', 'Range')}
-                        aria-invalid={!!error}
-                        className="font-mono sm:w-56"
-                      />
-                      <Input
-                        value={r.note}
-                        onChange={(e) => update(r.key, { note: e.target.value })}
-                        disabled={!canEdit}
-                        maxLength={100}
-                        placeholder={t(
-                          'admin.privateNetworks.notePlaceholder',
-                          'Note, such as GitLab'
-                        )}
-                        aria-label={t('admin.privateNetworks.noteLabel', 'Note')}
-                        className="sm:flex-1"
-                      />
-                      {canEdit && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => remove(r.key)}
-                          aria-label={t('admin.privateNetworks.remove', 'Remove {range}', {
-                            range: r.cidr || t('admin.privateNetworks.rangeLabel', 'Range'),
-                          })}
-                        >
-                          <Trash2 className="size-4" aria-hidden />
-                        </Button>
-                      )}
-                    </div>
-                    {error ? (
-                      <p className="text-body text-destructive">{error}</p>
-                    ) : (
-                      isWideDraft(r.cidr) && (
-                        <p className="flex items-center gap-1.5 text-cap text-warning">
-                          <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
-                          {t(
-                            'admin.privateNetworks.wide',
-                            'A wide range: every address in it becomes reachable. Prefer the host’s own /32 or its /24.'
-                          )}
-                        </p>
-                      )
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
-            {canEdit && !settings.signup_open && rows.length < settings.max_ranges && (
-              <Button variant="outline" size="sm" onClick={() => addRow()}>
-                <Plus className="me-1.5 size-4" aria-hidden />
-                {t('admin.privateNetworks.add', 'Add range')}
-              </Button>
-            )}
-            {pending && (
-              <p className="text-cap text-muted-foreground">
-                {t(
-                  'admin.privateNetworks.pending',
-                  'Saved. Every server applies the list within {seconds} seconds.',
-                  { seconds: settings.refresh_seconds }
-                )}
-              </p>
-            )}
-          </section>
-
-          <SettingChangedLine change={settings} />
-          {canEdit ? (
-            <SettingsSaveBar
-              className="basis-full"
-              dirty={dirty}
-              onSave={() => setConfirmOpen(true)}
-              onDiscard={reset}
-            />
-          ) : (
-            <RoleRequiredNotice permission={NETWORK_PERMISSION} />
           )}
-        </CardContent>
-      </Card>
+          <ul className="space-y-2" data-testid="console-ranges">
+            {rows.map((r) => {
+              const idx = rowIndex(r.key)
+              const error = rowError && rowError.index === idx ? rowError.text : null
+              return (
+                <li key={r.key} className="space-y-1">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Input
+                      value={r.cidr}
+                      onChange={(e) => update(r.key, { cidr: e.target.value })}
+                      disabled={!canEdit}
+                      placeholder="192.168.10.0/24"
+                      aria-label={t('admin.privateNetworks.rangeLabel', 'Range')}
+                      aria-invalid={!!error}
+                      className="font-mono sm:w-56"
+                    />
+                    <Input
+                      value={r.note}
+                      onChange={(e) => update(r.key, { note: e.target.value })}
+                      disabled={!canEdit}
+                      maxLength={100}
+                      placeholder={t(
+                        'admin.privateNetworks.notePlaceholder',
+                        'Note, such as GitLab'
+                      )}
+                      aria-label={t('admin.privateNetworks.noteLabel', 'Note')}
+                      className="sm:flex-1"
+                    />
+                    {canEdit && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => remove(r.key)}
+                        aria-label={t('admin.privateNetworks.remove', 'Remove {range}', {
+                          range: r.cidr || t('admin.privateNetworks.rangeLabel', 'Range'),
+                        })}
+                      >
+                        <Trash2 className="size-4" aria-hidden />
+                      </Button>
+                    )}
+                  </div>
+                  {error ? (
+                    <p className="text-body text-destructive">{error}</p>
+                  ) : (
+                    isWideDraft(r.cidr) && (
+                      <p className="flex items-center gap-1.5 text-cap text-warning">
+                        <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+                        {t(
+                          'admin.privateNetworks.wide',
+                          'A wide range: every address in it becomes reachable. Prefer the host’s own /32 or its /24.'
+                        )}
+                      </p>
+                    )
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+          {pending && (
+            <p className="text-cap text-muted-foreground">
+              {t(
+                'admin.privateNetworks.pending',
+                'Saved. Every server applies the list within {seconds} seconds.',
+                { seconds: settings.refresh_seconds }
+              )}
+            </p>
+          )}
+        </SettingsBlock>
+      </SettingsSection>
+
+      <SettingsSection
+        framed
+        id={`${id}-server`}
+        title={t('admin.privateNetworks.serverTitle', 'Set on the server')}
+        description={
+          <>
+            {settings.server_ranges.length === 0 &&
+              `${t('admin.privateNetworks.serverNone', 'None.')} `}
+            {/* The variable name may wrap only at its underscores. */}
+            {t(
+              'admin.privateNetworks.serverHint',
+              'Changed only in the server’s environment ({name}) and a restart.',
+              { name: '\u0000' }
+            )
+              .split('\u0000')
+              .map((part, i) =>
+                i === 0 ? (
+                  part
+                ) : (
+                  <span key={i}>
+                    <code className="font-mono">
+                      {SERVER_CIDRS_VAR.split('_').map((w, j) => (
+                        <span key={j}>
+                          {j > 0 && (
+                            <>
+                              _<wbr />
+                            </>
+                          )}
+                          {w}
+                        </span>
+                      ))}
+                    </code>
+                    {part}
+                  </span>
+                )
+              )}
+          </>
+        }
+      >
+        {settings.server_ranges.length > 0 && (
+          <SettingsBlock>
+            <ul className="flex flex-wrap gap-2" data-testid="server-ranges">
+              {settings.server_ranges.map((r) => (
+                <li key={r.cidr}>
+                  <Badge variant="outline" className="font-mono">
+                    {r.cidr}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          </SettingsBlock>
+        )}
+      </SettingsSection>
+
+      {canEdit ? (
+        <SettingsSaveBar
+          className="basis-full"
+          dirty={dirty}
+          onSave={() => setConfirmOpen(true)}
+          onDiscard={reset}
+        />
+      ) : (
+        <RoleRequiredNotice permission={NETWORK_PERMISSION} />
+      )}
 
       <DestinationTestCard
         canTest={canEdit}
@@ -521,17 +525,16 @@ function DestinationTestCard({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t('admin.privateNetworks.test.title', 'Test a destination')}</CardTitle>
-        <CardDescription>
-          {t(
-            'admin.privateNetworks.test.description',
-            'Checks which addresses a host name resolves to and whether the platform may reach each one. Nothing is sent to the host.'
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <SettingsSection
+      framed
+      id={`${id}-test`}
+      title={t('admin.privateNetworks.test.title', 'Test a destination')}
+      description={t(
+        'admin.privateNetworks.test.description',
+        'Checks which addresses a host name resolves to and whether the platform may reach each one. Nothing is sent to the host.'
+      )}
+    >
+      <SettingsBlock>
         {!canTest ? (
           <RoleRequiredNotice permission={NETWORK_PERMISSION} />
         ) : (
@@ -555,7 +558,6 @@ function DestinationTestCard({
                 placeholder="gitlab.example.com"
                 autoComplete="off"
                 spellCheck={false}
-                className="font-mono"
               />
             </div>
             <Button type="submit" variant="outline" disabled={busy}>
@@ -608,7 +610,7 @@ function DestinationTestCard({
             )}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </SettingsBlock>
+    </SettingsSection>
   )
 }

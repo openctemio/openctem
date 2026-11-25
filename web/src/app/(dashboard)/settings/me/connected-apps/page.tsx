@@ -1,7 +1,6 @@
 'use client'
 
 import { useTranslation } from '@/context/i18n-provider'
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card'
 import {
   revokeMyConnection,
   scopeMyConnection,
@@ -12,36 +11,26 @@ import { ConnectionsList } from '@/features/mcp-oauth/components/connections-lis
 /**
  * The AI applications (MCP clients) the signed-in person connected in this
  * organization (RFC-062 §12). Each one acts as the person and sees only what
- * they can see; disconnecting ends it at once.
+ * they can see; disconnecting ends it at once. The page header (the
+ * /settings/me layout) says what the list is, so the list stands alone in the
+ * settings column, with no card around it.
  */
 export default function ConnectedAppsPage() {
   const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useMyConnections()
   return (
-    <Card>
-      <CardHeader>
-        <CardDescription>
-          {t(
-            'mcp.myConnections.description',
-            'Applications you allowed to work with this organization’s data as you. They lose access when you disconnect them or when your own access changes.'
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ConnectionsList
-          connections={data?.data}
-          isLoading={isLoading}
-          error={error}
-          onRetry={() => void mutate()}
-          onRevoke={revokeMyConnection}
-          onScope={scopeMyConnection}
-          emptyTitle={t('mcp.connections.emptyTitle', 'No connected applications')}
-          emptyDescription={t(
-            'mcp.myConnections.empty',
-            'When you connect an AI assistant to {product}, it appears here.'
-          )}
-        />
-      </CardContent>
-    </Card>
+    <ConnectionsList
+      connections={data?.data}
+      isLoading={isLoading}
+      error={error}
+      onRetry={() => void mutate()}
+      onRevoke={revokeMyConnection}
+      onScope={scopeMyConnection}
+      emptyTitle={t('mcp.connections.emptyTitle', 'No connected applications')}
+      emptyDescription={t(
+        'mcp.myConnections.empty',
+        'When you connect an AI assistant to {product}, it appears here.'
+      )}
+    />
   )
 }

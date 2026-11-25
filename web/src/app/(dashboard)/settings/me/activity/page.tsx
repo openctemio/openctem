@@ -1,201 +1,123 @@
 'use client'
 
-import { useDisplayUser } from '@/hooks/use-display-user'
-import { useListParams } from '@/hooks/use-list-params'
-import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { ChevronLeft, ChevronRight, History } from 'lucide-react'
+import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  History,
-  Key,
-  User,
-  Shield,
-  Users,
-  Building,
-  Mail,
-  Settings,
-  ChevronLeft,
-  ChevronRight,
-  type LucideIcon,
-} from 'lucide-react'
-import { formatRelative, formatDateSafe } from '@/lib/format-date'
-import { EmptyState, ErrorState, PageStack } from '@/features/shared'
-import { useAccountActivity } from '@/features/account'
-import {
-  getActionCategory,
-  formatAction,
-  RESULT_DISPLAY,
-} from '@/features/organization/types/audit.types'
 import { useTranslation } from '@/context/i18n-provider'
-
-// Icon per action category (action looks like "auth.login", "user.updated", …)
-const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  auth: Key,
-  user: User,
-  member: Users,
-  invitation: Mail,
-  tenant: Building,
-  settings: Settings,
-  permission: Shield,
-  other: History,
-}
-
-const CATEGORY_COLORS: Record<string, string> = {
-  auth: 'bg-green-500/10 text-green-500',
-  user: 'bg-blue-500/10 text-blue-500',
-  member: 'bg-purple-500/10 text-purple-500',
-  invitation: 'bg-cyan-500/10 text-cyan-500',
-  tenant: 'bg-indigo-500/10 text-indigo-500',
-  settings: 'bg-yellow-500/10 text-yellow-500',
-  permission: 'bg-orange-500/10 text-orange-500',
-  other: 'bg-muted text-muted-foreground',
-}
+import { useAccountActivity } from '@/features/account'
+import { formatAction } from '@/features/organization/types/audit.types'
+import { EmptyState, ErrorState } from '@/features/shared'
+import { useDisplayUser } from '@/hooks/use-display-user'
+import { useListParams } from '@/hooks/use-list-params'
+import { formatDateSafe, formatRelative } from '@/lib/format-date'
 
 const PER_PAGE = 10
 
+/**
+ * Your activity: the signed-in person's own recent actions in this
+ * organization (GET /audit-logs/users/{id}, paged on the server, the page in
+ * the URL). One flat list in the settings column (the /settings/me layout):
+ * each row is the translated action, when, and from where; a failed or
+ * refused action says so. The server's free-text message is English only and
+ * mostly repeats the action, so the list shows the translated action alone;
+ * the full record stays in the organization's audit log.
+ */
 export default function ActivityPage() {
   const { t } = useTranslation()
   const user = useDisplayUser()
-  // The page lives in the URL (one list convention).
   const { page, setPage } = useListParams({ defaultPageSize: PER_PAGE })
-
-  // Paged on the server (the user-activity endpoint has no category filter,
-  // so the old browser-side "type" filter is gone with the browser paging).
   const { activities, total, totalPages, isLoading, error, mutate } = useAccountActivity(
     user?.id,
     page,
     PER_PAGE
   )
 
+  const resultText: Record<string, string> = {
+    failure: t('auditLog.result.failure', 'Failure'),
+    denied: t('auditLog.result.denied', 'Denied'),
+  }
+
   return (
-    <PageStack>
-      {/* Header with Filter */}
-      <Card>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-20 w-full" />
-              ))}
-            </div>
-          ) : error && activities.length === 0 ? (
-            <ErrorState
-              title={t('account.activity.loadFailed', 'your activity')}
-              error={error}
-              onRetry={() => void mutate()}
-            />
-          ) : activities.length === 0 ? (
-            <EmptyState
-              icon={History}
-              title={t('account.activity.empty', 'No activity found')}
-              card={false}
-            />
-          ) : (
-            <div className="space-y-4">
-              {activities.map((activity) => {
-                const category = getActionCategory(activity.action)
-                const Icon = CATEGORY_ICONS[category] ?? History
-                const colorClass = CATEGORY_COLORS[category] ?? CATEGORY_COLORS.other
-                const result = RESULT_DISPLAY[activity.result]
-
-                return (
-                  <div
-                    key={activity.id}
-                    className="flex items-start gap-4 p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-                  >
-                    <div
-                      className={`h-10 w-10 rounded-full flex items-center justify-center ${colorClass}`}
-                    >
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-medium">{formatAction(activity.action, t)}</p>
-                        {result && (
-                          <Badge className={`${result.bgColor} ${result.color} border-0 text-xs`}>
-                            {t(`auditLog.result.${activity.result}`, result.label)}
-                          </Badge>
-                        )}
-                      </div>
-                      {/* The server's English message often only repeats the action
-                        name, which the line above already shows translated. */}
-                      {activity.message && activity.message !== formatAction(activity.action) && (
-                        <p className="text-sm text-muted-foreground mt-0.5">{activity.message}</p>
-                      )}
-                      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                        {activity.actor_ip && <span>{activity.actor_ip}</span>}
-                        <span title={formatDateSafe(activity.timestamp, 'PPpp')}>
-                          {formatRelative(activity.timestamp)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {/* Pagination */}
+    <>
+      {isLoading ? (
+        <div className="flex flex-col gap-2" aria-busy="true">
+          {[...Array(5)].map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
+      ) : error && activities.length === 0 ? (
+        <ErrorState
+          title={t('account.activity.loadFailed', 'your activity')}
+          error={error}
+          onRetry={() => void mutate()}
+        />
+      ) : activities.length === 0 ? (
+        <EmptyState icon={History} title={t('account.activity.empty', 'No activity found')} />
+      ) : (
+        <section aria-label={t('settings.item.activity', 'Activity')} className="min-w-0">
+          <ul className="divide-y divide-border-subtle border-y border-border-subtle">
+            {activities.map((activity) => {
+              const failed = resultText[activity.result]
+              return (
+                <li key={activity.id} className="min-w-0 py-3">
+                  <p className="text-body font-medium text-pretty">
+                    {formatAction(activity.action, t)}
+                  </p>
+                  <p className="mt-0.5 flex flex-wrap gap-x-3 text-cap text-muted-foreground">
+                    <span title={formatDateSafe(activity.timestamp, 'PPpp')}>
+                      {formatRelative(activity.timestamp)}
+                    </span>
+                    {activity.actor_ip && <span>{activity.actor_ip}</span>}
+                    {failed && <span className="font-medium text-destructive">{failed}</span>}
+                  </p>
+                </li>
+              )
+            })}
+          </ul>
           {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-6">
-              <p className="text-sm text-muted-foreground">
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <p className="min-w-0 text-cap text-muted-foreground">
                 {t('account.activity.showing', 'Showing {from} to {to} of {total} activities', {
                   from: (page - 1) * PER_PAGE + 1,
                   to: Math.min(page * PER_PAGE, total),
                   total,
                 })}
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <Button
                   variant="outline"
-                  size="icon-sm"
+                  size="icon"
                   onClick={() => setPage(page - 1)}
                   disabled={page === 1}
                   aria-label={t('account.activity.prev', 'Previous page')}
                 >
-                  <ChevronLeft className="h-4 w-4" />
+                  <ChevronLeft aria-hidden />
                 </Button>
-                <span className="text-sm">
-                  {t('account.activity.pageOf', 'Page {page} of {total}', {
-                    page,
-                    total: totalPages,
-                  })}
-                </span>
                 <Button
                   variant="outline"
-                  size="icon-sm"
+                  size="icon"
                   onClick={() => setPage(page + 1)}
                   disabled={page === totalPages}
                   aria-label={t('account.activity.next', 'Next page')}
                 >
-                  <ChevronRight className="h-4 w-4" />
+                  <ChevronRight aria-hidden />
                 </Button>
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </section>
+      )}
 
-      {/* Security Notice */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-start gap-4">
-            <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center flex-shrink-0">
-              <Shield className="h-5 w-5 text-blue-500" />
-            </div>
-            <div>
-              <p className="font-medium">{t('settings.account.securityTip', 'Security tip')}</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                {t(
-                  'settings.account.securityTipBody',
-                  'Sign-ins and active sessions are under Security. If you see anything you do not recognise, change your password and sign out your other sessions.'
-                )}
-              </p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </PageStack>
+      <p className="text-cap text-muted-foreground text-pretty">
+        {t(
+          'account.activity.tip',
+          'Something you do not recognise? Change your password and sign out your other sessions.'
+        )}{' '}
+        <Link href="/account/security" className="link-inline">
+          {t('account.activity.tipLink', 'Open account security')}
+        </Link>
+      </p>
+    </>
   )
 }
