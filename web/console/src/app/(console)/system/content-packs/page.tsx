@@ -130,6 +130,8 @@ export default function ContentPacksPage() {
       {
         accessorKey: 'tier',
         header: t('admin.cp.col.tier', 'Tier'),
+        // The tier is on the pack's sheet too: it gives way on a tablet.
+        meta: { hideBelow: 900 },
         cell: ({ row }) => <Badge variant="outline">{tierLabel(row.original.tier)}</Badge>,
       },
       {
