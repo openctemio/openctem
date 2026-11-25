@@ -238,7 +238,9 @@ export function ListTitleRow({
     if (!row) return
     const mark = () => {
       const groups = [extraRef.current, endRef.current].filter((g): g is HTMLElement => !!g)
-      const bare = !groups.some((g) => drawsSomething(g))
+      // A row with a `start` slot (the view's Modified mark, Save view) keeps its
+      // place: the mark can appear at any time, and the toolbar must not move.
+      const bare = !start && !groups.some((g) => drawsSomething(g))
       if (bare !== row.hasAttribute('data-bare')) row.toggleAttribute('data-bare', bare)
     }
     mark()
