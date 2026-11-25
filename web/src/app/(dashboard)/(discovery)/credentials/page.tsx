@@ -22,6 +22,7 @@ import {
   DataTableRowActions,
   EmptyState,
   FilterSheet,
+  CellText,
   MetricStrip,
   type MetricStripItem,
   PageStack,
@@ -383,13 +384,13 @@ export default function CredentialsPage() {
       },
       header: t('credentials.col.source', 'Source'),
       cell: ({ row }) => (
-        <span className="block truncate">
+        <CellText>
           {row.original.metadata.source ? (
             sourceLabel(row.original.metadata.source)
           ) : (
             <span className="text-muted-foreground">—</span>
           )}
-        </span>
+        </CellText>
       ),
     },
     {
@@ -406,9 +407,9 @@ export default function CredentialsPage() {
       cell: ({ row }) => {
         const user = toDisplayText(row.original.metadata.username, 200)
         return (
-          <span className="block truncate" title={user}>
+          <CellText title={user || undefined}>
             {user || <span className="text-muted-foreground">—</span>}
-          </span>
+          </CellText>
         )
       },
     },

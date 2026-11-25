@@ -78,12 +78,13 @@ describe('FleetHealthStrip', () => {
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
 
-  it('keeps every detail to one line above the list (from 768 px), whole in its tooltip', () => {
+  it('shows every detail line whole: it wraps, never ends in an ellipsis, and is its tooltip', () => {
     renderStrip()
     const lines = document.querySelectorAll('[data-slot="fleet-detail-line"]')
     expect(lines.length).toBeGreaterThanOrEqual(2)
     for (const line of Array.from(lines)) {
-      expect(line).toHaveClass('block', 'md:truncate')
+      expect(line).toHaveClass('block', 'break-words')
+      expect(line.className).not.toMatch(/truncate|line-clamp|text-ellipsis/)
       expect(line).toHaveAttribute('title', line.textContent)
     }
     const legend = document.querySelector('[data-slot="fleet-bar-legend"]')
