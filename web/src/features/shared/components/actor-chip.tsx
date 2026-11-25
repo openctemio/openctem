@@ -23,6 +23,7 @@ import { fetcher } from '@/lib/api/client'
 import { tenantEndpoints } from '@/lib/api/endpoints'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
+import { breakAtSeparators } from './break-text'
 import { formatDateTime } from '@/lib/app-locale'
 
 export interface ActorRef {
@@ -198,6 +199,9 @@ export function ActorChip({ actor, at, className, compact }: ActorChipProps) {
     <span
       className={cn('inline-flex min-w-0 items-center gap-1.5 text-sm', className)}
       title={title}
+      // The name wraps to two lines at most; past that it ends in an ellipsis
+      // with the full name as the title.
+      data-cut-tooltip=""
       data-actor-kind={system ? 'system' : 'user'}
     >
       {!compact && (
@@ -205,7 +209,9 @@ export function ActorChip({ actor, at, className, compact }: ActorChipProps) {
           <AvatarFallback className="text-[10px]">{system ? 'OC' : initials(label)}</AvatarFallback>
         </Avatar>
       )}
-      <span className={cn('truncate', system && 'text-muted-foreground')}>{label}</span>
+      <span className={cn('line-clamp-2 min-w-0 break-words', system && 'text-muted-foreground')}>
+        {breakAtSeparators(label)}
+      </span>
     </span>
   )
 }

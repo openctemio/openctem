@@ -810,9 +810,7 @@ function VulnerabilitiesListBody() {
           label: t('vulnPage.list.col.firstSeen', 'First seen'),
         },
         enableSorting: true,
-        cell: ({ row }) => (
-          <RelativeTime date={row.original.first_seen_at} className="whitespace-nowrap" />
-        ),
+        cell: ({ row }) => <RelativeTime date={row.original.first_seen_at} />,
       },
       {
         id: 'last_seen',
@@ -824,9 +822,7 @@ function VulnerabilitiesListBody() {
           label: t('vulnPage.list.col.lastSeen', 'Last seen'),
         },
         enableSorting: true,
-        cell: ({ row }) => (
-          <RelativeTime date={row.original.last_seen_at} className="whitespace-nowrap" />
-        ),
+        cell: ({ row }) => <RelativeTime date={row.original.last_seen_at} />,
       },
     ],
     [t, params]

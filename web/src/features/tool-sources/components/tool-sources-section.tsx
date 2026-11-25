@@ -18,6 +18,7 @@ import {
   EmptyState,
   RelativeTime,
   SettingsPage,
+  CellText,
 } from '@/features/shared'
 import { DataTableRowActions } from '@/features/shared/components/data-table-row-actions'
 import { PersonPhoneCard } from '@/features/organization/components/person-phone-card'
@@ -167,11 +168,7 @@ export function ToolSourcesSection() {
         meta: { kind: 'tags', minWidth: 120, hideBelow: 660, label: toolsLabel },
         enableSorting: false,
         header: toolsLabel,
-        cell: ({ row }) => (
-          <span className="block truncate text-sm" title={row.original.tools.join(', ')}>
-            {row.original.tools.join(', ')}
-          </span>
-        ),
+        cell: ({ row }) => <CellText className="text-sm">{row.original.tools.join(', ')}</CellText>,
       },
       {
         id: 'key',
@@ -193,9 +190,9 @@ export function ToolSourcesSection() {
             <div className="min-w-0 text-sm text-muted-foreground">
               <RelativeTime date={key.updated_at} />
               {key.updated_by_name && (
-                <div className="truncate" title={key.updated_by_name}>
+                <CellText>
                   {t('toolSources.updatedBy', 'by {name}', { name: key.updated_by_name })}
-                </div>
+                </CellText>
               )}
             </div>
           )

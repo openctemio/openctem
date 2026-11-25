@@ -51,6 +51,35 @@ describe('DataTable cut cells', () => {
     expect(cell.className).not.toContain('text-ellipsis')
   })
 
+  it('never cuts a column header: a long label wraps', () => {
+    renderTable()
+    const head = screen.getAllByText('Due')[0].closest('th')!
+    expect(head.className).not.toContain('text-ellipsis')
+    expect(head.className).toContain('whitespace-normal')
+    expect(head.className).not.toContain('whitespace-nowrap')
+  })
+
+  it('keeps a date on one line but lets a relative time wrap', () => {
+    const timed: ColumnDef<Row>[] = [
+      columns[0],
+      { accessorKey: 'due', header: 'Created', meta: { kind: 'date', label: 'Created' } },
+      { accessorKey: 'owner', header: 'Seen', meta: { kind: 'datetime-recent', label: 'Seen' } },
+    ]
+    render(
+      <DataTable
+        columns={timed}
+        data={rows}
+        getRowId={(r) => r.id}
+        pagination={{ pageIndex: 0, pageSize: 25 }}
+        onPaginationChange={() => {}}
+      />
+    )
+    const date = screen.getAllByText('Apr 29, 2026, 23 d overdue')[0].closest('td')!
+    const seen = screen.getAllByText('Sam')[0].closest('td')!
+    expect(date.className).toContain('whitespace-nowrap')
+    expect(seen.className).not.toContain('whitespace-nowrap')
+  })
+
   it('leaves a pinned cell unclipped so its edge shadow stays visible', () => {
     const pinned: ColumnDef<Row>[] = [
       { accessorKey: 'name', header: 'Name', meta: { kind: 'asset', pin: 'start', label: 'Name' } },
