@@ -57,7 +57,9 @@ export function LegalNotice({ kind, termsUrl = '', privacyUrl = '', className }:
   const text = t(`auth.legal.${kind}.${which}`, FALLBACKS[kind][which])
 
   return (
-    <p className={cn('text-cap text-muted-foreground', className)}>
+    // data-slot: the entry frame hides its own footer links while this line
+    // shows them, so the same two links never appear twice on one screen.
+    <p data-slot="legal-notice" className={cn('text-cap text-muted-foreground', className)}>
       {text.split(/(\{terms\}|\{privacy\})/).map((part, i) => (
         <Fragment key={i}>{part in links ? links[part] : part}</Fragment>
       ))}

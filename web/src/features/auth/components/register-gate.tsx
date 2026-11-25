@@ -1,11 +1,15 @@
 'use client'
 
-import Link from '@/components/link'
 import { useSearchParams } from 'next/navigation'
-import { ArrowLeft } from 'lucide-react'
 
-import { EntryActions, EntryCard, EntryHeader, EntryLine, EntryNote } from '@/components/entry'
-import { Button } from '@/components/ui/button'
+import {
+  EntryActions,
+  EntryBackLink,
+  EntryCard,
+  EntryHeader,
+  EntryLine,
+  EntryNote,
+} from '@/components/entry'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TextLink } from '@/components/ui/text-link'
 
@@ -58,12 +62,7 @@ export function RegisterGate({
           )}
         />
         <EntryActions>
-          <Button variant="outline" asChild>
-            <Link href="/login">
-              <ArrowLeft aria-hidden className="size-4" />
-              {t('auth.common.backToSignIn', 'Back to sign in')}
-            </Link>
-          </Button>
+          <EntryBackLink />
         </EntryActions>
       </EntryCard>
     )
