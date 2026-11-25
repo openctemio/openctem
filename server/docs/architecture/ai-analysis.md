@@ -147,7 +147,12 @@ sign-in, resumes, deletes or changes it. Every change is a critical or high audi
 
 The executor puts an `aianalysis.Provenance` in the context before it calls any command: AI agent,
 run, executor, provider, model, prompt template id and digest, the accountable owners at that moment,
-and who triggered the run.
+who triggered the run, and the evidence references the suggestion behind the change cited (`evidence`,
+as checked by the platform). A run on an AI worker adds the worker (`sensor_id`), the model family it
+reported (`model_family`) and the sha256 of its result (`result_digest`). The time is the row's own
+timestamp; the run id links the row to the run, its bundle and its citations. A person's later
+decision on anything the AI agent filed (approving its request, confirming its suggestion) is that
+person's own row, never merged into the AI agent's.
 
 - The finding activity writer stamps `source = 'ai_agent'` and `source_metadata.ai` on rows the
   AI agent writes; a database trigger labels **every** row whose actor is an AI agent
@@ -165,6 +170,10 @@ the run's logical state: `queued`, `running`, `waiting_tool`, `waiting_approval`
 
 - One live run per subject and use case (partial unique index). A live run past its deadline
   (`RunDeadline`) gives the slot up when the next run starts (failed with `timeout`).
+- A finished run records its `outcome` (`applied`: it changed the finding; `proposed`: a request or a
+  held change waits for a person; `no_change`: it only added information; `abstained`), and an
+  `action_log` of each suggestion with what became of it and why (codes only, never text). A run also
+  keeps `subject_row_version`, the finding's row version when it built its bundle.
 - Budgets per AI agent: runs per hour, tokens per month (inside the organization's AI token budget).
 - A run is readable only by someone who can see its subject (finding subjects only for now).
 - The per-run index on `finding_activities` is built concurrently by its own migration.
@@ -261,9 +270,74 @@ controller (index `idx_ai_runs_worker_live`; a job of the core `findings` module
 | its job was canceled | `canceled`, `job_canceled` |
 | its job is gone | `failed`, `worker_unavailable` |
 
-A worker run moves past `queued` only together with its sensor (`chk_ai_runs_worker`). Applying a
-worker's result (completion of the job) is designed, not built: until then a worker run ends by the
-sweep.
+A worker run moves past `queued` only together with its sensor (`chk_ai_runs_worker`). Before it
+ends runs for lack of a result, the sweep takes any result that arrived but was not taken yet (below).
+
+## Applying a worker's result
+
+A worker completes its analysis job with an `openctem.analyze.result/v1` document as the job's output
+(`{"result": {"output": <result>}}`; `metadata.output` is read for an older worker). The platform
+trusts the request, not the document, and then the document only as untrusted data.
+
+**Who may end the job.** `complete` and `fail` of an `analyze` command are accepted only from a
+request signed with the worker's own registered key (RFC 9421, the body covered by its content
+digest; `sensorsig`) that states the lease epoch it holds the job under
+(`X-OpenCTEM-Lease-Epoch`). A bearer key, an unsigned request or a request without the epoch is told
+`command-not-found`, as is a sensor of another organization; a superseded epoch is refused by the
+lease fencing every command has (`command.Transition`, `signedOnly`). Only the platform creates the
+job, and only an AI worker grant claims it.
+
+**Taking the result** (`WorkerExecutor.ApplyResult`, `internal/app/aianalysis/worker_result.go`), right
+after the real completion (never on a replay) with the command's own organization, and by the sweep
+for a completed job whose request ended first:
+
+1. The run is found from the platform's own job payload (`job_id`), never from the worker's document,
+   and must be the same organization's run bound to this job (`command_id`).
+2. One statement claims it (`ClaimWorkerResult`): only while it is `queued` or `running`, within its
+   deadline and without a result; it sets the run `running` on the completing worker with the sha256
+   of the result. A replay, a second caller or a result after the deadline takes nothing.
+3. The document must satisfy the result schema (at most 256 KiB) and name the run's job; otherwise
+   the run fails `invalid_output` or is refused `job_mismatch`. Usage is recorded (provider, model,
+   model family, tokens, template; names cleaned and bounded) and the tokens are charged to the
+   organization's AI budget.
+4. A `refused` or `failed` result ends the run with the worker's error code when it is on the allow
+   list (`unsupported_kind`, `policy_restricted`, `bundle_too_large`, `model_refused`,
+   `budget_exhausted`, `invalid_output`, `provider_error`, `deadline_exceeded`,
+   `not_assessable_<reason>`), `worker_error` otherwise. Nothing is applied.
+5. The AI agent is resolved again (paused, disabled or deleted since, no permission left, or the
+   finding no longer in its scope: refused `ai_agent_unavailable`), and the organization's AI settings
+   and use case are read again (AI off: `not_configured`; use case off: `use_case_off`).
+6. The suggestions go through the same `apply` as a built-in run's output: the kind's output schema,
+   one suggestion per kind, unmasking through the platform's mapping, the evidence check (bundle
+   fields and the knowledge excerpts the run carried), and the governance below. The finding is
+   compared with the row version **the run saw when it built the bundle**: if anyone changed it since,
+   every change becomes a comment (`finding_changed`). A person's action always wins.
+7. An `incomplete` result applies what validates; the run completes with the worker's code.
+8. Audit: `ai_agent.analysis_result_applied` or `ai_agent.analysis_result_refused` with the run, job,
+   finding, worker, provider, model, model family, result digest, status, outcome, error code and the
+   action log (never model text).
+
+**Untrusted text.** Whatever the model or the worker wrote is stored as plain text: every character
+markdown or HTML gives a meaning is escaped, and bare addresses are broken, so nothing in an AI
+comment or request renders as a link, an image or markup (no address is fetched when the comment is
+shown). Payload text is bounded (`aidom.NormalizePayload`). A suggestion whose own text matches a
+prompt-injection pattern is written as a comment only (`output_injection_suspected`), as is every
+suggestion of a run whose bundle was flagged when it was built (`injection_suspected`, stored on the
+run).
+
+**What can happen without a person.** For both executors:
+
+| Suggestion | Becomes |
+|---|---|
+| summary, remediation steps, needs-info | a comment by the AI agent |
+| `true_positive` on a `new` finding | the move to `confirmed` when the use case is on auto-apply at or above its minimum confidence **and** the organization's switch and limits allow it ([ai-autonomy.md](ai-autonomy.md)); a comment otherwise |
+| a severity raise | a comment (a person decides) |
+| a severity downgrade | a severity request a person decides (never from a run a person started) |
+| `likely_false_positive` | a false-positive request a person decides (never from a run a person started) |
+
+Lowering risk (false positive, a lower severity, duplicate, risk acceptance, closing) is never
+automatic: the AI agent can never approve, and its requests follow the organization's approval
+levels.
 
 ## API
 
@@ -294,8 +368,14 @@ an AI agent's retest of an out-of-scope target is refused before any job exists.
 schema-valid `analyze` job with the masked text only (no host, address or secret), bound to a queued
 run, audited without the text; scope, cross-tenant, AI off and kill switch queue nothing; an oversize
 bundle is fitted under the document limit; overdue, expired and failed jobs end their runs and a new
-run can start. `sensor_analyze_claim_db_test.go`: a legacy-broad sensor advertising the kind, a
-scanner, another organization and a claim without a grant read get no analysis job.
+run can start. `ai_worker_result_db_test.go`: a result is applied once as the AI agent with the
+worker, model family, result digest and cited evidence on every row it writes and an audit row, a
+downgrade and a false positive stay requests, a person's change in between turns the change into a
+comment; a replay, another job's result, another organization, a stale epoch, a bearer or unsigned
+request, an invalid document, a late result, a disabled AI agent, a paused organization and a reached
+limit apply nothing; worker markup is stored escaped and injected text only comments; the sweep takes
+a result its request left untaken. `sensor_analyze_claim_db_test.go`: a legacy-broad sensor advertising the kind, a
+scanner, another organization and a claim without a grant read get no analysis job; only a request signed by the worker's key under its lease epoch ends one.
 `TestAIAssist_CannotWrite_DB`: in an assistance context comment, status, severity and approval
 request are refused and nothing is written; no principal is resolved.
 `pkg/domain/aianalysis/agent_test.go`: deny list, ceiling, presets, health, provenance stamping,

@@ -476,6 +476,25 @@ func (r *AIKnowledgeRepository) RecordRun(ctx context.Context, tenantID, runID s
 	return tx.Commit()
 }
 
+// RunExcerptOrdinals lists the ordinals of the excerpts a run carried.
+func (r *AIKnowledgeRepository) RunExcerptOrdinals(ctx context.Context, tenantID, runID shared.ID) ([]int, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT ordinal FROM ai_run_knowledge WHERE tenant_id = $1 AND run_id = $2 ORDER BY ordinal`,
+		tenantID, runID)
+	if err != nil {
+		return nil, fmt.Errorf("list run excerpts: %w", err)
+	}
+	defer rows.Close()
+	var out []int
+	for rows.Next() {
+		var o int
+		if err := rows.Scan(&o); err != nil {
+			return nil, fmt.Errorf("scan run excerpt: %w", err)
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
 // Citations lists a run's excerpts as the viewer may see them.
 func (r *AIKnowledgeRepository) Citations(ctx context.Context, tenantID, runID, viewer shared.ID, viewerAll bool,
 ) ([]aiknowledge.Citation, aiknowledge.RetrievalMode, error) {

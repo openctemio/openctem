@@ -345,7 +345,8 @@ const aiRunColumns = `id, tenant_id, ai_agent_id, use_case, kind, subject_type, 
 	COALESCE(prompt_template_digest, ''), COALESCE(output_schema, ''), COALESCE(provider, ''), COALESCE(model, ''),
 	steps, tool_calls, actions, tokens_in, tokens_out, cost_micro_usd, duration_ms, COALESCE(error_code, ''),
 	triggered_by, trigger, accountable, legacy_output, deadline_at, started_at, completed_at, created_at,
-	sensor_id, command_id, COALESCE(result_digest, ''), injection_suspected`
+	sensor_id, command_id, COALESCE(result_digest, ''), injection_suspected,
+	subject_row_version, COALESCE(model_family, ''), COALESCE(outcome, ''), action_log`
 
 // CreateRun inserts a run. A second live run for the same use case and
 // subject is ErrRunInFlight.
@@ -393,13 +394,26 @@ func nonNilOwners(o []aianalysis.OwnerRef) []aianalysis.OwnerRef {
 
 // UpdateRun stores the outcome and provenance of a run.
 func (r *AIAnalysisRepository) UpdateRun(ctx context.Context, run *aianalysis.Run) error {
+	var actionLog any
+	if len(run.ActionLog) > 0 {
+		entries := run.ActionLog
+		if len(entries) > aianalysis.MaxActionLog {
+			entries = entries[:aianalysis.MaxActionLog]
+		}
+		b, err := json.Marshal(entries)
+		if err != nil {
+			return fmt.Errorf("encode ai run action log: %w", err)
+		}
+		actionLog = b
+	}
 	res, err := r.db.ExecContext(ctx, `
 		UPDATE ai_runs SET status = $3, data_class = $4, fields_sent = $5, fields_withheld = $6,
 			bundle_digest = $7, prompt_template_id = $8, prompt_template_digest = $9, output_schema = $10,
 			provider = $11, model = $12, steps = $13, tool_calls = $14, actions = $15, tokens_in = $16,
 			tokens_out = $17, cost_micro_usd = $18, duration_ms = $19, error_code = $20,
 			started_at = $21, completed_at = $22, sensor_id = $23, result_digest = $24,
-			injection_suspected = $25, updated_at = now()
+			injection_suspected = $25, subject_row_version = $26, model_family = $27, outcome = $28,
+			action_log = $29, updated_at = now()
 		WHERE tenant_id = $1 AND id = $2`,
 		run.TenantID, run.ID, run.Status, run.DataClass, pq.Array(nonNil(run.FieldsSent)),
 		pq.Array(nonNil(run.FieldsWithheld)), nullStr(run.BundleDigest), nullStr(run.PromptTemplateID),
@@ -407,7 +421,8 @@ func (r *AIAnalysisRepository) UpdateRun(ctx context.Context, run *aianalysis.Ru
 		run.Steps, run.ToolCalls, run.Actions, run.TokensIn, run.TokensOut, run.CostMicroUSD,
 		nullIntPtr(run.DurationMS), nullStr(run.ErrorCode),
 		nullTime(run.StartedAt), nullTime(run.CompletedAt), nullID(run.SensorID), nullStr(run.ResultDigest),
-		run.InjectionSuspected)
+		run.InjectionSuspected, nullInt64Ptr(run.SubjectRowVersion), nullStr(run.ModelFamily), nullStr(string(run.Outcome)),
+		actionLog)
 	if err != nil {
 		return fmt.Errorf("update ai run: %w", err)
 	}
@@ -544,14 +559,28 @@ func scanAIRun(row rowScanner) (*aianalysis.Run, error) {
 		legacy      []byte
 		sensor      sql.NullString
 		command     sql.NullString
+		rowVersion  sql.NullInt64
+		outcome     string
+		actionLog   []byte
 	)
 	if err := row.Scan(&run.ID, &run.TenantID, &aiAgent, &run.UseCase, &run.Kind, &run.SubjectType, &run.SubjectID,
 		&run.Executor, &run.Status, &run.DataClass, &sent, &withheld, &run.BundleDigest, &run.PromptTemplateID,
 		&run.PromptTemplateDigest, &run.OutputSchema, &run.Provider, &run.Model, &run.Steps, &run.ToolCalls,
 		&run.Actions, &run.TokensIn, &run.TokensOut, &run.CostMicroUSD, &duration, &run.ErrorCode, &triggeredBy,
 		&run.Trigger, &acc, &legacy, &deadline, &started, &completed, &run.CreatedAt,
-		&sensor, &command, &run.ResultDigest, &run.InjectionSuspected); err != nil {
+		&sensor, &command, &run.ResultDigest, &run.InjectionSuspected,
+		&rowVersion, &run.ModelFamily, &outcome, &actionLog); err != nil {
 		return nil, err
+	}
+	if rowVersion.Valid {
+		v := rowVersion.Int64
+		run.SubjectRowVersion = &v
+	}
+	run.Outcome = aianalysis.RunOutcome(outcome)
+	if len(actionLog) > 0 {
+		if err := json.Unmarshal(actionLog, &run.ActionLog); err != nil {
+			return nil, fmt.Errorf("decode action log: %w", err)
+		}
 	}
 	run.AIAgentID = nullIDFromString(aiAgent)
 	run.SensorID, run.CommandID = nullIDFromString(sensor), nullIDFromString(command)
@@ -586,4 +615,66 @@ func nullIDFromString(ns sql.NullString) *shared.ID {
 		return nil
 	}
 	return &id
+}
+
+// nullInt64Ptr is a nullable bigint parameter.
+func nullInt64Ptr(v *int64) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
+// ClaimWorkerResult marks a live worker run as taking the result of its
+// analysis job: only the run bound to commandID, still queued or running,
+// within its deadline and without a result yet. It sets the run running on
+// the worker that returned the result (sensorID) with the result's digest,
+// in one statement, so exactly one caller applies a result once.
+func (r *AIAnalysisRepository) ClaimWorkerResult(ctx context.Context, tenantID, runID, commandID, sensorID shared.ID, digest string) (bool, error) {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE ai_runs SET status = 'running', sensor_id = $4, result_digest = $5,
+		       started_at = COALESCE(started_at, now()), updated_at = now()
+		WHERE tenant_id = $1 AND id = $2 AND command_id = $3
+		  AND executor IN ('platform_worker', 'tenant_worker')
+		  AND status IN ('queued', 'running') AND result_digest IS NULL
+		  AND (deadline_at IS NULL OR deadline_at >= now())`,
+		tenantID, runID, commandID, sensorID, digest)
+	if err != nil {
+		return false, fmt.Errorf("claim ai worker result: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
+
+// PendingWorkerResults lists, across organizations (a system job), up to
+// limit live worker runs whose analysis job completed but whose result was
+// not taken yet (the request that completed the job ended before it
+// applied the result). Each is returned with its own tenant and job.
+func (r *AIAnalysisRepository) PendingWorkerResults(ctx context.Context, limit int) ([]aianalysis.PendingResult, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT r.tenant_id, r.command_id
+		FROM ai_runs r
+		JOIN commands c ON c.tenant_id = r.tenant_id AND c.id = r.command_id
+		WHERE r.executor IN ('platform_worker', 'tenant_worker')
+		  AND r.status IN ('queued', 'running') AND r.result_digest IS NULL
+		  AND (r.deadline_at IS NULL OR r.deadline_at >= now())
+		  AND c.type = 'analyze' AND c.status = 'completed'
+		ORDER BY r.deadline_at NULLS FIRST
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list pending ai worker results: %w", err)
+	}
+	defer rows.Close()
+	var out []aianalysis.PendingResult
+	for rows.Next() {
+		var p aianalysis.PendingResult
+		if err := rows.Scan(&p.TenantID, &p.CommandID); err != nil {
+			return nil, fmt.Errorf("scan pending ai worker result: %w", err)
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }

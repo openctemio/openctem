@@ -17,6 +17,7 @@ import (
 
 	"github.com/openctemio/openctem/server/internal/app/command"
 	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	protov2 "github.com/openctemio/openctem/server/pkg/sensorproto/v2"
 )
 
 const analyzeTriageCap = "analyze.triage.v1"
@@ -174,5 +175,57 @@ func TestAnalyzeClaim_NoGrantReadWithholdsIt(t *testing.T) {
 	}
 	if status, _, _ := h.commandState(job); status != "pending" {
 		t.Fatalf("analysis job is %s, want pending", status)
+	}
+}
+
+// An analysis job ends only by a request its AI worker signed with its own
+// key, under the lease epoch it holds the job (its result is what an AI
+// agent acts on): a bearer key, an unsigned request without the epoch, a
+// superseded epoch and a worker of another organization are all told the job
+// does not exist, and the job stays running; the signed request under the
+// current epoch completes it.
+func TestAnalyzeComplete_SignedUnderItsEpochOnly(t *testing.T) {
+	// The secrets wiring carries the signed-request authenticator.
+	h := newCtlHarnessConfig(t, ctlHarnessConfig{secrets: true})
+	notFound := ingestProblem(string(protov2.ProblemCommandNotFound))
+	worker := h.newLimitedSensor(h.tenantID, "example-worker", nil, []string{analyzeTriageCap}, 5)
+	h.aiWorkerGrant(worker)
+	job := h.analyzeCommand(h.tenantID)
+	h.holdCommand(job, worker.id, 3)
+	path := "/api/v2/sensor/commands/" + job + "/complete"
+	body := map[string]any{"result": map[string]any{"status": "completed", "output": map[string]any{"contract": "openctem.analyze.result/v1"}}}
+
+	// Bearer key, even with the epoch.
+	resp, raw := h.call(worker.key, http.MethodPost, path, body, protov2.HeaderLeaseEpoch, "3")
+	h.want(resp, raw, http.StatusNotFound, notFound)
+	resp, raw = h.call(worker.key, http.MethodPost, "/api/v2/sensor/commands/"+job+"/fail", map[string]any{"error_message": "x"}, protov2.HeaderLeaseEpoch, "3")
+	h.want(resp, raw, http.StatusNotFound, notFound)
+
+	key := h.keyBind(worker, h.tenantID)
+	raw, _ = json.Marshal(body)
+	// Signed, without the epoch.
+	resp, out := h.signedDo(key, http.MethodPost, path, raw)
+	h.want(resp, out, http.StatusNotFound, notFound)
+	// Signed, under a superseded epoch.
+	resp, out = h.signedDo(key, http.MethodPost, path, raw, protov2.HeaderLeaseEpoch, "2")
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("a superseded epoch completed the job: %s", out)
+	}
+	// A key-bound worker of another organization, under the right epoch.
+	other := h.newTenant()
+	foreign := h.newLimitedSensor(other, "example-worker-other", nil, []string{analyzeTriageCap}, 5)
+	h.aiWorkerGrant(foreign)
+	fkey := h.keyBind(foreign, other)
+	resp, out = h.signedDo(fkey, http.MethodPost, path, raw, protov2.HeaderLeaseEpoch, "3")
+	h.want(resp, out, http.StatusNotFound, notFound)
+	if status, _, _ := h.commandState(job); status != "running" {
+		t.Fatalf("job is %s after refused completions, want running", status)
+	}
+
+	// Signed by its worker, under its epoch.
+	resp, out = h.signedDo(key, http.MethodPost, path, raw, protov2.HeaderLeaseEpoch, "3")
+	h.want(resp, out, http.StatusOK, "")
+	if status, _, _ := h.commandState(job); status != "completed" {
+		t.Fatalf("job is %s, want completed", status)
 	}
 }

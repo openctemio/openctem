@@ -29,7 +29,8 @@ import (
 // organization on the ai-worker grant profile that advertises the job's kind
 // takes it, signed like every command. The worker never receives the
 // placeholder mapping or a secret value: the job carries the masked text
-// only. The result is applied when the worker completes the job.
+// only. The result is applied when the worker completes the job
+// (worker_result.go).
 
 // Fixed run error code of a bundle that does not fit an analysis job.
 const RunErrBundleTooLarge = "bundle_too_large"
@@ -67,8 +68,9 @@ type AnalysisJob struct {
 }
 
 // AnalysisJobQueue queues analysis jobs as `analyze` commands of the
-// organization (the command queue), and cancels them.
+// organization (the command queue), cancels them and reads them back.
 type AnalysisJobQueue interface {
+	AnalysisJobReader
 	QueueAnalysisJob(ctx context.Context, job AnalysisJob) error
 	// CancelAnalysisJob cancels a job that is still open; a job already
 	// ended is left as it is.
@@ -91,6 +93,7 @@ func JobCapability(kind string) string { return "analyze." + kind }
 type WorkerExecutor struct {
 	b      *BuiltinExecutor
 	jobs   AnalysisJobQueue
+	reader AnalysisJobReader
 	audit  *auditapp.AuditService
 	logger *logger.Logger
 }
@@ -99,7 +102,7 @@ type WorkerExecutor struct {
 // checks and bundle steps, and wires it into it: an AI agent whose runs are
 // on the organization's AI workers is dispatched here.
 func NewWorkerExecutor(b *BuiltinExecutor, jobs AnalysisJobQueue, audit *auditapp.AuditService, log *logger.Logger) *WorkerExecutor {
-	w := &WorkerExecutor{b: b, jobs: jobs, audit: audit, logger: log.With("component", "ai_worker_executor")}
+	w := &WorkerExecutor{b: b, jobs: jobs, reader: jobs, audit: audit, logger: log.With("component", "ai_worker_executor")}
 	b.worker = w
 	return w
 }
