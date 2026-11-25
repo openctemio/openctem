@@ -90,15 +90,9 @@ export function DefaultPoolSection({ pool, canWrite }: DefaultPoolSectionProps) 
         id={switchId}
         checked={on}
         onCheckedChange={(next) => setConfirm(next ? 'on' : 'off')}
-        disabled={!canWrite || saving || !hasProxies}
-        aria-describedby={!hasProxies ? `${switchId}-why` : undefined}
+        disabled={!canWrite || saving}
       />
       <Label htmlFor={switchId}>{t('proxyPools.default.toggle', 'Use proxies for scans')}</Label>
-      {!hasProxies && (
-        <span id={`${switchId}-why`} className="sr-only">
-          {t('proxyPools.default.needsProxyFirst', 'Add a proxy first.')}
-        </span>
-      )}
     </div>
   )
 
@@ -110,7 +104,8 @@ export function DefaultPoolSection({ pool, canWrite }: DefaultPoolSectionProps) 
         'proxyPools.default.description',
         'Your own sensors send scans to public targets through these proxies. Private addresses are still scanned directly. A sensor can use another pool or go direct on its page. Shared sensors never use your proxies.'
       )}
-      actions={toggle}
+      // The switch appears once there is a proxy to use: never a dead switch.
+      actions={hasProxies ? toggle : undefined}
     >
       {!canWrite && (
         <ReadOnlyNotice
