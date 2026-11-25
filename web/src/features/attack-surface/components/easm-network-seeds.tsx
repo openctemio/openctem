@@ -306,7 +306,7 @@ export function EASMNetworkSeedsPanel() {
         <p className="text-sm text-muted-foreground">
           {t(
             'networkSeeds.limitReached',
-            'You have reached the limit of {max} seeds. Remove one to add another.',
+            'You have reached the limit of {max, plural, one {# seed} other {# seeds}}. Remove one to add another.',
             { max }
           )}
         </p>

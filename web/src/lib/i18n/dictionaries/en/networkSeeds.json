@@ -14,7 +14,7 @@
   "networkSeeds.kindAsn": "AS number",
   "networkSeeds.kindOrg": "Organization",
   "networkSeeds.lastLookup": "Looked up",
-  "networkSeeds.limitReached": "You have reached the limit of {max} seeds. Remove one to add another.",
+  "networkSeeds.limitReached": "You have reached the limit of {max, plural, one {# seed} other {# seeds}}. Remove one to add another.",
   "networkSeeds.lookupFailed": "The last lookup failed; it is retried later.",
   "networkSeeds.lookups.description": "Your AS numbers and organization names are sent to RIPEstat to find your address ranges. Turn this off to keep them private; network seeds are then not looked up.",
   "networkSeeds.lookups.title": "Network seed lookups",

@@ -14,7 +14,7 @@
   "networkSeeds.kindAsn": "Số AS",
   "networkSeeds.kindOrg": "Tổ chức",
   "networkSeeds.lastLookup": "Đã tra cứu",
-  "networkSeeds.limitReached": "Bạn đã đạt giới hạn {max} seed. Hãy xóa một seed để thêm seed khác.",
+  "networkSeeds.limitReached": "Bạn đã đạt giới hạn {max, plural, other {# seed}}. Hãy xóa một seed để thêm seed khác.",
   "networkSeeds.lookupFailed": "Lần tra cứu gần nhất thất bại; sẽ thử lại sau.",
   "networkSeeds.lookups.description": "Số AS và tên tổ chức của bạn được gửi tới RIPEstat để tìm các dải địa chỉ của bạn. Tắt tính năng này để giữ kín; khi đó seed mạng sẽ không được tra cứu.",
   "networkSeeds.lookups.title": "Tra cứu seed mạng",
