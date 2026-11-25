@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 
+import { LegalNotice } from '@/features/auth/components/legal-notice'
 import {
   EntryActions,
+  EntryBackLink,
   EntryBanner,
   EntryCard,
   EntryDivider,
   EntryFrame,
   EntryHeader,
   EntryLine,
+  EntryLinkProblem,
 } from '@/components/entry'
 
 describe('EntryFrame', () => {
@@ -121,5 +124,44 @@ describe('entry card parts', () => {
     expect(within(card).getByText('Or continue with')).toBeInTheDocument()
     expect(within(card).getByRole('button', { name: 'Continue' })).toBeInTheDocument()
     expect(within(card).getByText('Have an account?')).toBeInTheDocument()
+  })
+})
+
+describe('entry exits', () => {
+  it('draws the way back to sign in the same everywhere', () => {
+    render(<EntryBackLink />)
+    const back = screen.getByRole('link', { name: 'Back to sign in' })
+    expect(back).toHaveAttribute('href', '/login')
+    expect(back).toHaveAttribute('data-entry', 'back')
+  })
+
+  it('titles a broken link by its problem, with one way on and the way back', () => {
+    render(
+      <EntryLinkProblem
+        title="This reset link does not work"
+        description="Request a new one."
+        action={<a href="/forgot-password">Request a new reset link</a>}
+      />
+    )
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'This reset link does not work' })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Request a new reset link' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back to sign in' })).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('hides the footer legal links while the page shows them in its consent line', () => {
+    render(
+      <EntryFrame termsUrl="/terms" privacyUrl="/privacy">
+        <LegalNotice kind="signIn" termsUrl="/terms" privacyUrl="/privacy" />
+      </EntryFrame>
+    )
+    const frame = document.querySelector('[data-slot="entry-frame"]')
+    expect(frame?.className).toContain('group/entry')
+    const footer = screen.getByRole('contentinfo')
+    for (const link of within(footer).getAllByRole('link', { name: /Terms|Privacy/ }))
+      expect(link.className).toContain('group-has-[[data-slot=legal-notice]]/entry:hidden')
+    expect(document.querySelector('[data-slot="legal-notice"]')).not.toBeNull()
   })
 })

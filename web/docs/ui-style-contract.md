@@ -237,6 +237,17 @@ wrapper:
 - **`EntryDivider`**, **`EntryActions`** (stacked full-width, or `row` for a
   choice), **`EntryLine`** (centred secondary line), **`EntryNote`** (small
   print).
+- **`EntryBackLink`**: the one way back of every entry page, the same
+  everywhere: an outline button with a back arrow, last in the actions,
+  "Back to sign in" (or, `to="app"` for someone signed in, "Go to the
+  dashboard"). Never a filled button, never a second exit beside it.
+- **`EntryLinkProblem`**: the state of a link or request that cannot be used
+  (reset, setup, verification, access-request confirmation, invitation,
+  application consent): the title names the problem ("This reset link does
+  not work"), one plain sentence, at most one way on (the filled button), then
+  `EntryBackLink`. Never a red banner under the page's normal title.
+- The legal links show once per screen: a page with a consent line
+  (`LegalNotice`, sign in and register) hides the footer's copy of them.
 - One primary action per card, the teal fill (`<Button variant="signal">`):
   an entry page is one call to action. `signal` is for entry pages only; an
   app page's primary action stays the kit default (ink). Fields and buttons are the kit's and

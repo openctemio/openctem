@@ -118,8 +118,8 @@ describe('one h1 per entry page and state', () => {
   it.each([
     ['reset', 'tok', 'Reset password'],
     ['setup', 'tok', 'Set your password'],
-    ['reset', '', 'Invalid reset link'],
-    ['setup', '', 'Invalid setup link'],
+    ['reset', '', 'This reset link does not work'],
+    ['setup', '', 'This setup link does not work'],
   ] as const)('password link (%s, token "%s")', (mode, token, title) => {
     render(<PasswordTokenForm mode={mode} token={token} />)
     expect(h1s().map((h) => h.textContent)).toEqual([title])
@@ -131,7 +131,7 @@ describe('one h1 per entry page and state', () => {
     render(<VerifyEmail />)
     expect(h1s()).toHaveLength(1)
     await waitFor(() =>
-      expect(screen.getByText('This link is invalid or has expired.')).toBeInTheDocument()
+      expect(screen.getByText('This verification link does not work')).toBeInTheDocument()
     )
     expect(h1s()).toHaveLength(1)
   })
@@ -195,7 +195,9 @@ describe('notices keep the role they are announced with', () => {
     vi.mocked(confirmAccessRequestAction).mockResolvedValue({ success: false, error: 'expired' })
     render(<RequestAccessConfirm />)
     await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent('This link is invalid or has expired.')
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'It may have expired or been used already. Send a new request.'
+      )
     )
     expect(screen.queryByRole('alert')).toBeNull()
   })
