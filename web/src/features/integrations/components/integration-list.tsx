@@ -13,8 +13,8 @@ import { useTranslation } from '@/context/i18n-provider'
  *
  * - an optional status strip with the same three tiles everywhere
  *   (Connected / Needs attention / Pending), full width, that filters the
- *   list; it is hidden while the list is empty (no row of zeros above an
- *   empty state);
+ *   list (after the list on a phone, as every list strip); it is hidden
+ *   while the list is empty (no row of zeros above an empty state);
  * - then the error, a table-shaped skeleton, the empty state, or the table;
  * - the table rows open their record by the name, and further actions sit in
  *   the "..." row menu (`DataTableRowActions`); a refresh is the toolbar's
@@ -99,6 +99,7 @@ export function IntegrationList<T>({
     groupOf && (isLoading || rows.length > 0) ? (
       <MetricStrip
         loading={isLoading}
+        listFirst
         items={[
           tile('connected', t('integrationsHub.metrics.connected', 'Connected')),
           tile('attention', t('integrationsHub.metrics.attention', 'Needs attention')),
