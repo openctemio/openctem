@@ -151,7 +151,7 @@ describe('ProgramMetricsSection', () => {
     } as unknown as ProgramMetrics
     render(<ProgramMetricsSection tenantId="t1" days={90} />)
     expect(valueOf('Owner acceptance rate').textContent).toBe('Not measured')
-    expect(screen.getByText('2 assignments still inside the SLA window')).toBeTruthy()
+    expect(screen.getByText('2 assignments still within the time limit')).toBeTruthy()
   })
 
   it('exposes each definition behind a labelled info button', () => {

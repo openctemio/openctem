@@ -380,7 +380,7 @@ describe('Scan approval Off: no approval wording for scope changes', () => {
     routeGets([pendingEntry], [pendingExclusion], false)
     wrap(<ScopeApprovals />)
     expect(await screen.findByTestId('approvals-left-over')).toHaveTextContent(
-      /need no approval while scan approval is not Strict/
+      /need no approval while scan approval is not required/
     )
     expect(await screen.findAllByRole('listitem')).toHaveLength(2)
   })

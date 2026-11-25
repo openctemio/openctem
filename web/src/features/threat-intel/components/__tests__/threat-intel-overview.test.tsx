@@ -16,8 +16,8 @@ const kev = {
 describe('ThreatIntelOverview', () => {
   it('shows the organization figures with the thresholds the API counts at', () => {
     render(<ThreatIntelOverview epssStats={epss} kevStats={kev} />)
-    expect(screen.getByText('EPSS 50% or more')).toBeInTheDocument()
-    expect(screen.getByText('EPSS 10% or more')).toBeInTheDocument()
+    expect(screen.getByText('Exploit likelihood 50% or more')).toBeInTheDocument()
+    expect(screen.getByText('Exploit likelihood 10% or more')).toBeInTheDocument()
     // The old 30% label described a threshold the API never used.
     expect(screen.queryByText(/30%/)).not.toBeInTheDocument()
     // No ratio of the organization's findings to the global catalog.
@@ -37,9 +37,9 @@ describe('ThreatIntelOverview', () => {
     render(<ThreatIntelOverview epssStats={epss} kevStats={kev} />)
     // Real links (open in a new tab, show the URL), not buttons that navigate.
     const href = (name: RegExp) => screen.getByRole('link', { name }).getAttribute('href')
-    expect(href(/EPSS 50% or more/)).toBe('/findings?epss_score_gte=0.5')
-    expect(href(/EPSS 10% or more/)).toBe('/findings?epss_score_gte=0.1')
-    expect(href(/In CISA KEV/)).toBe('/findings?is_in_kev=true')
-    expect(screen.queryByRole('button', { name: /EPSS 50% or more/ })).toBeNull()
+    expect(href(/Exploit likelihood 50% or more/)).toBe('/findings?epss_score_gte=0.5')
+    expect(href(/Exploit likelihood 10% or more/)).toBe('/findings?epss_score_gte=0.1')
+    expect(href(/Known exploited \(KEV\)/)).toBe('/findings?is_in_kev=true')
+    expect(screen.queryByRole('button', { name: /Exploit likelihood 50% or more/ })).toBeNull()
   })
 })

@@ -155,7 +155,7 @@ const FALLBACK_LABELS: Record<string, string> = {
   cicd: 'CI/CD',
   'github-app': 'GitHub App',
   siem: 'SIEM',
-  scm: 'SCM',
+  scm: 'Source control',
   saml: 'SAML',
   scim: 'SCIM',
   mcp: 'MCP',

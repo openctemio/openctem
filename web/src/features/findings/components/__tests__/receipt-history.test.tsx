@@ -125,7 +125,7 @@ describe('ReceiptHistory', () => {
     )
     const totals = screen.getByTestId('receipt-totals')
     expect(within(totals).getByText('190')).toBeInTheDocument()
-    expect(screen.getByText('Totals of 3 receipts')).toBeInTheDocument()
+    expect(screen.getByText('Totals of 3 imports')).toBeInTheDocument()
     expect(screen.getAllByText('Scan run').length).toBeGreaterThan(0)
     await userEvent.click(screen.getByRole('button', { name: 'Remove tool filter: nuclei' }))
     expect(replace).toHaveBeenCalledWith('/?origin=sensor&since=2026-09-26T00%3A00%3A00Z')
@@ -144,7 +144,7 @@ describe('ReceiptHistory', () => {
   it('opens a receipt in the side sheet from its row', async () => {
     render(<ReceiptHistory />)
     await userEvent.click(screen.getAllByRole('row')[1])
-    expect(await screen.findByText('Receipt 1 of 1')).toBeInTheDocument()
+    expect(await screen.findByText('Import 1 of 1')).toBeInTheDocument()
   })
 
   it('filters by source kind through the URL and the request', async () => {
@@ -160,7 +160,7 @@ describe('ReceiptHistory', () => {
     swr.error = new Error('boom')
     render(<ReceiptHistory />)
     expect(screen.queryByTestId('receipt-totals')).not.toBeInTheDocument()
-    expect(screen.getAllByText(/Import and run receipts/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Imports/).length).toBeGreaterThan(0)
   })
 
   it('says there are no receipts yet when no filter is set, and blames filters only when one is', () => {
