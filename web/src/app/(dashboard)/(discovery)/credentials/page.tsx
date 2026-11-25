@@ -898,7 +898,12 @@ export default function CredentialsPage() {
             }
           />
 
-          <MetricStrip loading={statsLoading && !credentialStats} items={metrics} listFirst />
+          <MetricStrip
+            loading={statsLoading && !credentialStats}
+            items={metrics}
+            listFirst
+            listEmpty={!listLoading && total === 0 && !narrowed}
+          />
           {titleRow}
 
           {noAccess ? (

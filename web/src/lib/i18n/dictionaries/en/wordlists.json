@@ -31,6 +31,7 @@
   "wordlists.preview.cut": "(the first {kept} of {count} fit in one run)",
   "wordlists.preview.description": "See how many names a standard discovery run of a domain would try, and where they come from. Nothing is sent.",
   "wordlists.preview.domain": "Domain",
+  "wordlists.preview.domainRequired": "Enter a domain first.",
   "wordlists.preview.failed": "Could not count the labels",
   "wordlists.preview.learned": "Learned from your names, with variants: {count}",
   "wordlists.preview.loading": "Counting...",

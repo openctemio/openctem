@@ -918,7 +918,7 @@ export default function ControlTestingPage() {
           </Button>
         </PageHeader>
 
-        <MetricStrip items={metrics} />
+        <MetricStrip items={metrics} listFirst />
 
         {/* Validation coverage KPI: how much exposure has been re-checked. */}
         <ValidationCoverageCard />

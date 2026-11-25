@@ -70,6 +70,10 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
   const [policyConfirmOpen, setPolicyConfirmOpen] = useState(false)
   const [testing, setTesting] = useState(false)
 
+  // The provider the form starts from: the saved one, or the first offered
+  // when none is saved yet. Compared against it, a fresh form is not dirty.
+  const initialProvider = settings.provider || settings.providers[0] || ''
+
   // The saved values: on load, after a save and on Discard.
   const reset = useCallback(() => {
     setEnabled(settings.enabled)
@@ -93,7 +97,7 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
     .filter(Boolean)
   const dirty =
     enabled !== settings.enabled ||
-    provider !== settings.provider ||
+    provider !== initialProvider ||
     model.trim() !== settings.model ||
     (compat && (baseUrl.trim() !== settings.base_url || allowPrivate !== settings.allow_private)) ||
     models.join(',') !== settings.allowed_models.join(',') ||
@@ -322,26 +326,24 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
             disabled={!editable}
           />
         )}
-        {canEdit && !locked && (
-          <SettingsRow
-            label={t('admin.ai.test', 'Test the key')}
-            hint={t(
-              'admin.ai.testHint',
-              'Asks the provider whether it accepts the saved key. Save your changes first.'
-            )}
-          >
-            <Button
-              variant="outline"
-              onClick={() => void test()}
-              disabled={
-                testing || dirty || !(settings.key_set || settings.provider === 'openai_compatible')
-              }
+        {/* Shown only when there is a saved key to test and nothing unsaved. */}
+        {canEdit &&
+          !locked &&
+          !dirty &&
+          (settings.key_set || settings.provider === 'openai_compatible') && (
+            <SettingsRow
+              label={t('admin.ai.test', 'Test the key')}
+              hint={t(
+                'admin.ai.testHint',
+                'Asks the provider whether it accepts the saved key. Save your changes first.'
+              )}
             >
-              {testing && <Loader2 className="animate-spin" aria-hidden />}
-              {t('admin.ai.testButton', 'Test')}
-            </Button>
-          </SettingsRow>
-        )}
+              <Button variant="outline" onClick={() => void test()} disabled={testing}>
+                {testing && <Loader2 className="animate-spin" aria-hidden />}
+                {t('admin.ai.testButton', 'Test')}
+              </Button>
+            </SettingsRow>
+          )}
       </SettingsSection>
       {canEdit && !locked && (
         <SettingsSaveBar
@@ -372,7 +374,10 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
           disabled={!canEdit}
         />
         {canEdit && allowOrg !== settings.allow_org_provider && (
-          <SettingsBlock className="items-end">
+          <SettingsBlock className="flex-row justify-end">
+            <Button variant="ghost" onClick={() => setAllowOrg(settings.allow_org_provider)}>
+              {t('settings.saveBar.discard', 'Discard')}
+            </Button>
             <Button onClick={() => setPolicyConfirmOpen(true)}>
               {t('admin.ai.policySave', 'Save policy')}
             </Button>

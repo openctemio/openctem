@@ -106,7 +106,7 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
       <SettingsSection
         framed
         id="self-service-limits"
-        title={t('limits.console.defaults.title', 'Limits of self-service organizations')}
+        title={t('limits.console.defaults.title', 'Defaults for self-service organizations')}
         description={t(
           'limits.console.defaults.description',
           'The limits an organization starts with when a person creates it themselves. Leave a value empty for no limit (the default). Organizations created in this console have no limits, and existing organizations keep theirs.'

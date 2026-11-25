@@ -283,7 +283,7 @@ describe('Proxies page', () => {
     pools = []
     createPool.mockResolvedValue({})
     renderPanel()
-    expect(screen.getByRole('switch', { name: 'Use proxies for scans' })).toBeDisabled()
+    expect(screen.queryByRole('switch', { name: 'Use proxies for scans' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Add proxies' }))
     const dialog = within(await screen.findByRole('dialog'))
     fireEvent.change(dialog.getByTestId('proxy-paste-list'), {
@@ -305,7 +305,8 @@ describe('Proxies page', () => {
   it('cannot turn proxies on without a proxy (it would fail every scan closed)', () => {
     pools = [pool({ enabled: false, endpoints: [], endpoints_text: '' })]
     renderPanel()
-    expect(screen.getByRole('switch', { name: 'Use proxies for scans' })).toBeDisabled()
+    // No switch to turn on until there is a proxy: the empty state says what to do.
+    expect(screen.queryByRole('switch', { name: 'Use proxies for scans' })).toBeNull()
     expect(screen.getByText('No proxies yet')).toBeInTheDocument()
   })
 

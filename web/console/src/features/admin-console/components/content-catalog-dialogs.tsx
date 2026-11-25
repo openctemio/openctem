@@ -1,12 +1,11 @@
 'use client'
 
-import { useId, useRef, useState } from 'react'
-import { Upload } from 'lucide-react'
+import { useId, useState } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
+import { FilePicker } from '@/features/shared'
 import { AdminConfirmDialog } from './admin-confirm-dialog'
 import {
   importCatalogBundle,
@@ -16,10 +15,8 @@ import {
 } from '../api/use-content-catalog'
 
 /**
- * A file chooser in the console's language: the browser's own file control
- * labels itself in the browser's language ("Choose File / No file chosen"),
- * so the native input stays hidden behind a translated button and the chosen
- * file's name.
+ * A labelled file chooser (the shared FilePicker: translated, never the
+ * browser's own "Choose File / No file chosen" control).
  */
 function FileField({
   label,
@@ -32,34 +29,11 @@ function FileField({
   file: File | null
   onFile: (f: File | null) => void
 }) {
-  const { t } = useTranslation()
   const id = useId()
-  const input = useRef<HTMLInputElement>(null)
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={id}>{label}</Label>
-      <div className="flex min-w-0 items-center gap-3">
-        <Button type="button" variant="outline" onClick={() => input.current?.click()}>
-          <Upload className="size-4" aria-hidden />
-          {t('admin.catalog.chooseFile', 'Choose a file')}
-        </Button>
-        <span
-          className="min-w-0 truncate text-body text-muted-foreground"
-          title={file?.name}
-          aria-live="polite"
-        >
-          {file ? file.name : t('admin.catalog.noFile', 'No file chosen')}
-        </span>
-      </div>
-      <input
-        ref={input}
-        id={id}
-        type="file"
-        accept={accept}
-        className="sr-only"
-        tabIndex={-1}
-        onChange={(e) => onFile(e.target.files?.[0] ?? null)}
-      />
+      <FilePicker id={id} accept={accept} file={file} onFile={onFile} />
     </div>
   )
 }

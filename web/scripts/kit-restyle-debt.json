@@ -5,7 +5,6 @@
   "console/src/features/admin-console/components/organization-summary.tsx": 2,
   "console/src/features/admin-console/components/platform-user-badges.tsx": 2,
   "console/src/features/admin-console/components/second-factor-step.tsx": 3,
-  "console/src/features/admin-console/components/social-login-settings-form.tsx": 1,
   "console/src/features/admin-console/components/support-access-panel.tsx": 1,
   "console/src/features/sso/components/identity-providers-panel.tsx": 2,
   "src/app/(auth)/select-tenant/page.tsx": 1,

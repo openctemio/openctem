@@ -21,6 +21,7 @@ import {
 import type { EmailSettingsResponse } from '@/lib/api/generated'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveEmailSettings, sendTestEmail } from '../api/use-email-settings'
+import { SecretField } from './console-setting-parts'
 import { ReasonAndCodeFields, useReasonAndCode } from './step-up-code-hint'
 
 export interface EmailSettingsFormProps {
@@ -229,41 +230,15 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
               placeholder: '587',
             })}
             {field('username', t('admin.email.username', 'User name'), { autoComplete: 'off' })}
-            <SettingsField id={`${id}-password`} label={t('admin.email.password', 'Password')}>
-              {(control) => (
-                <div className="flex min-w-0 flex-col gap-2">
-                  <Input
-                    {...control}
-                    type="password"
-                    value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value)
-                      setClearPassword(false)
-                    }}
-                    disabled={!canEdit || clearPassword}
-                    autoComplete="new-password"
-                    placeholder={
-                      settings.password_set
-                        ? t('admin.email.passwordKeep', 'Stored. Type to replace it.')
-                        : t('admin.email.passwordNone', 'Not set')
-                    }
-                  />
-                  {settings.password_set && canEdit && (
-                    <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={clearPassword}
-                        onChange={(e) => {
-                          setClearPassword(e.target.checked)
-                          setPassword('')
-                        }}
-                      />
-                      {t('admin.email.passwordClear', 'Remove the stored password')}
-                    </label>
-                  )}
-                </div>
-              )}
-            </SettingsField>
+            <SecretField
+              label={t('admin.email.password', 'Password')}
+              isSet={!!settings.password_set}
+              value={password}
+              onChange={setPassword}
+              clear={clearPassword}
+              onClear={setClearPassword}
+              disabled={!canEdit}
+            />
             {field('from', t('admin.email.from', 'Sender address'), {
               type: 'email',
               placeholder: 'noreply@example.com',
@@ -336,7 +311,8 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
             </label>
           )}
         </SettingsBlock>
-        {canEdit && (
+        {/* Shown only when it can run: e-mail on and the form saved. */}
+        {canEdit && settings.enabled && !dirty && (
           <SettingsRow
             label={t('admin.email.sendTest', 'Send a test e-mail')}
             hint={t(
@@ -344,11 +320,7 @@ export function EmailSettingsForm({ settings, canEdit, onSaved }: EmailSettingsF
               'Sends an e-mail to your address with the saved settings. Save your changes first.'
             )}
           >
-            <Button
-              variant="outline"
-              onClick={() => void test()}
-              disabled={testing || dirty || !settings.enabled}
-            >
+            <Button variant="outline" onClick={() => void test()} disabled={testing}>
               {testing && <Loader2 className="animate-spin" aria-hidden />}
               {t('admin.email.sendTestButton', 'Send test')}
             </Button>

@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { HealthStatus } from '@/components/ui/health-status'
+import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -75,6 +76,16 @@ export function ToolSourcesSection() {
         <HealthStatus state="ok" label={t('toolSources.keySet', 'Set')} />
         <span className="font-mono text-cap text-muted-foreground">{`•••• ${s.key.last4 ?? ''}`}</span>
       </span>
+    ) : canWrite ? (
+      // No key yet: the cell offers to set one where the key would show.
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setEditing(s)}
+        aria-label={t('toolSources.setNamed', 'Set the key for {name}', { name: s.name })}
+      >
+        {t('toolSources.set', 'Set key')}
+      </Button>
     ) : (
       <HealthStatus state="off" label={t('toolSources.notSet', 'Not set')} />
     )
@@ -86,14 +97,19 @@ export function ToolSourcesSection() {
       <span className="text-muted-foreground">{t('toolSources.neverUsed', 'Never')}</span>
     )
 
-  const enableSwitch = (s: ToolSource) => (
-    <Switch
-      checked={!!s.key?.set && !!s.key.enabled}
-      disabled={!s.key?.set || !canWrite}
-      onCheckedChange={(v) => void toggle(s, v)}
-      aria-label={t('toolSources.enableAria', 'Use the key for {name}', { name: s.name })}
-    />
-  )
+  // Without a key there is nothing to switch on: the cell stays empty (the
+  // Key cell offers to set one) instead of a greyed, dead switch.
+  const enableSwitch = (s: ToolSource) =>
+    s.key?.set ? (
+      <Switch
+        checked={!!s.key.enabled}
+        disabled={!canWrite}
+        onCheckedChange={(v) => void toggle(s, v)}
+        aria-label={t('toolSources.enableAria', 'Use the key for {name}', { name: s.name })}
+      />
+    ) : (
+      <span className="text-muted-foreground">-</span>
+    )
 
   const rowMenu = (s: ToolSource) => {
     const hasKey = !!s.key?.set
@@ -255,7 +271,7 @@ export function ToolSourcesSection() {
               address={t('toolSources.usedBy', 'Used by {tools}', { tools })}
               menu={
                 <div className="flex items-center gap-1">
-                  {enableSwitch(s)}
+                  {s.key?.set && enableSwitch(s)}
                   {rowMenu(s)}
                 </div>
               }

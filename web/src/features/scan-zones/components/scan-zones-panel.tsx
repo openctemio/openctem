@@ -170,7 +170,7 @@ export function ScanZonesPanel({ createOpen, onCreateOpenChange }: ScanZonesPane
 
   return (
     <>
-      <MetricStrip className="mt-5" loading={isLoading} items={metrics} />
+      <MetricStrip className="mt-5" loading={isLoading} items={metrics} listFirst />
 
       <div className="mt-5">{body}</div>
 

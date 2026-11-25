@@ -234,7 +234,6 @@
   "scans.capabilities.action.edit": "Sửa",
   "scans.capabilities.action.viewDetails": "Xem chi tiết",
   "scans.capabilities.add": "Thêm năng lực",
-  "scans.capabilities.addHint": "Chuyển sang thẻ Tùy chỉnh để thêm năng lực của riêng bạn",
   "scans.capabilities.card.sensorsWith": "{count} sensor có năng lực này",
   "scans.capabilities.card.sensorsWithMany": "{count} sensor có năng lực này",
   "scans.capabilities.card.toolsUsing": "{count} tool đang dùng năng lực này",

@@ -118,12 +118,13 @@ describe('FeedRelayCard', () => {
     expect(why).toHaveTextContent('parked (not active)')
     expect(why).toHaveTextContent(/SENSOR_FEED_RELAY=0/)
 
-    const save = screen.getByRole('button', { name: 'Save' })
-    expect(save).toBeDisabled() // relay needs at least one sensor
+    // The save bar: relay with no sensor cannot be saved yet.
+    expect(screen.getByRole('button', { name: /Save changes/ })).toBeDisabled()
     await userEvent.click(screen.getByLabelText('edge-1'))
     await userEvent.click(screen.getByLabelText('edge-2'))
     await userEvent.click(screen.getByLabelText('edge-3'))
     expect(screen.getByLabelText('edge-4')).toBeDisabled()
+    const save = screen.getByRole('button', { name: /Save changes/ })
     expect(save).toBeEnabled()
 
     await userEvent.click(save)

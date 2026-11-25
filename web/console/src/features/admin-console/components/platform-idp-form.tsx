@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { Loader2 } from 'lucide-react'
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -16,6 +15,7 @@ import {
   SettingsBlock,
   SettingsField,
   SettingsFieldGrid,
+  SettingsSaveBar,
   SettingsSection,
   SettingsSwitchRow,
 } from '@/features/shared'
@@ -119,6 +119,9 @@ export function PlatformIdPForm({
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }))
+  const formId = useId()
+  const saved = useMemo(() => toForm(idp), [idp])
+  const dirty = JSON.stringify(form) !== JSON.stringify(saved)
 
   const turningOnRequire = form.requireIdP && form.enabled && !idp.require_idp
   const turningOffRequire = idp.require_idp && !form.requireIdP
@@ -187,7 +190,7 @@ export function PlatformIdPForm({
   }
 
   return (
-    <form method="post" onSubmit={submit} className="flex min-w-0 flex-col gap-section">
+    <form id={formId} method="post" onSubmit={submit} className="flex min-w-0 flex-col gap-section">
       <SettingsSection
         framed
         id="admin-idp"
@@ -440,23 +443,19 @@ export function PlatformIdPForm({
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      <div className="flex flex-wrap justify-end gap-2">
-        {idp.configured && (
+      {idp.configured && (
+        <div className="flex flex-wrap gap-2">
           <Button
             type="button"
-            variant="destructive"
-            className="me-auto"
+            variant="outline"
             disabled={busy}
             onClick={() => setConfirmDelete(true)}
           >
             {t('admin.platformIdpForm.removeProvider', 'Remove identity provider')}
           </Button>
-        )}
-        <Button type="submit" disabled={busy}>
-          {busy && <Loader2 className="me-2 size-4 animate-spin" />}
-          {t('common.save', 'Save')}
-        </Button>
-      </div>
+        </div>
+      )}
+      <SettingsSaveBar dirty={dirty} saving={busy} form={formId} onDiscard={() => setForm(saved)} />
 
       <ConfirmDialog
         open={confirmDelete}

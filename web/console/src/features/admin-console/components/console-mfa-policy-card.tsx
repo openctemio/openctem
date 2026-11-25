@@ -29,7 +29,7 @@ export function ConsoleMfaPolicyCard() {
   if (error) {
     return (
       <ErrorState
-        title={t('admin.mfaPolicy.title', 'Require security keys')}
+        title={t('admin.mfaPolicy.title', 'Security keys for administrators')}
         error={error}
         onRetry={() => void mutate()}
       />
