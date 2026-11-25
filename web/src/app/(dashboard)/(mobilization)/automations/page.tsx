@@ -568,7 +568,7 @@ export default function WorkflowsPage() {
         <DataTableColumnHeader column={column} title={t('automations.columns.status', 'Status')} />
       ),
       cell: ({ row }) => (
-        <Badge variant={row.original.is_active ? 'default' : 'secondary'}>
+        <Badge variant={row.original.is_active ? 'outline' : 'secondary'}>
           {row.original.is_active
             ? t('automations.status.active', 'Active')
             : t('automations.status.inactive', 'Inactive')}
@@ -878,14 +878,6 @@ export default function WorkflowsPage() {
                     'automations.empty.description',
                     'Create your first automation workflow.'
                   )}
-                  action={
-                    <Can permission={Permission.AutomationsWrite} mode="disable">
-                      <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
-                        <Plus className="me-2 h-4 w-4" />
-                        {t('automations.empty.create', 'Create workflow')}
-                      </Button>
-                    </Can>
-                  }
                 />
               ) : (
                 <DataTable

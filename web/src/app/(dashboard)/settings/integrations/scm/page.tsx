@@ -412,14 +412,6 @@ export default function SCMConnectionsPage() {
                       'scmIntegration.page.emptyDescription',
                       'Connect your GitHub, GitLab, Bitbucket, or Azure DevOps account to import and scan repositories.'
                     )}
-                    action={
-                      <Can route="POST /api/v1/integrations">
-                        <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-                          <Plus className="me-2 h-4 w-4" />
-                          {t('scmIntegration.page.addConnection', 'Add connection')}
-                        </Button>
-                      </Can>
-                    }
                   />
                 ) : (
                   <DataTable

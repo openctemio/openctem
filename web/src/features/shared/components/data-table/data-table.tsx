@@ -34,6 +34,7 @@ import { DENSE_ATTRS } from '@/components/ui/density'
 import { ListToolbar } from '../list-toolbar'
 import { ErrorState } from '../error-state'
 import { OneFilledAction } from '../one-filled-action'
+import { EmptyState, NoResultsState } from '../empty-state'
 import type { ListSearchProps } from '../list-search'
 import type { FilterPanelToggleProps } from '../filter-button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -1743,26 +1744,26 @@ export function DataTable<TData, TValue>({
       noMatchBlock != null ? (
         noMatchBlock
       ) : (
-        <DefaultEmpty
-          message={noMatchWords?.title ?? t('common.table.noResults', 'No results found')}
+        <NoResultsState
+          card={false}
+          title={noMatchWords?.title ?? t('common.table.noResults', 'No results found')}
           hint={
             noMatchWords?.hint ??
             t('common.table.adjustSearch', 'Try adjusting your search or filters')
           }
-          action={
-            onClearFilters ? (
-              <Button variant="outline" size="sm" onClick={onClearFilters}>
-                {t('common.table.clearFilters', 'Clear filters')}
-              </Button>
-            ) : undefined
-          }
+          onClearFilters={onClearFilters}
         />
       )
     ) : (
       emptyState.nothingYet
     )
   ) : (
-    (emptyState ?? <DefaultEmpty message={emptyMessage} hint={emptyHint} />)
+    (emptyState ??
+    (filterActive ? (
+      <NoResultsState card={false} onClearFilters={onClearFilters} />
+    ) : (
+      <EmptyState card={false} icon={Inbox} title={emptyMessage} description={emptyHint} />
+    )))
   )
   // One filled button per screen: the empty body's action is an outline
   // button beside the page's main action (`OneFilledAction`).
@@ -2063,12 +2064,7 @@ export function DataTable<TData, TValue>({
               ))}
             </div>
           ) : (
-            (errorState ??
-            (emptyState === undefined || isEmptyStates(emptyState) ? (
-              <div className="py-12">{emptyBody}</div>
-            ) : (
-              emptyBody
-            )))
+            (errorState ?? emptyBody)
           )}
         </div>
       )}
@@ -2294,8 +2290,7 @@ export function DataTable<TData, TValue>({
                     colSpan={columns.length}
                     data-slot={errorState ? 'table-error-cell' : undefined}
                     className={cn(
-                      'h-48',
-                      errorState ? 'align-top whitespace-normal text-start' : 'text-center'
+                      errorState ? 'h-48 align-top whitespace-normal text-start' : 'text-center'
                     )}
                   >
                     {errorState ?? emptyBody}
@@ -2637,26 +2632,6 @@ function TableStaleNote({
     </span>
   )
   return block ? <div className="text-cap text-muted-foreground">{note}</div> : note
-}
-
-/** The default empty block: icon, one line, an optional hint and action. */
-function DefaultEmpty({
-  message,
-  hint,
-  action,
-}: {
-  message: React.ReactNode
-  hint?: React.ReactNode
-  action?: React.ReactNode
-}) {
-  return (
-    <div className="flex flex-col items-center justify-center gap-2 text-center">
-      <Inbox className="size-10 text-muted-foreground/50" />
-      <p className="text-body font-medium">{message}</p>
-      {hint && <p className="text-cap text-muted-foreground">{hint}</p>}
-      {action}
-    </div>
-  )
 }
 
 /**
