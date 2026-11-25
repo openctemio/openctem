@@ -140,12 +140,46 @@ func newFeedHTTPClient(timeout time.Duration, cfg *feedProxyConfig, d guardedDia
 	}
 	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		if addr == proxyAddr {
-			return proxyDial.dialContext(ctx, network, addr)
+			conn, err := proxyDial.dialContext(ctx, network, addr)
+			if err != nil && !errors.Is(err, ErrBlockedDestination) {
+				err = &ProxyUnreachableError{Err: err}
+			}
+			return conn, err
 		}
 		return d.dialContext(ctx, network, addr)
 	}
+	// A proxy that answers CONNECT with anything but 200 refused the
+	// destination (a rule, a sign-in it wants): named apart from a host
+	// that cannot be reached. The tunnel is still refused either way.
+	tr.OnProxyConnectResponse = func(_ context.Context, _ *url.URL, _ *http.Request, resp *http.Response) error {
+		if resp.StatusCode != http.StatusOK {
+			return &ProxyRefusedError{Status: resp.StatusCode}
+		}
+		return nil
+	}
 	return c
 }
+
+// ProxyRefusedError: the feed proxy answered the CONNECT request with a
+// status other than 200 (it refused the destination or wants a sign-in).
+type ProxyRefusedError struct {
+	Status int
+}
+
+func (e *ProxyRefusedError) Error() string {
+	return fmt.Sprintf("the feed proxy refused the connection (status %d)", e.Status)
+}
+
+// ProxyUnreachableError: the feed proxy itself could not be reached.
+type ProxyUnreachableError struct {
+	Err error
+}
+
+func (e *ProxyUnreachableError) Error() string {
+	return "the feed proxy cannot be reached: " + e.Err.Error()
+}
+
+func (e *ProxyUnreachableError) Unwrap() error { return e.Err }
 
 // checkProxiedDestination applies the guard's destination rules to a host
 // the proxy will connect to. Answers are judged by the installation's policy
