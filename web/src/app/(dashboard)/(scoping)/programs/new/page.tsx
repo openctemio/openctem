@@ -39,7 +39,7 @@ export default function NewProgramPage() {
           title={t('programs.new.title', 'Import program')}
           description={t(
             'programs.new.descriptionSources',
-            'Enter the scope by hand or import the scope file from the program page. In-scope targets become scope entries that take effect when you accept the program rules; out-of-scope items stop program entries only, never your own scope.'
+            "Enter the scope by hand or import the scope file from the program page. In-scope targets become scope entries that take effect when you accept the program rules; out-of-scope items only block this program's own entries and never change your own scope."
           )}
         >
           <Button asChild variant="outline" size="sm">

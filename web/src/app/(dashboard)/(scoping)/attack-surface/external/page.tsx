@@ -141,10 +141,10 @@ function typeLabel(t: TFn, type?: string): string {
       return t('attackSurface.external.type.certificate', 'Certificate')
     case 'host':
       return t('attackSurface.external.type.host', 'Host')
-    default: {
-      const s = (type ?? '').replace(/_/g, ' ')
-      return s.charAt(0).toUpperCase() + s.slice(1)
-    }
+    case 'network':
+      return t('attackSurface.external.type.network', 'Network')
+    default:
+      return t('attackSurface.external.type.other', 'Other')
   }
 }
 

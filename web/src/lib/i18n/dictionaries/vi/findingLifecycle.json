@@ -1,6 +1,6 @@
 {
   "findingLifecycle.actorKind.api_key": "Khóa API",
-  "findingLifecycle.actorKind.ticket_inbound": "Đồng bộ ticket",
+  "findingLifecycle.actorKind.ticket_inbound": "Đồng bộ phiếu",
   "findingLifecycle.actorKind.workflow": "Quy trình tự động",
   "findingLifecycle.color.amber": "Hổ phách",
   "findingLifecycle.color.blue": "Xanh dương",
@@ -64,7 +64,7 @@
   "findingLifecycle.field.due_date": "Hạn chót",
   "findingLifecycle.field.fix_reference": "Tham chiếu bản sửa (pull request hoặc commit)",
   "findingLifecycle.field.target_version": "Phiên bản đích",
-  "findingLifecycle.field.ticket_link": "Liên kết ticket",
+  "findingLifecycle.field.ticket_link": "Liên kết phiếu",
   "findingLifecycle.guard.characters": "ký tự",
   "findingLifecycle.guard.denyKinds": "Không cho phép",
   "findingLifecycle.guard.fields": "Trường",

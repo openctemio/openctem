@@ -53,9 +53,9 @@ describe('SignupPolicyForm', () => {
 
   it('under SIGNUP_MODE=disabled self-service is locked and the reason is shown', () => {
     render(<SignupPolicyForm policy={LOCKED} canEdit onSaved={vi.fn()} />)
-    expect(screen.getByText(/SIGNUP_MODE: disabled/)).toBeInTheDocument()
+    expect(screen.getByText('What the server allows')).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: /anyone who signs up/i })).toBeDisabled()
-    expect(screen.getByText(/set SIGNUP_MODE=open on the server/i)).toBeInTheDocument()
+    expect(screen.getByText(/allow open sign-up in the server settings/i)).toBeInTheDocument()
   })
 
   it('a stored policy above the ceiling shows what is in force', () => {

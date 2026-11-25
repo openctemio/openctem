@@ -143,7 +143,7 @@ describe('EmergingThreatsList', () => {
   it('exploit: KEV hides the EPSS figure; without KEV it reads "Exploit chance"', async () => {
     renderList()
     await screen.findByText('CVE-2026-1000')
-    expect(screen.getAllByText('KEV').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Exploited').length).toBeGreaterThan(0)
     expect(screen.queryByText('Exploit chance 50.0%')).not.toBeInTheDocument()
     expect(screen.getByText('Exploit chance 0.6%')).toBeInTheDocument()
   })
@@ -323,7 +323,7 @@ describe('EmergingThreatsList', () => {
     expect(within(dialog).getByRole('button', { name: 'More actions' })).toBeInTheDocument()
     const meta = dialog.querySelector('[data-slot="et-meta"]') as HTMLElement
     expect(meta.textContent).toContain('New')
-    expect(meta.textContent).toContain('KEV')
+    expect(meta.textContent).toContain('Exploited')
   })
 
   it('shows the API error', async () => {

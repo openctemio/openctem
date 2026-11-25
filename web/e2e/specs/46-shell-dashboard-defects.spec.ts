@@ -112,12 +112,12 @@ for (const vp of VIEWPORTS) {
           })
         )
         await page.goto('/findings/imports')
-        await expect(page.getByText('No receipts yet.').first()).toBeVisible({ timeout: 30_000 })
-        await expect(page.getByText('No receipts match these filters.')).toHaveCount(0)
+        await expect(page.getByText('No imports yet.').first()).toBeVisible({ timeout: 30_000 })
+        await expect(page.getByText('No imports match these filters.')).toHaveCount(0)
         expect(await layoutDefects(page)).toEqual([])
         expect(await seriousAxe(page)).toEqual([])
         await page.goto('/findings/imports?origin=sensor')
-        await expect(page.getByText('No receipts match these filters.').first()).toBeVisible()
+        await expect(page.getByText('No imports match these filters.').first()).toBeVisible()
       }
     )
   }

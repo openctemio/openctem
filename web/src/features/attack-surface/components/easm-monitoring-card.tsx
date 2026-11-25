@@ -355,11 +355,11 @@ export function EASMMonitoringCard() {
         </section>
         <section
           className="space-y-3 md:col-span-2"
-          aria-label={t('networkSeeds.lookups.title', 'Network seed lookups')}
+          aria-label={t('networkSeeds.lookups.title', 'Network lookups')}
         >
           <div className="flex items-center justify-between gap-3">
             <Label htmlFor="easm-network-lookups" className="font-medium">
-              {t('networkSeeds.lookups.title', 'Network seed lookups')}
+              {t('networkSeeds.lookups.title', 'Network lookups')}
             </Label>
             <Switch
               id="easm-network-lookups"

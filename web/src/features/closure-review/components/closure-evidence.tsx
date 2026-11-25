@@ -8,7 +8,7 @@ import { formatLocalized, formatRelative } from '@/lib/format-date'
 import type { ClosureEvidence as Evidence } from '../types'
 
 export const METHOD_LABEL: Record<string, string> = {
-  covered_scan: 'Covered scan',
+  covered_scan: 'Scan checked the asset',
   ci_default_branch: 'Default-branch scan',
   retest: 'Retest',
   retest_verified: 'Retest confirmed the fix',

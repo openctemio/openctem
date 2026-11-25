@@ -33,6 +33,7 @@
   "notificationChannels.history.noChannels": "Chưa có kênh nào",
   "notificationChannels.history.noChannelsDescription": "Thêm một kênh; các sự kiện kênh đó gửi sẽ hiện ở đây.",
   "notificationChannels.history.openSource": "Mở nguồn của {title}",
+  "notificationChannels.history.providerOther": "Khác",
   "notificationChannels.history.refreshed": "Đã làm mới thông báo",
   "notificationChannels.history.selectChannel": "Chọn kênh…",
   "notificationChannels.history.selectPrompt": "Chọn một kênh để xem sự kiện thông báo của kênh đó",

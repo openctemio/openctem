@@ -168,7 +168,7 @@ function ApproveDialog({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="ar-slug">{t('admin.accessRequestsPanel.slug', 'Slug')}</Label>
+                <Label htmlFor="ar-slug">{t('admin.accessRequestsPanel.slug', 'Short name')}</Label>
                 <Input
                   id="ar-slug"
                   value={slug}

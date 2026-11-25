@@ -80,7 +80,7 @@ export default function AdminSessionsPage() {
               {s.break_glass && (
                 <span className="inline-flex shrink-0 items-center gap-1 text-cap-m text-destructive max-md:hidden">
                   <Siren className="size-3" aria-hidden="true" />
-                  {t('admin.sessions.breakGlass', 'Break-glass')}
+                  {t('admin.sessions.breakGlass', 'Emergency access')}
                 </span>
               )}
               {s.admin_name && s.admin_name !== s.admin_email && (
@@ -108,7 +108,7 @@ export default function AdminSessionsPage() {
               <span className="md:hidden">
                 <Badge variant="destructive">
                   <Siren aria-hidden="true" />
-                  {t('admin.sessions.breakGlass', 'Break-glass')}
+                  {t('admin.sessions.breakGlass', 'Emergency access')}
                 </Badge>
               </span>
             )}
@@ -224,7 +224,7 @@ export default function AdminSessionsPage() {
             <Button asChild>
               <Link
                 href={adminActivityHref(breakGlass.admin_email)}
-                title={t('admin.sessions.reviewTitle', 'Review the break-glass session')}
+                title={t('admin.sessions.reviewTitle', 'Review the emergency session')}
               >
                 {t('admin.sessions.review', 'Review')}
               </Link>

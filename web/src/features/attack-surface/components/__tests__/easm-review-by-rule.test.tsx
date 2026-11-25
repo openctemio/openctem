@@ -110,7 +110,7 @@ describe('suggested rules', () => {
     expect(
       within(card).getByText('Covers dev.example.com.au and every name below it')
     ).toBeInTheDocument()
-    expect(within(card).getByText('Strong')).toBeInTheDocument()
+    expect(within(card).getByText('High confidence')).toBeInTheDocument()
     expect(
       within(card).getByText(/1 stay out: old\.dev\.example\.com\.au \(Marked not ours\)/)
     ).toBeInTheDocument()

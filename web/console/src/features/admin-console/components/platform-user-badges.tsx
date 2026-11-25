@@ -113,7 +113,7 @@ export function PlatformUserBadges({
   if (user.mfa_enabled)
     marks.push({
       key: 'mfa',
-      label: t('admin.users.badge.mfa', 'MFA'),
+      label: t('admin.users.badge.mfa', 'Two-factor on'),
       variant: 'outline',
       tone: 'success',
     })

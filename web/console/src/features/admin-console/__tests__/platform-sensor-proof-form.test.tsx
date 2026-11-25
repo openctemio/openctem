@@ -15,8 +15,8 @@ const { PlatformSensorProofForm } = await import('../components/platform-sensor-
 describe('PlatformSensorProofForm', () => {
   it('explains the default (off) and is read-only without the super admin role', () => {
     render(<PlatformSensorProofForm required={false} canEdit={false} onSave={vi.fn()} />)
-    expect(screen.getByText(/an organization's scope entry is enough/)).toBeInTheDocument()
-    expect(screen.getByText(/public multi-tenant cloud/)).toBeInTheDocument()
+    expect(screen.getByText(/the organization's scope is enough/)).toBeInTheDocument()
+    expect(screen.getByText(/Turn on for a public cloud/)).toBeInTheDocument()
     expect(screen.getByRole('switch')).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
   })

@@ -72,7 +72,7 @@ describe('Evidence tab sources', () => {
 
   it('shows the empty state when every source is empty, still with the validation and compliance blocks', () => {
     renderTab()
-    expect(screen.getByText('No Evidence')).toBeInTheDocument()
+    expect(screen.getByText('No evidence')).toBeInTheDocument()
     expect(screen.getByTestId('validation-panel')).toBeInTheDocument()
     expect(screen.getByTestId('compliance-card')).toBeInTheDocument()
   })
@@ -80,7 +80,7 @@ describe('Evidence tab sources', () => {
   it('shows validation results instead of the empty state when they are the only evidence', () => {
     validation = [{ id: 'v1' }]
     renderTab()
-    expect(screen.queryByText('No Evidence')).toBeNull()
+    expect(screen.queryByText('No evidence')).toBeNull()
     expect(screen.getByTestId('validation-panel')).toBeInTheDocument()
     expect(screen.getByTestId('compliance-card')).toBeInTheDocument()
   })
@@ -88,14 +88,14 @@ describe('Evidence tab sources', () => {
   it('does not flash the empty state while validation results load', () => {
     validationLoading = true
     renderTab()
-    expect(screen.queryByText('No Evidence')).toBeNull()
+    expect(screen.queryByText('No evidence')).toBeNull()
   })
 
   it('shows an error row with Retry when the uploaded files fail to load', async () => {
     uploadsError = new Error('boom')
     renderTab(finding({ source: 'pentest' }))
     expect(screen.getByRole('alert')).toHaveTextContent('Could not load the uploaded files')
-    expect(screen.queryByText('No Evidence')).toBeNull()
+    expect(screen.queryByText('No evidence')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(retry).toHaveBeenCalled()
   })

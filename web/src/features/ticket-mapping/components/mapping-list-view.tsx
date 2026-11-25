@@ -108,8 +108,14 @@ export function MappingListView() {
                         {p.name}
                       </Link>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span>{p.project_key}</span>
-                        <span>{p.issue_type || p.issue_type_id}</span>
+                        <span>
+                          {t('ticketMapping.list.project', 'Project {key}', { key: p.project_key })}
+                        </span>
+                        <span>
+                          {t('ticketMapping.list.issueType', 'Type {type}', {
+                            type: p.issue_type || p.issue_type_id,
+                          })}
+                        </span>
                         <Badge variant="secondary">
                           {p.object_kind === 'task'
                             ? t('ticketMapping.kind.taskShort', 'Tasks')

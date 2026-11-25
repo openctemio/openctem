@@ -129,6 +129,14 @@ interface NodePaletteProps {
   position?: 'left' | 'right'
 }
 
+/** Catalog key of a category display name: "IaC Security" -> iac_security. */
+function categoryKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+}
+
 export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProps) {
   const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
@@ -301,7 +309,9 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                   ) : (
                     <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
                   )}
-                  <span className="truncate">{category}</span>
+                  <span className="truncate">
+                    {t(`workflowStages.palette.category.${categoryKey(category)}`, category)}
+                  </span>
                   <span className="ms-auto text-xs text-muted-foreground">{tools.length}</span>
                 </button>
 

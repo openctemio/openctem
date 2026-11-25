@@ -28,12 +28,12 @@ describe('EntryFrame', () => {
     expect(within(main).getByRole('heading', { level: 1, name: 'Sign in' })).toBeInTheDocument()
 
     const footer = screen.getByRole('contentinfo')
-    expect(within(footer).getByRole('link', { name: 'Terms of Service' })).toHaveAttribute(
+    expect(within(footer).getByRole('link', { name: 'Terms of service' })).toHaveAttribute(
       'href',
       '/terms'
     )
     // A document hosted elsewhere opens in a new tab without an opener.
-    const privacy = within(footer).getByRole('link', { name: /Privacy Policy/ })
+    const privacy = within(footer).getByRole('link', { name: /Privacy policy/ })
     expect(privacy).toHaveAttribute('href', 'https://example.com/privacy')
     expect(privacy).toHaveAttribute('target', '_blank')
     expect(privacy.getAttribute('rel')).toContain('noopener')
@@ -51,8 +51,8 @@ describe('EntryFrame', () => {
       </EntryFrame>
     )
     const footer = screen.getByRole('contentinfo')
-    expect(within(footer).queryByRole('link', { name: 'Terms of Service' })).toBeNull()
-    expect(within(footer).queryByRole('link', { name: /Privacy Policy/ })).toBeNull()
+    expect(within(footer).queryByRole('link', { name: 'Terms of service' })).toBeNull()
+    expect(within(footer).queryByRole('link', { name: /Privacy policy/ })).toBeNull()
   })
 
   it('sets the entry control scale (36px controls) on the whole page', () => {

@@ -490,7 +490,7 @@ export function PlatformIdPForm({
         title={t('confirm.platformIdp.requireTitle', 'Require the identity provider?')}
         desc={t(
           'confirm.platformIdp.requireDesc',
-          'Administrators who are not break-glass accounts can no longer use their password for the console, and those in the console with a password are signed out now (you too, if you signed in with a password).'
+          'Administrators who are not emergency access accounts can no longer use their password for the console, and those in the console with a password are signed out now (you too, if you signed in with a password).'
         )}
         confirmText={t('confirm.platformIdp.require', 'Require it')}
         destructive

@@ -274,7 +274,7 @@ export default function AdminOrganizationsPage() {
           search={{
             value: list.q,
             onChange: list.setSearch,
-            placeholder: t('admin.org.search', 'Search name or slug…'),
+            placeholder: t('admin.org.search', 'Search name or short name…'),
             label: t('admin.org.searchLabel', 'Search organizations'),
           }}
           toolbarStart={

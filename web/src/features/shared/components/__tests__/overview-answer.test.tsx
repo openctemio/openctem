@@ -6,7 +6,7 @@ describe('OverviewAnswer', () => {
   it('shows the one big number and the sentence behind it', () => {
     render(
       <OverviewAnswer
-        question="P0 fixed within target"
+        question="Highest priority (P0) fixed within target"
         value="86%"
         sentence="6 of 7 P0 findings were fixed."
       />
@@ -14,7 +14,9 @@ describe('OverviewAnswer', () => {
     const value = screen.getByText('86%')
     expect(value.className).toContain('text-4xl')
     expect(screen.getByText('6 of 7 P0 findings were fixed.')).toBeTruthy()
-    expect(screen.getByRole('heading', { name: 'P0 fixed within target' })).toBeTruthy()
+    expect(
+      screen.getByRole('heading', { name: 'Highest priority (P0) fixed within target' })
+    ).toBeTruthy()
   })
 
   it('colours the number only for a problem answer', () => {
@@ -27,7 +29,7 @@ describe('OverviewAnswer', () => {
   it('says not measured in muted body text with the reason, no big number', () => {
     const { container } = render(
       <OverviewAnswer
-        question="P0 fixed within target"
+        question="Highest priority (P0) fixed within target"
         value="0%"
         notMeasured={{ label: 'Not measured', reason: 'No P0 findings in the period.' }}
       />

@@ -71,7 +71,7 @@
   "exceptions.page.delete": "Xóa",
   "exceptions.page.deleteFailed": "Không xóa được quy tắc",
   "exceptions.page.deleted": "Đã xóa quy tắc loại trừ",
-  "exceptions.page.description": "Các quy tắc loại trừ ẩn dương tính giả và rủi ro đã chấp nhận, có bước phê duyệt.",
+  "exceptions.page.description": "Các quy tắc ẩn dương tính giả và rủi ro đã chấp nhận, có bước phê duyệt.",
   "exceptions.page.edit": "Sửa",
   "exceptions.page.emptyAll": "Dương tính giả và rủi ro đã chấp nhận hiện ở đây, kèm người phê duyệt và ngày hết hạn.",
   "exceptions.page.emptyFiltered": "Không có ngoại lệ nào khớp bộ lọc",

@@ -119,7 +119,7 @@ export function StatusCard({ cve, exposure }: { cve: string; exposure: CveExposu
           })}
         </CardTitle>
         <CardDescription>
-          {t('vulnPage.status.hint', 'Each segment opens its list')}
+          {t('vulnPage.status.hint', 'Select a segment to open its list')}
         </CardDescription>
       </CardHeader>
       <CardContent>

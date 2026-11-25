@@ -303,7 +303,7 @@ export default function PriorityRulesPage() {
 
     const orderNum = Number(form.evaluation_order)
     if (!Number.isFinite(orderNum)) {
-      toast.error(t('prioritization.rules.toast.orderNumber', 'Evaluation order must be a number'))
+      toast.error(t('prioritization.rules.toast.orderNumber', 'Rule order must be a number'))
       return
     }
 
@@ -459,7 +459,7 @@ export default function PriorityRulesPage() {
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
-            title={t('prioritization.rules.col.order', 'Evaluation order')}
+            title={t('prioritization.rules.col.order', 'Rule order')}
           />
         ),
         cell: ({ row }) => <span className="tabular-nums">{row.original.evaluation_order}</span>,
@@ -499,7 +499,7 @@ export default function PriorityRulesPage() {
                     onClick: () => openEdit(rule),
                   },
                   {
-                    label: t('prioritization.rules.action.dryRun', 'Dry run'),
+                    label: t('prioritization.rules.action.dryRun', 'Test run'),
                     icon: FlaskConical,
                     onClick: () =>
                       setDryRunRule({
@@ -661,7 +661,7 @@ export default function PriorityRulesPage() {
           <AlertDescription>
             {t(
               'prioritization.rules.how.body',
-              "Rules are evaluated from the highest evaluation order down (higher wins). The first active rule whose conditions all match sets the finding's priority class. Inactive rules are skipped."
+              "Rules run from the highest order number down. The first active rule whose conditions all match sets the finding's priority. Inactive rules are skipped."
             )}
           </AlertDescription>
         </Alert>
@@ -693,7 +693,7 @@ export default function PriorityRulesPage() {
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                   placeholder={t(
                     'prioritization.rules.form.namePlaceholder',
-                    'e.g. KEV on crown jewel → P0'
+                    'e.g., Known exploited on a crown jewel: highest priority'
                   )}
                   {...fieldErrorProps(
                     'name',
@@ -731,7 +731,7 @@ export default function PriorityRulesPage() {
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="grid gap-2">
                   <Label htmlFor="priority_class">
-                    {t('prioritization.rules.form.target', 'Target priority class')}
+                    {t('prioritization.rules.form.target', 'Set priority to')}
                   </Label>
                   <Select
                     value={form.priority_class}
@@ -754,7 +754,7 @@ export default function PriorityRulesPage() {
 
                 <div className="grid gap-2">
                   <Label htmlFor="evaluation_order">
-                    {t('prioritization.rules.form.order', 'Evaluation order')}
+                    {t('prioritization.rules.form.order', 'Rule order')}
                   </Label>
                   <Input
                     id="evaluation_order"
@@ -918,7 +918,7 @@ export default function PriorityRulesPage() {
                 }
               >
                 <FlaskConical className="me-1 h-4 w-4" />
-                {t('prioritization.rules.action.dryRun', 'Dry run')}
+                {t('prioritization.rules.action.dryRun', 'Test run')}
               </Button>
             )}
             <Button onClick={handleSave} disabled={isSaving}>

@@ -232,7 +232,7 @@ export default function SelectTenantPage() {
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-body truncate font-medium">{tenant.name}</span>
                   <span className="text-cap text-muted-foreground truncate">
-                    {tenant.slug}, {t(`org.role.${tenant.role}`, tenant.role)}
+                    {t(`org.role.${tenant.role}`, tenant.role)}
                   </span>
                 </span>
                 {isSelected && !isPending && <Check aria-hidden className="size-4 shrink-0" />}

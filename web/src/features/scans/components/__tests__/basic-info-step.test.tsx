@@ -372,7 +372,7 @@ describe('BasicInfoStep', () => {
       expect(
         intensity.compareDocumentPosition(what) & Node.DOCUMENT_POSITION_FOLLOWING
       ).toBeTruthy()
-      expect(screen.getByRole('radio', { name: 'Active' })).toBeChecked()
+      expect(screen.getByRole('radio', { name: 'Probing' })).toBeChecked()
     })
 
     it('turns off the workflows above a passive scan, with why', () => {

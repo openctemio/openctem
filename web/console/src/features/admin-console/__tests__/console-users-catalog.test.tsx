@@ -161,7 +161,7 @@ describe('Content catalog', () => {
   it('shows the trust roots read-only and lets a super admin revoke a version with a reason, the typed version and a code', async () => {
     mocks.role = 'super_admin'
     render(<CatalogPage />)
-    expect(screen.getByText(/cannot be changed from this console/)).toBeInTheDocument()
+    expect(screen.getByText(/cannot be changed from here/)).toBeInTheDocument()
     await userEvent.click(screen.getAllByText('Scanning sensor')[0])
     await userEvent.click(await screen.findByRole('button', { name: 'Revoke' }))
     const confirm = screen.getAllByRole('button', { name: 'Revoke' }).at(-1)!
@@ -251,7 +251,7 @@ describe('Content catalog', () => {
     expect(screen.getByRole('table', { name: 'Catalog packages' })).toBeInTheDocument()
     expect(screen.queryByText('No catalog has been imported yet')).not.toBeInTheDocument()
     // The trust details stay.
-    expect(screen.getByText(/cannot be changed from this console/)).toBeInTheDocument()
+    expect(screen.getByText(/cannot be changed from here/)).toBeInTheDocument()
   })
 
   it('says nothing was imported when no package is listed', () => {

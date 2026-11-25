@@ -101,16 +101,16 @@ export default function ValidationOverviewPage() {
   const metrics: MetricStripItem[] = [
     {
       key: 'coverage',
-      label: t('validation.overview.coverage.label', 'P0/P1 validation coverage'),
+      label: t('validation.overview.coverage.label', 'Validated top-priority fixes'),
       value: coverageError || covTotal === 0 ? '–' : `${share(covValidated, covTotal)}%`,
       detail: coverageError
         ? undefined
         : covTotal === 0
-          ? t('validation.overview.coverage.none', 'No P0 or P1 finding closed yet')
+          ? t('validation.overview.coverage.none', 'No highest or high priority finding closed yet')
           : formatList(classes),
       description: t(
         'validation.overview.coverage.description',
-        'Closed P0 and P1 findings with validation evidence (pentest, scripted or sensor).'
+        'Closed findings of the two highest priorities (P0, P1) with validation evidence (pentest, scripted or sensor).'
       ),
       href: findingsHref(CLOSED_P0_P1),
     },

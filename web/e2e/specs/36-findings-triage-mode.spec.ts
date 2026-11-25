@@ -54,7 +54,7 @@ async function fillRequest(page: Page) {
   await dialog.locator('#justification').fill('E2E triage: decided in triage mode for the spec.')
   await dialog.getByRole('button', { name: 'Review' }).click()
   await dialog
-    .getByRole('button', { name: /Submit for Approval|Mark as false positive|Accept the risk/ })
+    .getByRole('button', { name: /Submit for approval|Mark as false positive|Accept the risk/ })
     .click()
   await expect(dialog).toBeHidden()
 }

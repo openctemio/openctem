@@ -146,7 +146,7 @@ export function ProgramMetricsSection({
           ? `, ${t(`${K}.acceptance.pending`, '{count} pending', { count: oa.pending })}`
           : '')
       : oa?.pending
-        ? t(`${K}.acceptance.allPending`, '{items} still inside the SLA window', {
+        ? t(`${K}.acceptance.allPending`, '{items} still within the time limit', {
             items: counted(t, 'assignment', oa.pending),
           })
         : t(`${K}.acceptance.empty`, 'No assignments with an SLA in this period')
@@ -167,8 +167,8 @@ export function ProgramMetricsSection({
       : t(`${K}.cycles.empty`, 'No cycle was due in this period')
 
   const controlTitle: Record<string, string> = {
-    edr: t(`${K}.controls.edr.title`, 'Critical hosts without EDR'),
-    mfa: t(`${K}.controls.mfa.title`, 'Critical accounts without MFA'),
+    edr: t(`${K}.controls.edr.title`, 'Critical hosts without endpoint protection'),
+    mfa: t(`${K}.controls.mfa.title`, 'Critical accounts without multi-factor sign-in'),
     logging: t(`${K}.controls.logging.title`, 'Critical storage without logging'),
   }
   const controlInfo: Record<string, string> = {

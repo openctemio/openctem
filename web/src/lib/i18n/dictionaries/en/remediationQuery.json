@@ -6,7 +6,7 @@
   "remediationQuery.create.deadline": "Deadline",
   "remediationQuery.create.defaultTitle": "Fix findings matching a query",
   "remediationQuery.create.description": "Select the findings of a task with a query. It runs with your access only; preview before you create.",
-  "remediationQuery.create.entry": "New task from query",
+  "remediationQuery.create.entry": "New task from a filter",
   "remediationQuery.create.failed": "The task could not be created.",
   "remediationQuery.create.ignoredFilters": "Not carried over (not filters of the query language): {filters}",
   "remediationQuery.create.noOwner": "No owner",

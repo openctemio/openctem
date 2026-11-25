@@ -95,7 +95,7 @@ describe('FindingApprovalsForm, policy — tier grid', () => {
     render(<ApprovalPolicyForm settings={settings()} canEdit />)
     // accepted.critical: floor security, default dual.
     const critical = await optionsOf('accepted.critical')
-    expect(critical).toEqual(['Default (Two approvers)', 'Security review'])
+    expect(critical).toEqual(['Default: Two approvers', 'Security review'])
     expect(critical).not.toContain('One person')
     expect(critical).not.toContain('Peer review')
     // A rule never decides alone: no "One person" anywhere in a rule row.
@@ -143,7 +143,7 @@ describe('FindingApprovalsForm, policy — tier grid', () => {
 
   it('needs a security pool before the strict toggle can be set', () => {
     render(<ApprovalPolicyForm settings={settings()} canEdit />)
-    expect(screen.getByRole('switch', { name: /only the security pool/i })).toBeDisabled()
+    expect(screen.getByRole('switch', { name: /only the security reviewer group/i })).toBeDisabled()
   })
 })
 

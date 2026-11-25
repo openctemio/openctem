@@ -89,8 +89,8 @@ describe('ProgramMetricsSection', () => {
       'Time to validate priority exposures',
       'Time to assign an owner',
       'Cycles completed on time',
-      'Critical hosts without EDR',
-      'Critical accounts without MFA',
+      'Critical hosts without endpoint protection',
+      'Critical accounts without multi-factor sign-in',
       'Critical storage without logging',
     ]) {
       const v = valueOf(title)
@@ -124,9 +124,9 @@ describe('ProgramMetricsSection', () => {
     expect(screen.getByText('Median 2 h, 3 assets (+1 not timed yet)')).toBeTruthy()
     expect(valueOf('Cycles completed on time').textContent).toBe('50%')
     expect(screen.getByText('2 of 4 cycles on time, 1 late, 1 open, criteria met 60%')).toBeTruthy()
-    expect(valueOf('Critical hosts without EDR').textContent).toBe('60%')
+    expect(valueOf('Critical hosts without endpoint protection').textContent).toBe('60%')
     expect(screen.getByText('1 lacking, 2 not recorded, of 5 assets')).toBeTruthy()
-    expect(valueOf('Critical accounts without MFA').textContent).toBe('100%')
+    expect(valueOf('Critical accounts without multi-factor sign-in').textContent).toBe('100%')
     // No critical storage: not measured, never 0%.
     expect(valueOf('Critical storage without logging').textContent).toBe('Not measured')
     // Time-to-break is never computed, even when everything else is.
@@ -151,7 +151,7 @@ describe('ProgramMetricsSection', () => {
     } as unknown as ProgramMetrics
     render(<ProgramMetricsSection tenantId="t1" days={90} />)
     expect(valueOf('Owner acceptance rate').textContent).toBe('Not measured')
-    expect(screen.getByText('2 assignments still inside the SLA window')).toBeTruthy()
+    expect(screen.getByText('2 assignments still within the time limit')).toBeTruthy()
   })
 
   it('exposes each definition behind a labelled info button', () => {

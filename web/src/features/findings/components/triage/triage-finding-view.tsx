@@ -171,7 +171,7 @@ export function TriageFindingView({
               </span>
               {asset.is_internet_accessible && (
                 <span className="rounded border px-1 font-mono text-xs font-semibold">
-                  {t('findings.triageMode.internet', 'NET')}
+                  {t('findings.triageMode.internet', 'Internet')}
                 </span>
               )}
               {asset.criticality && (

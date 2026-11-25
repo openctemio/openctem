@@ -269,7 +269,9 @@ export function VulnMatchingSettingsForm({
         </SettingsBlock>
       </SettingsSection>
 
-      <p className="text-xs text-muted-foreground">{NVD_ATTRIBUTION}</p>
+      <p className="text-xs text-muted-foreground">
+        {t('settings.vulnMatching.nvdNotice', NVD_ATTRIBUTION)}
+      </p>
     </form>
   )
 }

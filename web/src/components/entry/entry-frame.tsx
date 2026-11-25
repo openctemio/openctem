@@ -95,7 +95,7 @@ export function EntryFrame({
             external={!termsUrl.startsWith('/')}
             className={LEGAL_LINK_CLASS}
           >
-            {t('auth.legal.terms', 'Terms of Service')}
+            {t('auth.legal.terms', 'Terms of service')}
           </TextLink>
         )}
         {privacyUrl && (
@@ -104,7 +104,7 @@ export function EntryFrame({
             external={!privacyUrl.startsWith('/')}
             className={LEGAL_LINK_CLASS}
           >
-            {t('auth.legal.privacy', 'Privacy Policy')}
+            {t('auth.legal.privacy', 'Privacy policy')}
           </TextLink>
         )}
         <Overridable id="auth.footer" fallback={PoweredBy} />

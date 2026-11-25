@@ -124,7 +124,6 @@ export default function AiApplicationsPage() {
                       )}
                 </p>
               )}
-              <p className="text-muted-foreground font-mono text-xs break-all">{c.client_id}</p>
               <p className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
                 <span>
                   {t(
@@ -203,7 +202,7 @@ export default function AiApplicationsPage() {
           title={t('admin.systemAiApplicationsPage.aiApplications', 'AI applications')}
           description={t(
             'admin.systemAiApplicationsPage.mcpClientsThatConnectTo',
-            'MCP clients that connect to this deployment, with their usage. Block one to stop it everywhere.'
+            'AI tools and apps that connect to this platform, with their usage. Block one to stop it everywhere.'
           )}
         />
         {error ? (

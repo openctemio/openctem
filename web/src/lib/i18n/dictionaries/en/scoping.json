@@ -204,7 +204,7 @@
   "scoping.overview.currentCycle": "Current cycle",
   "scoping.overview.description": "What the program protects this cycle, and whether that is written down.",
   "scoping.overview.exclusions": "{n, plural, one {# exclusion} other {# exclusions}}",
-  "scoping.overview.feeds": "Feeds Discovery: {snapshot}, {exclusions} enforced on scans",
+  "scoping.overview.feeds": "Used by Discovery: {snapshot}, {exclusions} applied to scans",
   "scoping.overview.loadError": "the scoping summary",
   "scoping.overview.noSnapshot": "no scope snapshot yet",
   "scoping.overview.notReady": "Not ready",

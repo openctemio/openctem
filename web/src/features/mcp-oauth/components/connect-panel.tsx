@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useTranslation } from '@/context/i18n-provider'
+import { usePermissionLabel } from '@/lib/use-permission-label'
 import { useApiKeyPolicy, useCreateApiKey } from '@/features/api-keys/api/use-api-keys'
 import { expiryOptionsFor } from '@/features/api-keys/lib/expiry'
 import type { CreateAPIKeyResponse } from '@/features/api-keys/types/api-key.types'
@@ -73,6 +74,7 @@ export function ConnectPanel({
   canWriteKeys,
 }: ConnectPanelProps) {
   const { t } = useTranslation()
+  const permissionLabel = usePermissionLabel()
   const defaultName = (id: PresetId) =>
     id === 'general'
       ? t('mcp.key.defaultName.general', 'MCP read access')
@@ -310,8 +312,8 @@ export function ConnectPanel({
                 </Select>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {activePreset.scopes.map((s) => (
-                    <Badge key={s} variant="outline" className="font-mono text-xs">
-                      {s}
+                    <Badge key={s} variant="outline" className="text-xs">
+                      {permissionLabel(s)}
                     </Badge>
                   ))}
                 </div>

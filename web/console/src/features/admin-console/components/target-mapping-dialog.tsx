@@ -117,10 +117,14 @@ export function TargetMappingDialog({
       const saved = editing
         ? await updateTargetMapping(mapping.id, fields)
         : await createTargetMapping({ target_type: targetType, asset_type: assetType, ...fields })
+      const pair = {
+        target: text.label(saved.target_type),
+        asset: text.asset(saved.asset_type),
+      }
       toast.success(
-        `${text.label(saved.target_type)} → ${text.asset(saved.asset_type)} ${
-          editing ? 'updated' : 'created'
-        }`
+        editing
+          ? t('admin.targetMappingDialog.updatedToast', '{target} to {asset} mapping updated', pair)
+          : t('admin.targetMappingDialog.createdToast', '{target} to {asset} mapping created', pair)
       )
       onSaved(saved)
       onOpenChange(false)
@@ -252,12 +256,12 @@ export function TargetMappingDialog({
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-0.5">
                   <Label htmlFor="tm-primary">
-                    {t('admin.targetMappingDialog.primaryMapping', 'Primary mapping')}
+                    {t('admin.targetMappingDialog.primaryMapping', 'First choice')}
                   </Label>
                   <p className="text-xs text-muted-foreground">
                     {t(
                       'admin.targetMappingDialog.theMainAssetTypeFor',
-                      'The main asset type for this target type. Sets the priority to {priority}.',
+                      'Used first for this target type. Sets the priority to {priority}.',
                       { priority: PRIMARY_PRIORITY }
                     )}
                   </p>
@@ -295,7 +299,7 @@ export function TargetMappingDialog({
                   {errors.priority ??
                     t(
                       'admin.targetMappingDialog.lowerComesFirstIsPrimary',
-                      '{min}–{max}. Lower comes first; {primary} is primary, {fallback} is the default.',
+                      '{min} to {max}. A lower number is used first.',
                       {
                         min: MIN_PRIORITY,
                         max: MAX_PRIORITY,

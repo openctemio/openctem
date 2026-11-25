@@ -156,7 +156,9 @@ describe('asset group member links', () => {
       current = asset(type)
       render(<AssetDetailPage />)
       expect(screen.getByRole('heading', { name: `member-${type}` })).toBeInTheDocument()
-      expect(screen.getByText(ID)).toBeInTheDocument()
+      // The page no longer prints the raw id (wording pass: no raw ids in the UI);
+      // it is reachable through the Copy ID action instead.
+      expect(screen.queryByText(ID)).not.toBeInTheDocument()
       expect(replace).not.toHaveBeenCalled()
     }
   )

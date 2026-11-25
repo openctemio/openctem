@@ -222,7 +222,7 @@ export function IOCsPanel() {
         title={t('threatIntel.iocs.noAccessTitle', 'No access to indicators')}
         description={t(
           'threatIntel.iocs.noAccessDescription',
-          'You need the View Threat Intel permission to see the IOC catalogue.'
+          'You need the View Threat Intel permission to see the indicator catalog.'
         )}
       />
     )
@@ -258,7 +258,7 @@ export function IOCsPanel() {
         title={t('threatIntel.iocs.title', 'Indicators of compromise')}
         description={t(
           'threatIntel.iocs.description',
-          'Indicators correlated against runtime telemetry to reopen the findings they belong to.'
+          'Indicators matched against live events from your monitoring tools to reopen the findings they belong to.'
         )}
       >
         <Can permission={Permission.ThreatIntelWrite} mode="disable">
@@ -295,7 +295,7 @@ export function IOCsPanel() {
           emptyMessage={t('threatIntel.iocs.emptyTitle', 'No indicators')}
           emptyDescription={t(
             'threatIntel.iocs.emptyDescription',
-            'Add an indicator of compromise to start correlating runtime telemetry.'
+            'Add an indicator of compromise to start matching live events.'
           )}
           onRowClick={(row) => setSelectedId(row.id)}
           toolbarStart={filterSelects}
@@ -464,10 +464,7 @@ function IOCMatchesSection({ iocId }: { iocId: string }) {
         <Skeleton className="h-12 w-full" />
       ) : matches.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          {t(
-            'threatIntel.iocs.matches.empty',
-            'No runtime telemetry has matched this indicator yet.'
-          )}
+          {t('threatIntel.iocs.matches.empty', 'No live event has matched this indicator yet.')}
         </p>
       ) : (
         <ul className="divide-y rounded-lg border">
@@ -567,7 +564,7 @@ function CreateIOCDialog({
           <DialogDescription>
             {t(
               'threatIntel.iocs.create.description',
-              "Add an IOC to correlate against runtime telemetry. The value must match the selected type's format."
+              "Add an indicator to match against live events from your monitoring tools. The value must match the selected type's format."
             )}
           </DialogDescription>
         </DialogHeader>

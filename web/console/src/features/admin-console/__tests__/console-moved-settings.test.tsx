@@ -122,10 +122,10 @@ describe('Alert webhook', () => {
       />
     )
     expect(screen.getByText('Receiver: hooks.example.com')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Replace Webhook address (https)' }))
-    expect((screen.getByLabelText('Webhook address (https)') as HTMLInputElement).value).toBe('')
+    await userEvent.click(screen.getByRole('button', { name: 'Replace Webhook address' }))
+    expect((screen.getByLabelText('Webhook address') as HTMLInputElement).value).toBe('')
     await userEvent.type(
-      screen.getByLabelText('Webhook address (https)'),
+      screen.getByLabelText('Webhook address'),
       'https://hooks.example.com/T0KEN'
     )
     await userEvent.click(screen.getByRole('switch', { name: /Send alerts to the webhook/ }))
