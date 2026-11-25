@@ -71,16 +71,18 @@ function formatBytes(n?: number): string {
 function usePackLabels() {
   const { t } = useTranslation()
   const missing = '\u0000'
-  const word = (ns: string, v?: string) => {
-    if (!v) return ''
-    const found = t(`${ns}.${v}`, missing)
-    return found !== missing ? found : humanizeIdentifier(v)
-  }
-  return {
-    kindLabel: (v?: string) => word('admin.cp.kindName', v),
-    tierLabel: (v?: string) => word('admin.cp.tierName', v),
-    channelLabel: (v?: string) => word('admin.cp.channelName', v),
-  }
+  return useMemo(() => {
+    const word = (ns: string, v?: string) => {
+      if (!v) return ''
+      const found = t(`${ns}.${v}`, missing)
+      return found !== missing ? found : humanizeIdentifier(v)
+    }
+    return {
+      kindLabel: (v?: string) => word('admin.cp.kindName', v),
+      tierLabel: (v?: string) => word('admin.cp.tierName', v),
+      channelLabel: (v?: string) => word('admin.cp.channelName', v),
+    }
+  }, [t])
 }
 
 export default function ContentPacksPage() {
@@ -166,7 +168,7 @@ export default function ContentPacksPage() {
         cell: ({ row }) => <RelativeTime date={row.original.created_at} className="text-sm" />,
       },
     ],
-    [t]
+    [t, kindLabel, tierLabel]
   )
 
   const channelRows: ContentChannelResponse[] = channels.data?.data ?? []
@@ -214,7 +216,7 @@ export default function ContentPacksPage() {
         cell: ({ row }) => <RelativeTime date={row.original.updated_at} />,
       },
     ],
-    [t]
+    [t, channelLabel]
   )
 
   return (
