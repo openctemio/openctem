@@ -41,6 +41,7 @@ describe('attack surface pages', () => {
   // A page that renders a feature view: the view draws the navigation.
   const DELEGATES: Record<string, string> = {
     'web/page.tsx': '../../features/web-surface/components/web-surface-view.tsx',
+    'discovery/page.tsx': '../../features/attack-surface/components/easm-discovery.tsx',
   }
   // Pages outside the tab row, to be retired (research/353 D9). Never add one.
   const ORPHANS = new Set(['external/page.tsx'])
