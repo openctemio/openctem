@@ -239,13 +239,16 @@ guard_running_stack() {
 # ---------------------------------------------------------------------------
 
 # signing_identity <image ref with tag>: the keyless identity a release image
-# is signed with. Empty for images the project does not sign.
+# is signed with. Empty for images the project does not sign. A sensor profile
+# image (v0.42.0-relay) is signed by the workflow at its release tag (v0.42.0).
 signing_identity() {
 	local ref="$1" repo tag
 	repo="${ref%:*}" tag="${ref##*:}"
 	[[ "$ref" == "$OC_RELEASE_REPO"* && "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] || return 0
 	case "$repo" in
-	"${OC_RELEASE_REPO}sensor") printf 'https://github.com/openctemio/sensor/.github/workflows/docker-publish.yml@refs/tags/%s' "$tag" ;;
+	"${OC_RELEASE_REPO}sensor")
+		tag="$(printf '%s' "$tag" | sed -E 's/-(default|standard|passive|relay|full|browser)$//')"
+		printf 'https://github.com/openctemio/sensor/.github/workflows/docker-publish.yml@refs/tags/%s' "$tag" ;;
 	*) printf 'https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/%s' "$tag" ;;
 	esac
 }

@@ -221,6 +221,16 @@ makes no outbound feed request:
 | version check (release feed) | relayed; applied with origin `relay` (the same file again each day is not an error); the online check does not run |
 | program feed URLs | not fetched (a `PROGRAMFEED_DIR` still is); listed as `not_relayed` in the status |
 
+Relay sensors: any active shared sensor that reports `feed.relay@1` can be
+designated. A sensor that should relay and never scan runs the sensor's relay
+profile image (`ghcr.io/openctemio/sensor:<version>-relay`, sensor repository
+`docs/PROFILES.md`): no tool, `feed.relay@1` as its only capability (no
+`shared.isolation@1`, so no shared job is ever offered to it). The compose
+install adds one with `deploy/docker-compose.relay-sensor.yml` (its own
+enrollment token, `-feed-relay` on its enrollment job); the Helm chart runs
+its bundled sensor from that image with `sensor.profile=relay`. Run one to
+three for redundancy.
+
 Defaults: a new compose install with the bundled sensor starts in relay mode
 (`bootstrap-admin sensor-token -feed-relay` stores relay mode only when the
 setting was never written, and the sensor that enrolls with that token is
