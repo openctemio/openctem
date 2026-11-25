@@ -6,17 +6,14 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { csrfFetch, del } from '@/lib/api/client'
 import { useRouter } from 'next/navigation'
 import { Main } from '@/components/layout'
+import { RefreshButton } from '@/components/list-page-parts'
 import {
   PageHeader,
-  EmptyState,
   DataTable,
   DataTableColumnHeader,
   DataTableRowActions,
   StackedCell,
   RelativeTime,
-  ErrorState,
-  MetricStrip,
-  type MetricStripItem,
   type RowAction,
   PageStack,
 } from '@/features/shared'
@@ -24,21 +21,10 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
 import { connectionProblem } from '@/features/integrations/lib/connection-status'
 import { Can } from '@/lib/permissions'
-import {
-  Plus,
-  Link2,
-  RefreshCw,
-  Eye,
-  Pencil,
-  Trash2,
-  Loader2,
-  GitBranch,
-  ExternalLink,
-} from 'lucide-react'
+import { Plus, Link2, Eye, Pencil, Trash2, GitBranch, ExternalLink } from 'lucide-react'
 import {
   AddConnectionDialog,
   EditConnectionDialog,
@@ -52,6 +38,10 @@ import {
 import type { SCMConnection } from '@/features/repositories/types/repository.types'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTranslation } from '@/context/i18n-provider'
+import {
+  IntegrationList,
+  integrationStatusGroup,
+} from '@/features/integrations/components/integration-list'
 
 // Only a problem (error) is coloured; the other states stay neutral.
 const PROVIDER_LABELS: Record<string, string> = {
@@ -80,21 +70,6 @@ export default function SCMConnectionsPage() {
     // Handle both array format and { data: [...] } format
     return Array.isArray(connectionsData) ? connectionsData : []
   }, [connectionsData])
-
-  const [statusFilter, setStatusFilter] = useState<'connected' | 'error' | null>(null)
-  const visible = useMemo(
-    () => (statusFilter ? connections.filter((c) => c.status === statusFilter) : connections),
-    [connections, statusFilter]
-  )
-
-  // Calculate stats - SCMConnection uses repositoryCount (camelCase)
-  const stats = useMemo(() => {
-    const total = connections.length
-    const connected = connections.filter((c) => c.status === 'connected').length
-    const errorCount = connections.filter((c) => c.status === 'error').length
-    const totalRepos = connections.reduce((sum, c) => sum + (c.repositoryCount || 0), 0)
-    return { total, connected, error: errorCount, totalRepos }
-  }, [connections])
 
   const handleRefresh = useCallback(async () => {
     setActionInProgress('refresh')
@@ -340,25 +315,6 @@ export default function SCMConnectionsPage() {
     [handleTestConnection, t]
   )
 
-  // The strip filters the list: click a tile to show only those connections, again to clear.
-  const metrics: MetricStripItem[] = [
-    {
-      key: 'connected',
-      label: t('scmIntegration.metrics.connected', 'Connected'),
-      value: stats.connected,
-      active: statusFilter === 'connected',
-      onClick: () => setStatusFilter(statusFilter === 'connected' ? null : 'connected'),
-    },
-    {
-      key: 'error',
-      label: t('scmIntegration.metrics.errors', 'Errors'),
-      value: stats.error,
-      tone: 'danger',
-      active: statusFilter === 'error',
-      onClick: () => setStatusFilter(statusFilter === 'error' ? null : 'error'),
-    },
-  ]
-
   return (
     <>
       <Main>
@@ -378,85 +334,63 @@ export default function SCMConnectionsPage() {
               <GitBranch className="me-2 h-4 w-4" />
               {t('scmIntegration.page.repositories', 'Repositories')}
             </Button>
-            <Can route="POST /api/v1/integrations">
-              <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-                <Plus className="me-2 h-4 w-4" />
-                {t('scmIntegration.page.addConnection', 'Add connection')}
-              </Button>
-            </Can>
+            {/* While the list is empty its empty state carries the one
+                Add connection button. */}
+            {connections.length > 0 && (
+              <Can route="POST /api/v1/integrations">
+                <Button size="sm" onClick={() => setAddDialogOpen(true)}>
+                  <Plus className="me-2 h-4 w-4" />
+                  {t('scmIntegration.page.addConnection', 'Add connection')}
+                </Button>
+              </Can>
+            )}
           </PageHeader>
 
-          {error ? (
-            <div>
-              <ErrorState
-                title={t('scmIntegration.page.errorTitle', 'SCM connections')}
-                error={error}
-                onRetry={() => void mutate()}
-              />
-            </div>
-          ) : (
-            <>
-              <MetricStrip loading={isLoading} items={metrics} />
-
-              <div>
-                {isLoading ? (
-                  <div className="space-y-3">
-                    <Skeleton className="h-9 w-full max-w-sm" />
-                    <Skeleton className="h-48 w-full" />
-                  </div>
-                ) : connections.length === 0 ? (
-                  <EmptyState
-                    icon={Link2}
-                    title={t('scmIntegration.page.emptyTitle', 'No SCM connections')}
-                    description={t(
-                      'scmIntegration.page.emptyDescription',
-                      'Connect your GitHub, GitLab, Bitbucket, or Azure DevOps account to import and scan repositories.'
-                    )}
-                    action={
-                      <Can route="POST /api/v1/integrations">
-                        <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-                          <Plus className="me-2 h-4 w-4" />
-                          {t('scmIntegration.page.addConnection', 'Add connection')}
-                        </Button>
-                      </Can>
-                    }
-                  />
-                ) : (
-                  <DataTable
-                    columns={columns}
-                    data={visible}
-                    getRowId={(c) => c.id}
-                    searchPlaceholder={t(
-                      'scmIntegration.page.searchPlaceholder',
-                      'Search connections…'
-                    )}
-                    showSelectionCount={false}
-                    toolbarEnd={
-                      <Button
-                        variant="outline"
-                        size="icon"
-
-                        aria-label={t('scmIntegration.page.refresh', 'Refresh')}
-                        title={t('scmIntegration.page.refresh', 'Refresh')}
-                        onClick={handleRefresh}
-                        disabled={actionInProgress === 'refresh'}
-                      >
-                        {actionInProgress === 'refresh' ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-4 w-4" />
-                        )}
-                      </Button>
-                    }
-                    emptyMessage={t(
-                      'scmIntegration.page.noMatch',
-                      'No connections match your search'
-                    )}
-                  />
+          <IntegrationList
+            rows={connections}
+            isLoading={isLoading}
+            error={error}
+            onRetry={() => void mutate()}
+            errorTitle={t('scmIntegration.page.errorTitle', 'SCM connections')}
+            groupOf={(c) => integrationStatusGroup(c.status)}
+            empty={{
+              icon: Link2,
+              title: t('scmIntegration.page.emptyTitle', 'No SCM connections'),
+              description: t(
+                'scmIntegration.page.emptyDescription',
+                'Connect your GitHub, GitLab, Bitbucket, or Azure DevOps account to import and scan repositories.'
+              ),
+              action: (
+                <Can route="POST /api/v1/integrations">
+                  <Button size="sm" onClick={() => setAddDialogOpen(true)}>
+                    <Plus className="me-2 h-4 w-4" />
+                    {t('scmIntegration.page.addConnection', 'Add connection')}
+                  </Button>
+                </Can>
+              ),
+            }}
+          >
+            {(visible) => (
+              <DataTable
+                columns={columns}
+                data={visible}
+                getRowId={(c) => c.id}
+                searchPlaceholder={t(
+                  'scmIntegration.page.searchPlaceholder',
+                  'Search connections…'
                 )}
-              </div>
-            </>
-          )}
+                showSelectionCount={false}
+                toolbarEnd={
+                  <RefreshButton
+                    onClick={() => void handleRefresh()}
+                    loading={actionInProgress === 'refresh'}
+                    label={t('scmIntegration.page.refresh', 'Refresh')}
+                  />
+                }
+                emptyMessage={t('scmIntegration.page.noMatch', 'No connections match your search')}
+              />
+            )}
+          </IntegrationList>
         </PageStack>
       </Main>
 

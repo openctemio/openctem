@@ -5,14 +5,10 @@ import { useState, useMemo, useCallback } from 'react'
 import { csrfFetch, del } from '@/lib/api/client'
 import { useRouter } from 'next/navigation'
 import { Main } from '@/components/layout'
+import { RefreshButton } from '@/components/list-page-parts'
 import { toDisplayText } from '@/lib/untrusted-text'
 import { PersonPhoneCard } from '@/features/organization/components/person-phone-card'
 import {
-  PageHeader,
-  EmptyState,
-  ErrorState,
-  MetricStrip,
-  type MetricStripItem,
   DataTable,
   DataTableColumnHeader,
   DataTableRowActions,
@@ -26,22 +22,10 @@ import { Badge } from '@/components/ui/badge'
 import type { ColumnDef } from '@tanstack/react-table'
 import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { Can } from '@/lib/permissions'
-import {
-  Plus,
-  Bell,
-  RefreshCw,
-  Send,
-  Pencil,
-  Trash2,
-  Loader2,
-  MessageSquare,
-  History,
-  Inbox,
-} from 'lucide-react'
+import { Plus, Bell, Send, Pencil, Trash2, MessageSquare, History } from 'lucide-react'
 import {
   useNotificationIntegrationsApi,
   invalidateNotificationIntegrationsCache,
@@ -62,15 +46,16 @@ import { SEVERITY_BADGE_SOFT, type SeverityLevel } from '@/lib/severity-colors'
 import { AddNotificationDialog } from '@/features/notifications/components/add-notification-dialog'
 import { EditNotificationDialog } from '@/features/notifications/components/edit-notification-dialog'
 import { useTranslation } from '@/context/i18n-provider'
+import {
+  IntegrationList,
+  integrationStatusGroup,
+} from '@/features/integrations/components/integration-list'
+import {
+  NOTIFICATION_PROVIDER_LABELS,
+  NotificationSectionHeader,
+} from '@/features/integrations/components/notification-sections'
 
-// Only a problem (error) is coloured; the other states stay neutral.
-const PROVIDER_LABELS: Record<string, string> = {
-  slack: 'Slack',
-  teams: 'Microsoft Teams',
-  telegram: 'Telegram',
-  webhook: 'Webhook',
-  email: 'Email',
-}
+const PROVIDER_LABELS = NOTIFICATION_PROVIDER_LABELS
 
 function ProviderIcon({ provider, className }: { provider: string; className?: string }) {
   switch (provider) {
@@ -154,20 +139,6 @@ export default function NotificationIntegrationsPage() {
     // edit dialog would overwrite their HEC token with a webhook URL.
     return notificationChannelsOnly(integrationsData.data ?? [])
   }, [integrationsData])
-
-  const [statusFilter, setStatusFilter] = useState<'connected' | 'error' | null>(null)
-  const visible = useMemo(
-    () => (statusFilter ? integrations.filter((i) => i.status === statusFilter) : integrations),
-    [integrations, statusFilter]
-  )
-
-  // Calculate stats
-  const stats = useMemo(() => {
-    const total = integrations.length
-    const connected = integrations.filter((i) => i.status === 'connected').length
-    const errorCount = integrations.filter((i) => i.status === 'error').length
-    return { total, connected, error: errorCount }
-  }, [integrations])
 
   const handleRefresh = useCallback(async () => {
     setActionInProgress('refresh')
@@ -573,65 +544,13 @@ export default function NotificationIntegrationsPage() {
     [t, rowActions, eventTypeCatalog, eventCategories, defaultEventTypes, eventTypeCount]
   )
 
-  // The strip filters the list: click a tile to show only those channels, again to clear.
-  const metrics: MetricStripItem[] = [
-    {
-      key: 'connected',
-      label: t('notificationChannels.metrics.connected', 'Connected'),
-      value: stats.connected,
-      active: statusFilter === 'connected',
-      onClick: () => setStatusFilter(statusFilter === 'connected' ? null : 'connected'),
-    },
-    {
-      key: 'error',
-      label: t('notificationChannels.metrics.errors', 'Errors'),
-      value: stats.error,
-      tone: 'danger',
-      active: statusFilter === 'error',
-      onClick: () => setStatusFilter(statusFilter === 'error' ? null : 'error'),
-    },
-  ]
-
   return (
     <>
       <Main>
         <PageStack>
-          <PageHeader
-            title={t('notificationChannels.page.title', 'Notification channels')}
-            description={t(
-              'notificationChannels.page.description',
-              'Send security alerts to Slack, Microsoft Teams, Telegram and custom webhooks.'
-            )}
-          >
-            {/* On a phone the two secondary buttons show their icons only, so the
-                three header actions share one row instead of leaving Add
-                channel alone on a row of its own. */}
-            <Can route="PUT /api/v1/integrations/{id}">
-              <Button
-                iconOnlyBelow="sm"
-                variant="outline"
-                title={t('notificationChannels.page.viewEvents', 'View events')}
-                onClick={() => router.push('/settings/integrations/notifications/history')}
-              >
-                <History aria-hidden />
-                <span className="sr-only sm:not-sr-only">
-                  {t('notificationChannels.page.viewEvents', 'View events')}
-                </span>
-              </Button>
-              <Button
-                iconOnlyBelow="sm"
-                variant="outline"
-                title={t('notificationChannels.page.queue', 'Queue')}
-                onClick={() => router.push('/settings/integrations/notifications/outbox')}
-              >
-                <Inbox aria-hidden />
-                <span className="sr-only sm:not-sr-only">
-                  {t('notificationChannels.page.queue', 'Queue')}
-                </span>
-              </Button>
-            </Can>
-            {/* While the list is empty its empty state carries the one
-                Add channel button. */}
+          {/* While the list is empty its empty state carries the one
+              Add channel button. */}
+          <NotificationSectionHeader>
             {integrations.length > 0 && (
               <Can route="POST /api/v1/integrations/notifications">
                 <Button onClick={() => setAddDialogOpen(true)}>
@@ -640,99 +559,74 @@ export default function NotificationIntegrationsPage() {
                 </Button>
               </Can>
             )}
-          </PageHeader>
+          </NotificationSectionHeader>
 
-          {error ? (
-            <div>
-              <ErrorState
-                title={t('notificationChannels.page.errorTitle', 'notification channels')}
-                error={error}
-                onRetry={() => void mutate()}
-              />
-            </div>
-          ) : (
-            <>
-              {/* Two tiles: capped so each stays a tile (about 290 px) instead of
-                  stretching across a 2560 px page. */}
-              <MetricStrip loading={isLoading} items={metrics} className="max-w-xl" />
-
-              <div>
-                {isLoading ? (
-                  <div className="space-y-3">
-                    <Skeleton className="h-9 w-full max-w-sm" />
-                    <Skeleton className="h-48 w-full" />
-                  </div>
-                ) : integrations.length === 0 ? (
-                  <EmptyState
-                    icon={Bell}
-                    title={t('notificationChannels.page.emptyTitle', 'No notification channels')}
-                    description={t(
-                      'notificationChannels.page.emptyDescription',
-                      'Add Slack, Microsoft Teams, Telegram, or webhook integrations to receive security alerts.'
-                    )}
-                    action={
-                      <Can route="POST /api/v1/integrations/notifications">
-                        <Button onClick={() => setAddDialogOpen(true)}>
-                          <Plus aria-hidden />
-                          {t('notificationChannels.page.addChannel', 'Add channel')}
-                        </Button>
-                      </Can>
-                    }
-                  />
-                ) : (
-                  <DataTable
-                    columns={columns}
-                    data={visible}
-                    getRowId={(i) => i.id}
-                    searchPlaceholder={t(
-                      'notificationChannels.page.searchPlaceholder',
-                      'Search channels…'
-                    )}
-                    showSelectionCount={false}
-                    pinActions
-                    mobileRow={(integration) => (
-                      <PersonPhoneCard
-                        title={toDisplayText(integration.name, 200)}
-                        address={PROVIDER_LABELS[integration.provider] || integration.provider}
-                        menu={rowActions(integration)}
-                        facts={
-                          <>
-                            <IntegrationHealth status={integration.status} />
-                            {integration.status === 'error' && integration.status_message && (
-                              <span className="line-clamp-2 basis-full text-xs text-destructive [overflow-wrap:anywhere]">
-                                {toDisplayText(integration.status_message, 300)}
-                              </span>
-                            )}
-                          </>
-                        }
-                      />
-                    )}
-                    toolbarEnd={
-                      <Button
-                        variant="outline"
-                        size="icon"
-
-                        aria-label={t('notificationChannels.page.refresh', 'Refresh')}
-                        title={t('notificationChannels.page.refresh', 'Refresh')}
-                        onClick={handleRefresh}
-                        disabled={actionInProgress === 'refresh'}
-                      >
-                        {actionInProgress === 'refresh' ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="h-4 w-4" />
+          <IntegrationList
+            rows={integrations}
+            isLoading={isLoading}
+            error={error}
+            onRetry={() => void mutate()}
+            errorTitle={t('notificationChannels.page.errorTitle', 'notification channels')}
+            groupOf={(i) => integrationStatusGroup(i.status)}
+            empty={{
+              icon: Bell,
+              title: t('notificationChannels.page.emptyTitle', 'No notification channels'),
+              description: t(
+                'notificationChannels.page.emptyDescription',
+                'Add Slack, Microsoft Teams, Telegram, or webhook integrations to receive security alerts.'
+              ),
+              action: (
+                <Can route="POST /api/v1/integrations/notifications">
+                  <Button onClick={() => setAddDialogOpen(true)}>
+                    <Plus aria-hidden />
+                    {t('notificationChannels.page.addChannel', 'Add channel')}
+                  </Button>
+                </Can>
+              ),
+            }}
+          >
+            {(visible) => (
+              <DataTable
+                columns={columns}
+                data={visible}
+                getRowId={(i) => i.id}
+                searchPlaceholder={t(
+                  'notificationChannels.page.searchPlaceholder',
+                  'Search channels…'
+                )}
+                showSelectionCount={false}
+                pinActions
+                mobileRow={(integration) => (
+                  <PersonPhoneCard
+                    title={toDisplayText(integration.name, 200)}
+                    address={PROVIDER_LABELS[integration.provider] || integration.provider}
+                    menu={rowActions(integration)}
+                    facts={
+                      <>
+                        <IntegrationHealth status={integration.status} />
+                        {integration.status === 'error' && integration.status_message && (
+                          <span className="line-clamp-2 basis-full text-xs text-destructive [overflow-wrap:anywhere]">
+                            {toDisplayText(integration.status_message, 300)}
+                          </span>
                         )}
-                      </Button>
+                      </>
                     }
-                    emptyMessage={t(
-                      'notificationChannels.page.noMatch',
-                      'No channels match your search'
-                    )}
                   />
                 )}
-              </div>
-            </>
-          )}
+                toolbarEnd={
+                  <RefreshButton
+                    onClick={() => void handleRefresh()}
+                    loading={actionInProgress === 'refresh'}
+                    label={t('notificationChannels.page.refresh', 'Refresh')}
+                  />
+                }
+                emptyMessage={t(
+                  'notificationChannels.page.noMatch',
+                  'No channels match your search'
+                )}
+              />
+            )}
+          </IntegrationList>
         </PageStack>
       </Main>
 

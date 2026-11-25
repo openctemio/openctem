@@ -1,29 +1,28 @@
 'use client'
 
 import { IntegrationHealth } from '@/features/integrations/components/integration-health'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import {
   DataTable,
-  EmptyState,
-  ErrorState,
   LinkCard,
-  MetricStrip,
   PageHeader,
   RelativeTime,
   StackedCell,
-  type MetricStripItem,
   PageStack,
 } from '@/features/shared'
+import {
+  IntegrationList,
+  integrationStatusGroup,
+} from '@/features/integrations/components/integration-list'
+import { PersonPhoneCard } from '@/features/organization/components/person-phone-card'
 import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Puzzle, ArrowRight } from 'lucide-react'
+import { Puzzle } from 'lucide-react'
 import { INTEGRATION_CATEGORIES as integrationCategories } from '@/features/integrations/config/integration-categories'
-import { Can, Permission } from '@/lib/permissions'
 import { useSCMConnections } from '@/features/repositories/hooks/use-repositories'
 import type { SCMConnection } from '@/features/repositories/types/repository.types'
 import { useIntegrationsApi } from '@/features/integrations/api'
@@ -49,19 +48,30 @@ const CATEGORY_LABELS: Record<IntegrationCategory, [string, string]> = {
   notification: ['integrationsHub.category.notification', 'Notification channels'],
 }
 
-// Status badge for every IntegrationStatus the API can return. Only a problem
-// (error / expired) is coloured; everything else stays neutral.
+function categoryLabel(t: TFn, i: Integration): string {
+  if (isSiemIntegration(i)) return t('integrationsHub.category.siem', 'SIEM')
+  const label = CATEGORY_LABELS[i.category]
+  return label ? t(label[0], label[1]) : i.category
+}
+
+// The name opens the page that manages the integration (no per-row "Manage"
+// button); the status is the shared IntegrationHealth.
 function buildColumns(t: TFn): ColumnDef<Integration>[] {
   return [
     {
       accessorKey: 'name',
       header: t('integrationsHub.columns.name', 'Name'),
+      meta: { kind: 'name' },
       cell: ({ row }) => {
         const i = row.original
         const problem = i.sync_error || i.status_message
         return (
           <StackedCell
-            primary={i.name}
+            primary={
+              <Link href={integrationManageHref(i)} className="font-medium hover:underline">
+                {i.name}
+              </Link>
+            }
             secondary={
               problem ? <span className="text-destructive">{problem}</span> : i.description
             }
@@ -73,16 +83,14 @@ function buildColumns(t: TFn): ColumnDef<Integration>[] {
     {
       id: 'category',
       header: t('integrationsHub.columns.category', 'Category'),
-      accessorFn: (i) => {
-        if (isSiemIntegration(i)) return t('integrationsHub.category.siem', 'SIEM')
-        const label = CATEGORY_LABELS[i.category]
-        return label ? t(label[0], label[1]) : i.category
-      },
+      meta: { kind: 'text' },
+      accessorFn: (i) => categoryLabel(t, i),
       cell: ({ getValue }) => <Badge variant="outline">{getValue<string>()}</Badge>,
     },
     {
       accessorKey: 'status',
       header: t('integrationsHub.columns.status', 'Status'),
+      meta: { kind: 'status' },
       cell: ({ row }) => {
         return <IntegrationHealth status={row.original.status} />
       },
@@ -90,30 +98,16 @@ function buildColumns(t: TFn): ColumnDef<Integration>[] {
     {
       id: 'last_sync',
       header: t('integrationsHub.columns.lastSync', 'Last sync'),
+      meta: { kind: 'datetime-recent' },
       accessorFn: (i) => i.last_sync_at ?? '',
       cell: ({ row }) => <RelativeTime date={row.original.last_sync_at} />,
-    },
-    {
-      id: 'actions',
-      // Labelled buttons: as wide as they need (the 48 px actions column cut them).
-      meta: { kind: 'decisions' },
-      enableSorting: false,
-      cell: ({ row }) => (
-        <Can permission={Permission.IntegrationsRead} mode="hide">
-          <Button variant="ghost" size="sm" asChild>
-            <Link href={integrationManageHref(row.original)}>
-              {t('integrationsHub.manage', 'Manage')}
-              <ArrowRight className="ms-1 h-4 w-4" />
-            </Link>
-          </Button>
-        </Can>
-      ),
     },
   ]
 }
 
 export default function IntegrationsPage() {
   const { t } = useTranslation()
+  const router = useRouter()
   const columns = useMemo(() => buildColumns(t), [t])
   const { data: scmConnectionsData } = useSCMConnections()
   const { data: integrationsData, error, isLoading, mutate } = useIntegrationsApi()
@@ -126,49 +120,35 @@ export default function IntegrationsPage() {
 
   // All configured integrations across every category (real data).
   const integrations: Integration[] = integrationsData?.data ?? []
-  const connectedCount = integrations.filter((i) => i.status === 'connected').length
-  const needsAttentionCount = integrations.filter(
-    (i) => i.status === 'error' || i.status === 'expired'
-  ).length
-  const pendingCount = integrations.filter(
-    (i) => i.status === 'pending' || i.status === 'disconnected'
-  ).length
+  const hasRows = integrations.length > 0
 
-  // The strip filters the list: one status group at a time, click again to clear.
-  const [statusGroup, setStatusGroup] = useState<'connected' | 'attention' | 'pending' | null>(null)
-  const inGroup = (i: Integration, g: 'connected' | 'attention' | 'pending') =>
-    g === 'connected'
-      ? i.status === 'connected'
-      : g === 'attention'
-        ? i.status === 'error' || i.status === 'expired'
-        : i.status === 'pending' || i.status === 'disconnected'
-  const visible = statusGroup ? integrations.filter((i) => inGroup(i, statusGroup)) : integrations
-
-  const toggle = (g: 'connected' | 'attention' | 'pending') => ({
-    active: statusGroup === g,
-    onClick: () => setStatusGroup(statusGroup === g ? null : g),
-  })
-  const metrics: MetricStripItem[] = [
-    {
-      key: 'connected',
-      label: t('integrationsHub.metrics.connected', 'Connected'),
-      value: connectedCount,
-      ...toggle('connected'),
-    },
-    {
-      key: 'attention',
-      label: t('integrationsHub.metrics.attention', 'Needs attention'),
-      value: needsAttentionCount,
-      tone: 'danger',
-      ...toggle('attention'),
-    },
-    {
-      key: 'pending',
-      label: t('integrationsHub.metrics.pending', 'Pending'),
-      value: pendingCount,
-      ...toggle('pending'),
-    },
-  ]
+  // Destinations: the pages that own each connect flow. While nothing is
+  // connected they are the page's first step; once there is a list, the list
+  // comes first and these follow it.
+  const categories = (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {integrationCategories.map((category) => (
+        <LinkCard
+          key={category.id}
+          href={category.href}
+          icon={category.icon}
+          title={t(`integrationsHub.categories.${category.id}.title`, category.title)}
+          description={t(
+            `integrationsHub.categories.${category.id}.description`,
+            category.description
+          )}
+          badge={category.badge ? t('integrationsHub.badge.soon', category.badge) : undefined}
+          aside={
+            category.id === 'scm' && scmConnections.length > 0 ? (
+              <Badge variant="secondary" className="tabular-nums">
+                {scmConnectedCount}/{scmConnections.length}
+              </Badge>
+            ) : undefined
+          }
+        />
+      ))}
+    </div>
+  )
 
   return (
     <Main>
@@ -181,60 +161,50 @@ export default function IntegrationsPage() {
           )}
         />
 
-        {/* Categories — navigation to the pages that own each connect flow */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {integrationCategories.map((category) => (
-            <LinkCard
-              key={category.id}
-              href={category.href}
-              icon={category.icon}
-              title={t(`integrationsHub.categories.${category.id}.title`, category.title)}
-              description={t(
-                `integrationsHub.categories.${category.id}.description`,
-                category.description
-              )}
-              badge={category.badge ? t('integrationsHub.badge.soon', category.badge) : undefined}
-              aside={
-                category.id === 'scm' && scmConnections.length > 0 ? (
-                  <Badge variant="secondary" className="tabular-nums">
-                    {scmConnectedCount}/{scmConnections.length}
-                  </Badge>
-                ) : undefined
-              }
-            />
-          ))}
-        </div>
+        {!hasRows && !isLoading && !error && categories}
 
-        <MetricStrip loading={isLoading} items={metrics} />
-
-        {error ? (
-          <ErrorState
-            title={t('integrationsHub.errorTitle', 'integrations')}
-            error={error}
-            onRetry={() => void mutate()}
-          />
-        ) : isLoading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-9 w-full max-w-sm" />
-            <Skeleton className="h-48 w-full" />
-          </div>
-        ) : integrations.length === 0 ? (
-          <EmptyState
-            icon={Puzzle}
-            title={t('integrationsHub.empty.title', 'No integrations configured yet')}
-            description={t(
+        <IntegrationList
+          rows={integrations}
+          isLoading={isLoading}
+          error={error}
+          onRetry={() => void mutate()}
+          errorTitle={t('integrationsHub.errorTitle', 'integrations')}
+          groupOf={(i) => integrationStatusGroup(i.status)}
+          empty={{
+            icon: Puzzle,
+            title: t('integrationsHub.empty.title', 'No integrations configured yet'),
+            description: t(
               'integrationsHub.empty.description',
               'Pick a category above to connect your first tool.'
-            )}
-          />
-        ) : (
-          <DataTable
-            columns={columns}
-            data={visible}
-            getRowId={(i) => i.id}
-            searchPlaceholder={t('integrationsHub.searchPlaceholder', 'Search integrations…')}
-            showSelectionCount={false}
-          />
+            ),
+          }}
+        >
+          {(visible) => (
+            <DataTable
+              columns={columns}
+              data={visible}
+              getRowId={(i) => i.id}
+              searchPlaceholder={t('integrationsHub.searchPlaceholder', 'Search integrations…')}
+              showSelectionCount={false}
+              mobileRow={(i) => (
+                <PersonPhoneCard
+                  title={i.name}
+                  address={categoryLabel(t, i)}
+                  facts={<IntegrationHealth status={i.status} />}
+                  onOpen={() => router.push(integrationManageHref(i))}
+                />
+              )}
+            />
+          )}
+        </IntegrationList>
+
+        {hasRows && (
+          <section className="space-y-3" aria-labelledby="integrations-add">
+            <h2 id="integrations-add" className="text-section">
+              {t('integrationsHub.addHeading', 'Connect another tool')}
+            </h2>
+            {categories}
+          </section>
         )}
       </PageStack>
     </Main>

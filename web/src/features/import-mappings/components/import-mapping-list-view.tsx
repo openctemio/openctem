@@ -39,7 +39,8 @@ export function ImportMappingListView() {
             'Turn any CSV, JSON, JSON Lines or XML export into findings and assets. Choose a mapping as the format when you import results.'
           )}
         >
-          {newButton}
+          {/* While the list is empty its empty state carries the one New button. */}
+          {items.length > 0 && newButton}
         </PageHeader>
 
         <div>

@@ -6,10 +6,7 @@ import { OUTBOX_HEALTH } from '@/features/notifications/lib/outbox-health'
 import { useState } from 'react'
 import { useListParams } from '@/hooks/use-list-params'
 import type { ColumnDef } from '@tanstack/react-table'
-import Link from '@/components/link'
 import {
-  ArrowLeft,
-  RefreshCw,
   MoreHorizontal,
   Clock,
   Loader2,
@@ -22,7 +19,9 @@ import {
 import { toast } from 'sonner'
 
 import { Main } from '@/components/layout'
-import { ErrorState, DataTable, PageHeader, PageStack } from '@/features/shared'
+import { ErrorState, DataTable, PageStack } from '@/features/shared'
+import { RefreshButton } from '@/components/list-page-parts'
+import { NotificationSectionHeader } from '@/features/integrations/components/notification-sections'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
@@ -183,10 +182,6 @@ export default function NotificationOutboxPage() {
     dead: 0,
     total: 0,
   }
-
-  // Check if there are any actionable entries
-  const hasActionableEntries =
-    stats.pending > 0 || stats.processing > 0 || stats.failed > 0 || stats.dead > 0
 
   // Handlers
   const handleRefresh = async () => {
@@ -454,25 +449,9 @@ export default function NotificationOutboxPage() {
     <>
       <Main>
         <PageStack>
-          {/* Header */}
-          <Button variant="ghost" size="sm" asChild className="-ms-2">
-            <Link href="/settings/integrations/notifications">
-              <ArrowLeft className="me-2 h-4 w-4" />
-              {t('notificationChannels.outbox.back', 'Back to channels')}
-            </Link>
-          </Button>
-          <PageHeader
-            title={t('notificationChannels.outbox.title', 'Notification queue')}
-            description={t(
-              'notificationChannels.outbox.description',
-              'Notifications waiting to be delivered, retried or given up on.'
-            )}
-          >
-            <Button variant="outline" size="sm" onClick={handleRefresh}>
-              <RefreshCw className="me-2 h-4 w-4" />
-              {t('notificationChannels.outbox.refresh', 'Refresh')}
-            </Button>
-          </PageHeader>
+          {/* The section's header stays as on Channels; the tabs show this
+              sub-page and lead back (no back-link row). */}
+          <NotificationSectionHeader />
 
           {/* Queue Health Status */}
           <QueueHealthStatus
@@ -481,70 +460,67 @@ export default function NotificationOutboxPage() {
             onViewFailed={handleViewFailed}
           />
 
-          {/* Only show entries section if there are actionable entries or user applied filter */}
-          {(hasActionableEntries || statusFilter !== 'all') && (
-            <>
-              <div>
-                <DataTable
-                  columns={columns}
-                  data={entries}
-                  getRowId={(e) => e.id}
-                  isLoading={entriesLoading}
-                  showSearch={false}
-                  toolbarStart={
-                    <Select
-                      value={statusFilter}
-                      onValueChange={(value) => {
-                        setStatusFilter(value as OutboxStatus | 'all')
-                        setPage(1)
-                      }}
-                    >
-                      <SelectTrigger
-                        className="w-[160px]"
-                        aria-label={t(
-                          'notificationChannels.outbox.filterByStatus',
-                          'Filter by status'
-                        )}
-                      >
-                        <SelectValue
-                          placeholder={t('notificationChannels.outbox.allStatuses', 'All statuses')}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">
-                          {t('notificationChannels.outbox.allStatuses', 'All statuses')}
-                        </SelectItem>
-                        <SelectItem value="pending">{statusLabel('pending')}</SelectItem>
-                        <SelectItem value="processing">{statusLabel('processing')}</SelectItem>
-                        <SelectItem value="failed">{statusLabel('failed')}</SelectItem>
-                        <SelectItem value="dead">{statusLabel('dead')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  }
-                  manualPagination
-                  rowCount={entriesData?.total ?? 0}
-                  pagination={pagination}
-                  onPaginationChange={setPagination}
-                  pageSize={pagination.pageSize}
-                  emptyMessage={t('notificationChannels.outbox.emptyMessage', 'No entries found')}
-                  emptyDescription={
-                    statusFilter !== 'all'
-                      ? t(
-                          'notificationChannels.outbox.emptyFiltered',
-                          'No {status} entries in the queue',
-                          {
-                            status: statusLabel(statusFilter).toLocaleLowerCase(locale),
-                          }
-                        )
-                      : t(
-                          'notificationChannels.outbox.emptyQueue',
-                          'The notification queue is empty'
-                        )
-                  }
+          {/* The entries table is always there, with the queue's filter and
+              refresh in its toolbar, as on the other notification tabs. */}
+          <div>
+            <DataTable
+              columns={columns}
+              data={entries}
+              getRowId={(e) => e.id}
+              isLoading={entriesLoading}
+              showSearch={false}
+              toolbarEnd={
+                <RefreshButton
+                  onClick={() => void handleRefresh()}
+                  loading={statsLoading || entriesLoading}
                 />
-              </div>
-            </>
-          )}
+              }
+              toolbarStart={
+                <Select
+                  value={statusFilter}
+                  onValueChange={(value) => {
+                    setStatusFilter(value as OutboxStatus | 'all')
+                    setPage(1)
+                  }}
+                >
+                  <SelectTrigger
+                    className="w-[160px]"
+                    aria-label={t('notificationChannels.outbox.filterByStatus', 'Filter by status')}
+                  >
+                    <SelectValue
+                      placeholder={t('notificationChannels.outbox.allStatuses', 'All statuses')}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">
+                      {t('notificationChannels.outbox.allStatuses', 'All statuses')}
+                    </SelectItem>
+                    <SelectItem value="pending">{statusLabel('pending')}</SelectItem>
+                    <SelectItem value="processing">{statusLabel('processing')}</SelectItem>
+                    <SelectItem value="failed">{statusLabel('failed')}</SelectItem>
+                    <SelectItem value="dead">{statusLabel('dead')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              }
+              manualPagination
+              rowCount={entriesData?.total ?? 0}
+              pagination={pagination}
+              onPaginationChange={setPagination}
+              pageSize={pagination.pageSize}
+              emptyMessage={t('notificationChannels.outbox.emptyMessage', 'No entries found')}
+              emptyDescription={
+                statusFilter !== 'all'
+                  ? t(
+                      'notificationChannels.outbox.emptyFiltered',
+                      'No {status} entries in the queue',
+                      {
+                        status: statusLabel(statusFilter).toLocaleLowerCase(locale),
+                      }
+                    )
+                  : t('notificationChannels.outbox.emptyQueue', 'The notification queue is empty')
+              }
+            />
+          </div>
 
           {/* Delete Confirmation Dialog */}
           <ConfirmDialog

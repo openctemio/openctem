@@ -50,6 +50,15 @@ export function MappingListView() {
   const { data, error, isLoading, mutate } = useMappingProfiles()
   const profiles = data?.data ?? []
 
+  const newButton = (
+    <Can permission={Permission.IntegrationsManage}>
+      <Button onClick={() => setCreateOpen(true)}>
+        <Plus className="me-2 h-4 w-4" aria-hidden />
+        {t('ticketMapping.list.new', 'New mapping')}
+      </Button>
+    </Can>
+  )
+
   return (
     <Main>
       <PageStack>
@@ -60,12 +69,8 @@ export function MappingListView() {
             'Which {product} attribute goes to which Jira field, which Jira field comes back, and how statuses map, per project and issue type.'
           )}
         >
-          <Can permission={Permission.IntegrationsManage}>
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="me-2 h-4 w-4" aria-hidden />
-              {t('ticketMapping.list.new', 'New mapping')}
-            </Button>
-          </Can>
+          {/* While the list is empty its empty state carries the one New button. */}
+          {profiles.length > 0 && newButton}
         </PageHeader>
 
         <div>
@@ -89,13 +94,7 @@ export function MappingListView() {
                 'ticketMapping.list.emptyDescription',
                 'Without a mapping, tickets use the built-in fields: summary, description, priority from severity and labels.'
               )}
-              action={
-                <Can permission={Permission.IntegrationsManage}>
-                  <Button onClick={() => setCreateOpen(true)}>
-                    {t('ticketMapping.list.new', 'New mapping')}
-                  </Button>
-                </Can>
-              }
+              action={newButton}
             />
           ) : (
             <div className="grid gap-3">
