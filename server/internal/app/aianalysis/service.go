@@ -534,7 +534,7 @@ func (s *Service) pauseFor(ctx context.Context, a *aidom.AIAgent, reason aidom.P
 	}
 	if moved {
 		a.Status, a.PauseReason = aidom.StatusPaused, reason
-		s.log(ctx, auditapp.AuditContext{TenantID: a.TenantID.String(), ActorEmail: "system:ai-agent"},
+		s.log(ctx, auditapp.AuditContext{TenantID: a.TenantID.String(), ActorEmail: systemAIAgentActor},
 			audit.ActionAIAgentPaused, a, fmt.Sprintf("AI agent %q paused: %s", a.Name, reason),
 			map[string]any{"reason": string(reason)})
 	}

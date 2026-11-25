@@ -305,7 +305,7 @@ func (w *WorkerExecutor) logResult(ctx context.Context, run *aidom.Run, action a
 	if len(actions) > 0 {
 		ev = ev.WithMetadata("actions", actionLog(actions))
 	}
-	actx := auditapp.AuditContext{TenantID: run.TenantID.String(), ActorEmail: "system:ai-agent"}
+	actx := auditapp.AuditContext{TenantID: run.TenantID.String(), ActorEmail: systemAIAgentActor}
 	if err := w.audit.LogEvent(ctx, actx, ev); err != nil {
 		w.logger.Error("failed to log audit event", "action", string(action), "error", logger.SanitizeError(err))
 	}
@@ -419,3 +419,7 @@ func (w *WorkerExecutor) ApplyPendingResults(ctx context.Context) (int, error) {
 
 // pendingBatch bounds one pass over pending results.
 const pendingBatch = 50
+
+// systemAIAgentActor is the audit actor of rows the platform writes for an
+// AI agent's work (no person acted).
+const systemAIAgentActor = "system:ai-agent"
