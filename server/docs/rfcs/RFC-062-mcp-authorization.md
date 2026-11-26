@@ -226,7 +226,8 @@ the device grant type.
 | Scope | Permissions | Tools |
 |---|---|---|
 | `mcp:findings.read` | `findings:read` | findings, finding stats, active CVEs, priority explanation, remediation groups |
-| `mcp:assets.read` | `assets:read` | assets, exposure chains |
+| `mcp:assets.read` | `assets:read` | assets |
+| `mcp:paths.read` | `attack_surface:paths:read` | exposure chains |
 | `mcp:compliance.read` | `compliance:frameworks:read` | compliance posture |
 | `mcp:pentest.read` | `pentest:campaigns:read`, `pentest:findings:read`, `pentest:retests:read`, `pentest:templates:read` | pentest campaigns, findings, retests, templates, report prompts |
 | `mcp:scope.read` | `attack_surface:scope:read` | check_scope: may this target be tested at this intensity (§10b) |
