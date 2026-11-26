@@ -63,7 +63,7 @@ type samlURLProviderRepo struct {
 	p *samldom.SAMLProvider
 }
 
-func (f samlURLProviderRepo) GetByID(_ context.Context, id shared.ID) (*samldom.SAMLProvider, error) {
+func (f samlURLProviderRepo) GetByIDUnscoped(_ context.Context, id shared.ID) (*samldom.SAMLProvider, error) {
 	if f.p != nil && f.p.ID() == id {
 		return f.p, nil
 	}

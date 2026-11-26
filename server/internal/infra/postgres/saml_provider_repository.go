@@ -58,9 +58,10 @@ func (r *SAMLProviderRepository) GetByTenant(ctx context.Context, tenantID share
 		`SELECT `+samlProviderColumns+` FROM saml_providers WHERE tenant_id = $1`, tenantID.String()))
 }
 
-// GetByID finds a configuration by its connection id. The public sign-in
-// addresses carry the id and no tenant; the tenant comes from the row.
-func (r *SAMLProviderRepository) GetByID(ctx context.Context, id shared.ID) (*samlprovider.SAMLProvider, error) {
+// GetByIDUnscoped finds a configuration by its connection id, in any tenant.
+// Only the public SAML routes use it: their path carries the random
+// connection id and no tenant, and the tenant comes from the row.
+func (r *SAMLProviderRepository) GetByIDUnscoped(ctx context.Context, id shared.ID) (*samlprovider.SAMLProvider, error) {
 	return scanSAMLProvider(r.db.QueryRowContext(ctx,
 		`SELECT `+samlProviderColumns+` FROM saml_providers WHERE id = $1`, id.String()))
 }

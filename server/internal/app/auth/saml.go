@@ -549,7 +549,7 @@ func (s *SAMLService) findConnection(ctx context.Context, key string) (*samldom.
 		return nil, ErrSAMLNotConfigured
 	}
 	if id, err := shared.IDFromString(key); err == nil {
-		if p, err := s.repo.GetByID(ctx, id); err == nil {
+		if p, err := s.repo.GetByIDUnscoped(ctx, id); err == nil {
 			return p, nil
 		}
 	}

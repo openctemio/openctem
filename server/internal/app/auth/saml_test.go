@@ -29,7 +29,7 @@ type fakeSAMLRepo struct {
 func newFakeSAMLRepo() *fakeSAMLRepo {
 	return &fakeSAMLRepo{byTenant: map[shared.ID]*samldom.SAMLProvider{}, reserved: map[shared.ID]shared.ID{}}
 }
-func (f *fakeSAMLRepo) GetByID(_ context.Context, id shared.ID) (*samldom.SAMLProvider, error) {
+func (f *fakeSAMLRepo) GetByIDUnscoped(_ context.Context, id shared.ID) (*samldom.SAMLProvider, error) {
 	for _, p := range f.byTenant {
 		if p.ID() == id {
 			return p, nil
