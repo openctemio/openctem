@@ -265,7 +265,7 @@ export function GroupHeaderContent<TData>({
             }}
             aria-label={t(
               'components.shared.group.selectRows',
-              'Select the {count} rows of {label}',
+              'Select the {count, plural, one {# row} other {# rows}} of {label}',
               {
                 count: rows.length,
                 label,

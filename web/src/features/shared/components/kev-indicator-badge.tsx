@@ -209,12 +209,20 @@ export function KEVStatus({ inKEV, kevData, className }: KEVStatusProps) {
                 <span className="ms-1">
                   (
                   {isPastDue
-                    ? t('components.shared.kev.daysOverdue', '{count} days overdue', {
-                        count: Math.abs(daysUntilDue),
-                      })
-                    : t('components.shared.kev.daysLeft', '{count} days left', {
-                        count: daysUntilDue,
-                      })}
+                    ? t(
+                        'components.shared.kev.daysOverdue',
+                        '{count, plural, one {# day overdue} other {# days overdue}}',
+                        {
+                          count: Math.abs(daysUntilDue),
+                        }
+                      )
+                    : t(
+                        'components.shared.kev.daysLeft',
+                        '{count, plural, one {# day left} other {# days left}}',
+                        {
+                          count: daysUntilDue,
+                        }
+                      )}
                   )
                 </span>
               )}
