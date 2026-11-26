@@ -375,14 +375,14 @@ const coreSidebarData: SidebarData = {
           title: 'Exposure chains',
           url: '/exposure-chains',
           icon: Route,
-          permission: Permission.AssetsRead,
+          permission: Permission.AttackPathsRead,
           module: 'attack_surface',
         },
         {
           title: 'Attack paths',
           url: '/attack-paths',
           icon: Waypoints,
-          permission: Permission.AssetsRead,
+          permission: Permission.AttackPathsRead,
           module: 'attack_surface',
         },
         {

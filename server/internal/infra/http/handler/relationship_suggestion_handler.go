@@ -10,8 +10,10 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openctemio/openctem/server/internal/app/asset"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/pkg/apierror"
+	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/relationship"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/logger"
@@ -19,6 +21,7 @@ import (
 
 // RelationshipSuggestionHandler handles relationship suggestion HTTP requests.
 type RelationshipSuggestionHandler struct {
+	configAuditor
 	service        *asset.RelationshipSuggestionService
 	logger         *logger.Logger
 	generateMu     sync.Mutex
@@ -110,10 +113,26 @@ func (h *RelationshipSuggestionHandler) Approve(w http.ResponseWriter, r *http.R
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordApproved(r, suggestionID, 1)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "approved"})
+}
+
+// recordApproved records an approval of relationship suggestions that
+// succeeded: one entry per request, naming the suggestion for a single
+// approval and carrying how many relationships were created. A bulk approval
+// that created nothing leaves no entry.
+func (h *RelationshipSuggestionHandler) recordApproved(r *http.Request, suggestionID string, count int) {
+	if count <= 0 {
+		return
+	}
+	event := auditapp.NewSuccessEvent(auditdom.ActionAssetRelationshipApproved, auditdom.ResourceTypeAssetRelationship, suggestionID).
+		WithSeverity(auditdom.SeverityForAction(auditdom.ActionAssetRelationshipApproved)).
+		WithMetadata("approved_count", count).
+		WithMessage("Relationship suggestions approved")
+	recordConfigAudit(r.Context(), h.audit, h.logger, configAuditContext(r), event)
 }
 
 // Dismiss handles POST /api/v1/relationships/suggestions/{id}/dismiss
@@ -152,6 +171,7 @@ func (h *RelationshipSuggestionHandler) ApproveAll(w http.ResponseWriter, r *htt
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordApproved(r, "", count)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -185,6 +205,7 @@ func (h *RelationshipSuggestionHandler) ApproveBatch(w http.ResponseWriter, r *h
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordApproved(r, "", count)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
