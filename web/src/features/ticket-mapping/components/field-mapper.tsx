@@ -42,6 +42,7 @@ import {
   templateSnippets,
   unmappedRequired,
 } from '../lib/mapping-utils'
+import { issueText } from '../lib/issue-text'
 import { renderSample } from '../lib/template-sample'
 import type {
   CatalogView,
@@ -405,7 +406,7 @@ function MappingRowCard({
   onRemove,
   onEditTransform,
 }: RowProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const attr = row.source.attr
     ? catalog.attributes.find((a) => a.path === row.source.attr)
     : undefined
@@ -713,7 +714,7 @@ function MappingRowCard({
                 : 'bg-warning/10 text-warning'
             )}
           >
-            {i.message}
+            {issueText(t, locale, i)}
           </span>
         ))}
       </div>

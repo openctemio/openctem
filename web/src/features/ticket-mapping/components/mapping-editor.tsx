@@ -47,14 +47,15 @@ import {
   useProjectMeta,
 } from '../api/use-ticket-mapping-api'
 import { exportDocument, normalizeSpec } from '../lib/mapping-utils'
+import { issueText } from '../lib/issue-text'
 import type { MappingSpec, ValidationIssue } from '../types/ticket-mapping.types'
 import { FieldMapper, MappingSettingsBar } from './field-mapper'
 import { WorkflowMapper } from './workflow-mapper'
 import { MappingPreview } from './mapping-preview'
 import { MappingHistory } from './mapping-history'
 
-function IssueList({ issues }: { issues: ValidationIssue[] }) {
-  const { t } = useTranslation()
+export function IssueList({ issues }: { issues: ValidationIssue[] }) {
+  const { t, locale } = useTranslation()
   if (issues.length === 0) {
     return (
       <p className="flex items-center gap-2 text-sm text-success" role="status">
@@ -80,7 +81,7 @@ function IssueList({ issues }: { issues: ValidationIssue[] }) {
           <span className="me-2 font-medium">
             {t(`ticketMapping.severity.${i.severity}`, i.severity)}
           </span>
-          {i.message}
+          {issueText(t, locale, i)}
         </li>
       ))}
     </ul>
