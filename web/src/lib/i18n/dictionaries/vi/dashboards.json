@@ -171,6 +171,7 @@
   "dashboards.flowPanel.added": "Đã thêm luồng phơi nhiễm lên đầu bảng điều khiển",
   "dashboards.flowPanel.undo": "Hoàn tác",
   "dashboards.freshness.building": "Dữ liệu bảng điều khiển đang được tạo lần đầu.",
+  "dashboards.freshness.due": "Sắp làm mới",
   "dashboards.freshness.failed": "Lần làm mới gần nhất thất bại; đây là số liệu tốt gần nhất.",
   "dashboards.freshness.manual": "Chỉ làm mới khi yêu cầu",
   "dashboards.freshness.next": "Lần tới {time}",

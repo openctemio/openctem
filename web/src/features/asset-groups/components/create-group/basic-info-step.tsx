@@ -367,7 +367,7 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
                     type="email"
                     placeholder={t(
                       'assetGroups.basic.ownerEmailPlaceholder',
-                      'e.g., a.nguyen@company.vn'
+                      'e.g., a.nguyen@example.com.vn'
                     )}
                     value={data.ownerEmail}
                     onChange={(e) => onChange({ ownerEmail: e.target.value })}

@@ -65,7 +65,8 @@ function preview(value: string): string {
 // \u2022 is the mask's bullet.
 const OWN_PREVIEW = /^[^\u2022]{0,4}\u2022{3,16}[^\u2022]{0,4}$/
 const SERVER_PREVIEW = /^[^…]{0,4}…[^…]{0,4}$/
-const MASK_WORD = /^(?:\[REDACTED\]|\*{3})/i
+// The whole value, not its start: `***s3cr3t` or `[REDACTED]hunter2` is not a mask.
+const MASK_WORD = /^(?:\[REDACTED\]|\*{3,})$/i
 
 /** Whether a value is already a mask: this module's preview, the server's, `[REDACTED]`, `***`. */
 function isMasked(value: string): boolean {
