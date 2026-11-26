@@ -254,6 +254,15 @@ var stepUpRoutes = []string{
 	"POST /api/v1/roles/{id}/members/bulk",
 	"POST /api/v1/users/{id}/roles",
 	"PUT /api/v1/users/{id}/roles",
+	// Every other path that grants a role: a team's roles and access (its
+	// members inherit them), an invitation or a created user (both carry
+	// role ids), and a member's team role.
+	"POST /api/v1/groups/{id}/roles",
+	"PUT /api/v1/groups/{id}/access",
+	"POST /api/v1/groups/{id}/access/upgrade",
+	"POST /api/v1/tenants/acme/invitations",
+	"POST /api/v1/tenants/acme/users",
+	"PATCH /api/v1/tenants/acme/members/{id}",
 }
 
 // leadCampaignRoles answers every campaign as existing with the caller as its
@@ -350,6 +359,7 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			registerScanRoutes(router, scanH, auth, nil, nil)
 			registerServiceAccountRoutes(router, &handler.ServiceAccountHandler{}, auth, nil)
 			registerRoleRoutes(router, &handler.RoleHandler{}, auth, nil)
+			registerGroupRoutes(router, &handler.GroupHandler{}, auth, nil)
 			registerScanApprovalRoutes(router, &handler.ScanApprovalHandler{}, auth, nil)
 			registerPentestRoutes(router, &handler.PentestHandler{}, nil, auth, nil, leadCampaignRoles{}, chain())
 			mux := router.(interface{ Handler() http.Handler }).Handler()
