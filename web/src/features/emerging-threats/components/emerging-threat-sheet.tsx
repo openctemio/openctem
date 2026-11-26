@@ -293,7 +293,7 @@ function SheetBodyContent({ alert, fullPage }: { alert: EmergingThreatDetail; fu
       </div>
       <DetailSections>
         <DetailSection title={t('emergingThreats.sheet.why')}>
-          <EtsBreakdownBars breakdown={alert.ets_breakdown} />
+          <EtsBreakdownBars ets={alert.ets} breakdown={alert.ets_breakdown} />
           <p className="text-meta text-muted-foreground">{t('emergingThreats.sheet.whyCaption')}</p>
         </DetailSection>
 

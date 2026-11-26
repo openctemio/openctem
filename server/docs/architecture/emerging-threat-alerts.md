@@ -218,7 +218,13 @@ resolver (private program routing).
 
 List filters: `level`, `state` (open by default), `tier`, `exposure=internet`,
 `kev=true` (known exploited), `search` (CVE id or title). Each row carries the
-score breakdown (`ets_breakdown`); the summary counts the open alerts by
+score breakdown (`ets_breakdown`). The score and its parts never disagree:
+`ets_breakdown` is sent only when its parts give `ets` (the points times the
+confidence, rounded, at most 100, equal to the stored total and score;
+`Breakdown.Explains`), and is `null` otherwise, for example on a row stored
+with a score but no parts; the console then says the parts were not recorded
+instead of showing parts of 0 beside the score, and the recommended action
+takes its exploitation points from the vulnerability. The summary counts the open alerts by
 level, `new` (not triaged yet), `kev` and `internet_facing`. The stored
 `title` names the first product over every asset of the organization, so the
 console shows `product` instead: a member with a data scope never reads the
@@ -290,14 +296,16 @@ only: likely (a version match below 80% confidence) is its own number.
   Known exploited, Internet-facing); one toolbar with the state token, search,
   the filter panel (priority, match, known exploited, internet-facing) and
   Display; one compact row per threat: CVE and in-scope product, priority,
-  score (breakdown on hover), exploit (KEV and ransomware; the EPSS figure as
+  score (breakdown on hover, only when its parts give the score), exploit (KEV and ransomware; the EPSS figure as
   "Exploit chance" only without KEV), affected hosts in words ("3 hosts
   confirmed", "+1 likely", "+2 possibly affected", then internet-facing and
   crown jewels; zeros left out), state, last change, and a
   row menu (view, open page, acknowledge, remediating, reopen).
 - A row opens a drawer: recommended action, score, hosts confirmed (likely
   and possibly affected beside it), internet-facing and crown-jewel hosts,
-  why it is ranked (score parts), exploit status with the disclosure date,
+  why it is ranked (score parts, and a sentence saying how the points make
+  the score: every point counts when the version is confirmed, else the
+  share that counts), exploit status with the disclosure date,
   affected products by version (hosts per version), the most important hosts
   (one row per host with its services), what changed, and every action,
   including **Scan affected assets**

@@ -146,7 +146,7 @@ function ScoreCard({ alert }: { alert: EmergingThreatDetail }) {
       </CardHeader>
       <CardContent className="space-y-3">
         <EtsCell ets={alert.ets} />
-        <EtsBreakdownBars breakdown={alert.ets_breakdown} />
+        <EtsBreakdownBars ets={alert.ets} breakdown={alert.ets_breakdown} />
       </CardContent>
     </Card>
   )
