@@ -43,8 +43,23 @@ var _ = registerActions("pentest_template", map[Action]Severity{
 	ActionPentestTemplateDeleted: SeverityMedium,
 })
 
+// Relationship writes change the edges attack paths and exposure chains are
+// computed from, so every create, edit and approved suggestion is recorded
+// like a delete: who changed which edge, and when.
+const (
+	ActionAssetRelationshipCreated Action = "asset_relationship.created"
+	ActionAssetRelationshipUpdated Action = "asset_relationship.updated"
+	// ActionAssetRelationshipApproved records approved relationship
+	// suggestions (one entry per approval request; a bulk approval carries
+	// the number of relationships it created).
+	ActionAssetRelationshipApproved Action = "asset_relationship.approved"
+)
+
 var _ = registerActions("asset_relationship", map[Action]Severity{
-	ActionAssetRelationshipDeleted: SeverityLow,
+	ActionAssetRelationshipDeleted:  SeverityLow,
+	ActionAssetRelationshipCreated:  SeverityLow,
+	ActionAssetRelationshipUpdated:  SeverityLow,
+	ActionAssetRelationshipApproved: SeverityLow,
 })
 
 // ActionAssetDuplicateMerged is recorded once per asset a duplicate

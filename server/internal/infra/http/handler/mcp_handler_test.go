@@ -122,7 +122,7 @@ func newTestMCPWithPentest(fr mcpFindingReader, pr mcpPentestReader) *MCPHandler
 }
 
 // allReadScopes is the set of permissions a fully-scoped MCP key would carry.
-var allReadScopes = []string{"findings:read", "assets:read", "compliance:frameworks:read"}
+var allReadScopes = []string{"findings:read", "assets:read", "attack_surface:paths:read", "compliance:frameworks:read"}
 
 // doRPC POSTs with the given tenant + full read scopes in context (as APIKeyAuth
 // would set for a fully-scoped key). Use doRPCScoped to vary the scopes.

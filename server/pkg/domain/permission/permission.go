@@ -385,6 +385,12 @@ const (
 	// (RFC-065). Neither widens the organization's own scope.
 	ProgramsRead  Permission = "attack_surface:programs:read"
 	ProgramsWrite Permission = "attack_surface:programs:write"
+
+	// AttackPathsRead reads the computed attack routes: attack-path scores
+	// and detail, exposure chains and threat models (and the MCP exposure
+	// chains tool). assets:read alone shows the inventory and its
+	// structural relationships, never the ranked route to compromise.
+	AttackPathsRead Permission = "attack_surface:paths:read"
 )
 
 // =============================================================================
@@ -567,7 +573,7 @@ func AllPermissions() []Permission {
 
 		// Attack Surface module
 		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove, ScopeApprove,
-		ProgramsRead, ProgramsWrite,
+		ProgramsRead, ProgramsWrite, AttackPathsRead,
 
 		// Validation module (legacy)
 		PentestRead, PentestWrite,

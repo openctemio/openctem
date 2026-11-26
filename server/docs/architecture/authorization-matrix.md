@@ -438,6 +438,22 @@ and SBOM import write it.
 > exposure with a lower severity does not turn it into a one-step decision. See
 > [finding-status-lifecycle.md](finding-status-lifecycle.md#four-eyes-on-exposure-dispositions).
 
+#### Attack paths (`/api/v1/attack-surface`, `/api/v1/threat-models`)
+
+The computed attack routes have their own read permission, so a role can hold
+the inventory (`assets:read`: assets, their relationships and the
+neighbourhood) without the ranked route to compromise it. Owner, admin and
+member hold it; viewer does not; custom roles that held `assets:read` were given
+it by migration `20261126022931_attack_paths_read_permission`. API keys and MCP
+grants must name it.
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/attack-surface/stats` | `assets:read` |
+| `GET /api/v1/attack-surface/attack-paths` · `/attack-paths/{id}` · `/exposure-chains`, MCP `get_exposure_chains` | `attack_surface:paths:read` |
+| `GET /api/v1/threat-models` · `/{id}` · `/{id}/coverage` | `attack_surface:paths:read` |
+| `POST /api/v1/threat-models/generate` | `assets:write` and `attack_surface:paths:read` |
+
 #### Scope exclusions (`/api/v1/scope/exclusions`)
 
 An exclusion stops scans from touching whatever it matches. Whether it is a
