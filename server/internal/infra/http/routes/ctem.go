@@ -68,10 +68,12 @@ func registerThreatModelRoutes(
 	tenantMiddlewares := append(buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware), moduleGate)
 
 	router.Group("/api/v1/threat-models", func(r Router) {
-		r.GET("/", h.List, middleware.Require(permission.AssetsRead))
-		r.POST("/generate", h.Generate, middleware.Require(permission.AssetsWrite))
-		r.GET("/{id}", h.Get, middleware.Require(permission.AssetsRead))
-		r.GET("/{id}/coverage", h.Coverage, middleware.Require(permission.AssetsRead))
+		// A threat model is a computed attack route: reading one needs
+		// attack_surface:paths:read, generating one needs it with assets:write.
+		r.GET("/", h.List, middleware.Require(permission.AttackPathsRead))
+		r.POST("/generate", h.Generate, middleware.RequireAll(permission.AssetsWrite, permission.AttackPathsRead))
+		r.GET("/{id}", h.Get, middleware.Require(permission.AttackPathsRead))
+		r.GET("/{id}/coverage", h.Coverage, middleware.Require(permission.AttackPathsRead))
 	}, tenantMiddlewares...)
 }
 

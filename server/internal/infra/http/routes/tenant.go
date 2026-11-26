@@ -114,13 +114,13 @@ func registerTenantRoutes(
 		r.PATCH("/", h.Update, middleware.RequireTeamAdmin(), tenantPerm(permission.TeamUpdate))
 		// No direct add of an existing account: invitations are the consent
 		// path (POST /members was removed, see removed_routes_test.go).
-		r.PATCH("/members/{userId}", h.UpdateMemberRole, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
+		r.PATCH("/members/{userId}", h.UpdateMemberRole, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite), requireStepUp())
 		r.POST("/members/{userId}/suspend", h.SuspendMember, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		r.POST("/members/{userId}/reactivate", h.ReactivateMember, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
-		r.POST("/invitations", h.CreateInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
+		r.POST("/invitations", h.CreateInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite), requireStepUp())
 		// Administrator-created accounts: create a user with roles and a
 		// one-time set-password link; reissue the link while the account is unused.
-		r.POST("/users", h.CreateUser, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
+		r.POST("/users", h.CreateUser, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite), requireStepUp())
 		r.POST("/users/{userId}/setup-link", h.ReissueSetupLink, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersWrite))
 		r.POST("/invitations/{invitationId}/resend", h.ResendInvitation, middleware.RequireTeamAdmin(), tenantPerm(permission.MembersInvite))
 		// A new link without email (servers that cannot send mail, lost links)

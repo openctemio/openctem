@@ -66,7 +66,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		SLARead, SLAWrite, SLADelete,
 		// Attack Surface
 		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove, ScopeApprove,
-		ProgramsRead, ProgramsWrite,
+		ProgramsRead, ProgramsWrite, AttackPathsRead,
 		// Validation (legacy)
 		PentestRead, PentestWrite,
 		// Pentest (granular - all)
@@ -151,7 +151,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		SLARead, SLAWrite, SLADelete,
 		// Attack Surface
 		ScopeRead, ScopeWrite, ScopeDelete, ScopeExclusionsApprove, ScopeApprove,
-		ProgramsRead, ProgramsWrite,
+		ProgramsRead, ProgramsWrite, AttackPathsRead,
 		// Validation (legacy)
 		PentestRead, PentestWrite,
 		// Pentest (granular - all)
@@ -238,8 +238,8 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ScanWorkflowsRead, ScanWorkflowsWrite,
 		// Settings (read only; billing is owner/admin only)
 		SLARead,
-		// Attack Surface (read + write)
-		ScopeRead, ScopeWrite,
+		// Attack Surface (read + write; computed attack routes too)
+		ScopeRead, ScopeWrite, AttackPathsRead,
 		// Validation (legacy)
 		PentestRead, PentestWrite,
 		// Pentest (read + write, no delete)
@@ -309,7 +309,7 @@ var RolePermissions = map[tenant.Role][]Permission{
 		ScanWorkflowsRead,
 		// Settings (read only; billing is owner/admin only)
 		SLARead,
-		// Attack Surface (read only)
+		// Attack Surface (read only; no computed attack routes)
 		ScopeRead,
 		// Validation (legacy)
 		PentestRead,
