@@ -124,8 +124,9 @@ func TestLimits(t *testing.T) {
 		if l.StaleAfter(SourceKEV) < l.StaleAfter(SourceVulnfeed) {
 			t.Errorf("%v: KEV under the bundle limit", h)
 		}
-		if l.StaleAfter(SourceEPSS) < StaleAfterEPSS || l.StaleAfter(SourceEPSS) < b+24*time.Hour {
-			t.Errorf("%v: EPSS %v", h, l.StaleAfter(SourceEPSS))
+		e := l.StaleAfter(SourceEPSS)
+		if e < StaleAfterEPSS || e < min(b+24*time.Hour, MaxBundleValidity) || e > MaxBundleValidity {
+			t.Errorf("%v: EPSS %v", h, e)
 		}
 	}
 }

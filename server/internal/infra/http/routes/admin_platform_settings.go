@@ -17,8 +17,8 @@ import (
 //	                                           step-up + reason (critical audit)
 //	/admin/settings/storage-quota  any admin   PUT: super_admin + step-up (audited)
 //	/admin/settings/feed-relay     any admin   PUT: super_admin + step-up (audited)
-//	/admin/settings/feed-freshness any admin   PUT: super_admin + step-up (audited,
-//	                                           admins told)
+//	/admin/settings/feed-freshness any admin   PUT: super_admin + fresh step-up + reason
+//	                                           (critical audit, admins told)
 //	/admin/settings/alerts         any admin   PUT: super_admin + fresh step-up + reason
 //	                                           (critical audit, admins told);
 //	                                           test: super_admin
@@ -95,7 +95,7 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 	feedLimits := ps.FeedLimits != nil
 	router.Group("/api/v1/admin/settings/feed-freshness", func(r Router) {
 		r.GET("/", on(feedLimits, ps.GetFeedFreshnessLimits))
-		r.PUT("/", on(feedLimits, ps.UpdateFeedFreshnessLimits), stepUp("settings.feed_freshness"))
+		r.PUT("/", on(feedLimits, ps.UpdateFeedFreshnessLimits), freshStepUp("settings.feed_freshness"))
 	}, adminMiddlewares...)
 	scanIdent := ps.ScanIdentity != nil
 	router.Group("/api/v1/admin/settings/scan-identification", func(r Router) {

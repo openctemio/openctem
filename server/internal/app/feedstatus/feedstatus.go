@@ -46,7 +46,12 @@ const (
 // between two releases. KEV is judged, like the bundle, by the date the
 // release carries (when the collector read it) against the bundle limit;
 // EPSS scores are dated by day, so their limit is the bundle limit plus a
-// day, and never under 36 hours.
+// day, never under 36 hours and never over the 7 days a release is valid.
+// The default KEV limit moved from 6 to 12 hours with this.
+//
+// The limits also decide whether a release's KEV and EPSS side data counts
+// as current (threat.IntelService.sourceStale): raising them loosens that
+// acceptance, not only the banner.
 //
 // A platform administrator may raise the bundle limit for a site that
 // copies releases by hand (Limits, console setting feed_freshness.limits);
@@ -58,7 +63,10 @@ const (
 	// under 6 hours the banner would come and go between releases; above
 	// 7 days a release is refused as expired anyway.
 	MinStaleAfterVulnfeed = 6 * time.Hour
-	MaxStaleAfterVulnfeed = 7 * 24 * time.Hour
+	MaxStaleAfterVulnfeed = MaxBundleValidity
+	// MaxBundleValidity is how long a release is accepted at all: an older
+	// one is refused as expired. No derived limit goes beyond it.
+	MaxBundleValidity = 7 * 24 * time.Hour
 	// StaleAfterEPSS is the floor of the EPSS limit (scores are published
 	// daily).
 	StaleAfterEPSS = 36 * time.Hour
@@ -90,7 +98,7 @@ func (l Limits) StaleAfter(source string) time.Duration {
 	case SourceVulnfeed, SourceKEV:
 		return l.Bundle()
 	case SourceEPSS:
-		return max(StaleAfterEPSS, l.Bundle()+epssDayLag)
+		return min(max(StaleAfterEPSS, l.Bundle()+epssDayLag), MaxBundleValidity)
 	}
 	return 0
 }

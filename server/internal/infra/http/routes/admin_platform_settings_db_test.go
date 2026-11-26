@@ -172,23 +172,26 @@ func TestAdminFeedFreshnessLimits_Routes_DB(t *testing.T) {
 		!strings.Contains(resp, `"bundle_hours":12`) || !strings.Contains(resp, `"source":"default"`) {
 		t.Fatalf("read: %d %s", code, resp)
 	}
-	if code, _ := reader.do(http.MethodPut, path, map[string]any{"bundle_hours": 48, "version": 0}, true); code != http.StatusForbidden {
+	if code, _ := reader.do(http.MethodPut, path, map[string]any{"bundle_hours": 48, "version": 0, "reason": "offline site"}, true); code != http.StatusForbidden {
 		t.Fatalf("a read-only administrator changed the limit: %d", code)
 	}
 	super := h.newAdmin(admin.AdminRoleSuperAdmin)
 	super.verify()
 	super.autoStepUp = true
-	if code, _ := super.do(http.MethodPut, path, map[string]any{"bundle_hours": 500, "version": 0}, true); code != http.StatusBadRequest {
+	if code, _ := super.do(http.MethodPut, path, map[string]any{"bundle_hours": 500, "version": 0, "reason": "offline site"}, true); code != http.StatusBadRequest {
 		t.Fatalf("out of bounds accepted: %d", code)
 	}
-	code, resp := super.do(http.MethodPut, path, map[string]any{"bundle_hours": 48, "version": 0}, true)
+	if code, _ := super.do(http.MethodPut, path, map[string]any{"bundle_hours": 48, "version": 0}, true); code != http.StatusBadRequest {
+		t.Fatalf("a change without a reason was accepted: %d", code)
+	}
+	code, resp := super.do(http.MethodPut, path, map[string]any{"bundle_hours": 48, "version": 0, "reason": "offline site, daily copy"}, true)
 	if code != http.StatusOK || !strings.Contains(resp, `"bundle_hours":48`) || !strings.Contains(resp, `"epss_hours":72`) ||
 		!strings.Contains(resp, `"source":"console"`) {
 		t.Fatalf("update: %d %s", code, resp)
 	}
 	var audited int
-	_ = h.db.QueryRowContext(context.Background(), `SELECT count(*) FROM admin_audit_logs WHERE admin_id = $1 AND action = $2`,
-		super.a.ID().String(), feedlimits.ActionChanged).Scan(&audited)
+	_ = h.db.QueryRowContext(context.Background(), `SELECT count(*) FROM admin_audit_logs WHERE admin_id = $1 AND action = $2
+		AND severity = 'critical'`, super.a.ID().String(), feedlimits.ActionChanged).Scan(&audited)
 	if audited != 1 {
 		t.Fatalf("audit rows: %d", audited)
 	}

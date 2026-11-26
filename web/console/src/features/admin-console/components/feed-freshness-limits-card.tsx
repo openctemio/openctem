@@ -10,11 +10,18 @@ import { useTranslation } from '@/context/i18n-provider'
 import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { ErrorState } from '@/features/shared'
 import { saveFeedFreshnessLimits, useFeedFreshnessLimits } from '../api/use-platform-settings'
-import { SettingChangedLine, handleSaveConflict } from './console-setting-parts'
+import {
+  ReasonConfirmDialog,
+  SettingChangedLine,
+  handleSaveConflict,
+} from './console-setting-parts'
 
-/** EPSS follows the bundle limit: a day more, at least 36 hours. */
+/** A release older than this is refused, so no limit goes beyond it. */
+const MAX_RELEASE_HOURS = 168
+
+/** EPSS follows the bundle limit: a day more, at least 36 hours, at most 7 days. */
 export function epssHoursFor(bundleHours: number): number {
-  return Math.max(36, bundleHours + 24)
+  return Math.min(Math.max(36, bundleHours + 24), MAX_RELEASE_HOURS)
 }
 
 /**
@@ -23,8 +30,9 @@ export function epssHoursFor(bundleHours: number): number {
  * sees the banner. The default suits a platform that receives the feed by
  * itself; a site that copies releases by hand raises it. KEV rides the
  * bundle and takes the same limit; EPSS a day more. A release older than 7
- * days is refused whatever the limit. Super admin and the step-up; audited,
- * every administrator is told.
+ * days is refused whatever the limit. Raising it also loosens which KEV and
+ * EPSS copies of a release count as current. Super admin, fresh step-up and a
+ * reason; a critical audit entry, every administrator is told.
  */
 export function FeedFreshnessLimitsCard({ canEdit }: { canEdit: boolean }) {
   const { t } = useTranslation()
@@ -32,6 +40,7 @@ export function FeedFreshnessLimitsCard({ canEdit }: { canEdit: boolean }) {
   const { data, error, isLoading, mutate } = useFeedFreshnessLimits()
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
 
   const reset = useCallback(() => {
     if (data) setValue(String(data.bundle_hours))
@@ -54,15 +63,15 @@ export function FeedFreshnessLimitsCard({ canEdit }: { canEdit: boolean }) {
   const dirty = valid && n !== data.bundle_hours
   const shown = valid ? n : data.bundle_hours
 
-  const save = async () => {
+  const save = async (reason: string) => {
     setBusy(true)
     try {
-      await saveFeedFreshnessLimits({ bundle_hours: n, version: data.version })
+      await saveFeedFreshnessLimits({ bundle_hours: n, version: data.version, reason })
       toast.success(t('admin.feedLimits.saved', 'Vulnerability data age limit saved'))
       void mutate()
     } catch (e) {
       if (
-        !handleSaveConflict(
+        handleSaveConflict(
           e,
           () => void mutate(),
           t(
@@ -71,11 +80,8 @@ export function FeedFreshnessLimitsCard({ canEdit }: { canEdit: boolean }) {
           )
         )
       )
-        toast.error(
-          e instanceof Error
-            ? e.message
-            : t('admin.settings.saveFailed', 'Could not save the setting')
-        )
+        return
+      throw e
     } finally {
       setBusy(false)
     }
@@ -88,7 +94,7 @@ export function FeedFreshnessLimitsCard({ canEdit }: { canEdit: boolean }) {
         <CardDescription>
           {t(
             'admin.feedLimits.description',
-            'After this many hours without a newer release, the feeds show as stale, the administrators are alerted and every user sees the banner. Keep the default when the platform receives the feed by itself. Raise it when you copy releases to an offline folder by hand. A release older than 7 days is refused whatever this says.'
+            'After this many hours without a newer release, the feeds show as stale, the administrators are alerted and every user sees the banner. Raising it also lets older KEV and EPSS copies in a release count as current, so new exploited vulnerabilities can show up later. Keep the default when the platform receives the feed by itself. Raise it only when you copy releases to an offline folder by hand. A release older than 7 days is refused whatever this says.'
           )}
         </CardDescription>
       </CardHeader>
@@ -140,11 +146,22 @@ export function FeedFreshnessLimitsCard({ canEdit }: { canEdit: boolean }) {
             className="basis-full"
             dirty={dirty}
             saving={busy}
-            onSave={() => void save()}
+            onSave={() => setConfirmOpen(true)}
             onDiscard={reset}
           />
         )}
       </CardContent>
+      <ReasonConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={t('admin.feedLimits.confirmTitle', 'Change how old the data may be?')}
+        desc={t(
+          'admin.feedLimits.confirmDesc',
+          'Applies at the next check on every server. A higher limit hides out-of-date data for longer and accepts older KEV and EPSS copies. Recorded in the admin audit log and sent to every administrator.'
+        )}
+        confirmText={t('admin.feedLimits.confirmButton', 'Change the limit')}
+        onConfirm={save}
+      />
     </Card>
   )
 }

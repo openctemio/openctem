@@ -10,8 +10,10 @@
 // takes the same limit; EPSS takes it plus a day. A release older than
 // 7 days is still refused by the importer, whatever the limit.
 //
-// Raising the limit hides out-of-date data for longer, so a change needs a
-// super admin and a step-up, is audited and every administrator is told.
+// Raising the limit hides out-of-date data for longer and loosens which
+// release side data (KEV, EPSS) counts as current, so a change needs a super
+// admin, a fresh step-up and a reason; it is a critical audit entry and
+// every administrator is told.
 //
 // Design: docs/architecture/intelligence-feeds.md, "Freshness".
 package feedlimits
@@ -112,25 +114,30 @@ func (s *Service) Get(ctx context.Context) (Settings, error) {
 }
 
 // Limits are the limits in force for feedstatus. A setting that cannot be
-// read gives the defaults (the stricter answer: data is reported out of
-// date sooner, never later).
+// read gives the strictest limit (MinHours): never looser than what an
+// administrator stored, so out-of-date data is reported sooner, never later.
 func (s *Service) Limits(ctx context.Context) feedstatus.Limits {
 	st, err := s.Get(ctx)
 	if err != nil {
-		s.logger.Warn("feed freshness limits not read; using the defaults", "error", err)
-		return feedstatus.DefaultLimits()
+		s.logger.Warn("feed freshness limits not read; using the strictest limit", "error", err)
+		return feedstatus.Limits{Vulnfeed: feedstatus.MinStaleAfterVulnfeed}
 	}
 	return feedstatus.Limits{Vulnfeed: time.Duration(st.BundleHours) * time.Hour}
 }
 
 // Update stores the bundle limit. The caller checked the super admin role
-// and the step-up. expectedVersion is the version read (0: nothing stored).
-func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, hours, expectedVersion int, ip, userAgent string) (Settings, error) {
+// and the fresh step-up. expectedVersion is the version read (0: nothing
+// stored); reason is required.
+func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, hours, expectedVersion int, reason, ip, userAgent string) (Settings, error) {
 	if actor == nil {
 		return Settings{}, ErrNoActor
 	}
 	if hours < MinHours || hours > MaxHours {
 		return Settings{}, ErrInvalid
+	}
+	reason, err := consolesetting.CheckReason(reason)
+	if err != nil {
+		return Settings{}, err
 	}
 	prev, err := s.Get(ctx)
 	if err != nil {
@@ -142,7 +149,7 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, hours, exp
 	next := settingsOf(hours)
 	s.recorder.Record(ctx, actor, consolesetting.Change{
 		Action: ActionChanged, Key: SettingKey, Title: "Vulnerability data age limit",
-		Method: "PUT", Path: Path, Notify: true,
+		Method: "PUT", Path: Path, Reason: reason, Critical: true, Notify: true,
 		Details: map[string]any{"previous_bundle_hours": prev.BundleHours, "previous_source": prev.Source,
 			"bundle_hours": hours, "kev_hours": next.BundleHours, "epss_hours": next.EPSSHours},
 	}, ip, userAgent)
