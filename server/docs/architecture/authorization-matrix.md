@@ -453,6 +453,13 @@ grants must name it.
 | `GET /api/v1/attack-surface/attack-paths` · `/attack-paths/{id}` · `/exposure-chains`, MCP `get_exposure_chains` | `attack_surface:paths:read` |
 | `GET /api/v1/threat-models` · `/{id}` · `/{id}/coverage` | `attack_surface:paths:read` |
 | `POST /api/v1/threat-models/generate` | `assets:write` and `attack_surface:paths:read` |
+| Dashboard widget `attack_paths.to_crown_jewels` (personal and organization dashboards) | `attack_surface:paths:read`; without it the widget reads `unsupported` / `forbidden` with no rows |
+
+Derived yes/no signals stay under their own permissions: `on_attack_path` on
+an exposure (`exposures:read`) and the attack-path reason in a finding's
+priority explanation (`findings:read`). They say that an asset sits on some
+route, never which route, so they are not the attack recipe this permission
+guards.
 
 #### Scope exclusions (`/api/v1/scope/exclusions`)
 
