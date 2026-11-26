@@ -467,7 +467,7 @@
   "serverText.sensor.profile.collector": "bộ thu thập",
   "serverText.sensor.profile.custom": "tùy chỉnh",
   "serverText.sensor.profile.easm_external": "bề mặt tấn công bên ngoài",
-  "serverText.sensor.profile.endpoint_agent": "tác nhân điểm cuối",
+  "serverText.sensor.profile.endpoint_agent": "endpoint",
   "serverText.sensor.profile.internal_network_scanner": "quét mạng nội bộ",
   "serverText.sensor.profile.legacy_broad": "quyền rộng cũ",
   "serverText.sensor.profile.other": "tùy chỉnh",

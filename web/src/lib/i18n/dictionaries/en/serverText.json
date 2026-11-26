@@ -467,7 +467,7 @@
   "serverText.sensor.profile.collector": "collector",
   "serverText.sensor.profile.custom": "custom",
   "serverText.sensor.profile.easm_external": "external attack surface",
-  "serverText.sensor.profile.endpoint_agent": "endpoint agent",
+  "serverText.sensor.profile.endpoint_agent": "endpoint",
   "serverText.sensor.profile.internal_network_scanner": "internal network scanner",
   "serverText.sensor.profile.legacy_broad": "legacy broad",
   "serverText.sensor.profile.other": "custom",
