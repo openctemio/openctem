@@ -1,23 +1,21 @@
 'use client'
 
 /**
- * Settings > Approvals, the approval policy sections
+ * Settings > Approvals, the approval policy fields
  * (server/docs/rfcs/RFC-111-approval-policy.md): the tier per kind and risk
  * class, the security pool, exclusions, caps, the decision deadline, the EPSS
- * threshold and what a material change does. Every choice only adds
+ * threshold and what a material change does, as the field groups the
+ * editors draw (`approval-editors.tsx`). Every choice only adds
  * constraints above the platform floors; the editor never offers a tier below
- * a floor, and the API validates and clamps again. The page owns the draft
- * and its one save bar (`FindingApprovalsForm`). Saving needs settings:write,
+ * a floor, and the API validates and clamps again. `FindingApprovalsForm`
+ * owns the draft and saves it. Saving needs settings:write,
  * an owner or administrator and a recent sign-in (the API client asks for
  * re-authentication). A relaxing change waits 24 hours, the stricter of both
  * policies applying meanwhile.
  */
 
-import { memo, useId, useState } from 'react'
-import { ChevronDown, Clock } from 'lucide-react'
-import { toast } from 'sonner'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
+import { useId } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -30,23 +28,11 @@ import {
 } from '@/components/ui/select'
 import { useTranslation } from '@/context/i18n-provider'
 import { useGroups } from '@/features/access-control/api/use-groups'
-import {
-  KeyValueList,
-  SettingsBlock,
-  SettingsField,
-  SettingsFieldGrid,
-  SettingsRow,
-  SettingsSection,
-  SettingsSwitchRow,
-} from '@/features/shared'
-import { getErrorMessage } from '@/lib/api/error-handler'
+import { KeyValueList, SettingsSwitchRow } from '@/features/shared'
+import { FormField, FormSection, FormStack } from '@/features/shared/components/forms'
 import { usePermissions, Permission } from '@/lib/permissions'
+import type { FindingApprovalSettings } from '../api/use-findings-api'
 import {
-  updateFindingApprovalSettings,
-  type FindingApprovalSettings,
-} from '../api/use-findings-api'
-import {
-  APPROVAL_KINDS,
   APPROVAL_TIERS,
   DEFAULT_CELL,
   PLATFORM_ACCEPTANCE_CAPS,
@@ -66,7 +52,6 @@ import {
   type RiskClass,
   type SinglePersonFPChange,
 } from '../lib/approval-policy'
-import { formatDateTime } from '@/lib/app-locale'
 
 const NO_GROUP = '__none__'
 
@@ -116,8 +101,6 @@ function parseFloatIn(v: string, min: number, max: number): number | null | unde
   if (!Number.isFinite(n) || n < min || n > max) return null
   return n
 }
-
-type TFn = ReturnType<typeof useTranslation>['t']
 
 /** The policy last chosen: a waiting relaxation, else the one in force. */
 export function policyFromSettings(s: FindingApprovalSettings): PolicyDraft {
@@ -172,238 +155,73 @@ export function buildPolicy(form: PolicyDraft, s: FindingApprovalSettings): Appr
   }
 }
 
-/** The names of the changed settings, for the save bar. */
-export function policyChangeNames(t: TFn, form: PolicyDraft, s: FindingApprovalSettings) {
-  const saved = policyFromSettings(s)
-  const differs = (k: keyof PolicyDraft) => JSON.stringify(form[k]) !== JSON.stringify(saved[k])
-  const names: string[] = []
-  const add = (on: boolean, name: string) => {
-    if (on && !names.includes(name)) names.push(name)
-  }
-  add(differs('cells'), t('findingApprovals.policy.tiersTitle', 'Who approves'))
-  add(differs('groupId'), t('findingApprovals.policy.poolGroup', 'Security pool group'))
-  add(differs('strict'), t('findingApprovals.policy.strict', 'Only the security pool'))
-  add(
-    differs('excludeAssignee'),
-    t('findingApprovals.policy.excludeAssignee', 'Exclude the assignee')
-  )
-  add(
-    differs('stepUpAll'),
-    t('findingApprovals.policy.stepUpAll', 'Re-authentication for every approval')
-  )
-  add(differs('caps'), t('findingApprovals.policy.capsTitle', 'Longest acceptance (days)'))
-  add(
-    differs('decideWithin'),
-    t('findingApprovals.policy.decideWithin', 'Decision deadline (days)')
-  )
-  add(differs('epss'), t('findingApprovals.policy.epss', 'EPSS threshold'))
-  add(
-    differs('accepted') || differs('singlePersonFP'),
-    t('findingApprovals.policy.materialTitle', 'When the finding changes')
-  )
-  return names
-}
-
-interface ApprovalPolicySectionsProps {
+/** What every policy field group of an editor gets. */
+export interface PolicyFieldsProps {
   settings: FindingApprovalSettings
   form: PolicyDraft
   onChange: (next: PolicyDraft) => void
-  canEdit: boolean
-  /** A save is running: the waiting relaxation cannot be canceled meanwhile. */
-  saving?: boolean
-  onSaved?: (next: FindingApprovalSettings) => void
+  disabled: boolean
 }
 
-/**
- * Who approves, the security pool, limits and deadlines, and material changes.
- * Memoised: typing in another section of the page does not redraw the tier
- * grid (twelve selects).
- */
-export const ApprovalPolicySections = memo(function ApprovalPolicySections({
+/** The three tier cells of one kind of request, one per risk class. */
+export function KindTierFields({
+  kind,
   settings,
   form,
   onChange,
-  canEdit,
-  saving = false,
-  onSaved,
-}: ApprovalPolicySectionsProps) {
+  disabled,
+}: PolicyFieldsProps & { kind: ApprovalKind }) {
+  const id = useId()
+  const floors = settings.floors ?? {}
+  const defaults = settings.defaults ?? {}
+  return (
+    <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))] gap-x-3 gap-y-3">
+      {RISK_CLASSES.map((cls) => (
+        <TierCell
+          key={cls}
+          id={`${id}-${kind}-${cls}`}
+          kind={kind}
+          cls={cls}
+          floor={floors[cellKey(kind, cls)]}
+          platformDefault={defaults[cellKey(kind, cls)]}
+          value={form.cells[cellKey(kind, cls)] ?? DEFAULT_CELL}
+          disabled={disabled}
+          onChange={(v) => onChange({ ...form, cells: { ...form.cells, [cellKey(kind, cls)]: v } })}
+        />
+      ))}
+    </div>
+  )
+}
+
+/** The security pool, its strict mode and who else may not approve. */
+export function PoolFields({ form, onChange, disabled }: Omit<PolicyFieldsProps, 'settings'>) {
   const { t } = useTranslation()
   const id = useId()
   const { can } = usePermissions()
   const canListGroups = can(Permission.GroupsRead)
   const { groups, isLoading: groupsLoading } = useGroups(undefined, canListGroups)
-  const [canceling, setCanceling] = useState(false)
-
-  const floors = settings.floors ?? {}
-  const defaults = settings.defaults ?? {}
-  const { caps, decideWithin, epss } = parsePolicy(form)
-
+  const currentGroup = groups.find((g) => g.id === form.groupId)
   const set = <K extends keyof PolicyDraft>(key: K, value: PolicyDraft[K]) =>
     onChange({ ...form, [key]: value })
-
-  // The API drops the waiting relaxation and keeps the policy in force. It
-  // applies at once, apart from the save bar.
-  const cancelPending = async () => {
-    setCanceling(true)
-    try {
-      const next = await updateFindingApprovalSettings({ cancel_pending: true })
-      toast.success(
-        t('findingApprovals.settings.pendingCanceled', 'The waiting change was canceled')
-      )
-      onSaved?.(next)
-    } catch (err) {
-      toast.error(
-        getErrorMessage(
-          err,
-          t('findingApprovals.settings.cancelFailed', 'Could not cancel the waiting change')
-        )
-      )
-    } finally {
-      setCanceling(false)
-    }
-  }
-
-  const disabled = !canEdit
-  const currentGroup = groups.find((g) => g.id === form.groupId)
-  const pendingAt = settings.pending_policy_at
-    ? formatDateTime(new Date(settings.pending_policy_at))
-    : ''
-  const capsInvalid = caps.standard === null || caps.high === null || caps.critical === null
-
   return (
-    <>
-      <SettingsSection
-        framed
-        id="approval-tiers"
-        title={t('findingApprovals.policy.tiersTitle', 'Who approves')}
-        description={t(
-          'findingApprovals.policy.tiersDescription',
-          'The approval each kind of request needs, by how risky the finding is. Only choices at or above the platform minimum are offered. A relaxing change takes effect 24 hours after you save it; a stricter one at once.'
-        )}
+    <FormStack>
+      <FormField
+        id={`${id}-pool`}
+        label={t('findingApprovals.policy.poolGroup', 'Security pool group')}
+        required={false}
+        hint={
+          canListGroups
+            ? t(
+                'findingApprovals.policy.poolDescription',
+                'Security review and two-approver requests need a sign-off from the security pool. When nobody in the pool is eligible, any approver may decide unless you turn that off.'
+              )
+            : t(
+                'findingApprovals.policy.poolNoPermission',
+                'You need permission to view groups to change the security pool.'
+              )
+        }
       >
-        {settings.pending_policy && (
-          <SettingsBlock>
-            <Alert data-testid="approval-policy-pending">
-              <Clock className="h-4 w-4" aria-hidden />
-              <AlertTitle>
-                {t('findingApprovals.policy.pendingTitle', 'A relaxed approval policy is waiting')}
-              </AlertTitle>
-              <AlertDescription>
-                {t(
-                  'findingApprovals.policy.pendingBody',
-                  'It takes effect at {at}. Until then the stricter rules of the old and the new policy apply.',
-                  { at: pendingAt }
-                )}
-              </AlertDescription>
-              {canEdit && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="col-start-2 mt-2 justify-self-start"
-                  disabled={canceling || saving}
-                  onClick={() => void cancelPending()}
-                >
-                  {t('findingApprovals.settings.cancelPending', 'Cancel the change')}
-                </Button>
-              )}
-            </Alert>
-          </SettingsBlock>
-        )}
-        <SettingsBlock>
-          <div
-            className="space-y-4"
-            role="group"
-            aria-label={t('findingApprovals.policy.tiersTitle', 'Who approves')}
-          >
-            <div className="hidden @[45rem]:grid @[45rem]:grid-cols-[minmax(8rem,11rem)_repeat(3,minmax(0,1fr))] @[45rem]:gap-3 text-cap font-medium text-muted-foreground">
-              <span>{t('findingApprovals.policy.kindColumn', 'Request')}</span>
-              {RISK_CLASSES.map((c) => (
-                <span key={c}>{riskClassLabel(t, c)}</span>
-              ))}
-            </div>
-            {APPROVAL_KINDS.map((kind) => (
-              <div
-                key={kind}
-                className="grid gap-3 border-t border-border-subtle pt-4 @[45rem]:grid-cols-[minmax(8rem,11rem)_repeat(3,minmax(0,1fr))] @[45rem]:border-t-0 @[45rem]:pt-0"
-              >
-                <div className="text-body font-medium @[45rem]:pt-1.5">
-                  {kindLabel(t, kind)}
-                  {kind === 'false_positive' && (
-                    <p className="text-cap font-normal text-muted-foreground">
-                      {t(
-                        'findingApprovals.policy.fpRowHint',
-                        'Default follows the false-positive level above; a tier here only raises it.'
-                      )}
-                    </p>
-                  )}
-                </div>
-                {RISK_CLASSES.map((cls) => (
-                  <TierCell
-                    key={cls}
-                    id={`${id}-${kind}-${cls}`}
-                    kind={kind}
-                    cls={cls}
-                    floor={floors[cellKey(kind, cls)]}
-                    platformDefault={defaults[cellKey(kind, cls)]}
-                    value={form.cells[cellKey(kind, cls)] ?? DEFAULT_CELL}
-                    disabled={disabled}
-                    onChange={(v) => set('cells', { ...form.cells, [cellKey(kind, cls)]: v })}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-        </SettingsBlock>
-        {/* The glossary is reference, folded under the grid: open on demand. */}
-        <SettingsBlock>
-          <Collapsible>
-            <CollapsibleTrigger className="group inline-flex min-h-control-touch items-center gap-1 rounded-sm text-body font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:min-h-0">
-              <ChevronDown
-                className="size-4 transition-transform group-data-[state=open]:rotate-180 motion-reduce:transition-none"
-                aria-hidden
-              />
-              {t('findingApprovals.policy.tiersMeaning', 'What the tiers mean')}
-            </CollapsibleTrigger>
-            <CollapsibleContent className="pt-2">
-              <KeyValueList
-                items={APPROVAL_TIERS.map((tier) => ({
-                  key: tier,
-                  label: tierLabel(t, tier),
-                  value: tierHelp(t, tier),
-                }))}
-              />
-            </CollapsibleContent>
-          </Collapsible>
-        </SettingsBlock>
-      </SettingsSection>
-
-      <SettingsSection
-        framed
-        id="security-pool"
-        title={t('findingApprovals.policy.poolTitle', 'Security pool and exclusions')}
-        description={t(
-          'findingApprovals.policy.poolDescription',
-          'Security review and two-approver requests need a sign-off from the security pool. When nobody in the pool is eligible, any approver may decide unless you turn that off.'
-        )}
-      >
-        <SettingsRow
-          wide
-          label={
-            <label htmlFor={`${id}-pool`}>
-              {t('findingApprovals.policy.poolGroup', 'Security pool group')}
-            </label>
-          }
-          hintId={`${id}-pool-hint`}
-          hint={
-            canListGroups
-              ? undefined
-              : t(
-                  'findingApprovals.policy.poolNoPermission',
-                  'You need permission to view groups to change the security pool.'
-                )
-          }
-        >
+        {(control) => (
           <Select
             value={form.groupId || NO_GROUP}
             onValueChange={(v) => {
@@ -412,11 +230,7 @@ export const ApprovalPolicySections = memo(function ApprovalPolicySections({
             }}
             disabled={disabled || !canListGroups || groupsLoading}
           >
-            <SelectTrigger
-              id={`${id}-pool`}
-              className="w-full"
-              aria-describedby={canListGroups ? undefined : `${id}-pool-hint`}
-            >
+            <SelectTrigger {...control} className="w-full">
               <SelectValue>
                 {form.groupId
                   ? (currentGroup?.name ??
@@ -435,7 +249,9 @@ export const ApprovalPolicySections = memo(function ApprovalPolicySections({
               ))}
             </SelectContent>
           </Select>
-        </SettingsRow>
+        )}
+      </FormField>
+      <div>
         <SettingsSwitchRow
           id={`${id}-strict`}
           label={t('findingApprovals.policy.strict', 'Only the security pool')}
@@ -469,224 +285,246 @@ export const ApprovalPolicySections = memo(function ApprovalPolicySections({
           disabled={disabled}
           onCheckedChange={(v) => set('stepUpAll', v)}
         />
-      </SettingsSection>
-
-      <SettingsSection
-        framed
-        id="approval-limits"
-        title={t('findingApprovals.policy.limitsTitle', 'Limits and deadlines')}
-        description={t(
-          'findingApprovals.policy.limitsDescription',
-          'Leave a field empty to use the platform value. A cap for one class also bounds the riskier classes.'
-        )}
-      >
-        <SettingsBlock>
-          <fieldset className="min-w-0 space-y-3">
-            <legend className="text-body font-medium">
-              {t('findingApprovals.policy.capsTitle', 'Longest acceptance (days)')}
-            </legend>
-            <SettingsFieldGrid className="grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))]">
-              {RISK_CLASSES.map((c) => (
-                <SettingsField key={c} id={`${id}-cap-${c}`} label={riskClassLabel(t, c)}>
-                  {(control) => (
-                    <Input
-                      {...control}
-                      type="number"
-                      inputMode="numeric"
-                      min={1}
-                      max={POLICY_BOUNDS.maxAcceptanceDays}
-                      step={1}
-                      placeholder={t('findingApprovals.policy.platformValue', 'Platform')}
-                      value={form.caps[c]}
-                      disabled={disabled}
-                      aria-invalid={caps[c] === null || undefined}
-                      onChange={(e) => set('caps', { ...form.caps, [c]: e.target.value })}
-                    />
-                  )}
-                </SettingsField>
-              ))}
-            </SettingsFieldGrid>
-            <p className="text-cap text-muted-foreground">
-              {t(
-                'findingApprovals.policy.capsHint',
-                'Platform caps by priority: P0 or KEV {p0} days, P1 {p1}, P2 {p2}, P3 {p3}. The shorter of the platform cap and yours applies.',
-                {
-                  p0: PLATFORM_ACCEPTANCE_CAPS.p0Kev,
-                  p1: PLATFORM_ACCEPTANCE_CAPS.p1,
-                  p2: PLATFORM_ACCEPTANCE_CAPS.p2,
-                  p3: PLATFORM_ACCEPTANCE_CAPS.p3,
-                }
-              )}
-            </p>
-            {capsInvalid && (
-              <p className="text-cap font-medium text-destructive" role="alert">
-                {t('findingApprovals.policy.capsInvalid', 'Enter whole days from 1 to {max}.', {
-                  max: POLICY_BOUNDS.maxAcceptanceDays,
-                })}
-              </p>
-            )}
-          </fieldset>
-        </SettingsBlock>
-        <SettingsBlock>
-          <SettingsFieldGrid>
-            <SettingsField
-              id={`${id}-decide`}
-              label={t('findingApprovals.policy.decideWithin', 'Decision deadline (days)')}
-              hint={
-                decideWithin === null
-                  ? undefined
-                  : t(
-                      'findingApprovals.policy.decideWithinHelp',
-                      'A pending request expires after this many days, from {min} to {max}.',
-                      {
-                        min: POLICY_BOUNDS.decideWithinDays.min,
-                        max: POLICY_BOUNDS.decideWithinDays.max,
-                      }
-                    )
-              }
-              error={
-                decideWithin === null
-                  ? t(
-                      'findingApprovals.policy.decideWithinHelp',
-                      'A pending request expires after this many days, from {min} to {max}.',
-                      {
-                        min: POLICY_BOUNDS.decideWithinDays.min,
-                        max: POLICY_BOUNDS.decideWithinDays.max,
-                      }
-                    )
-                  : undefined
-              }
-            >
-              {(control) => (
-                <Input
-                  {...control}
-                  type="number"
-                  inputMode="numeric"
-                  min={POLICY_BOUNDS.decideWithinDays.min}
-                  max={POLICY_BOUNDS.decideWithinDays.max}
-                  step={1}
-                  placeholder={String(POLICY_BOUNDS.decideWithinDays.max)}
-                  value={form.decideWithin}
-                  disabled={disabled}
-                  onChange={(e) => set('decideWithin', e.target.value)}
-                />
-              )}
-            </SettingsField>
-            <SettingsField
-              id={`${id}-epss`}
-              label={t('findingApprovals.policy.epss', 'EPSS threshold')}
-              hint={
-                epss === null
-                  ? undefined
-                  : t(
-                      'findingApprovals.policy.epssHelp',
-                      'A finding with an EPSS score at or above this counts as high risk, from {min} to {max}.',
-                      { min: POLICY_BOUNDS.epss.min, max: POLICY_BOUNDS.epss.max }
-                    )
-              }
-              error={
-                epss === null
-                  ? t(
-                      'findingApprovals.policy.epssHelp',
-                      'A finding with an EPSS score at or above this counts as high risk, from {min} to {max}.',
-                      { min: POLICY_BOUNDS.epss.min, max: POLICY_BOUNDS.epss.max }
-                    )
-                  : undefined
-              }
-            >
-              {(control) => (
-                <Input
-                  {...control}
-                  type="number"
-                  inputMode="decimal"
-                  min={POLICY_BOUNDS.epss.min}
-                  max={POLICY_BOUNDS.epss.max}
-                  step={0.01}
-                  placeholder={String(POLICY_BOUNDS.epss.max)}
-                  value={form.epss}
-                  disabled={disabled}
-                  onChange={(e) => set('epss', e.target.value)}
-                />
-              )}
-            </SettingsField>
-          </SettingsFieldGrid>
-        </SettingsBlock>
-      </SettingsSection>
-
-      <SettingsSection
-        framed
-        id="material-change"
-        title={t('findingApprovals.policy.materialTitle', 'When the finding changes')}
-        description={t(
-          'findingApprovals.policy.materialDescription',
-          'What happens to a decision when the finding later becomes riskier.'
-        )}
-      >
-        <SettingsRow
-          wide
-          label={
-            <label htmlFor={`${id}-mc-accepted`}>
-              {t('findingApprovals.policy.materialAccepted', 'Accepted risk')}
-            </label>
-          }
-        >
-          <Select
-            value={form.accepted}
-            onValueChange={(v) => set('accepted', v as AcceptedChange)}
-            disabled={disabled}
-          >
-            <SelectTrigger id={`${id}-mc-accepted`} className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="end_on_tier_rise">
-                {t(
-                  'findingApprovals.policy.material.end_on_tier_rise',
-                  'End it when the finding needs a stricter approval'
-                )}
-              </SelectItem>
-              <SelectItem value="end_on_any_change">
-                {t(
-                  'findingApprovals.policy.material.end_on_any_change',
-                  'End it on any material change'
-                )}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </SettingsRow>
-        <SettingsRow
-          wide
-          label={
-            <label htmlFor={`${id}-mc-fp`}>
-              {t(
-                'findingApprovals.policy.materialSingleFP',
-                'False positive decided by one person'
-              )}
-            </label>
-          }
-        >
-          <Select
-            value={form.singlePersonFP}
-            onValueChange={(v) => set('singlePersonFP', v as SinglePersonFPChange)}
-            disabled={disabled}
-          >
-            <SelectTrigger id={`${id}-mc-fp`} className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="flag">
-                {t('findingApprovals.policy.material.flag', 'Flag it for review')}
-              </SelectItem>
-              <SelectItem value="revoke">
-                {t('findingApprovals.policy.material.revoke', 'Reopen the finding')}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </SettingsRow>
-      </SettingsSection>
-    </>
+      </div>
+    </FormStack>
   )
-})
+}
+
+/** The longest acceptance per risk class, in days. */
+export function CapsFields({ form, onChange, disabled }: Omit<PolicyFieldsProps, 'settings'>) {
+  const { t } = useTranslation()
+  const id = useId()
+  const { caps } = parsePolicy(form)
+  const capsInvalid = caps.standard === null || caps.high === null || caps.critical === null
+  return (
+    <FormSection
+      title={t('findingApprovals.policy.capsTitle', 'Longest acceptance (days)')}
+      description={t(
+        'findingApprovals.policy.limitsDescription',
+        'Leave a field empty to use the platform value. A cap for one class also bounds the riskier classes.'
+      )}
+    >
+      <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))] gap-x-3 gap-y-3">
+        {RISK_CLASSES.map((c) => (
+          <FormField key={c} id={`${id}-cap-${c}`} label={riskClassLabel(t, c)} required={false}>
+            {(control) => (
+              <Input
+                {...control}
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={POLICY_BOUNDS.maxAcceptanceDays}
+                step={1}
+                placeholder={t('findingApprovals.policy.platformValue', 'Platform')}
+                value={form.caps[c]}
+                disabled={disabled}
+                aria-invalid={caps[c] === null || undefined}
+                onChange={(e) => onChange({ ...form, caps: { ...form.caps, [c]: e.target.value } })}
+              />
+            )}
+          </FormField>
+        ))}
+      </div>
+      <p className="text-cap text-muted-foreground">
+        {t(
+          'findingApprovals.policy.capsHint',
+          'Platform caps by priority: P0 or KEV {p0} days, P1 {p1}, P2 {p2}, P3 {p3}. The shorter of the platform cap and yours applies.',
+          {
+            p0: PLATFORM_ACCEPTANCE_CAPS.p0Kev,
+            p1: PLATFORM_ACCEPTANCE_CAPS.p1,
+            p2: PLATFORM_ACCEPTANCE_CAPS.p2,
+            p3: PLATFORM_ACCEPTANCE_CAPS.p3,
+          }
+        )}
+      </p>
+      {capsInvalid && (
+        <p className="text-cap font-medium text-destructive" role="alert">
+          {t('findingApprovals.policy.capsInvalid', 'Enter whole days from 1 to {max}.', {
+            max: POLICY_BOUNDS.maxAcceptanceDays,
+          })}
+        </p>
+      )}
+    </FormSection>
+  )
+}
+
+/** The request deadline and the EPSS score that counts as high risk. */
+export function DeadlineFields({ form, onChange, disabled }: Omit<PolicyFieldsProps, 'settings'>) {
+  const { t } = useTranslation()
+  const id = useId()
+  const { decideWithin, epss } = parsePolicy(form)
+  const decideText = t(
+    'findingApprovals.policy.decideWithinHelp',
+    'A pending request expires after this many days, from {min} to {max}.',
+    { min: POLICY_BOUNDS.decideWithinDays.min, max: POLICY_BOUNDS.decideWithinDays.max }
+  )
+  const epssText = t(
+    'findingApprovals.policy.epssHelp',
+    'A finding with an EPSS score at or above this counts as high risk, from {min} to {max}.',
+    { min: POLICY_BOUNDS.epss.min, max: POLICY_BOUNDS.epss.max }
+  )
+  return (
+    <FormStack>
+      <FormField
+        id={`${id}-decide`}
+        label={t('findingApprovals.policy.decideWithin', 'Decision deadline (days)')}
+        required={false}
+        hint={decideWithin === null ? undefined : decideText}
+        error={decideWithin === null ? decideText : undefined}
+      >
+        {(control) => (
+          <Input
+            {...control}
+            type="number"
+            inputMode="numeric"
+            min={POLICY_BOUNDS.decideWithinDays.min}
+            max={POLICY_BOUNDS.decideWithinDays.max}
+            step={1}
+            placeholder={String(POLICY_BOUNDS.decideWithinDays.max)}
+            value={form.decideWithin}
+            disabled={disabled}
+            onChange={(e) => onChange({ ...form, decideWithin: e.target.value })}
+          />
+        )}
+      </FormField>
+      <FormField
+        id={`${id}-epss`}
+        label={t('findingApprovals.policy.epss', 'EPSS threshold')}
+        required={false}
+        hint={epss === null ? undefined : epssText}
+        error={epss === null ? epssText : undefined}
+      >
+        {(control) => (
+          <Input
+            {...control}
+            type="number"
+            inputMode="decimal"
+            min={POLICY_BOUNDS.epss.min}
+            max={POLICY_BOUNDS.epss.max}
+            step={0.01}
+            placeholder={String(POLICY_BOUNDS.epss.max)}
+            value={form.epss}
+            disabled={disabled}
+            onChange={(e) => onChange({ ...form, epss: e.target.value })}
+          />
+        )}
+      </FormField>
+    </FormStack>
+  )
+}
+
+/** What happens to an accepted risk when its finding later becomes riskier. */
+export function MaterialAcceptedField({
+  form,
+  onChange,
+  disabled,
+}: Omit<PolicyFieldsProps, 'settings'>) {
+  const { t } = useTranslation()
+  const id = useId()
+  return (
+    <FormField
+      id={`${id}-mc-accepted`}
+      label={t('findingApprovals.policy.materialTitle', 'When the finding changes')}
+      required={false}
+      hint={t(
+        'findingApprovals.policy.materialDescription',
+        'What happens to a decision when the finding later becomes riskier.'
+      )}
+    >
+      {(control) => (
+        <Select
+          value={form.accepted}
+          onValueChange={(v) => onChange({ ...form, accepted: v as AcceptedChange })}
+          disabled={disabled}
+        >
+          <SelectTrigger {...control} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="end_on_tier_rise">
+              {t(
+                'findingApprovals.policy.material.end_on_tier_rise',
+                'End it when the finding needs a stricter approval'
+              )}
+            </SelectItem>
+            <SelectItem value="end_on_any_change">
+              {t(
+                'findingApprovals.policy.material.end_on_any_change',
+                'End it on any material change'
+              )}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      )}
+    </FormField>
+  )
+}
+
+/** What happens to a false positive one person decided when the finding becomes riskier. */
+export function MaterialSinglePersonFPField({
+  form,
+  onChange,
+  disabled,
+}: Omit<PolicyFieldsProps, 'settings'>) {
+  const { t } = useTranslation()
+  const id = useId()
+  return (
+    <FormField
+      id={`${id}-mc-fp`}
+      label={t('findingApprovals.policy.materialSingleFP', 'False positive decided by one person')}
+      required={false}
+      hint={t(
+        'findingApprovals.policy.materialDescription',
+        'What happens to a decision when the finding later becomes riskier.'
+      )}
+    >
+      {(control) => (
+        <Select
+          value={form.singlePersonFP}
+          onValueChange={(v) => onChange({ ...form, singlePersonFP: v as SinglePersonFPChange })}
+          disabled={disabled}
+        >
+          <SelectTrigger {...control} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="flag">
+              {t('findingApprovals.policy.material.flag', 'Flag it for review')}
+            </SelectItem>
+            <SelectItem value="revoke">
+              {t('findingApprovals.policy.material.revoke', 'Reopen the finding')}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      )}
+    </FormField>
+  )
+}
+
+/** "What the tiers mean": reference, folded, opened on demand. */
+export function TierGlossary() {
+  const { t } = useTranslation()
+  return (
+    <Collapsible>
+      <CollapsibleTrigger className="group inline-flex min-h-control-touch items-center gap-1 rounded-sm text-body font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none sm:min-h-0">
+        <ChevronDown
+          className="size-4 transition-transform group-data-[state=open]:rotate-180 motion-reduce:transition-none"
+          aria-hidden
+        />
+        {t('findingApprovals.policy.tiersMeaning', 'What the tiers mean')}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-2">
+        <KeyValueList
+          items={APPROVAL_TIERS.map((tier) => ({
+            key: tier,
+            label: tierLabel(t, tier),
+            value: tierHelp(t, tier),
+          }))}
+        />
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
 
 interface TierCellProps {
   id: string
