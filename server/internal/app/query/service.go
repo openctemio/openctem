@@ -193,8 +193,11 @@ func (s *Service) principal(ctx context.Context, c Caller) (querylang.Principal,
 		if s.dataScope == nil {
 			return pr, errors.New("data scope enforcer not configured")
 		}
-		scope, err = s.dataScope.ResolveFor(ctx, tenantID, datascope.Caller{UserID: c.UserID, APIKey: c.APIKey})
-		if err == nil && scope == nil {
+		var kind datascope.Resolution
+		scope, kind, err = s.dataScope.ResolveForKind(ctx, tenantID, datascope.Caller{UserID: c.UserID, APIKey: c.APIKey})
+		// A has_full_data_access role holder sees the tenant (nil scope by
+		// right); only a scope that did not resolve is refused.
+		if err == nil && kind == datascope.ResolutionNone {
 			return pr, errors.New("data scope did not resolve")
 		}
 	case c.UserID != "" && s.dataScope != nil:
