@@ -244,7 +244,7 @@ export function VerifiedDomainsList({
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground" data-testid="domain-jit">
           {row.original.status === 'verified'
-            ? jitLabel(row.original)
+            ? jitLabel(row.original, t)
             : t('admin.verifiedDomainsList.notUntilVerified', 'Not until verified')}
         </span>
       ),
