@@ -44,6 +44,13 @@ type samlURLTenantRepo struct {
 	t *tenantdom.Tenant
 }
 
+func (f samlURLTenantRepo) GetByID(_ context.Context, id shared.ID) (*tenantdom.Tenant, error) {
+	if f.t != nil && f.t.ID() == id {
+		return f.t, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
 func (f samlURLTenantRepo) GetBySlug(_ context.Context, slug string) (*tenantdom.Tenant, error) {
 	if f.t != nil && f.t.Slug() == slug {
 		return f.t, nil
@@ -54,6 +61,20 @@ func (f samlURLTenantRepo) GetBySlug(_ context.Context, slug string) (*tenantdom
 type samlURLProviderRepo struct {
 	samldom.Repository
 	p *samldom.SAMLProvider
+}
+
+func (f samlURLProviderRepo) GetByID(_ context.Context, id shared.ID) (*samldom.SAMLProvider, error) {
+	if f.p != nil && f.p.ID() == id {
+		return f.p, nil
+	}
+	return nil, samldom.ErrNotFound
+}
+
+func (f samlURLProviderRepo) GetByLegacyPathKey(_ context.Context, key string) (*samldom.SAMLProvider, error) {
+	if f.p != nil && key != "" && f.p.LegacyPathKey() == key {
+		return f.p, nil
+	}
+	return nil, samldom.ErrNotFound
 }
 
 func (f samlURLProviderRepo) GetByTenant(_ context.Context, tenantID shared.ID) (*samldom.SAMLProvider, error) {
@@ -81,7 +102,8 @@ func samlURLTestCert(t *testing.T) string {
 }
 
 // newSAMLURLHandler is a handler over an organization "acme" with an enabled
-// SAML configuration. publicURL is what the server would have configured.
+// SAML configuration that predates connection ids, so its frozen legacy
+// address key is "acme". publicURL is what the server would have configured.
 func newSAMLURLHandler(t *testing.T, publicURL string) *SAMLHandler {
 	t.Helper()
 	tn, err := tenantdom.NewTenant("Acme", "acme", shared.NewID().String())
@@ -89,7 +111,7 @@ func newSAMLURLHandler(t *testing.T, publicURL string) *SAMLHandler {
 		t.Fatal(err)
 	}
 	p := samldom.Reconstruct(shared.NewID(), tn.ID(), "https://idp.example.org/entity", "https://idp.example.org/sso",
-		samlURLTestCert(t), nil, "viewer", false, true, time.Now(), time.Now())
+		samlURLTestCert(t), nil, "viewer", false, true, time.Now(), time.Now()).WithLegacyPathKey("acme")
 	svc := auth.NewSAMLService(samlURLProviderRepo{p: p}, samlURLTenantRepo{t: tn}, nil, logger.NewNop())
 	h := NewSAMLHandler(svc, CookieConfig{}, "https://app.example.com", logger.NewNop())
 	h.SetPublicURL(publicURL)
@@ -106,7 +128,7 @@ func hostileSAMLRequest(t *testing.T, method, path string, body io.Reader) *http
 	t.Cleanup(func() { trustedProxiesForAuth = prev })
 
 	rctx := chi.NewRouteContext()
-	rctx.URLParams.Add("org", "acme")
+	rctx.URLParams.Add("connection", "acme")
 	ctx := context.WithValue(context.Background(), chi.RouteCtxKey, rctx)
 	r := httptest.NewRequestWithContext(ctx, method, "http://evil.example"+path, body)
 	r.Host = "evil.example"

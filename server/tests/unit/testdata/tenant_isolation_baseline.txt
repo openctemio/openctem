@@ -228,8 +228,6 @@ GET /api/v1/audit-logs/{id}
 GET /api/v1/audit-logs/resource/{type}/{id}
 GET /api/v1/audit-logs/user/{id}
 GET /api/v1/auth/oauth/{provider}/authorize
-GET /api/v1/auth/saml/{org}/login
-GET /api/v1/auth/saml/{org}/metadata
 GET /api/v1/auth/sso/{provider}/authorize
 GET /api/v1/brand/images/{kind}
 GET /api/v1/business-services/{id}
@@ -619,7 +617,6 @@ POST /api/v1/assets/{id}/sync
 POST /api/v1/assignment-rules/{id}/test
 POST /api/v1/attack-surface/discovery/stages/{stage}/run
 POST /api/v1/auth/oauth/{provider}/callback
-POST /api/v1/auth/saml/{org}/acs
 POST /api/v1/auth/sso/{provider}/callback
 POST /api/v1/business-services/{id}/assets
 POST /api/v1/business-units/{id}/assets
