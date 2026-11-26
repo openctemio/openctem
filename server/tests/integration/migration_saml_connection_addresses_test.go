@@ -79,12 +79,18 @@ func TestMigrationSAMLConnectionAddresses(t *testing.T) {
 
 	// A reserved id is stable until the configuration is deleted.
 	newTenant := shared.MustIDFromString(tenantNew)
+	if _, err := repo.GetReservedConnectionID(ctx, newTenant); !errors.Is(err, samlprovider.ErrNotFound) {
+		t.Fatalf("a read found a reservation that was never made: %v", err)
+	}
 	r1, err := repo.ReserveConnectionID(ctx, newTenant)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if r2, err := repo.ReserveConnectionID(ctx, newTenant); err != nil || r2 != r1 {
 		t.Fatalf("reservation not stable: %s then %s (%v)", r1, r2, err)
+	}
+	if got, err := repo.GetReservedConnectionID(ctx, newTenant); err != nil || got != r1 {
+		t.Fatalf("read of the reservation: %s (%v), want %s", got, err, r1)
 	}
 	if err := repo.Delete(ctx, newTenant); err != nil {
 		t.Fatal(err)

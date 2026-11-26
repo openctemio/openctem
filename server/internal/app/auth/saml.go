@@ -120,8 +120,9 @@ func (s *SAMLService) BuildConfig(ctx context.Context, tenantID shared.ID, in SA
 	}
 
 	// Preserve the existing id when updating so it's a true upsert. A new
-	// configuration takes the connection id reserved for the tenant: its
-	// addresses (built on that id) may already be registered at the IdP.
+	// configuration takes the connection id reserved for the tenant, if the
+	// administrator reserved one (its addresses may already be registered at
+	// the IdP), else a new one. Building never writes.
 	var id shared.ID
 	if existing, err := s.repo.GetByTenant(ctx, tenantID); err == nil && existing != nil {
 		id = existing.ID()
@@ -130,8 +131,14 @@ func (s *SAMLService) BuildConfig(ctx context.Context, tenantID shared.ID, in SA
 		if err := s.sso.requireRoomForConnection(ctx, tenantID); err != nil {
 			return nil, err
 		}
-		if id, err = s.repo.ReserveConnectionID(ctx, tenantID); err != nil {
-			return nil, err
+		reserved, rerr := s.repo.GetReservedConnectionID(ctx, tenantID)
+		switch {
+		case rerr == nil:
+			id = reserved
+		case errors.Is(rerr, samldom.ErrNotFound):
+			id = shared.NewID()
+		default:
+			return nil, rerr
 		}
 	}
 	return samldom.Reconstruct(id, tenantID, in.IDPEntityID, in.IDPSSOURL, in.IDPCertificate,
@@ -658,12 +665,17 @@ func matchesAny(s string, subs []string) bool {
 	return false
 }
 
+// ErrSAMLNoAddress is an organization with neither a SAML configuration nor
+// a reserved address: there is no SP metadata to show until the
+// administrator creates the address (ReserveAddress).
+var ErrSAMLNoAddress = fmt.Errorf("%w: no SAML address yet", shared.ErrNotFound)
+
 // SPMetadataForTenant returns the SP metadata XML and the public addresses of
 // an organization's SAML connection (by organization id), built on the
 // configured public origin. It is the platform admin console's download of
 // the file to upload in the IdP's SAML application; the public metadata URL
-// serves the same document. Before a configuration exists the addresses use
-// the connection id reserved for it.
+// serves the same document. It only reads: before a configuration exists it
+// answers the reserved address, or ErrSAMLNoAddress when none was reserved.
 func (s *SAMLService) SPMetadataForTenant(ctx context.Context, tenantID shared.ID, baseURL string) (string, SAMLAddresses, error) {
 	if _, err := s.tenantRepo.GetByID(ctx, tenantID); err != nil {
 		return "", SAMLAddresses{}, ErrSAMLTenantNotFound
@@ -672,7 +684,10 @@ func (s *SAMLService) SPMetadataForTenant(ctx context.Context, tenantID shared.I
 	if p, err := s.repo.GetByTenant(ctx, tenantID); err == nil {
 		addr = samlAddresses(p.PathKey(), baseURL, p.LegacyPathKey() != "")
 	} else if errors.Is(err, samldom.ErrNotFound) {
-		id, rerr := s.repo.ReserveConnectionID(ctx, tenantID)
+		id, rerr := s.repo.GetReservedConnectionID(ctx, tenantID)
+		if errors.Is(rerr, samldom.ErrNotFound) {
+			return "", SAMLAddresses{}, ErrSAMLNoAddress
+		}
 		if rerr != nil {
 			return "", SAMLAddresses{}, rerr
 		}
@@ -680,6 +695,31 @@ func (s *SAMLService) SPMetadataForTenant(ctx context.Context, tenantID shared.I
 	} else {
 		return "", SAMLAddresses{}, err
 	}
+	return s.spMetadata(ctx, addr, baseURL)
+}
+
+// ReserveAddress creates the SAML address of an organization that has no
+// configuration yet (the connection id its first configuration takes) and
+// returns its SP metadata; an organization with a configuration or a
+// reservation gets the address it already has. It is the one write of the
+// address before a configuration exists: an audited console write.
+func (s *SAMLService) ReserveAddress(ctx context.Context, tenantID shared.ID, baseURL string) (string, SAMLAddresses, error) {
+	if _, err := s.tenantRepo.GetByID(ctx, tenantID); err != nil {
+		return "", SAMLAddresses{}, ErrSAMLTenantNotFound
+	}
+	if p, err := s.repo.GetByTenant(ctx, tenantID); err == nil {
+		return s.spMetadata(ctx, samlAddresses(p.PathKey(), baseURL, p.LegacyPathKey() != ""), baseURL)
+	} else if !errors.Is(err, samldom.ErrNotFound) {
+		return "", SAMLAddresses{}, err
+	}
+	id, err := s.repo.ReserveConnectionID(ctx, tenantID)
+	if err != nil {
+		return "", SAMLAddresses{}, err
+	}
+	return s.spMetadata(ctx, samlAddresses(id.String(), baseURL, false), baseURL)
+}
+
+func (s *SAMLService) spMetadata(ctx context.Context, addr SAMLAddresses, baseURL string) (string, SAMLAddresses, error) {
 	doc, err := s.Metadata(ctx, addr.Key, baseURL)
 	if err != nil {
 		return "", SAMLAddresses{}, err

@@ -225,7 +225,8 @@ const filterspecMaxBody = filterspec.MaxBodyBytes
 // @Description  search box filter (fq, short or long form) minus the field's own conditions. Counted in the caller's
 // @Description  data scope with the list's server-side rules; fields the caller may not use, or that cannot be
 // @Description  grouped, are unknown (400). Past a 1 second budget the answer has no counts (enum and boolean values
-// @Description  are still listed). Answers are cached per caller for 60 seconds. Rate limited per user.
+// @Description  are still listed). No answer is kept between requests: every call runs under the caller's current
+// @Description  access. Rate limited per user.
 // @Tags         Query
 // @Produce      json
 // @Security     BearerAuth
