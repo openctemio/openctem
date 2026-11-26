@@ -328,9 +328,11 @@ export function useThreatIntelStats(tenantId: string | null) {
 }
 
 // Exposure chains and attack paths are attack-surface data: with the module
-// off they are not asked for (the API would answer MODULE_NOT_ENABLED).
+// off, or without attack_surface:paths:read, they are not asked for (the API
+// would answer MODULE_NOT_ENABLED or 403).
 export function useExposureChains(tenantId: string | null) {
-  const on = useModuleEnabled('attack_surface')
+  const { can } = usePermissions()
+  const on = useModuleEnabled('attack_surface') && can(Permission.AttackPathsRead)
   return useSWR<ExposureChainsResponse>(
     useKey('/api/v1/attack-surface/exposure-chains', on ? tenantId : null),
     (url: string) => get<ExposureChainsResponse>(url),
@@ -339,7 +341,8 @@ export function useExposureChains(tenantId: string | null) {
 }
 
 export function useAttackPaths(tenantId: string | null) {
-  const on = useModuleEnabled('attack_surface')
+  const { can } = usePermissions()
+  const on = useModuleEnabled('attack_surface') && can(Permission.AttackPathsRead)
   return useSWR<AttackPathsResponse>(
     useKey('/api/v1/attack-surface/attack-paths', on ? tenantId : null),
     (url: string) => get<AttackPathsResponse>(url),

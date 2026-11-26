@@ -20,8 +20,11 @@ type Scope string
 // can use a permission only when one of its scopes covers it AND the user
 // holds it at the time of the request.
 const (
-	ScopeFindingsRead   Scope = "mcp:findings.read"
-	ScopeAssetsRead     Scope = "mcp:assets.read"
+	ScopeFindingsRead Scope = "mcp:findings.read"
+	ScopeAssetsRead   Scope = "mcp:assets.read"
+	// ScopePathsRead reads the computed attack routes (the exposure chains
+	// tool): attack_surface:paths:read, never part of mcp:assets.read.
+	ScopePathsRead      Scope = "mcp:paths.read"
 	ScopeComplianceRead Scope = "mcp:compliance.read"
 	ScopePentestRead    Scope = "mcp:pentest.read"
 	// ScopeScopeRead lets the check_scope tool ask whether a target may be
@@ -63,7 +66,11 @@ var catalog = map[Scope]scopeInfo{ //nolint:gochecknoglobals // fixed scope tabl
 	},
 	ScopeAssetsRead: {
 		perms: []permission.Permission{permission.AssetsRead},
-		title: "Read assets and attack paths",
+		title: "Read assets",
+	},
+	ScopePathsRead: {
+		perms: []permission.Permission{permission.AttackPathsRead},
+		title: "Read attack paths and exposure chains",
 	},
 	ScopeComplianceRead: {
 		perms: []permission.Permission{permission.ComplianceFrameworksRead},

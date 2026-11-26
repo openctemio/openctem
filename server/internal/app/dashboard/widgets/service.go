@@ -404,6 +404,7 @@ func (s *Service) personalForViewer(ctx context.Context, d *DashboardData, c das
 // fields never leave the server.
 func (s *Service) forViewer(ctx context.Context, d *DashboardData, c dashboardapp.Caller, viewer *shared.ID) (*DashboardData, error) {
 	s.maskModulesOff(ctx, d, c.TenantID)
+	maskAttackPaths(d, c)
 	var member map[string]bool
 	for i := range d.Widgets {
 		it := d.Widgets[i].Items

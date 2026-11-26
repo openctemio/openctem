@@ -1044,6 +1044,7 @@ func NewHandlers(deps *HandlerDeps) routes.Handlers {
 	handlers.BusinessService.SetAuditService(svc.Audit)
 	handlers.AttackerProfile.SetAuditService(svc.Audit)
 	handlers.AssetRelationship.SetAuditService(svc.Audit)
+	handlers.RelationshipSuggestion.SetAuditService(svc.Audit)
 	handlers.AdminDedup.SetAuditService(svc.Audit)
 
 	if svc.SSO != nil {
