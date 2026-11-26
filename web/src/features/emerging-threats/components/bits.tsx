@@ -120,13 +120,72 @@ export const ETS_PART_MAX: Record<(typeof ETS_PARTS)[number], number> = {
   freshness: 10,
 }
 
+/** The points of the four parts before the confidence multiplier. */
+export function etsPoints(b: EtsBreakdown): number {
+  return ETS_PARTS.reduce((sum, k) => sum + b[k], 0)
+}
+
+/**
+ * The breakdown when it explains the score ets, else null. It mirrors the
+ * server's rule (pkg/domain/threatalert Breakdown.Explains): no part below
+ * zero, a confidence in (0, 1], and the points times the confidence,
+ * rounded and capped at 100, equal to the total and to ets. The page never
+ * shows a total next to parts that do not give it.
+ */
+export function explainedParts(
+  ets: number,
+  b: EtsBreakdown | null | undefined
+): EtsBreakdown | null {
+  if (!b) return null
+  if (ETS_PARTS.some((k) => !Number.isFinite(b[k]) || b[k] < 0)) return null
+  if (!(b.confidence > 0 && b.confidence <= 1)) return null
+  const total = Math.min(100, Math.round(etsPoints(b) * b.confidence))
+  return total === b.total && total === ets ? b : null
+}
+
+/**
+ * The score in plain words: whether every point counts (the affected
+ * version is confirmed) or only a share of them (the match is not certain),
+ * and how the points become the score.
+ */
+function etsSentence(t: ReturnType<typeof useTranslation>['t'], b: EtsBreakdown): string {
+  const sum = etsPoints(b)
+  if (b.confidence < 1) {
+    return t('emergingThreats.breakdown.scaled', undefined, {
+      percent: Math.round(b.confidence * 100),
+      sum,
+      confidence: Number(b.confidence.toFixed(2)),
+      total: b.total,
+    })
+  }
+  return sum > 100
+    ? t('emergingThreats.breakdown.capped', undefined, { sum })
+    : t('emergingThreats.breakdown.full', undefined, { sum, total: b.total })
+}
+
 /**
  * Why the score is what it is, using the width it has: one row per part
  * (label, a bar of its points against the most it can give, the points),
- * then the confidence multiplier and the total on one closing line.
+ * then the confidence multiplier and the total on one closing line, and a
+ * sentence saying how the points become the score. Parts that do not give
+ * the score (never recorded) are not shown: a note says so instead.
  */
-export function EtsBreakdownBars({ breakdown }: { breakdown: EtsBreakdown }) {
+export function EtsBreakdownBars({
+  ets,
+  breakdown: raw,
+}: {
+  ets: number
+  breakdown: EtsBreakdown | null
+}) {
   const { t } = useTranslation()
+  const breakdown = explainedParts(ets, raw)
+  if (!breakdown) {
+    return (
+      <p className="text-sm text-muted-foreground" data-slot="ets-breakdown-unrecorded">
+        {t('emergingThreats.breakdown.unrecorded')}
+      </p>
+    )
+  }
   return (
     <div className="space-y-2" data-slot="ets-breakdown">
       {/* A bar chart, not a key-value list: each row is a labelled meter
@@ -170,12 +229,15 @@ export function EtsBreakdownBars({ breakdown }: { breakdown: EtsBreakdown }) {
           <span className="font-semibold tabular-nums">{breakdown.total}</span>
         </span>
       </p>
+      <p className="text-meta text-muted-foreground" data-slot="ets-sentence">
+        {etsSentence(t, breakdown)}
+      </p>
     </div>
   )
 }
 
-/** The parts of the score as label/value rows (tooltip). */
-export function EtsBreakdownList({ breakdown }: { breakdown: EtsBreakdown }) {
+/** The parts of the score as label/value rows (tooltip); explainedParts only. */
+function EtsBreakdownList({ breakdown }: { breakdown: EtsBreakdown }) {
   const { t } = useTranslation()
   const items: KeyValueItem[] = [
     ...ETS_PARTS.map((k) => ({
@@ -200,11 +262,22 @@ export function EtsBreakdownList({ breakdown }: { breakdown: EtsBreakdown }) {
       value: <span className="font-semibold tabular-nums">{breakdown.total}</span>,
     },
   ]
-  return <KeyValueList items={items} />
+  return (
+    <>
+      <KeyValueList items={items} />
+      <p className="mt-1 text-meta text-muted-foreground">{etsSentence(t, breakdown)}</p>
+    </>
+  )
 }
 
 /** The score on one line (number and a short meter); hover shows why. */
-export function ScoreCell({ ets, breakdown }: { ets: number; breakdown?: EtsBreakdown }) {
+export function ScoreCell({
+  ets,
+  breakdown: raw,
+}: {
+  ets: number
+  breakdown?: EtsBreakdown | null
+}) {
   const { t } = useTranslation()
   const n = Math.round(ets)
   const body = (
@@ -219,6 +292,8 @@ export function ScoreCell({ ets, breakdown }: { ets: number; breakdown?: EtsBrea
       />
     </span>
   )
+  // No tooltip of parts that do not give the score.
+  const breakdown = explainedParts(ets, raw)
   if (!breakdown) return body
   return (
     <Tooltip>
