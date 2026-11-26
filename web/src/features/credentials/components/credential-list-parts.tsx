@@ -85,6 +85,11 @@ const KNOWN_SOURCES = new Set([
   'underground_forum',
 ])
 
+/** Whether a credential source is one the catalog names (credentials.source.*). */
+export function isCredentialSource(source: string): boolean {
+  return KNOWN_SOURCES.has(source)
+}
+
 export function credentialSourceLabel(t: TFn, source: string): string {
   // A source the catalog does not know reads "Other", never the raw key.
   return t(

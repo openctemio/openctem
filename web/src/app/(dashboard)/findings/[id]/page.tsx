@@ -45,7 +45,14 @@ import {
 import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { SettleGroup } from '@/features/shared/components/settle-group'
 import { PageStack } from '@/features/shared/components/page-stack'
-import { DetailSectionBlock, DetailSectionList } from '@/features/shared/components/detail'
+import {
+  DETAIL_GRID,
+  DETAIL_MAIN,
+  DETAIL_RAIL,
+  DETAIL_STRIP,
+  DetailSectionBlock,
+  DetailSectionList,
+} from '@/features/shared/components/detail'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -126,13 +133,6 @@ const TAB_ICON: Record<string, LucideIcon> = {
   details: Info,
 }
 
-/** The page's grid: the tab strip across, then the panel beside the properties rail. */
-const GRID = 'grid min-w-0 xl:grid-cols-[minmax(0,1fr)_19rem]'
-const RAIL = 'min-w-0 max-xl:order-2 xl:sticky xl:top-4 xl:col-start-2 xl:row-start-2 xl:self-start'
-const STRIP = 'min-w-0 max-xl:order-3 xl:col-span-2 xl:row-start-1'
-/** Below 1280 px the bands and the panel are grid items of their own (bands first). */
-const MAIN = 'flex min-w-0 flex-col gap-page max-xl:contents xl:col-start-1 xl:row-start-2'
-
 function dataFlowCount(f: FindingDetail) {
   return f.dataFlow?.steps.length ?? 0
 }
@@ -157,8 +157,8 @@ function LoadingSkeleton() {
           </div>
         </div>
       </div>
-      <div className={cn(GRID, 'gap-page')}>
-        <div className={cn(RAIL, 'space-y-2')}>
+      <div className={cn(DETAIL_GRID, 'gap-page')}>
+        <div className={cn(DETAIL_RAIL, 'space-y-2')}>
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="grid grid-cols-[6.75rem_1fr] items-center gap-3">
               <Skeleton className="h-4 w-16" />
@@ -166,10 +166,10 @@ function LoadingSkeleton() {
             </div>
           ))}
         </div>
-        <div className={STRIP}>
+        <div className={DETAIL_STRIP}>
           <Skeleton className="h-10 w-full max-w-xl" />
         </div>
-        <div className={MAIN}>
+        <div className={DETAIL_MAIN}>
           <Skeleton className="h-36 w-full" />
           <Skeleton className="h-28 w-full" />
           <Skeleton className="h-40 w-full" />
@@ -325,10 +325,10 @@ export default function FindingDetailPage() {
             onTriageCompleted={handleTriageCompleted}
             onStatusMove={triage.changeStatus}
           />
-          <Tabs value={tab} onValueChange={(v) => setTab(v)} className={GRID}>
+          <Tabs value={tab} onValueChange={(v) => setTab(v)} className={DETAIL_GRID}>
             <aside
               aria-label={t('findings.detail.propertiesAria', 'Finding properties')}
-              className={RAIL}
+              className={DETAIL_RAIL}
             >
               <div className="max-md:rounded-lg max-md:border max-md:bg-card max-md:px-3">
                 <FindingProperties finding={finding} triage={triage} />
@@ -342,7 +342,7 @@ export default function FindingDetailPage() {
               />
             </aside>
 
-            <div className={STRIP}>
+            <div className={DETAIL_STRIP}>
               <TabsList>
                 {tabs.map((key) => {
                   const Icon = TAB_ICON[key]
@@ -363,7 +363,7 @@ export default function FindingDetailPage() {
               </TabsList>
             </div>
 
-            <div className={MAIN}>
+            <div className={DETAIL_MAIN}>
               {/* The bands load their own data and render nothing without it. */}
               <div
                 data-slot="finding-bands"
