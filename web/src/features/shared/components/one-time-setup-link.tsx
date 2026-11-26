@@ -67,14 +67,22 @@ interface OneTimeSetupLinkProps {
  * be issued, which invalidates this one).
  */
 export function OneTimeSetupLink({ token, url, expiresAt, email }: OneTimeSetupLinkProps) {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   const link = url || buildSetupLink(token)
   const expiry = formatExpiry(expiresAt)
+  const [handOverBefore = '', handOverAfter = ''] = t(
+    'components.shared.setupLink.handOver',
+    "Give this link to {who} over a trusted channel (in person, or a chat you know is theirs). Anyone who opens it can set the account's password.",
+    { who: '\u0001' }
+  ).split('\u0001')
 
   return (
     <div className="space-y-3">
       <div className="space-y-1.5">
-        <p className="text-sm font-medium">One-time setup link</p>
+        <p className="text-sm font-medium">
+          {t('components.shared.setupLink.title', 'One-time setup link')}
+        </p>
         <div className="flex min-w-0 items-center gap-2">
           <code
             className="min-w-0 flex-1 rounded bg-muted px-2 py-1.5 font-mono text-xs break-all select-all"
@@ -86,7 +94,7 @@ export function OneTimeSetupLink({ token, url, expiresAt, email }: OneTimeSetupL
             type="button"
             size="icon"
             variant="outline"
-            aria-label="Copy setup link"
+            aria-label={t('components.shared.setupLink.copy', 'Copy setup link')}
             onClick={async () => {
               if (await copyToClipboard(link)) setCopied(true)
             }}
@@ -97,16 +105,28 @@ export function OneTimeSetupLink({ token, url, expiresAt, email }: OneTimeSetupL
       </div>
       <Alert className="border-warning/40 bg-warning/10">
         <ShieldAlert className="size-4 text-warning" />
-        <AlertTitle>Shown once</AlertTitle>
+        <AlertTitle>{t('components.shared.setupLink.shownOnce', 'Shown once')}</AlertTitle>
         <AlertDescription>
           <p>
-            Give this link to {email ? <strong>{email}</strong> : 'the user'} over a trusted channel
-            (in person, or a chat you know is theirs). Anyone who opens it can set the
-            account&apos;s password.
+            {handOverBefore}
+            {email ? (
+              <strong>{email}</strong>
+            ) : (
+              t('components.shared.setupLink.theUser', 'the user')
+            )}
+            {handOverAfter}
           </p>
           <p>
-            {expiry ? `It works once and expires ${expiry}.` : 'It works once and expires.'} It will
-            not be shown again; issue a new link if it is lost.
+            {expiry
+              ? t(
+                  'components.shared.setupLink.expires',
+                  'It works once and expires {expiry}. It will not be shown again; issue a new link if it is lost.',
+                  { expiry }
+                )
+              : t(
+                  'components.shared.setupLink.expiresNoDate',
+                  'It works once and expires. It will not be shown again; issue a new link if it is lost.'
+                )}
           </p>
         </AlertDescription>
       </Alert>
@@ -119,6 +139,7 @@ export function OneTimeSetupLink({ token, url, expiresAt, email }: OneTimeSetupL
  * the one-time link when no email could be sent.
  */
 export function SetupLinkResult({ outcome, email }: { outcome: SetupLinkOutcome; email: string }) {
+  const { t } = useTranslation()
   if (outcome.setup_token) {
     return (
       <OneTimeSetupLink
@@ -133,9 +154,13 @@ export function SetupLinkResult({ outcome, email }: { outcome: SetupLinkOutcome;
     return (
       <Alert variant="destructive">
         <MailCheck className="size-4" />
-        <AlertTitle>Setup email not sent</AlertTitle>
+        <AlertTitle>{t('components.shared.setupLink.notSent', 'Setup email not sent')}</AlertTitle>
         <AlertDescription>
-          {`The account for ${email} was created, but the email with its setup link could not be sent. For security the link is not shown here. Once email works, ${email} can use "Forgot password" on the sign-in page to set a password.`}
+          {t(
+            'components.shared.setupLink.failedBody',
+            'The account for {email} was created, but the email with its setup link could not be sent. For security the link is not shown here. Once email works, {email} can use "Forgot password" on the sign-in page to set a password.',
+            { email }
+          )}
         </AlertDescription>
       </Alert>
     )
@@ -143,11 +168,23 @@ export function SetupLinkResult({ outcome, email }: { outcome: SetupLinkOutcome;
   return (
     <Alert>
       <MailCheck className="size-4" />
-      <AlertTitle>{outcome.email_sent ? 'Setup email sent' : 'No setup link'}</AlertTitle>
+      <AlertTitle>
+        {outcome.email_sent
+          ? t('components.shared.setupLink.sent', 'Setup email sent')
+          : t('components.shared.setupLink.none', 'No setup link')}
+      </AlertTitle>
       <AlertDescription>
         {outcome.email_sent
-          ? `${email} has been emailed a link to set their password.`
-          : `No email was sent and no setup link was returned. Issue a setup link for ${email} from the user list.`}
+          ? t(
+              'components.shared.setupLink.sentBody',
+              '{email} has been emailed a link to set their password.',
+              { email }
+            )
+          : t(
+              'components.shared.setupLink.noneBody',
+              'No email was sent and no setup link was returned. Issue a setup link for {email} from the user list.',
+              { email }
+            )}
       </AlertDescription>
     </Alert>
   )

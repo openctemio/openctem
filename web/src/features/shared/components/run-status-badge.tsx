@@ -14,30 +14,37 @@ import { humanizeIdentifier } from '@/lib/humanize-identifier'
  * blocked is a pause ring (nothing ran; a person has to change the scan or its
  * scope, which is a decision, not a machine failure), canceled is off.
  */
-const RUN_STATE: Record<string, { state: HealthState; label: string }> = {
-  queued: { state: 'queued', label: 'Queued' },
-  pending: { state: 'queued', label: 'Pending' },
-  running: { state: 'run', label: 'Running' },
-  completed: { state: 'ok', label: 'Completed' },
+const RUN_STATE: Record<string, HealthState> = {
+  queued: 'queued',
+  pending: 'queued',
+  running: 'run',
+  completed: 'ok',
   // Kept results but lost some work (a batch or a step failed).
-  partial: { state: 'warn', label: 'Partial' },
-  failed: { state: 'down', label: 'Failed' },
-  timeout: { state: 'warn', label: 'Timed out' },
-  canceled: { state: 'off', label: 'Canceled' },
+  partial: 'warn',
+  failed: 'down',
+  timeout: 'warn',
+  canceled: 'off',
   // Stopped part way and waiting for a person (an automation run at its change cap).
-  paused: { state: 'warn', label: 'Paused' },
+  paused: 'warn',
   // The trigger was refused before anything was dispatched (scope gate,
   // freeze window, no sensor, wildcard target...). Nothing ran.
-  blocked: { state: 'paused', label: 'Blocked' },
+  blocked: 'paused',
 }
 
-/** A completed run with a conclusion: amber, in words. */
-const RESULT_LABEL = {
-  inconclusive: { i18n: 'scans.runStatus.completedInconclusive', label: 'Completed, inconclusive' },
-  still_exposed_elsewhere: {
-    i18n: 'scans.runStatus.completedExposedElsewhere',
-    label: 'Completed, exposed at another path',
-  },
+/** The words of each run state (the catalog has them under scans.runStatus). */
+function runLabels(t: ReturnType<typeof useTranslation>['t']): Record<string, string> {
+  return {
+    queued: t('components.shared.runStatus.queued', 'Queued'),
+    pending: t('scans.runStatus.pending', 'Pending'),
+    running: t('scans.runStatus.running', 'Running'),
+    completed: t('scans.runStatus.completed', 'Completed'),
+    partial: t('scans.runStatus.partial', 'Partial'),
+    failed: t('scans.runStatus.failed', 'Failed'),
+    timeout: t('scans.runStatus.timeout', 'Timed out'),
+    canceled: t('scans.runStatus.canceled', 'Canceled'),
+    paused: t('scans.runStatus.paused', 'Paused'),
+    blocked: t('scans.runStatus.blocked', 'Blocked'),
+  }
 }
 
 /**
@@ -75,13 +82,18 @@ export function RunStatusBadge({
   const { t } = useTranslation()
   // Normalize the two spellings the backends use.
   const key = status === 'cancelled' ? 'canceled' : status
-  const resultKey =
+  // A completed run with a conclusion: amber, in words.
+  const resultLabel =
     key === 'completed' && result
-      ? RESULT_LABEL[(result.kind ?? '') as keyof typeof RESULT_LABEL]
+      ? {
+          inconclusive: t('scans.runStatus.completedInconclusive', 'Completed, inconclusive'),
+          still_exposed_elsewhere: t(
+            'scans.runStatus.completedExposedElsewhere',
+            'Completed, exposed at another path'
+          ),
+        }[result.kind ?? '']
       : undefined
-  const known = resultKey
-    ? { state: 'warn' as HealthState, label: resultKey.label }
-    : RUN_STATE[key]
+  const state: HealthState | undefined = resultLabel ? 'warn' : RUN_STATE[key]
   const live = key === 'running' || key === 'pending' || key === 'queued'
   const pct =
     live && typeof progress === 'number' && Number.isFinite(progress)
@@ -92,14 +104,14 @@ export function RunStatusBadge({
   )
   return (
     <HealthStatus
-      state={known?.state ?? 'unknown'}
+      state={state ?? 'unknown'}
       value={key}
       label={
         label ??
-        (resultKey
-          ? t(resultKey.i18n, resultKey.label)
-          : known
-            ? t(`scans.runStatus.${key}`, known.label)
+        (resultLabel
+          ? resultLabel
+          : state
+            ? runLabels(t)[key]
             : status
               ? humanizeIdentifier(status)
               : t('labels.health.unknown', 'Unknown'))

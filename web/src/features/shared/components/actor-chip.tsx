@@ -206,6 +206,7 @@ export function ActorChip({ actor, at, className, compact }: ActorChipProps) {
     >
       {!compact && (
         <Avatar className="h-5 w-5 shrink-0">
+          {/* i18n-ok: OC is the product's two-letter mark, not prose */}
           <AvatarFallback className="text-[10px]">{system ? 'OC' : initials(label)}</AvatarFallback>
         </Avatar>
       )}
