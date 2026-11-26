@@ -117,9 +117,10 @@ func (p *SAMLProvider) IsDomainAllowed(emailDomain string) bool {
 // Repository persists per-tenant SAML config.
 type Repository interface {
 	GetByTenant(ctx context.Context, tenantID shared.ID) (*SAMLProvider, error)
-	// GetByID finds a configuration by its connection id (any tenant: the
-	// public sign-in addresses carry no tenant).
-	GetByID(ctx context.Context, id shared.ID) (*SAMLProvider, error)
+	// GetByIDUnscoped finds a configuration by its connection id across
+	// tenants. Only the public SAML routes call it: their addresses carry the
+	// random connection id and no tenant, and the tenant comes from the row.
+	GetByIDUnscoped(ctx context.Context, id shared.ID) (*SAMLProvider, error)
 	// GetByLegacyPathKey finds the configuration that holds this frozen
 	// legacy address key. It never reads tenants.slug.
 	GetByLegacyPathKey(ctx context.Context, key string) (*SAMLProvider, error)
