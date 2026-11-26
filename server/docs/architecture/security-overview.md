@@ -98,6 +98,13 @@ bulk delete records one entry per item it deleted.
 | Asset relationship (name is "source -> type -> target") | `asset_relationship.deleted` | `asset_relationship` | low |
 | Duplicate-asset merge approval, per merged asset (metadata: kept asset, review) | `asset.duplicate_merged` | `asset` | high |
 
+Relationship writes are recorded too, because attack paths and exposure
+chains are computed from these edges: `asset_relationship.created` (one entry
+per relationship, the single and the batch create, name "source -> type ->
+target"), `asset_relationship.updated`, and `asset_relationship.approved` (one
+entry per approval of relationship suggestions, with the number of
+relationships it created), all low severity, after the write succeeded.
+
 Template sources, finding comments and the other objects listed in the audit
 action catalog (`pkg/domain/audit`) were already audited. Bulk asset-group
 delete takes at most 100 ids.

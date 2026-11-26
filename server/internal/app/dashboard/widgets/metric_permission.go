@@ -11,7 +11,10 @@ import (
 // the same entity permission as reading those rows directly.
 func metricPermission(m dashboard.Metric) permission.Permission {
 	switch {
-	case m.Kind == dashboard.MetricKindAssetCount, m.Kind == dashboard.MetricKindPaths, m.ID == metricDiscoveryCoverage:
+	case m.Kind == dashboard.MetricKindPaths:
+		// The rows are computed attack routes to crown jewels.
+		return permission.AttackPathsRead
+	case m.Kind == dashboard.MetricKindAssetCount, m.ID == metricDiscoveryCoverage:
 		return permission.AssetsRead
 	case assetBreakdowns[m.ID], m.Kind == dashboard.MetricKindPosture:
 		return permission.AssetsRead
@@ -40,6 +43,29 @@ func maskForbidden(d *DashboardData, c dashboardapp.Caller) {
 			if ok {
 				maskAssetParts(&d.Widgets[i], c)
 			}
+			continue
+		}
+		d.Widgets[i] = WidgetValue{
+			ID: w.ID, Index: w.Index, WidgetType: w.WidgetType, Metric: w.Metric,
+			State: StateUnsupported, Reason: ReasonForbidden,
+		}
+	}
+}
+
+// maskAttackPaths removes the figures of attack-path widgets (routes to crown
+// jewels) for a reader without attack_surface:paths:read, on every exit,
+// organization dashboards included: an organization dashboard shows
+// organization-wide figures, but never the computed routes to someone who
+// may not read them. A caller without a permission check (system work) is
+// left as is.
+func maskAttackPaths(d *DashboardData, c dashboardapp.Caller) {
+	if c.Has == nil || c.Has(permission.AttackPathsRead.String()) {
+		return
+	}
+	for i := range d.Widgets {
+		w := d.Widgets[i]
+		m, ok := dashboard.LookupMetric(w.Metric)
+		if !ok || m.Kind != dashboard.MetricKindPaths {
 			continue
 		}
 		d.Widgets[i] = WidgetValue{

@@ -23,6 +23,16 @@ type Provenance struct {
 	PromptTemplateDigest string
 	Accountable          []OwnerRef
 	TriggeredBy          *shared.ID
+	// ModelFamily is the model family the AI worker reported ("" when
+	// unknown or built in).
+	ModelFamily string
+	// SensorID is the AI worker that returned the result (worker runs).
+	SensorID *shared.ID
+	// ResultDigest is the sha256 of the worker's result (worker runs).
+	ResultDigest string
+	// Evidence lists the references the suggestion behind this change
+	// cited (bundle fields, knowledge excerpts), as checked by the platform.
+	Evidence []string
 }
 
 type provenanceKey struct{}
@@ -65,6 +75,18 @@ func (p Provenance) Map() map[string]any {
 	}
 	if p.TriggeredBy != nil {
 		m["triggered_by"] = p.TriggeredBy.String()
+	}
+	if p.ModelFamily != "" {
+		m["model_family"] = p.ModelFamily
+	}
+	if p.SensorID != nil {
+		m["sensor_id"] = p.SensorID.String()
+	}
+	if p.ResultDigest != "" {
+		m["result_digest"] = p.ResultDigest
+	}
+	if len(p.Evidence) > 0 {
+		m["evidence"] = append([]string(nil), p.Evidence...)
 	}
 	return m
 }

@@ -65,6 +65,25 @@ type RunRepository interface {
 	// deadline, or whose analysis job failed, expired, was canceled or is
 	// gone. Each ends failed (canceled for a canceled job) with a fixed code.
 	SettleWorkerRuns(ctx context.Context, limit int) ([]SettledRun, error)
+	// ClaimWorkerResult marks the live worker run bound to commandID, within
+	// its deadline and without a result, as taking the result sensorID
+	// returned (status running, its sensor and the result digest); false
+	// when the run is not in that state (already taken, ended, another job).
+	ClaimWorkerResult(ctx context.Context, tenantID, runID, commandID, sensorID shared.ID, digest string) (bool, error)
+	// FinishClaimedRun stores the outcome of a run that ClaimWorkerResult
+	// claimed, only while it is still that claim (running, the same result
+	// digest); false when the run ended otherwise meanwhile.
+	FinishClaimedRun(ctx context.Context, run *Run) (bool, error)
+	// PendingWorkerResults lists, across organizations (a system job), live
+	// worker runs whose analysis job completed but whose result was not
+	// taken yet.
+	PendingWorkerResults(ctx context.Context, limit int) ([]PendingResult, error)
+}
+
+// PendingResult is the completed analysis job of a live worker run.
+type PendingResult struct {
+	TenantID  shared.ID
+	CommandID shared.ID
 }
 
 // SettledRun is a worker run the platform ended without a result.
