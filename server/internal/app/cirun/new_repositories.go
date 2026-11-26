@@ -21,6 +21,7 @@ import (
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/logger"
 )
@@ -175,10 +176,15 @@ func (s *Service) noticeNewGroup(ctx context.Context, tenantID shared.ID, cfg *c
 	if held > 0 {
 		body += fmt.Sprintf(" %d more new groups asked since the last notice; they are in the same list.", held)
 	}
+	msg := notificationdom.Msg("ci.new_group_asks", "group", group, "project", project, "trust", cfg.Name)
+	if held > 0 {
+		msg = notificationdom.Msg("ci.new_group_asks_more", "group", group, "project", project, "trust", cfg.Name, "held", held)
+	}
 	s.alertAdmins(ctx, tenantID, newGroupAlert(AdminAlert{
-		Title: fmt.Sprintf("A new GitLab group asks to send CI results: %s", group),
-		Body:  body,
-		URL:   "/ci-cd?tab=setup&section=new-repositories", Metadata: map[string]any{"trust_config_id": cfg.ID.String(),
+		Message: msg,
+		Title:   fmt.Sprintf("A new GitLab group asks to send CI results: %s", group),
+		Body:    body,
+		URL:     "/ci-cd?tab=setup&section=new-repositories", Metadata: map[string]any{"trust_config_id": cfg.ID.String(),
 			"group": group, "project": project, "held_back": held},
 	}))
 }

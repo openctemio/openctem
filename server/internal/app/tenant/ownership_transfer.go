@@ -155,7 +155,9 @@ func (s *TenantService) StartOwnershipTransfer(ctx context.Context, input StartO
 	s.emailTransfer(ctx, t.FromUserID, "You asked to transfer ownership of "+org,
 		fmt.Sprintf("You asked %s to become the owner of %s. Nothing changes until they accept; you can cancel the request on the Members page until then. When they accept, you become %s.",
 			displayOr(view.ToName, "a member"), org, roleLabel(t.PreviousOwnerRole)))
-	s.notifyUser(ctx, tenantID, t.ToUserID, "You have been asked to own this organization",
+	s.notifyUser(ctx, tenantID, t.ToUserID,
+		notificationdom.Msg("ownership.requested", "from", nameOrNested(view.FromName, "ownership.someone.owner"), "org", orgParam(org)),
+		"You have been asked to own this organization",
 		fmt.Sprintf("%s asked you to become the owner of %s. Accept or decline on the Members page.", displayOr(view.FromName, "The owner"), org))
 	return view, nil
 }
@@ -295,7 +297,11 @@ func (s *TenantService) AcceptOwnershipTransfer(ctx context.Context, actx audita
 		fmt.Sprintf("You accepted ownership of %s. You can now delete the organization, make people administrators and change its security settings.", org))
 	s.emailTransfer(ctx, t.FromUserID, "Ownership of "+org+" was transferred",
 		fmt.Sprintf("%s accepted ownership of %s. You are now %s.", displayOr(view.ToName, "The member"), org, roleLabel(res.PreviousOwnerRole)))
-	s.notifyAdmins(ctx, tenantID, "The organization has a new owner",
+	s.notifyAdminsMsg(ctx, tenantID,
+		notificationdom.Msg("ownership.accepted", "to", nameOrNested(view.ToName, "ownership.someone.member"),
+			"org", orgParam(org), "from", nameOrNested(view.FromName, "ownership.someone.previous_owner"),
+			"role", res.PreviousOwnerRole.String()),
+		"The organization has a new owner",
 		fmt.Sprintf("%s is now the owner of %s; %s is now %s.", displayOr(view.ToName, "A member"), org,
 			displayOr(view.FromName, "the previous owner"), roleLabel(res.PreviousOwnerRole)), notificationdom.SeverityHigh)
 	view.Status = string(tenantdom.OwnershipTransferAccepted)
@@ -360,7 +366,7 @@ func (s *TenantService) emailTransfer(ctx context.Context, userID shared.ID, sub
 }
 
 // notifyUser leaves an in-app notification for one person. Best effort.
-func (s *TenantService) notifyUser(ctx context.Context, tenantID, userID shared.ID, title, body string) {
+func (s *TenantService) notifyUser(ctx context.Context, tenantID, userID shared.ID, msg *notificationdom.Message, title, body string) {
 	if s.lifecycleNotifier == nil {
 		return
 	}
@@ -372,6 +378,7 @@ func (s *TenantService) notifyUser(ctx context.Context, tenantID, userID shared.
 		NotificationType: notificationdom.TypeMemberLifecycle,
 		Title:            title,
 		Body:             body,
+		Message:          msg,
 		Severity:         notificationdom.SeverityHigh,
 		ResourceType:     "membership",
 		URL:              "/settings/members",
@@ -380,11 +387,31 @@ func (s *TenantService) notifyUser(ctx context.Context, tenantID, userID shared.
 	}
 }
 
+const orgNameFallback = "the organization"
+
 func (s *TenantService) orgName(ctx context.Context, tenantID shared.ID) string {
 	if t, err := s.repo.GetByID(ctx, tenantID); err == nil && t != nil && t.Name() != "" {
 		return t.Name()
 	}
-	return "the organization"
+	return orgNameFallback
+}
+
+// nameOrNested is the message value for a name: the name itself, or a nested
+// message for the English fallback ("the previous owner") when it is empty.
+func nameOrNested(name, fallbackCode string) any {
+	if name == "" {
+		return notificationdom.Msg(fallbackCode)
+	}
+	return name
+}
+
+// orgParam is the message value for an organization name; orgName's English
+// fallback becomes a nested message.
+func orgParam(org string) any {
+	if org == orgNameFallback {
+		return notificationdom.Msg("ownership.someone.org")
+	}
+	return org
 }
 
 func displayOr(v, fallback string) string {

@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	"github.com/go-chi/chi/v5"
 
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
@@ -430,14 +432,17 @@ func (h *ScopeHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	if id, err := shared.IDFromString(tenantID); err == nil {
 		if tenant.RangeWidened(*prior, *out) {
 			// Opting in to wider ranges widens what one scan may sweep.
-			h.service.NotifyAdmins(ctx, id, "Widest scan range raised",
-				fmt.Sprintf("The widest range one scan target may name was raised from /%d to /%d. Scans of a range wider than a /16 find live hosts first and need a confirmation; review it in Scoping settings.", prior.RangePrefix(), out.RangePrefix()))
+			h.service.NotifyAdminsMsg(ctx, id, "Widest scan range raised",
+				fmt.Sprintf("The widest range one scan target may name was raised from /%d to /%d. Scans of a range wider than a /16 find live hosts first and need a confirmation; review it in Scoping settings.", prior.RangePrefix(), out.RangePrefix()),
+				notificationdom.Msg("scope.range_raised", "from", prior.RangePrefix(), "to", out.RangePrefix()))
 		} else if tenant.ProviderHoldLifted(*prior, *out) {
 			// Every scope entry on a shared provider address may be scanned again.
-			h.service.NotifyAdmins(ctx, id, "Hold on shared provider addresses turned off",
-				"The hold on scope entries that sit on a provider's shared addresses was turned off. Those entries can be scanned again without a per-provider decision; review it in Scoping settings.")
+			h.service.NotifyAdminsMsg(ctx, id, "Hold on shared provider addresses turned off",
+				"The hold on scope entries that sit on a provider's shared addresses was turned off. Those entries can be scanned again without a per-provider decision; review it in Scoping settings.",
+				notificationdom.Msg("scope.provider_hold_off"))
 		} else {
-			h.service.NotifyAdmins(ctx, id, "Scope settings changed", "The organization's scope settings were changed; review them in Scoping.")
+			h.service.NotifyAdminsMsg(ctx, id, "Scope settings changed", "The organization's scope settings were changed; review them in Scoping.",
+				notificationdom.Msg("scope.settings_changed"))
 		}
 	}
 	resp, err := h.settingsResponse(ctx, tenantID, *out)
@@ -499,8 +504,9 @@ func (h *ScopeHandler) UpdateIntrusiveSettings(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if id, err := shared.IDFromString(tenantID); err == nil {
-		h.service.NotifyAdmins(ctx, id, "Intrusive scope settings changed",
-			"An owner changed how long intrusive (t2) scope entries may last to "+out.T2Duration()+". Reason: "+strings.TrimSpace(req.Reason))
+		h.service.NotifyAdminsMsg(ctx, id, "Intrusive scope settings changed",
+			"An owner changed how long intrusive (t2) scope entries may last to "+out.T2Duration()+". Reason: "+strings.TrimSpace(req.Reason),
+			t2DurationMessage(out.T2Duration(), strings.TrimSpace(req.Reason)))
 	}
 	resp, err := h.settingsResponse(ctx, tenantID, *out)
 	if err != nil {

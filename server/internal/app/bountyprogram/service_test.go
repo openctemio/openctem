@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
 	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
@@ -177,9 +179,15 @@ type fullData bool
 
 func (f fullData) FullDataCaller(context.Context, shared.ID) (bool, error) { return bool(f), nil }
 
-type notes struct{ n int }
+type notes struct {
+	n    int
+	msgs []*notificationdom.Message
+}
 
-func (n *notes) NotifyAdmins(context.Context, shared.ID, string, string) { n.n++ }
+func (n *notes) NotifyAdminsMsg(_ context.Context, _ shared.ID, _, _ string, msg *notificationdom.Message) {
+	n.n++
+	n.msgs = append(n.msgs, msg)
+}
 
 const paste = "*.acme.example\nshop.other.example\n-admin.acme.example\ncom\n"
 
@@ -260,6 +268,9 @@ func TestPreviewAndImport(t *testing.T) {
 	}
 	if n.n != 1 {
 		t.Fatalf("administrators notified %d times", n.n)
+	}
+	if m := n.msgs[0]; m == nil || m.Code != "program.imported" || m.Params["program"] != "Acme" || m.Params["count"] != 2 {
+		t.Fatalf("message = %+v", m)
 	}
 	if ok, _ := repo.IsMember(ctx, tenant, p.ID, user); !ok {
 		t.Fatal("the importer joins the program's group")

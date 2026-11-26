@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	"github.com/openctemio/openctem/server/internal/app/onboarding"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
@@ -48,7 +50,8 @@ func (d *declineTenants) AddMember(context.Context, string, onboarding.AddMember
 func (d *declineTenants) AddMemberApprovingJoinRequest(context.Context, string, onboarding.AddMemberInput, shared.ID, shared.ID, auditapp.AuditContext) (*tenantdom.Membership, error) {
 	return nil, errors.New("not used")
 }
-func (d *declineTenants) NotifyAdmins(context.Context, shared.ID, string, string, string) {}
+func (d *declineTenants) NotifyAdminsMsg(context.Context, shared.ID, *notificationdom.Message, string, string, string) {
+}
 
 // Declining an invitation from the account space: only a reference minted
 // for this account, only an invitation reference, only a verified address

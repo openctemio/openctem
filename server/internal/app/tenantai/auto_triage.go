@@ -26,7 +26,7 @@ import (
 // LooseningNotifier tells the organization's owners and administrators that
 // a policy was loosened (*tenant.TenantService).
 type LooseningNotifier interface {
-	NotifyPolicyLoosened(ctx context.Context, tenantID string, actx auditapp.AuditContext, title, what, url string)
+	NotifyPolicyLoosenedWith(ctx context.Context, tenantID string, actx auditapp.AuditContext, code, title, what, url string, kv ...any)
 }
 
 // ErrAutoTriageUnavailable: the store cannot write the policy.
@@ -123,9 +123,10 @@ func (s *Service) SaveAutoTriage(ctx context.Context, tenantID string, in tenant
 		WithMessage(autoTriageMessage(before, next, loosened)).
 		WithSeverity(severity))
 	if loosened && s.notifier != nil {
-		s.notifier.NotifyPolicyLoosened(ctx, tenantID, actx, "Automatic AI triage widened",
+		s.notifier.NotifyPolicyLoosenedWith(ctx, tenantID, actx, "settings.ai_auto_triage_widened", "Automatic AI triage widened",
 			fmt.Sprintf("automatic AI triage: new %s findings are now sent to the AI provider without a person asking",
-				strings.Join(next.Severities, ", ")), "/settings/ai")
+				strings.Join(next.Severities, ", ")), "/settings/ai",
+			"severities", strings.Join(next.Severities, ", "))
 	}
 	return AutoTriageView{AutoTriagePolicy: next, Loosened: loosened}, nil
 }

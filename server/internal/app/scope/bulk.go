@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"strings"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/logger"
@@ -117,7 +118,7 @@ func (s *Service) CreateTargets(ctx context.Context, in BulkTargetsInput) ([]Bul
 		out = append(out, o)
 	}
 	if len(added) > 0 && (!in.Actor.system() || in.Actor.Automatic) {
-		s.NotifyAdmins(ctx, tenantID, bulkTitle(len(added)), bulkBody(added))
+		s.NotifyAdminsMsg(ctx, tenantID, bulkTitle(len(added)), bulkBody(added), bulkMessage(added))
 	}
 	return out, nil
 }
@@ -168,4 +169,24 @@ func bulkBody(ts []*scopedom.Target) string {
 		body += fmt.Sprintf(" and %d more", len(ts)-shown)
 	}
 	return body + " (permanent, added together)"
+}
+
+// bulkMessage is the batch notice as a message code: the entries named (up to
+// ten, each as a nested message) and how many more there were. One entry has
+// its own code (its title differs).
+func bulkMessage(ts []*scopedom.Target) *notificationdom.Message {
+	const shown = 10
+	entries := make([]notificationdom.Message, 0, min(len(ts), shown))
+	for i, t := range ts {
+		if i == shown {
+			break
+		}
+		entries = append(entries, *notificationdom.Msg("scope.bulk_entry",
+			"target_type", targetTypeMessage(t.TargetType()), "pattern", t.Pattern()))
+	}
+	code := "scope.bulk_added"
+	if len(ts) == 1 {
+		code = "scope.bulk_added_one"
+	}
+	return notificationdom.Msg(code, "count", len(ts), "entries", entries, "more", max(len(ts)-shown, 0))
 }

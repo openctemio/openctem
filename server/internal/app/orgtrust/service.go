@@ -57,7 +57,7 @@ type DomainOwnerLookup interface {
 // Members is what the trust service needs from the member side.
 type Members interface {
 	SuspendExternalMembersFromHome(ctx context.Context, host, home shared.ID, reason string) (int, error)
-	NotifyAdmins(ctx context.Context, tenantID shared.ID, title, body, severity string)
+	NotifyAdminsMsg(ctx context.Context, tenantID shared.ID, msg *notificationdom.Message, title, body, severity string)
 	TenantName(ctx context.Context, tenantID shared.ID) string
 }
 
@@ -129,7 +129,7 @@ func (s *Service) Request(ctx context.Context, host shared.ID, actor shared.ID, 
 	}
 	hostName, homeName := s.members.TenantName(ctx, host), s.members.TenantName(ctx, home)
 	s.record(ctx, actx, t, audit.ActionSSOTrustRequested, fmt.Sprintf("Trust requested: %s asks to trust %s", hostName, homeName))
-	s.members.NotifyAdmins(ctx, home, "An organization asks to trust yours",
+	s.members.NotifyAdminsMsg(ctx, home, notificationdom.Msg("trust.requested", "org", hostName), "An organization asks to trust yours",
 		fmt.Sprintf("%s asks to let your people sign in to it with your single sign-on. An owner can accept or decline it in Settings > Security > Trusted organizations.", hostName),
 		notificationdom.SeverityMedium)
 	return &View{Trust: t, Direction: "outgoing", OtherName: homeName}, nil
@@ -154,7 +154,7 @@ func (s *Service) Accept(ctx context.Context, home, id, actor shared.ID, attests
 	}
 	hostName, homeName := s.members.TenantName(ctx, t.HostTenantID), s.members.TenantName(ctx, home)
 	s.record(ctx, actx, t, audit.ActionSSOTrustAccepted, fmt.Sprintf("Trust accepted: %s trusts %s", hostName, homeName))
-	s.members.NotifyAdmins(ctx, t.HostTenantID, "A trusted organization accepted",
+	s.members.NotifyAdminsMsg(ctx, t.HostTenantID, notificationdom.Msg("trust.accepted", "org", homeName), "A trusted organization accepted",
 		fmt.Sprintf("%s accepted your trust: its people can now sign in to your organization with their own single sign-on.", homeName),
 		notificationdom.SeverityMedium)
 	return &View{Trust: t, Direction: "incoming", OtherName: hostName}, nil
@@ -206,8 +206,9 @@ func (s *Service) Revoke(ctx context.Context, tenantID, id shared.ID, actx audit
 		by, other = "the home organization", t.HostTenantID
 	}
 	s.record(ctx, actx, t, audit.ActionSSOTrustRevoked, fmt.Sprintf("Trust ended by %s; %d external member(s) suspended", by, suspended))
-	s.members.NotifyAdmins(ctx, other, "A trust between organizations ended",
-		fmt.Sprintf("%s ended the trust with your organization.", s.members.TenantName(ctx, tenantID)),
+	endedBy := s.members.TenantName(ctx, tenantID)
+	s.members.NotifyAdminsMsg(ctx, other, notificationdom.Msg("trust.ended", "org", endedBy), "A trust between organizations ended",
+		fmt.Sprintf("%s ended the trust with your organization.", endedBy),
 		notificationdom.SeverityMedium)
 	return nil
 }

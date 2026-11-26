@@ -123,29 +123,81 @@ func describeCondition(c covdom.AlertCondition) (title, body string) {
 }
 
 // describeAlert is the message of one or several changed conditions: one
-// condition with its action, or a digest with one line per condition.
-func describeAlert(send []covdom.AlertCondition) (title, body, url string) {
+// condition with its action, or a digest with one line per condition. msg is
+// the same text as a code and values for the web (conditionMessage).
+func describeAlert(send []covdom.AlertCondition) (title, body, url string, msg *notificationdom.Message) {
 	if len(send) == 1 {
 		title, body = describeCondition(send[0])
 		act := covdom.ActionFor(send[0])
-		return title, body + " " + act.Text, act.URL
+		return title, body + " " + act.Text, act.URL, conditionMessage(send[0])
 	}
 	lines := make([]string, 0, len(send))
+	items := make([]*notificationdom.Message, 0, len(send))
 	url = covdom.ActionFor(send[0]).URL
 	for _, c := range send {
 		_, b := describeCondition(c)
 		act := covdom.ActionFor(c)
 		lines = append(lines, "- "+b+" "+act.Text)
+		items = append(items, conditionMessage(c))
 		if act.URL != url {
 			url = "/assets"
 		}
 	}
-	return fmt.Sprintf("Coverage: %d changes", len(send)), strings.Join(lines, "\n"), url
+	return fmt.Sprintf("Coverage: %d changes", len(send)), strings.Join(lines, "\n"), url,
+		notificationdom.Lines("coverage.digest", items, "count", len(send))
+}
+
+// conditionMessage is one condition as a message code (coverage.<kind>) with
+// the capability key, the asset count, the readiness reason and the action
+// as values; the web words each in the reader's language.
+func conditionMessage(c covdom.AlertCondition) *notificationdom.Message {
+	kind := c.Kind
+	switch kind {
+	case covdom.AlertReadiness, covdom.AlertOutputDrop, covdom.AlertFailing, covdom.AlertUnreachable:
+	default:
+		kind = covdom.AlertGap
+	}
+	m := notificationdom.Msg("coverage."+kind, "capability", c.Capability, "count", c.Count,
+		"action", notificationdom.Msg(alertActionCode(c)))
+	switch kind {
+	case covdom.AlertReadiness:
+		m.Params["readiness"] = notificationdom.Msg("coverage.readiness." + safeCodeSegment(c.Reason))
+	case covdom.AlertFailing:
+		m.Params["streak"] = covdom.FailingStreak
+	}
+	return m
+}
+
+// alertActionCode names the action covdom.ActionFor words for a condition.
+func alertActionCode(c covdom.AlertCondition) string {
+	switch c.Kind {
+	case covdom.AlertUnreachable:
+		return "coverage.action.unreachable"
+	case covdom.AlertReadiness:
+		return "coverage.action." + safeCodeSegment(c.Reason)
+	default:
+		return "coverage.action.open_assets"
+	}
+}
+
+// safeCodeSegment keeps a reason usable as one code segment (lower-case
+// letters, digits and underscores); anything else becomes "other", which the
+// web words generically.
+func safeCodeSegment(v string) string {
+	if v == "" {
+		return "other"
+	}
+	for _, r := range v {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+			return "other"
+		}
+	}
+	return v
 }
 
 func (s *Service) sendAlert(ctx context.Context, tenantID shared.ID, send []covdom.AlertCondition) {
 	a := s.alerts
-	title, body, url := describeAlert(send)
+	title, body, url, msg := describeAlert(send)
 	if a.outbox != nil {
 		conds := make([]map[string]any, 0, len(send))
 		for _, c := range send {
@@ -175,7 +227,7 @@ func (s *Service) sendAlert(ctx context.Context, tenantID shared.ID, send []covd
 		if err := a.inApp.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
 			NotificationType: notificationdom.TypeCoverageGap, Severity: notificationdom.SeverityMedium,
-			Title: title, Body: body, ResourceType: "asset", URL: url,
+			Title: title, Body: body, Message: msg, ResourceType: "asset", URL: url,
 		}); err != nil {
 			s.logger.Warn("coverage alert: notify admin", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
 		}

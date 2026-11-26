@@ -129,6 +129,9 @@ func TestEmailRelayRefused_StopsChannelAndNotifiesOwnersOnce(t *testing.T) {
 	if len(inApp.got) != 1 || len(mail.to) != 1 || mail.to[0] != "owner@example.com" {
 		t.Fatalf("notices: in-app %d, mail %v, want one each", len(inApp.got), mail.to)
 	}
+	if m := inApp.got[0].Message; m == nil || m.Code != "relay.email_channel_stopped" || m.Params["channel"] != intg.Name() {
+		t.Fatalf("message = %+v, want relay.email_channel_stopped with the channel name", m)
+	}
 	if strings.Contains(inApp.got[0].Body, "—") {
 		t.Fatal("notice text must not contain an em dash")
 	}

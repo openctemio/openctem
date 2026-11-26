@@ -27,8 +27,8 @@ func NewNotificationRepository(db *DB) *NotificationRepository {
 // Create inserts a new notification.
 func (r *NotificationRepository) Create(ctx context.Context, n *notification.Notification) error {
 	query := `
-		INSERT INTO notifications (id, tenant_id, audience, audience_id, notification_type, title, body, severity, resource_type, resource_id, url, actor_id, created_at, reason)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, LEAST($13::timestamptz, NOW()), NULLIF($14, ''))`
+		INSERT INTO notifications (id, tenant_id, audience, audience_id, notification_type, title, body, severity, resource_type, resource_id, url, actor_id, created_at, reason, message_code, message_params)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, LEAST($13::timestamptz, NOW()), NULLIF($14, ''), NULLIF($15, ''), $16::jsonb)`
 
 	var audienceID, resourceID, actorID *string
 	if n.AudienceID() != nil {
@@ -44,7 +44,11 @@ func (r *NotificationRepository) Create(ctx context.Context, n *notification.Not
 		actorID = &s
 	}
 
-	_, err := r.db.ExecContext(ctx, query,
+	code, params, err := messageColumns(n)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, query,
 		n.ID(),
 		n.TenantID(),
 		n.Audience(),
@@ -59,6 +63,8 @@ func (r *NotificationRepository) Create(ctx context.Context, n *notification.Not
 		actorID,
 		n.CreatedAt(),
 		n.Reason(),
+		code,
+		params,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create notification: %w", err)
@@ -82,9 +88,14 @@ func (r *NotificationRepository) CreateCoalesced(ctx context.Context, n *notific
 		s := n.ActorID().String()
 		actorID = &s
 	}
+	code, params, err := messageColumns(n)
+	if err != nil {
+		return false, err
+	}
 	var mergedID string
 	err = r.db.QueryRowContext(ctx, `
 		UPDATE notifications SET title = $5, body = $6, severity = $7, actor_id = $8, url = $9,
+		       message_code = NULLIF($14, ''), message_params = $15::jsonb,
 		       reason = COALESCE(NULLIF($10, ''), reason), created_at = LEAST($11::timestamptz, NOW()), coalesced_count = coalesced_count + 1
 		WHERE id = (
 			SELECT x.id FROM notifications x
@@ -99,7 +110,7 @@ func (r *NotificationRepository) CreateCoalesced(ctx context.Context, n *notific
 		RETURNING id`,
 		n.TenantID(), n.AudienceID().String(), n.NotificationType(), n.ResourceID().String(),
 		n.Title(), n.Body(), n.Severity(), actorID, n.URL(), n.Reason(), n.CreatedAt(), n.ResourceType(),
-		fmt.Sprintf("%d seconds", int(notification.CoalesceWindow.Seconds()))).Scan(&mergedID)
+		fmt.Sprintf("%d seconds", int(notification.CoalesceWindow.Seconds())), code, params).Scan(&mergedID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, r.Create(ctx, n)
 	}
@@ -137,6 +148,7 @@ func (r *NotificationRepository) List(
 			n.resource_type, n.resource_id, n.url,
 			n.actor_id, n.created_at,
 			COALESCE(n.reason, ''), n.coalesced_count,
+			COALESCE(n.message_code, ''), n.message_params,
 			(nr.notification_id IS NOT NULL OR n.created_at <= COALESCE(ns.last_read_all_at, '-infinity'::timestamptz)) AS is_read,
 			COUNT(*) OVER() AS total_count
 		FROM notifications n
@@ -613,6 +625,8 @@ func (r *NotificationRepository) scanNotificationWithTotal(scanner notifRowScann
 		createdAt        time.Time
 		reason           string
 		count            int
+		messageCode      string
+		messageParams    []byte
 		isRead           bool
 		totalCount       int
 	)
@@ -621,7 +635,7 @@ func (r *NotificationRepository) scanNotificationWithTotal(scanner notifRowScann
 		&id, &tenantID, &audience, &audienceIDStr,
 		&notificationType, &title, &body, &severity,
 		&resourceType, &resourceIDStr, &url,
-		&actorIDStr, &createdAt, &reason, &count, &isRead, &totalCount,
+		&actorIDStr, &createdAt, &reason, &count, &messageCode, &messageParams, &isRead, &totalCount,
 	)
 	if err != nil {
 		return nil, 0, err
@@ -654,5 +668,25 @@ func (r *NotificationRepository) scanNotificationWithTotal(scanner notifRowScann
 		actorID, createdAt, isRead,
 	)
 	n.SetDelivery(reason, count)
+	n.SetMessage(notification.ParseMessage(messageCode, messageParams))
 	return n, totalCount, nil
+}
+
+// messageColumns are the stored message_code and message_params of a notice
+// (empty code and NULL values when it has none). The values travel as JSON
+// text cast to jsonb.
+func messageColumns(n *notification.Notification) (string, *string, error) {
+	m := n.Message()
+	if m == nil {
+		return "", nil, nil
+	}
+	b, err := m.ParamsJSON()
+	if err != nil {
+		return "", nil, fmt.Errorf("notification message values: %w", err)
+	}
+	if len(b) == 0 {
+		return m.Code, nil, nil
+	}
+	js := string(b)
+	return m.Code, &js, nil
 }

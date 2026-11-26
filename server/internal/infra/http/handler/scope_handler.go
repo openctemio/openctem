@@ -208,12 +208,13 @@ func (h *ScopeHandler) SetAuditService(svc *auditsvc.AuditService) {
 
 // notifyExclusionReduced tells every administrator that an exclusion in
 // effect was taken away or shortened: scope grew (RFC-054 §7).
-func (h *ScopeHandler) notifyExclusionReduced(tenantID string, e *scopedom.Exclusion, title string) {
+func (h *ScopeHandler) notifyExclusionReduced(tenantID string, e *scopedom.Exclusion, title, action string) {
 	id, err := shared.IDFromString(tenantID)
 	if err != nil || e == nil {
 		return
 	}
-	h.service.NotifyAdmins(context.Background(), id, title, e.ExclusionType().String()+" "+e.Pattern())
+	h.service.NotifyAdminsMsg(context.Background(), id, title, e.ExclusionType().String()+" "+e.Pattern(),
+		exclusionReducedMessage(action, e.ExclusionType().String(), e.Pattern()))
 }
 
 // joinedOut is targetOut for a change that can confirm waiting names: it
@@ -1374,7 +1375,7 @@ func (h *ScopeHandler) UpdateExclusion(w http.ResponseWriter, r *http.Request) {
 	}
 	h.auditExclusion(r, audit.ActionScopeExclusionUpdated, exclusionID, before, exclusion)
 	if req.ExpiresAt != nil && before.InEffect() && before.ShortensWindow(req.ExpiresAt) {
-		h.notifyExclusionReduced(tenantID, before, "Scope exclusion shortened")
+		h.notifyExclusionReduced(tenantID, before, "Scope exclusion shortened", "shortened")
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1419,7 +1420,7 @@ func (h *ScopeHandler) DeleteExclusion(w http.ResponseWriter, r *http.Request) {
 	}
 	h.auditExclusion(r, audit.ActionScopeExclusionDeleted, exclusionID, before, nil)
 	if before.InEffect() {
-		h.notifyExclusionReduced(tenantID, before, "Scope exclusion removed")
+		h.notifyExclusionReduced(tenantID, before, "Scope exclusion removed", "removed")
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -1556,7 +1557,7 @@ func (h *ScopeHandler) DeactivateExclusion(w http.ResponseWriter, r *http.Reques
 	}
 	h.auditExclusion(r, audit.ActionScopeExclusionDeactivated, exclusionID, before, exclusion)
 	if before.InEffect() {
-		h.notifyExclusionReduced(tenantID, before, "Scope exclusion deactivated")
+		h.notifyExclusionReduced(tenantID, before, "Scope exclusion deactivated", "deactivated")
 	}
 
 	w.Header().Set("Content-Type", "application/json")

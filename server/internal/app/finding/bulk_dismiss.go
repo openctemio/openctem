@@ -1006,6 +1006,8 @@ func (s *VulnerabilityService) announceBulkDismiss(ctx context.Context, row *Bul
 		if err := s.approvalInApp.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: row.TenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
 			NotificationType: notificationdom.TypeFindingApproval, Title: title, Body: body,
+			Message: notificationdom.Msg("finding.bulk_dismiss.announced", "count", out.Counts.Decided, "status", approvalSubject(statusLabel(row.RequestedStatus)),
+				"decided", out.Counts.Decided, "grouped", out.Counts.Grouped, "skipped", out.Counts.Skipped),
 			Severity: notificationdom.SeverityHigh, ResourceType: "finding_bulk_dismissal", ResourceID: &row.ID, URL: approvalInboxURL,
 		}); err != nil {
 			s.logger.Warn("bulk dismiss notice: in-app", "error", logger.SanitizeError(err))

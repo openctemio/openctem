@@ -132,6 +132,16 @@ func TestDigestJob(t *testing.T) {
 		if len(inApp.got) != 1 || *inApp.got[0].AudienceID != admin || inApp.got[0].Audience != notificationdom.AudienceUser {
 			t.Fatalf("in-app: %+v", inApp.got)
 		}
+		m := inApp.got[0].Message
+		if m == nil || m.Code != "easm.digest" || m.Params["count"] != 3 || m.Params["to_at"] != "2026-10-12T08:00:00Z" {
+			t.Fatalf("message: %+v", m)
+		}
+		lines, _ := m.Params["lines"].([]notificationdom.Message)
+		if len(lines) != 3 || lines[0].Code != "easm.digest.kind.dns_dangling" || lines[0].Params["count"] != 1 ||
+			lines[1].Code != "easm.digest.kind.host_added" || lines[1].Params["count"] != 2 ||
+			lines[2].Code != "easm.digest.change.dns_dangling" || lines[2].Params["name"] != name {
+			t.Fatalf("lines: %+v", lines)
+		}
 		// The window is the week before Monday 08:00 UTC.
 		w := store.windows[0]
 		if w[1] != time.Date(2026, 10, 12, 8, 0, 0, 0, time.UTC) || w[1].Sub(w[0]) != 7*24*time.Hour {
