@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/server/internal/app/feedlimits"
 	"github.com/openctemio/openctem/server/internal/app/feedrelay"
 	"github.com/openctemio/openctem/server/internal/app/feedwatch"
 
@@ -1063,6 +1064,9 @@ type Services struct {
 	PlatformSocialLogin *platformsociallogin.Service
 	DeploymentRegion    *deploymentregion.Service
 	StorageQuota        *storagequota.Service
+	// FeedLimits is how old the vulnerability data may be before it is out
+	// of date (console setting); nil without the settings store.
+	FeedLimits *feedlimits.Service
 	// FeedRelay receives every feed through a platform relay sensor in relay
 	// mode (RFC-142); nil without a database or platform settings.
 	FeedRelay *feedrelay.Service
@@ -1236,6 +1240,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	if repos.PlatformSetting != nil {
 		s.StorageQuota = storagequota.NewService(repos.PlatformSetting, s.Entitlement, s.SettingRecorder, cfg.Storage.TenantQuotaMB)
+		s.FeedLimits = feedlimits.NewService(repos.PlatformSetting, s.SettingRecorder, log)
 	}
 	if repos.PlatformSetting != nil {
 		s.PlatformMFA = platformmfa.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.Auth.MFAFloor)
@@ -1586,6 +1591,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		postgres.NewExposureDispositionRepository(&postgres.DB{DB: deps.DB}), s.Audit, log)
 	s.Exposure.SetDispositionGate(exposureDispositions)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
+	if s.FeedLimits != nil {
+		s.ThreatIntel.SetLimits(s.FeedLimits.Limits)
+	}
 	if repos.PlatformSetting != nil {
 		// The platform layer of the scan identification markers.
 		s.ScanIdentity = scanidentity.NewService(repos.PlatformSetting, s.SettingRecorder)
@@ -3743,6 +3751,10 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Auth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	// Break-glass accounts sign in on the admin console only.
 	s.Auth.SetBreakGlassGate(breakGlassChecker{admins: repos.Admin})
+	// An account whose sign-in an organization's SSO manages gets no password
+	// by forgot-password or a set-password link; owners and platform
+	// administrators keep theirs (break-glass).
+	s.Auth.SetManagedSignIn(repos.User, breakGlassChecker{admins: repos.Admin})
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -3815,6 +3827,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	)
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
 	s.SSO.SetIdentityRepo(repos.UserIdentity)
+	// Every organization sign-on records itself on the account and voids an
+	// outstanding password link of a password-less account.
+	s.SSO.SetOrganizationSignInStore(repos.User)
 	s.SSO.SetAuditService(s.Audit)
 	s.SSO.SetBreakGlassGate(breakGlassChecker{admins: repos.Admin})
 	if s.AccountDeletion != nil {

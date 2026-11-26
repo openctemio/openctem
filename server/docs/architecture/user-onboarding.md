@@ -16,7 +16,7 @@ access policies (allowed email domains, IP allowlist). Design and rationale:
 | Platform admin creates an organization for an existing account | `POST /api/v1/admin/tenants` (`owner_email` of an account): the organization is created with no owner and the account gets an [ownership invitation](organization-ownership-invitations.md); it becomes the owner only by accepting (step-up) | console session, ops_admin+ (audited); the invitee accepts with `POST /api/v1/me/ownership-invitations/{id}/accept` |
 | First organization at install | `bootstrap-admin -org-name … -org-owner-email …` (CLI, same service as the console path) | database credentials; audited with actor `bootstrap-admin` |
 | Invitation | `POST /api/v1/tenants/{tenant}/invitations`, then register with `invitation_token` (if no account) and `POST /api/v1/invitations/accept` with `{"token"}` in the body | owner/admin to invite; the token + matching email to accept |
-| Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*` | provider active + auto-provision + DNS-verified domain **with purpose `sso`** (set up in the admin console; a domain the organization verified itself for EASM never admits users, research/22 E6) + allowed domains |
+| Organization SSO (OIDC/SAML JIT) | `/api/v1/auth/sso/*`, `/api/v1/auth/saml/{connection}/*` | provider active + auto-provision + DNS-verified domain **with purpose `sso`** (set up in the admin console; a domain the organization verified itself for EASM never admits users, research/22 E6) + allowed domains |
 | Self-registration (email, or the first Google/GitHub/Microsoft sign-in) | `POST /api/v1/auth/register`, `/api/v1/auth/oauth/*` | the sign-up policy is `self_service`, or a pending invitation for the email ([Admission](#admission-one-rule-for-every-path)) |
 
 ## Flow
@@ -532,6 +532,10 @@ Response (201):
 The user opens `<UI>/set-password#token=<setup_token>` and chooses a password
 (`POST /api/v1/auth/reset-password`). The link is single-use and expires after
 24 hours; an administrator can issue a new one while the account is unused.
+When the person signs in through the organization's SSO first, the link is
+voided and the account gets no password by forgot-password either (unless it
+owns that organization): see
+[sso-authentication.md](sso-authentication.md#no-password-for-accounts-the-organizations-sso-manages).
 Errors: 409 when the email already has an account (invite instead), 400 when
 the domain is not allowed, 403 when granting roles the caller does not hold.
 
@@ -562,13 +566,13 @@ has an account or an organization exists:
 |---|---|
 | `POST /auth/login` | 401 "invalid credentials" for an unknown email, a wrong password, a federated account and a locked one (the state is told only to the password holder); a dummy bcrypt runs on every refusal. With Turnstile keys, after 3 failed sign-ins from one client address in 15 minutes the next attempt from it answers 403 `CAPTCHA_REQUIRED` until a passing `captcha_token` is sent (counted per address, never per account, in Redis across replicas; the count only decays with its window, a success does not clear it, and an unreadable counter asks for the CAPTCHA) |
 | `POST /auth/register` | 201 with the same body for a new and an existing email: no account id, the verification rule a new account would get, one message; the password policy is checked first for both; the verification email is sent after the response |
-| `POST /auth/forgot-password` | 200 "if the email exists…"; the lookup, the token write and the email all run after the response |
+| `POST /auth/forgot-password` | 200 "if the email exists…"; the lookup, the token write and the email all run after the response; an SSO-managed account gets the same answer and no link |
 | `GET /auth/sso/providers?org=` | 200 `{"providers":[]}` for an unknown organization, like one without SSO; the same provider query runs either way |
 | `GET /auth/sso/{provider}/authorize?org=` | 404 "SSO provider not configured" for an unknown organization and a missing provider alike |
-| `GET /auth/saml/{org}/metadata` | SP metadata for any well-formed slug (it is built from the slug and the deployment URL only) |
+| `GET /auth/saml/{connection}/metadata` | SP metadata for any well-formed connection key, a UUID or a legacy key (it is built from the key and the deployment URL only) |
 | `POST /auth/discover` | `{"next","org"}` for every email; `sso` + an opaque, expiring organization reference (never the slug) only for a domain an organization proved it owns and signs in to by SSO (sso-authentication.md, "Email-first sign-in") |
 | `POST /auth/create-first-team`, `POST /tenants` | a taken and a reserved organization URL get one "this URL is not available" answer that does not echo the slug |
-| `GET /auth/saml/{org}/login`, `POST …/acs` | every failure redirects to `/login?error=saml` |
+| `GET /auth/saml/{connection}/login`, `POST …/acs` | every failure redirects to `/login?error=saml` |
 
 Tests: `tests/unit/auth_anti_enumeration_test.go`.
 

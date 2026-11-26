@@ -78,7 +78,7 @@ func NewSAMLHandler(svc *auth.SAMLService, cookieCfg CookieConfig, frontendURL s
 // so the ACS can bind the response's InResponseTo. It must be SameSite=None +
 // Secure because the IdP delivers the response as a cross-site top-level POST
 // (Lax cookies are not sent on cross-site POST) — SAML therefore requires HTTPS.
-func samlRequestCookieName(org string) string { return "saml_authn_" + org }
+func samlRequestCookieName(key string) string { return "saml_authn_" + key }
 
 // The request-tracking cookie holds the AuthnRequest ID, followed by
 // samlForcedSuffix when the request asked for ForceAuthn. Stripping the
@@ -104,8 +104,8 @@ func parseSAMLRequestCookie(v string) (requestID string, forced bool) {
 // cookie carries (none without the cookie) and whether that request asked for
 // ForceAuthn. An empty ID is no ID: it would match a response that answers no
 // request (an unsolicited one), and only a real ID binds the response.
-func samlRequestIDsFromCookie(r *http.Request, org string) ([]string, bool) {
-	c, err := r.Cookie(samlRequestCookieName(org))
+func samlRequestIDsFromCookie(r *http.Request, key string) ([]string, bool) {
+	c, err := r.Cookie(samlRequestCookieName(key))
 	if err != nil || c.Value == "" {
 		return nil, false
 	}
@@ -119,22 +119,24 @@ func samlRequestIDsFromCookie(r *http.Request, org string) ([]string, bool) {
 // isTrueParam reads a boolean query parameter ("true" or "1").
 func isTrueParam(v string) bool { return v == "true" || v == "1" }
 
-// Login handles GET /api/v1/auth/saml/{org}/login — SP-initiated login.
+// Login handles GET /api/v1/auth/saml/{connection}/login — SP-initiated
+// login. {connection} is the connection id, or the frozen legacy key of a
+// configuration older than connection ids (deprecated, logged).
 func (h *SAMLHandler) Login(w http.ResponseWriter, r *http.Request) {
-	org := chi.URLParam(r, "org")
+	key := chi.URLParam(r, "connection")
 	forceAuthn := isTrueParam(r.URL.Query().Get("reauth"))
 	base, ok := h.baseURL()
 	if !ok {
 		h.redirectWithError(w, r, errSAMLPublicURLUnset)
 		return
 	}
-	redirectURL, requestID, err := h.svc.Login(r.Context(), org, base, forceAuthn)
+	redirectURL, requestID, err := h.svc.Login(r.Context(), key, base, forceAuthn)
 	if err != nil {
 		h.redirectWithError(w, r, err)
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     samlRequestCookieName(org),
+		Name:     samlRequestCookieName(key),
 		Value:    samlRequestCookieValue(requestID, forceAuthn),
 		Path:     "/",
 		MaxAge:   300,
@@ -165,19 +167,19 @@ func isSafeIdPRedirect(u string) bool {
 	return p.Scheme == "https" || p.Scheme == "http"
 }
 
-// ACS handles POST /api/v1/auth/saml/{org}/acs — the IdP posts the SAML
+// ACS handles POST /api/v1/auth/saml/{connection}/acs — the IdP posts the SAML
 // response here. On success it establishes the session cookies and redirects
 // the browser to the frontend. A refusal redirects to /login?error=<code>
 // with a code from a fixed list (awaiting_approval, not_member, no_seat,
 // domain_not_allowed, link_required, different_method, use_console,
 // saml_failed, ...); the specific SAML failure stays in the log.
 func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
-	org := chi.URLParam(r, "org")
+	key := chi.URLParam(r, "connection")
 
-	possibleRequestIDs, forcedAuthn := samlRequestIDsFromCookie(r, org)
+	possibleRequestIDs, forcedAuthn := samlRequestIDsFromCookie(r, key)
 	// Clear the single-use request cookie regardless of the outcome.
 	http.SetCookie(w, &http.Cookie{
-		Name: samlRequestCookieName(org), Value: "", Path: "/", MaxAge: -1,
+		Name: samlRequestCookieName(key), Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode,
 	})
 
@@ -189,7 +191,7 @@ func (h *SAMLHandler) ACS(w http.ResponseWriter, r *http.Request) {
 
 	// A SAML response is a few KB; cap the form body the service parses.
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	result, err := h.svc.ACS(auth.WithClientInfo(r.Context(), getClientIP(r), r.UserAgent()), org, base, r, possibleRequestIDs, forcedAuthn)
+	result, err := h.svc.ACS(auth.WithClientInfo(r.Context(), getClientIP(r), r.UserAgent()), key, base, r, possibleRequestIDs, forcedAuthn)
 	if err != nil {
 		h.redirectWithError(w, r, err)
 		return
@@ -255,15 +257,15 @@ func fromTrustedProxy(r *http.Request, trusted *httpsec.TrustedProxySet) bool {
 	return ip != nil && trusted.Contains(ip)
 }
 
-// Metadata handles GET /api/v1/auth/saml/{org}/metadata (public).
+// Metadata handles GET /api/v1/auth/saml/{connection}/metadata (public).
 func (h *SAMLHandler) Metadata(w http.ResponseWriter, r *http.Request) {
-	org := chi.URLParam(r, "org")
+	key := chi.URLParam(r, "connection")
 	base, ok := h.baseURL()
 	if !ok {
 		apierror.FromCode(apierror.CodeSAMLPublicURLUnset).WriteJSON(w)
 		return
 	}
-	xmlStr, err := h.svc.Metadata(r.Context(), org, base)
+	xmlStr, err := h.svc.Metadata(r.Context(), key, base)
 	if err != nil {
 		apierror.NotFound("tenant").WriteJSON(w)
 		return
@@ -518,12 +520,26 @@ func (h *SAMLHandler) ImportIdPMetadata(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, view)
 }
 
-// samlSPMetadataView is the organization's SP metadata for download.
+// samlSPMetadataView is the organization's SP metadata for download, with the
+// connection's addresses: the console shows these, never builds its own.
 type samlSPMetadataView struct {
 	Filename string `json:"filename"`
 	XML      string `json:"xml"`
 	// BaseURL is the public origin the SP URLs are built on (APP_URL).
 	BaseURL string `json:"base_url"`
+	// HasAddress is false while the organization has neither a SAML
+	// configuration nor a created address (POST .../sso/saml/address); the
+	// other fields are then empty.
+	HasAddress bool `json:"has_address"`
+	// ConnectionKey is the key in every address: the connection id, or the
+	// frozen legacy key of an older connection.
+	ConnectionKey string `json:"connection_key"`
+	EntityID      string `json:"entity_id"`
+	ACSURL        string `json:"acs_url"`
+	LoginURL      string `json:"login_url"`
+	// Legacy: the connection still uses the address it had before addresses
+	// were keyed by connection id (deprecated).
+	Legacy bool `json:"legacy"`
 }
 
 // SPMetadata handles GET /api/v1/admin/tenants/{tenantId}/sso/saml/sp-metadata.
@@ -539,6 +555,27 @@ type samlSPMetadataView struct {
 // @Security BearerAuth
 // @Router /admin/tenants/{tenantId}/sso/saml/sp-metadata [get]
 func (h *SAMLHandler) SPMetadata(w http.ResponseWriter, r *http.Request) {
+	h.writeSPMetadata(w, r, false)
+}
+
+// ReserveAddress handles POST /api/v1/admin/tenants/{tenantId}/sso/saml/address.
+// It creates the SAML address of an organization that has no configuration
+// yet (the connection id its first configuration takes), so the
+// administrator can register it at the IdP before saving; an organization
+// that already has one gets it back unchanged. Console write: step-up and
+// audit at the route.
+// @Summary Create an organization's SAML address
+// @Description Platform admin console: reserves the SAML connection id and returns the SP metadata and addresses built on APP_URL. 409 SAML_PUBLIC_URL_UNSET when APP_URL is not set.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/saml/address [post]
+func (h *SAMLHandler) ReserveAddress(w http.ResponseWriter, r *http.Request) {
+	h.writeSPMetadata(w, r, true)
+}
+
+func (h *SAMLHandler) writeSPMetadata(w http.ResponseWriter, r *http.Request, reserve bool) {
 	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
 	if err != nil {
 		apierror.Unauthorized("invalid tenant context").WriteJSON(w)
@@ -549,15 +586,31 @@ func (h *SAMLHandler) SPMetadata(w http.ResponseWriter, r *http.Request) {
 		apierror.FromCode(apierror.CodeSAMLPublicURLUnset).WriteJSON(w)
 		return
 	}
-	doc, slug, err := h.svc.SPMetadataForTenant(r.Context(), tenantID, base)
+	read := h.svc.SPMetadataForTenant
+	if reserve {
+		read = h.svc.ReserveAddress
+	}
+	doc, addr, err := read(r.Context(), tenantID, base)
+	w.Header().Set("Cache-Control", "no-store")
+	if errors.Is(err, auth.ErrSAMLNoAddress) {
+		// No configuration and no address yet: nothing to register.
+		writeJSON(w, http.StatusOK, samlSPMetadataView{BaseURL: base})
+		return
+	}
 	if err != nil {
 		apierror.NotFound("organization").WriteJSON(w)
 		return
 	}
 	writeJSON(w, http.StatusOK, samlSPMetadataView{
-		Filename: "openctem-" + slug + "-sp-metadata.xml",
-		XML:      doc,
-		BaseURL:  base,
+		Filename:      "openctem-saml-" + addr.Key + "-sp-metadata.xml",
+		XML:           doc,
+		BaseURL:       base,
+		HasAddress:    true,
+		ConnectionKey: addr.Key,
+		EntityID:      addr.EntityID,
+		ACSURL:        addr.ACSURL,
+		LoginURL:      addr.LoginURL,
+		Legacy:        addr.Legacy,
 	})
 }
 

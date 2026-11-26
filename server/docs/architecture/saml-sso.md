@@ -8,9 +8,9 @@
 
 - **9d (shipped)** — per-tenant config + SP metadata + admin CRUD + the shared
   federated-login seam.
-- **9e (shipped)** — SP-initiated login (`GET /api/v1/auth/saml/{org}/login`),
-  Assertion Consumer Service (`POST /api/v1/auth/saml/{org}/acs`) and SP
-  metadata (`GET /api/v1/auth/saml/{org}/metadata`): the IdP-side
+- **9e (shipped)** — SP-initiated login (`GET /api/v1/auth/saml/{connection}/login`),
+  Assertion Consumer Service (`POST /api/v1/auth/saml/{connection}/acs`) and SP
+  metadata (`GET /api/v1/auth/saml/{connection}/metadata`): the IdP-side
   `ServiceProvider` is built from the stored certificate, the assertion
   signature, conditions and `InResponseTo` (replay) are validated, and a
   session is issued via `SSOService.CompleteFederatedLogin`.
@@ -31,9 +31,9 @@ OIDC variant are drawn in
 flowchart LR
     B["Browser"]
     subgraph OC["OpenCTEM API"]
-        L["GET /auth/saml/{org}/login<br/>AuthnRequest + request id cookie"]
-        ACS["POST /auth/saml/{org}/acs<br/>strict checks + replay cache"]
-        MD["GET /auth/saml/{org}/metadata<br/>(public, APP_URL based)"]
+        L["GET /auth/saml/{connection}/login<br/>AuthnRequest + request id cookie"]
+        ACS["POST /auth/saml/{connection}/acs<br/>strict checks + replay cache"]
+        MD["GET /auth/saml/{connection}/metadata<br/>(public, APP_URL based)"]
         IMP["POST /admin/tenants/{id}/sso/saml/idp-metadata<br/>(platform admin, parse only)"]
         CFG[("saml_providers: entity ID, sign-in URL,<br/>1 to 5 public signing certs, domains, role")]
     end
@@ -64,12 +64,12 @@ sequenceDiagram
     box Identity provider
     participant E as SAML IdP (Entra ID)
     end
-    B->>API: GET /api/v1/auth/saml/{org}/login (loginRL)
+    B->>API: GET /api/v1/auth/saml/{connection}/login (loginRL)
     API->>API: org to tenant, saml_providers row exists and enabled (else ErrSAMLDisabled)
     API-->>B: 302 HTTP-Redirect binding, cookie saml_authn_{org} = request id, 300 s, SameSite=None
     B->>E: AuthnRequest (ForceAuthn when reauth=true)
     E-->>B: SAMLResponse (auto-submitting form)
-    B->>API: POST /api/v1/auth/saml/{org}/acs (body 1 MiB, no CSRF, no crossSite)
+    B->>API: POST /api/v1/auth/saml/{connection}/acs (body 1 MiB, no CSRF, no crossSite)
     API->>API: parseStrictResponse - one Assertion with its own signature by one of 1-5 certs, no SHA-1, no EncryptedAssertion
     API->>API: audience = SP entityID, destination = ACS, NotBefore and NotOnOrAfter (180 s skew), InResponseTo in cookie
     API->>R: SET NX saml:aid:{tenant}:{sha256(id)}, fail closed
@@ -117,9 +117,49 @@ owner yet gets it applied directly.
 
 ## SP metadata
 
-`GET /api/v1/auth/saml/{org}/metadata` (public) returns the SP metadata XML the
+`GET /api/v1/auth/saml/{connection}/metadata` (public) returns the SP metadata XML the
 admin registers with their IdP. The SP entity id / ACS URL are
-`<origin>/api/v1/auth/saml/{org}/{metadata,acs}`.
+`<origin>/api/v1/auth/saml/{connection}/{metadata,acs}`.
+
+### Addresses are keyed by connection, never by the organization's slug
+
+`{connection}` is the SAML configuration's random id (`saml_providers.id`).
+The public routes find the configuration from the path only: by id, then by a
+frozen legacy key; the organization's current slug is never read. So a rename
+moves nothing, and an organization that takes a slug another one gave up
+cannot receive that organization's sign-in posts. The certificate, the
+audience (entity ID), the ACS URL and the replay scope all come from the
+connection the path names, never from the message.
+
+- **Before the first save.** `GET /api/v1/admin/tenants/{tenantId}/sso/saml/sp-metadata`
+  only reads: it returns the metadata and the addresses (`entity_id`,
+  `acs_url`, `login_url`, `connection_key`, `legacy`, `has_address`) of the
+  configuration or of a created address, and `has_address: false` when
+  neither exists. The administrator creates the address with
+  `POST /api/v1/admin/tenants/{tenantId}/sso/saml/address` (a console write:
+  SSO step-up and the console audit, action `organization.saml_address_create`),
+  which reserves the connection id (`saml_connection_ids`); the first saved
+  configuration takes it, so the addresses registered at the IdP stay valid.
+  Building or validating a configuration never writes: without a reservation
+  the first save gets a new id. The console shows these addresses; it never
+  builds them itself.
+- **Deleting the configuration retires its address**: the configuration and
+  the reservation are deleted in one transaction, and a new configuration
+  gets a new id.
+- **Configurations that existed before connection ids** keep the address they
+  had (deprecated). Migration `20261126024604_saml_connection_addresses` copied
+  each one's slug at that moment into `saml_providers.legacy_path_key`; the
+  key is frozen (a rename does not change it) and only that configuration
+  answers on it, by id or by the legacy key, with its legacy entity ID and
+  ACS URL. Each sign-in through a legacy address logs a warning naming the
+  connection. New configurations never get a legacy key. To move a legacy
+  connection to a permanent address, delete it and configure it again, then
+  register the new metadata at the IdP.
+- **RelayState** is empty: nothing is read back from it.
+- Metadata answers for any well-formed key (a UUID or slug syntax), known or
+  not, so the route does not reveal which connections exist; login and ACS
+  answer the same `saml_failed` redirect for unknown, disabled and malformed
+  keys.
 
 ### The public origin comes from configuration only
 

@@ -32,6 +32,13 @@ type acsTenantRepo struct {
 	t *tenantdom.Tenant
 }
 
+func (r acsTenantRepo) GetByID(_ context.Context, id shared.ID) (*tenantdom.Tenant, error) {
+	if r.t.ID() == id {
+		return r.t, nil
+	}
+	return nil, shared.ErrNotFound
+}
+
 func (r acsTenantRepo) GetBySlug(_ context.Context, slug string) (*tenantdom.Tenant, error) {
 	if r.t.Slug() == slug {
 		return r.t, nil
@@ -76,6 +83,9 @@ func runSAMLACS(t *testing.T, forceAuthn bool, authnAt time.Time) (*saml.IdpAuth
 // a test IdP holding the configured certificate's key.
 type samlACSFixture struct {
 	svc       *SAMLService
+	repo      *fakeSAMLRepo
+	tenant    *tenantdom.Tenant
+	key       string // the connection's address key
 	idp       *saml.IdentityProvider
 	requestID string
 	forced    bool
@@ -100,19 +110,20 @@ func newSAMLACSFixture(t *testing.T) *samlACSFixture {
 
 	tn, _ := tenantdom.NewTenant("Acme", "acme", shared.NewID().String())
 	repo := newFakeSAMLRepo()
-	repo.byTenant[tn.ID()] = samldom.Reconstruct(shared.NewID(), tn.ID(), "https://idp.example.com/metadata",
+	connID := shared.NewID()
+	repo.byTenant[tn.ID()] = samldom.Reconstruct(connID, tn.ID(), "https://idp.example.com/metadata",
 		"https://idp.example.com/sso", certPEM, nil, "viewer", true, true, time.Now(), time.Now())
 
 	pwUser, _ := userdom.NewLocalUser("owner@acme.com", "Owner", "hash")
 	sso := &SSOService{userRepo: &fakeUserRepo{byEmail: pwUser}, logger: logger.NewNop()}
 	svc := NewSAMLService(repo, acsTenantRepo{t: tn}, sso, logger.NewNop())
 
-	spMD := svc.baseServiceProvider("acme", samlACSBase).Metadata()
+	spMD := svc.baseServiceProvider(connID.String(), samlACSBase).Metadata()
 	mdURL, _ := url.Parse("https://idp.example.com/metadata")
 	ssoURL, _ := url.Parse("https://idp.example.com/sso")
 	idp := &saml.IdentityProvider{Key: key, Certificate: cert, MetadataURL: *mdURL, SSOURL: *ssoURL,
 		ServiceProviderProvider: acsSPProvider{md: spMD}, SignatureMethod: dsig.RSASHA256SignatureMethod}
-	return &samlACSFixture{svc: svc, idp: idp}
+	return &samlACSFixture{svc: svc, repo: repo, tenant: tn, key: connID.String(), idp: idp}
 }
 
 // respond starts a login and returns the IdP's base64 SAMLResponse. mutate,
@@ -121,7 +132,7 @@ func newSAMLACSFixture(t *testing.T) *samlACSFixture {
 func (f *samlACSFixture) respond(t *testing.T, forceAuthn bool, authnAt time.Time,
 	mutate func(*saml.IdpAuthnRequest)) (*saml.IdpAuthnRequest, string) {
 	t.Helper()
-	redirect, requestID, err := f.svc.Login(context.Background(), "acme", samlACSBase, forceAuthn)
+	redirect, requestID, err := f.svc.Login(context.Background(), f.key, samlACSBase, forceAuthn)
 	if err != nil {
 		t.Fatalf("Login: %v", err)
 	}
@@ -157,7 +168,7 @@ func (f *samlACSFixture) post(samlResponse string) error {
 	body := url.Values{"SAMLResponse": {samlResponse}}.Encode()
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/auth/saml/acme/acs", strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	_, err := f.svc.ACS(context.Background(), "acme", samlACSBase, r, []string{f.requestID}, f.forced)
+	_, err := f.svc.ACS(context.Background(), f.key, samlACSBase, r, []string{f.requestID}, f.forced)
 	return err
 }
 

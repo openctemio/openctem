@@ -30,6 +30,12 @@ func kevView(ok time.Time) feedstatus.View {
 		LastSyncStatus: "success", LastSuccessAt: ptr(ok), Interval: feedstatus.IntervalKEV}
 }
 
+// withLimit sets the stale limit in force on a view (the console setting).
+func withLimit(v feedstatus.View, d time.Duration) feedstatus.View {
+	v.StaleAfter = d
+	return v
+}
+
 func keys(cs []Condition) []string {
 	out := make([]string, 0, len(cs))
 	for _, c := range cs {
@@ -77,7 +83,13 @@ func TestEvaluate(t *testing.T) {
 		{"bundle 13h old", []feedstatus.View{bundleView(now.Add(-13*time.Hour), now.Add(-5*time.Minute))}, healthy, first,
 			[]string{"data_stale:vulnfeed"}},
 		{"bundle 11h old", []feedstatus.View{bundleView(now.Add(-11*time.Hour), now.Add(-5*time.Minute))}, healthy, first, nil},
-		{"KEV 7h without a success", []feedstatus.View{kevView(now.Add(-7 * time.Hour))}, nil, first, []string{"data_stale:kev"}},
+		{"KEV 7h is inside the bundle limit", []feedstatus.View{kevView(now.Add(-7 * time.Hour))}, nil, first, nil},
+		{"KEV 13h without a success", []feedstatus.View{kevView(now.Add(-13 * time.Hour))}, nil, first, []string{"data_stale:kev"}},
+		{"bundle 20h old under a 48h limit", []feedstatus.View{withLimit(bundleView(now.Add(-20*time.Hour), now.Add(-5*time.Minute)), 48*time.Hour)},
+			&CorpusStats{NewestPublished: ptr(now.Add(-20 * time.Hour)), Published24h: 250, PublishedPrior30d: 8400}, first, nil},
+		{"bundle 50h old under a 48h limit", []feedstatus.View{withLimit(bundleView(now.Add(-50*time.Hour), now.Add(-5*time.Minute)), 48*time.Hour)},
+			&CorpusStats{NewestPublished: ptr(now.Add(-50 * time.Hour)), Published24h: 250, PublishedPrior30d: 8400}, first,
+			[]string{"data_stale:vulnfeed", "newest_record_old"}},
 		{"switched off", []feedstatus.View{off}, nil, first, nil},
 		{"never loaded, inside the grace", []feedstatus.View{never}, nil, now.Add(-time.Hour), nil},
 		{"never loaded, after the grace", []feedstatus.View{never}, nil, now.Add(-3 * time.Hour), []string{"data_stale:vulnfeed"}},
@@ -108,7 +120,7 @@ func TestEvaluateBannerFlag(t *testing.T) {
 	now := t0
 	refused := bundleView(now.Add(-time.Hour), now.Add(-time.Hour))
 	refused.State = feedstatus.StateRefused
-	cs := Evaluate([]feedstatus.View{refused, kevView(now.Add(-8 * time.Hour))},
+	cs := Evaluate([]feedstatus.View{refused, kevView(now.Add(-13 * time.Hour))},
 		&CorpusStats{NewestPublished: ptr(now.Add(-20 * time.Hour)), Published24h: 10, PublishedPrior30d: 8400}, now.Add(-time.Hour*24), now)
 	want := map[string]bool{"import_refused:vulnfeed": false, "data_stale:kev": true, "newest_record_old": true, "volume_low": false}
 	for _, c := range cs {
@@ -218,6 +230,9 @@ func TestCheckRefusedFeedIsLoudAndRecovers(t *testing.T) {
 	if !b.Stale || !slices.Equal(b.Codes, []string{CodeDataStale, CodeNewestRecordOld}) || b.StaleSince == nil || !b.StaleSince.Equal(applied) {
 		t.Fatalf("banner: %+v", b)
 	}
+	if !slices.Equal(b.Sources, []string{feedstatus.SourceVulnfeed}) {
+		t.Fatalf("banner sources: %v", b.Sources)
+	}
 
 	// Recovered: a new bundle applied, a new record published.
 	f.now = f.now.Add(CheckEvery)
@@ -236,7 +251,7 @@ func TestCheckRefusedFeedIsLoudAndRecovers(t *testing.T) {
 // alert again for a condition that is already open.
 func TestCheckDoesNotRepeatAfterRestart(t *testing.T) {
 	f := newFixture(t)
-	f.feeds.views = []feedstatus.View{kevView(t0.Add(-7 * time.Hour))}
+	f.feeds.views = []feedstatus.View{kevView(t0.Add(-13 * time.Hour))}
 	f.tick(t, 0)
 	if f.n.Count() != 1 {
 		t.Fatalf("first: %v", f.n.Subjects)
@@ -290,5 +305,45 @@ func TestCheckFeedReadError(t *testing.T) {
 	}
 	if f.n.Count() != 0 {
 		t.Fatalf("mail: %v", f.n.Subjects)
+	}
+}
+
+// Each condition carries what the console needs to explain it in the
+// reader's language: the feed, the limit, the error code and its params.
+func TestEvaluateStructuredConditions(t *testing.T) {
+	now := t0
+	failing := bundleView(now.Add(-time.Hour), now.Add(-time.Hour))
+	failing.State, failing.LastSyncStatus = feedstatus.StateFailing, "failed"
+	failing.ErrorCode, failing.ErrorParams = feedstatus.CodeProxyRefused, map[string]string{"status": "407", "host": "github.com"}
+	failing.FailingSince = ptr(now.Add(-time.Hour))
+	cs := Evaluate([]feedstatus.View{failing, kevView(now.Add(-13 * time.Hour))}, nil, now.Add(-24*time.Hour), now)
+	byKey := map[string]Condition{}
+	for _, c := range cs {
+		byKey[c.Key] = c
+	}
+	f := byKey["import_failing:vulnfeed"]
+	if f.ErrorCode != feedstatus.CodeProxyRefused || f.ErrorParams["status"] != "407" || f.FailingSince == nil || f.Source != feedstatus.SourceVulnfeed {
+		t.Fatalf("failing condition: %+v", f)
+	}
+	k := byKey["data_stale:kev"]
+	if k.LimitSeconds != int64(feedstatus.StaleAfter(feedstatus.SourceKEV)/time.Second) || k.AsOf == nil {
+		t.Fatalf("stale condition: %+v", k)
+	}
+}
+
+// A server setting refused at start-up (the import is off until a restart)
+// alerts at the next check, not after two runs that never come.
+func TestEvaluateStartUpRefusalAlertsAtOnce(t *testing.T) {
+	now := t0
+	v := feedstatus.View{Source: feedstatus.SourceVulnfeed, Enabled: true, State: feedstatus.StateFailing,
+		LastSyncStatus: "failed", Interval: feedstatus.IntervalVulnfeed, FailingSince: ptr(now.Add(-time.Minute)),
+		ErrorCode: feedstatus.CodeBlockedAddress, ErrorParams: map[string]string{"setting": "VULNFEED_BASE_URL", "host": "10.0.0.5"}}
+	got := keys(Evaluate([]feedstatus.View{v}, nil, now, now))
+	if !slices.Equal(got, []string{"import_failing:vulnfeed"}) {
+		t.Fatalf("got %v", got)
+	}
+	v.ErrorParams = nil
+	if got := keys(Evaluate([]feedstatus.View{v}, nil, now, now)); len(got) != 0 {
+		t.Fatalf("a run-time failure alerted after one minute: %v", got)
 	}
 }

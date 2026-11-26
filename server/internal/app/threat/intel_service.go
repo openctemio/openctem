@@ -72,6 +72,21 @@ type IntelService struct {
 	// afterBundle runs after KEV or EPSS was applied from a release (nil:
 	// nothing), see intel_bundle.go.
 	afterBundle func(ctx context.Context, source string)
+
+	// limits reads the stale limits in force (nil: the defaults).
+	limits func(ctx context.Context) feedstatus.Limits
+}
+
+// SetLimits wires the stale limits in force (the console setting,
+// internal/app/feedlimits); nil keeps the defaults.
+func (s *IntelService) SetLimits(f func(ctx context.Context) feedstatus.Limits) { s.limits = f }
+
+// staleLimits are the limits in force.
+func (s *IntelService) staleLimits(ctx context.Context) feedstatus.Limits {
+	if s.limits == nil {
+		return feedstatus.DefaultLimits()
+	}
+	return s.limits(ctx)
 }
 
 // NewIntelService creates a new IntelService.
@@ -553,6 +568,7 @@ func (s *IntelService) FeedViews(ctx context.Context) ([]feedstatus.View, error)
 		return nil, err
 	}
 	now := s.now().UTC()
+	limits := s.staleLimits(ctx)
 	out := make([]feedstatus.View, 0, len(rows))
 	for _, st := range rows {
 		var catalog int64
@@ -566,7 +582,9 @@ func (s *IntelService) FeedViews(ctx context.Context) ([]feedstatus.View, error)
 				catalog = c.total
 			}
 		}
-		out = append(out, feedstatus.Build(st, catalog, now))
+		out = append(out, feedstatus.BuildWith(st, catalog, now, limits))
 	}
+	// KEV and EPSS run on the bundle import's schedule.
+	feedstatus.AlignBundleCycle(out)
 	return out, nil
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Trash2, Loader2, RotateCcw, Download, Upload } from 'lucide-react'
 import { ErrorState } from '@/features/shared'
@@ -23,6 +23,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import {
   useSamlConfig,
+  useSpMetadata,
   useSaveSamlConfig,
   useDeleteSamlConfig,
   usePendingSSOChanges,
@@ -32,9 +33,9 @@ import {
   PENDING_SSO_MESSAGE,
 } from '@/features/sso-approvals/api/use-sso-changes'
 import { CopyableUrl } from '@console/features/sso/components/copyable-url'
-import { useOrgIdentityProviders } from '@console/features/sso/api/use-org-identity-providers'
 import {
   downloadSpMetadata,
+  createSamlAddress,
   importIdPMetadata,
   readMetadataFile,
   type IdPMetadata,
@@ -47,7 +48,7 @@ import { useTranslation } from '@/context/i18n-provider'
 interface SamlConfigFormProps {
   /** Organization being configured. */
   tenantId: string
-  /** Organization slug; the SP URLs are built from it. */
+  /** Organization slug: the removal confirmation asks for it. */
   tenantSlug: string
   /** False for a read-only administrator: the form is shown disabled. */
   canManage: boolean
@@ -77,11 +78,10 @@ export function SamlConfigForm({
   const [metadataUrl, setMetadataUrl] = useState('')
   const [isImporting, setIsImporting] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
+  const [isCreatingAddress, setIsCreatingAddress] = useState(false)
   const [imported, setImported] = useState<IdPMetadata | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
-  // The SP URLs are built on the API's public address (APP_URL), the same
-  // one the API puts in the SP metadata, never on this console's address.
-  const { appUrl } = useOrgIdentityProviders(tenantId)
+  const { data: spMetadata, mutate: mutateSpMetadata } = useSpMetadata(tenantId)
 
   const resetToSaved = () => {
     setForm(data ?? emptySamlConfig)
@@ -101,16 +101,16 @@ export function SamlConfigForm({
       JSON.stringify({ ...(data ?? emptySamlConfig), allowed_domains: undefined }) ||
     domainsText !== (data?.allowed_domains ?? []).join(', ')
 
-  const spURLs = useMemo(() => {
-    const slug = tenantSlug
-    if (!slug || !appUrl) return null
-    const base = `${appUrl.replace(/\/+$/, '')}/api/v1/auth/saml/${slug}`
-    return {
-      metadata: `${base}/metadata`,
-      acs: `${base}/acs`,
-      login: `${base}/login`,
-    }
-  }, [tenantSlug, appUrl])
+  // The SP addresses come from the API, keyed by the connection (never by
+  // the organization's slug) and built on its public address (APP_URL).
+  const spURLs = spMetadata?.has_address
+    ? {
+        metadata: spMetadata.entity_id,
+        acs: spMetadata.acs_url,
+        login: spMetadata.login_url,
+        legacy: spMetadata.legacy,
+      }
+    : null
 
   const set = <K extends keyof SamlConfig>(key: K, value: SamlConfig[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
@@ -133,6 +133,7 @@ export function SamlConfigForm({
       } else {
         toast.success(t('admin.samlConfigForm.samlConfigurationSaved', 'SAML configuration saved'))
         void mutate()
+        void mutateSpMetadata()
       }
       onChanged?.()
     } catch (e) {
@@ -215,6 +216,22 @@ export function SamlConfigForm({
     }
   }
 
+  const handleCreateAddress = async () => {
+    setIsCreatingAddress(true)
+    try {
+      await mutateSpMetadata(await createSamlAddress(tenantId), { revalidate: false })
+    } catch (e) {
+      toast.error(
+        getErrorMessage(
+          e,
+          t('admin.samlConfigForm.createAddressFailed', 'Could not create the SAML address')
+        )
+      )
+    } finally {
+      setIsCreatingAddress(false)
+    }
+  }
+
   const handleDelete = async () => {
     try {
       await remove()
@@ -225,6 +242,8 @@ export function SamlConfigForm({
       setForm(emptySamlConfig)
       setDomainsText('')
       void mutate()
+      // Deleting retires the address: the next configuration gets a new one.
+      void mutateSpMetadata()
       onChanged?.()
     } catch (e) {
       toast.error(
@@ -549,6 +568,17 @@ export function SamlConfigForm({
                         )}
                         url={spURLs.login}
                       />
+                      <p className="text-muted-foreground text-xs">
+                        {spURLs.legacy
+                          ? t(
+                              'admin.samlConfigForm.legacyAddress',
+                              'This connection uses an older address. It keeps working. A new connection gets a permanent address that does not change when the organization is renamed.'
+                            )
+                          : t(
+                              'admin.samlConfigForm.addressesStable',
+                              'These addresses never change, even if the organization is renamed. Deleting the connection retires them.'
+                            )}
+                      </p>
                       <Separator />
                       <Button
                         variant="outline"
@@ -565,6 +595,27 @@ export function SamlConfigForm({
                         {t('admin.samlConfigForm.downloadSpMetadata', 'Download SP metadata (XML)')}
                       </Button>
                     </>
+                  ) : spMetadata ? (
+                    <div className="space-y-3">
+                      <p className="text-muted-foreground text-sm">
+                        {t(
+                          'admin.samlConfigForm.noAddressYet',
+                          'This organization has no SAML address yet. Create it to get the addresses and metadata to register at your identity provider. It stays the same when you save the configuration.'
+                        )}
+                      </p>
+                      {canManage && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => void handleCreateAddress()}
+                          disabled={isCreatingAddress}
+                        >
+                          {isCreatingAddress && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                          {t('admin.samlConfigForm.createAddress', 'Create the SAML address')}
+                        </Button>
+                      )}
+                    </div>
                   ) : (
                     <p className="text-muted-foreground text-sm">
                       {t(
