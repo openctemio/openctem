@@ -182,6 +182,10 @@ type AuthService struct {
 	// lapsedDomains refuses email-only password resets on a domain whose
 	// verified owner lost it (RFC-058).
 	lapsedDomains LapsedDomainChecker
+	// orgSignIns and platformAdmins decide whether an account's sign-in is
+	// managed by an organization's SSO (managed_sign_in.go).
+	orgSignIns     OrganizationSignInStore
+	platformAdmins PlatformAdminLookup
 }
 
 // LapsedDomainChecker reports whether an email domain was verified for SSO by
@@ -2012,6 +2016,16 @@ func (s *AuthService) ForgotPassword(ctx context.Context, input ForgotPasswordIn
 		}
 	}
 
+	// An account whose sign-in an organization's SSO manages gets no
+	// password by email: the IdP is its way in (managed_sign_in.go). No token
+	// is stored and nothing is sent; the answer is the one an unknown
+	// address gets. An unknown answer refuses too (fail closed).
+	if managed, merr := s.passwordManagedBySSO(ctx, u); merr != nil || managed {
+		s.logger.Warn("password reset by email refused: the account signs in through its organization's single sign-on",
+			"user_id", u.ID().String(), "lookup_failed", merr != nil)
+		return &ForgotPasswordResult{}, nil //nolint:nilerr // fail closed, same answer as an unknown address
+	}
+
 	// Generate reset token
 	token, err := password.GenerateResetToken()
 	if err != nil {
@@ -2061,6 +2075,15 @@ func (s *AuthService) ResetPassword(ctx context.Context, input ResetPasswordInpu
 
 	// Check if token is expired
 	if u.PasswordResetExpiresAt() != nil && time.Now().After(*u.PasswordResetExpiresAt()) {
+		return ErrInvalidResetToken
+	}
+
+	// A link that reached an SSO-managed account (one issued before its
+	// first SSO sign-in, or by any path that did not check) sets no
+	// password: the same answer as a used or expired link.
+	if managed, merr := s.passwordManagedBySSO(ctx, u); merr != nil || managed {
+		s.logger.Warn("password link refused: the account signs in through its organization's single sign-on",
+			"user_id", u.ID().String(), "lookup_failed", merr != nil)
 		return ErrInvalidResetToken
 	}
 
