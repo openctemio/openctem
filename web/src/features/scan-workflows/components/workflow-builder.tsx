@@ -565,6 +565,18 @@ function WorkflowBuilderInner({
       ro.disconnect()
     }
   }, [fitView])
+  // A step card that changes size after the first fit (its text in another
+  // language, its tool list arriving) refits the view, until the person
+  // pans or zooms: a card grown after the fit ran past the tool list (1920
+  // px vi, 2026-11-26).
+  const sizeFitFrame = useRef(0)
+  const fitOnResize = useCallback(() => {
+    if (viewMoved.current) return
+    cancelAnimationFrame(sizeFitFrame.current)
+    sizeFitFrame.current = requestAnimationFrame(() => void fitView(FIT_OPTIONS))
+  }, [fitView])
+  useEffect(() => () => cancelAnimationFrame(sizeFitFrame.current), [])
+
   // A move with an event is the person's (a fit has none).
   const onMoveStart = useCallback((event: MouseEvent | TouchEvent | null) => {
     if (event) viewMoved.current = true
@@ -594,6 +606,11 @@ function WorkflowBuilderInner({
       })
 
       setNodes((nds) => applyNodeChanges(filteredChanges, nds) as WorkflowNode[])
+      // Once the person picks or drags a step, the view is theirs: a card
+      // that grows while they edit it does not move the canvas.
+      if (filteredChanges.some((c) => c.type === 'select' || (c.type === 'position' && c.dragging)))
+        viewMoved.current = true
+      else if (filteredChanges.some((c) => c.type === 'dimensions')) fitOnResize()
 
       // Handle position changes
       filteredChanges.forEach((change) => {
@@ -633,6 +650,7 @@ function WorkflowBuilderInner({
       onEndPositionChange,
       onNodeDelete,
       readOnly,
+      fitOnResize,
     ]
   )
 
