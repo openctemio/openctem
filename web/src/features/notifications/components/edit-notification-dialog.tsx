@@ -298,7 +298,11 @@ export function EditNotificationDialog({
         urgent_at_once: data.urgent_at_once,
       })
 
-      toast.success(`Notification channel "${data.name}" updated`)
+      toast.success(
+        t('notifications.dialog.updated', 'Notification channel "{name}" updated', {
+          name: data.name,
+        })
+      )
       handleClose()
       await onSuccess?.()
     } catch (error) {
@@ -321,18 +325,29 @@ export function EditNotificationDialog({
             >
               <Icon className={cn('h-4 w-4', providerConfig.color)} />
             </div>
-            Edit {PROVIDER_LABELS[integration.provider] || 'Notification'} Channel
+            {t('notifications.dialog.editTitle', 'Edit {provider} channel', {
+              provider:
+                PROVIDER_LABELS[integration.provider] ||
+                t('notifications.dialog.editProviderFallback', 'notification'),
+            })}
           </DialogTitle>
           <DialogDescription>
-            Update the configuration for this notification channel
+            {t(
+              'notifications.dialog.editDescription',
+              'Update the configuration for this notification channel'
+            )}
           </DialogDescription>
         </DialogHeader>
 
         <DialogForm onSubmit={handleSubmit(onSubmit)}>
           <DialogBody className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
-              <Input id="name" placeholder="e.g., Security Alerts" {...register('name')} />
+              <Label htmlFor="name">{t('notifications.dialog.name', 'Name')}</Label>
+              <Input
+                id="name"
+                placeholder={t('notifications.dialog.namePlaceholder', 'e.g., Security Alerts')}
+                {...register('name')}
+              />
               {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
             </div>
 
@@ -340,12 +355,17 @@ export function EditNotificationDialog({
             {integration.provider !== 'email' && (
               <div className="space-y-2">
                 <Label htmlFor="credentials">
-                  {providerConfig.credentialLabel} (leave empty to keep current)
+                  {t('notifications.dialog.keepCurrent', '{label} (leave empty to keep current)', {
+                    label: providerConfig.credentialLabel,
+                  })}
                 </Label>
                 <Input
                   id="credentials"
                   type="password"
-                  placeholder="Enter new value to update..."
+                  placeholder={t(
+                    'notifications.dialog.newValuePlaceholder',
+                    'Enter new value to update...'
+                  )}
                   {...register('credentials')}
                 />
               </div>
@@ -355,12 +375,17 @@ export function EditNotificationDialog({
             {integration.provider === 'email' && (
               <div className="space-y-4 rounded-lg border p-4 bg-muted/30">
                 <p className="text-sm font-medium">
-                  SMTP Configuration (leave empty to keep current)
+                  {t(
+                    'notifications.dialog.smtpConfigKeep',
+                    'SMTP configuration (leave empty to keep current)'
+                  )}
                 </p>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <Label htmlFor="edit_smtp_host">SMTP Host</Label>
+                    <Label htmlFor="edit_smtp_host">
+                      {t('notifications.dialog.smtpHost', 'SMTP host')}
+                    </Label>
                     <Input
                       id="edit_smtp_host"
                       placeholder="smtp.gmail.com"
@@ -368,7 +393,7 @@ export function EditNotificationDialog({
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit_smtp_port">Port</Label>
+                    <Label htmlFor="edit_smtp_port">{t('notifications.dialog.port', 'Port')}</Label>
                     <Input
                       id="edit_smtp_port"
                       type="number"
@@ -380,7 +405,9 @@ export function EditNotificationDialog({
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <Label htmlFor="edit_smtp_username">Username</Label>
+                    <Label htmlFor="edit_smtp_username">
+                      {t('notifications.dialog.username', 'Username')}
+                    </Label>
                     <Input
                       id="edit_smtp_username"
                       placeholder="your@email.com"
@@ -388,11 +415,13 @@ export function EditNotificationDialog({
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit_smtp_password">Password</Label>
+                    <Label htmlFor="edit_smtp_password">
+                      {t('notifications.dialog.password', 'Password')}
+                    </Label>
                     <Input
                       id="edit_smtp_password"
                       type="password"
-                      placeholder="App password"
+                      placeholder={t('notifications.dialog.passwordPlaceholder', 'App password')}
                       {...register('smtp_password')}
                     />
                   </div>
@@ -400,7 +429,9 @@ export function EditNotificationDialog({
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <Label htmlFor="edit_from_email">From Email</Label>
+                    <Label htmlFor="edit_from_email">
+                      {t('notifications.dialog.fromEmail', 'From email')}
+                    </Label>
                     <Input
                       id="edit_from_email"
                       type="email"
@@ -409,7 +440,9 @@ export function EditNotificationDialog({
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="edit_from_name">From Name</Label>
+                    <Label htmlFor="edit_from_name">
+                      {t('notifications.dialog.fromName', 'From name')}
+                    </Label>
                     <Input
                       id="edit_from_name"
                       placeholder={brand.name}
@@ -419,14 +452,19 @@ export function EditNotificationDialog({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="edit_to_emails">Recipients</Label>
+                  <Label htmlFor="edit_to_emails">
+                    {t('notifications.dialog.recipients', 'Recipients')}
+                  </Label>
                   <Input
                     id="edit_to_emails"
                     placeholder="security@company.com, admin@company.com"
                     {...register('to_emails')}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Comma-separated list of email addresses
+                    {t(
+                      'notifications.dialog.recipientsHelp',
+                      'Comma-separated list of email addresses'
+                    )}
                   </p>
                 </div>
 
@@ -438,7 +476,7 @@ export function EditNotificationDialog({
                       onCheckedChange={(checked) => setValue('use_starttls', !!checked)}
                     />
                     <label htmlFor="edit_use_starttls" className="text-sm cursor-pointer">
-                      STARTTLS (Port 587)
+                      {t('notifications.dialog.starttls', 'STARTTLS (port 587)')}
                     </label>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -448,7 +486,7 @@ export function EditNotificationDialog({
                       onCheckedChange={(checked) => setValue('use_tls', !!checked)}
                     />
                     <label htmlFor="edit_use_tls" className="text-sm cursor-pointer">
-                      Direct TLS (Port 465)
+                      {t('notifications.dialog.directTls', 'Direct TLS (port 465)')}
                     </label>
                   </div>
                 </div>
@@ -473,45 +511,64 @@ export function EditNotificationDialog({
             {integration.provider === 'telegram' && (
               <div className="space-y-2">
                 <Label htmlFor="channel_id">
-                  Chat ID <span className="text-destructive">*</span>
+                  {t('notifications.dialog.chatId', 'Chat ID')}{' '}
+                  <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   id="channel_id"
-                  placeholder="e.g., -1001274567890 or @channelname"
+                  placeholder={t(
+                    'notifications.dialog.chatIdPlaceholder',
+                    'e.g., -1001274567890 or @channelname'
+                  )}
                   {...register('channel_id', { required: integration.provider === 'telegram' })}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Get your chat ID: Add @userinfobot to your group/channel. For groups/channels, use
-                  the numeric ID (e.g., -1001274567890).
+                  {t(
+                    'notifications.dialog.chatIdHelpEdit',
+                    'Get your chat ID: Add @userinfobot to your group or channel. For groups or channels, use the numeric ID (e.g., -1001274567890).'
+                  )}
                 </p>
               </div>
             )}
 
             {(integration.provider === 'slack' || integration.provider === 'teams') && (
               <div className="space-y-2">
-                <Label htmlFor="channel_name">Channel Name (optional)</Label>
+                <Label htmlFor="channel_name">
+                  {t('notifications.dialog.channelName', 'Channel name (optional)')}
+                </Label>
                 <Input
                   id="channel_name"
-                  placeholder="e.g., security-alerts"
+                  placeholder={t(
+                    'notifications.dialog.channelNamePlaceholder',
+                    'e.g., security-alerts'
+                  )}
                   {...register('channel_name')}
                 />
               </div>
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="description">Description (optional)</Label>
+              <Label htmlFor="description">
+                {t('notifications.dialog.description', 'Description (optional)')}
+              </Label>
               <Textarea
                 id="description"
-                placeholder="Describe the purpose of this channel..."
+                placeholder={t(
+                  'notifications.dialog.descriptionPlaceholder',
+                  'Describe the purpose of this channel...'
+                )}
                 className="resize-none"
                 {...register('description')}
               />
             </div>
 
             <div className="space-y-3">
-              <Label>Severity Filters</Label>
+              <Label>{t('notifications.dialog.severityFilters', 'Severity filters')}</Label>
               <p className="text-xs text-muted-foreground">
-                Select which severity levels should trigger notifications
+                {t(
+                  'notifications.dialog.severityFiltersHelp',
+                  'Select which severity levels should trigger notifications'
+                )}
               </p>
               <div className="grid grid-cols-3 gap-3">
                 {ALL_NOTIFICATION_SEVERITIES.map((severity) => {
@@ -578,7 +635,7 @@ export function EditNotificationDialog({
                 >
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <Settings2 className="h-4 w-4" />
-                    Advanced Settings
+                    {t('notifications.dialog.advancedSettings', 'Advanced settings')}
                   </div>
                   <ChevronDown
                     className={cn('h-4 w-4 transition-transform', advancedOpen && 'rotate-180')}
@@ -620,11 +677,11 @@ export function EditNotificationDialog({
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={handleClose}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Save Changes
+              {t('notifications.dialog.save', 'Save changes')}
             </Button>
           </DialogFooter>
         </DialogForm>

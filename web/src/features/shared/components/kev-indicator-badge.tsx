@@ -2,6 +2,7 @@
 
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { AlertOctagon, Calendar, Clock, Skull, ShieldAlert } from 'lucide-react'
 import { parseISO, isPast, differenceInDays } from 'date-fns'
@@ -35,6 +36,7 @@ export function KEVIndicatorBadge({
   showDueDate = true,
   className,
 }: KEVIndicatorBadgeProps) {
+  const { t } = useTranslation()
   if (!inKEV) {
     return null
   }
@@ -70,28 +72,36 @@ export function KEVIndicatorBadge({
             )}
           >
             <AlertOctagon className={iconSizes[size]} />
+            {/* i18n-ok: KEV is the catalog's acronym */}
             KEV
             {hasRansomware && <Skull className={cn(iconSizes[size], 'ms-0.5')} />}
-            {isPastDue && showDueDate && <span className="ms-1 font-semibold">OVERDUE</span>}
+            {isPastDue && showDueDate && (
+              <span className="ms-1 font-semibold uppercase">
+                {t('components.shared.kev.overdue', 'Overdue')}
+              </span>
+            )}
           </Badge>
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-sm">
           <div className="space-y-2">
             <div className="flex items-center gap-2 font-semibold text-destructive">
               <AlertOctagon className="h-4 w-4" />
-              CISA Known Exploited Vulnerability
+              {t('components.shared.kev.title', 'CISA Known Exploited Vulnerability')}
             </div>
 
             <p className="text-xs text-muted-foreground">
-              This vulnerability is being actively exploited in the wild and requires immediate
-              attention.
+              {t(
+                'components.shared.kev.explain',
+                'This vulnerability is being actively exploited in the wild and requires immediate attention.'
+              )}
             </p>
 
             {kevData?.date_added && (
               <div className="flex items-center gap-2 text-sm">
                 <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
                 <span>
-                  Added: <RelativeTime date={kevData.date_added} />
+                  {t('components.shared.kev.added', 'Added:')}{' '}
+                  <RelativeTime date={kevData.date_added} />
                 </span>
               </div>
             )}
@@ -105,8 +115,8 @@ export function KEVIndicatorBadge({
               >
                 <Clock className="h-3.5 w-3.5" />
                 <span>
-                  Due: <RelativeTime date={kevData.due_date} />
-                  {isPastDue && ' (OVERDUE)'}
+                  {t('components.shared.kev.due', 'Due:')} <RelativeTime date={kevData.due_date} />
+                  {isPastDue && ` (${t('components.shared.kev.overdueLower', 'overdue')})`}
                 </span>
               </div>
             )}
@@ -114,7 +124,10 @@ export function KEVIndicatorBadge({
             {hasRansomware && (
               <div className="flex items-center gap-2 text-sm text-warning">
                 <Skull className="h-3.5 w-3.5" />
-                <span>Known ransomware use: {kevData?.ransomware_use}</span>
+                <span>
+                  {t('components.shared.kev.ransomwareKnown', 'Known ransomware use:')}{' '}
+                  {kevData?.ransomware_use}
+                </span>
               </div>
             )}
 
@@ -138,11 +151,12 @@ interface KEVStatusProps {
  * KEV Status - Expanded status display for detail views
  */
 export function KEVStatus({ inKEV, kevData, className }: KEVStatusProps) {
+  const { t } = useTranslation()
   if (!inKEV) {
     return (
       <div className={cn('flex items-center gap-2 text-muted-foreground', className)}>
         <ShieldAlert className="h-4 w-4" />
-        <span className="text-sm">Not in KEV catalog</span>
+        <span className="text-sm">{t('components.shared.kev.notIn', 'Not in KEV catalog')}</span>
       </div>
     )
   }
@@ -164,13 +178,17 @@ export function KEVStatus({ inKEV, kevData, className }: KEVStatusProps) {
     >
       <div className="flex items-center gap-2">
         <AlertOctagon className="h-5 w-5 text-destructive" />
-        <span className="font-semibold text-destructive">CISA Known Exploited Vulnerability</span>
+        <span className="font-semibold text-destructive">
+          {t('components.shared.kev.title', 'CISA Known Exploited Vulnerability')}
+        </span>
       </div>
 
       <div className="grid gap-2 text-sm">
         {kevData?.date_added && (
           <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Added to KEV:</span>
+            <span className="text-muted-foreground">
+              {t('components.shared.kev.addedToKev', 'Added to KEV:')}
+            </span>
             <span>{formatDate(new Date(kevData.date_added))}</span>
           </div>
         )}
@@ -182,15 +200,21 @@ export function KEVStatus({ inKEV, kevData, className }: KEVStatusProps) {
               isPastDue && 'text-destructive font-medium'
             )}
           >
-            <span className={isPastDue ? '' : 'text-muted-foreground'}>Remediation Due:</span>
+            <span className={isPastDue ? '' : 'text-muted-foreground'}>
+              {t('components.shared.kev.remediationDue', 'Remediation due:')}
+            </span>
             <span>
               {formatDate(new Date(kevData.due_date))}
               {daysUntilDue !== null && (
                 <span className="ms-1">
                   (
                   {isPastDue
-                    ? `${Math.abs(daysUntilDue)} days overdue`
-                    : `${daysUntilDue} days left`}
+                    ? t('components.shared.kev.daysOverdue', '{count} days overdue', {
+                        count: Math.abs(daysUntilDue),
+                      })
+                    : t('components.shared.kev.daysLeft', '{count} days left', {
+                        count: daysUntilDue,
+                      })}
                   )
                 </span>
               )}
@@ -202,7 +226,7 @@ export function KEVStatus({ inKEV, kevData, className }: KEVStatusProps) {
           <div className="flex items-center justify-between text-warning">
             <span className="flex items-center gap-1">
               <Skull className="h-3.5 w-3.5" />
-              Ransomware Use:
+              {t('components.shared.kev.ransomware', 'Ransomware use:')}
             </span>
             <span>{kevData?.ransomware_use}</span>
           </div>
@@ -226,6 +250,7 @@ interface KEVCompactIndicatorProps {
  * KEV Compact Indicator - Minimal indicator for tables and lists
  */
 export function KEVCompactIndicator({ inKEV, isPastDue, className }: KEVCompactIndicatorProps) {
+  const { t } = useTranslation()
   if (!inKEV) {
     return null
   }
@@ -246,9 +271,15 @@ export function KEVCompactIndicator({ inKEV, isPastDue, className }: KEVCompactI
           </div>
         </TooltipTrigger>
         <TooltipContent>
-          <p className="font-medium">CISA KEV {isPastDue && '(Overdue)'}</p>
+          <p className="font-medium">
+            {t('components.shared.kev.compactTitle', 'CISA KEV')}{' '}
+            {isPastDue && `(${t('components.shared.kev.overdueLower', 'overdue')})`}
+          </p>
           <p className="text-xs text-muted-foreground">
-            Known Exploited Vulnerability - Requires immediate action
+            {t(
+              'components.shared.kev.compactHint',
+              'Known Exploited Vulnerability: requires immediate action'
+            )}
           </p>
         </TooltipContent>
       </Tooltip>

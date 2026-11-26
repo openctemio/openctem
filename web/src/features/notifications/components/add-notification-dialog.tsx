@@ -2,7 +2,7 @@
 
 import { useTranslation } from '@/context/i18n-provider'
 import { useBrand } from '@/context/brand-provider'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -120,7 +120,9 @@ interface AddNotificationDialogProps {
   onSuccess?: () => Promise<void>
 }
 
-const PROVIDERS = [
+type Translate = ReturnType<typeof useTranslation>['t']
+
+const buildProviders = (t: Translate) => [
   {
     id: 'slack' as const,
     provider: 'slack' as const,
@@ -128,7 +130,7 @@ const PROVIDERS = [
     icon: MessageSquare,
     color: 'text-[#4A154B]',
     bgColor: 'bg-[#4A154B]/10',
-    description: 'Send notifications via Slack webhook',
+    description: t('notifications.providers.slack', 'Send notifications via Slack webhook'),
     credentialLabel: 'Webhook URL',
     credentialPlaceholder: 'https://hooks.slack.com/services/...',
   },
@@ -139,7 +141,7 @@ const PROVIDERS = [
     icon: MessageSquare,
     color: 'text-[#6264A7]',
     bgColor: 'bg-[#6264A7]/10',
-    description: 'Send notifications via Teams webhook',
+    description: t('notifications.providers.teams', 'Send notifications via Teams webhook'),
     credentialLabel: 'Webhook URL',
     credentialPlaceholder: 'https://outlook.office.com/webhook/...',
   },
@@ -150,8 +152,10 @@ const PROVIDERS = [
     icon: MessageSquare,
     color: 'text-[#1E325C]',
     bgColor: 'bg-[#1E325C]/10',
-    descriptionKey: 'notificationPresets.mattermost.description',
-    description: 'Send notifications via a Mattermost incoming webhook',
+    description: t(
+      'notificationPresets.mattermost.description',
+      'Send notifications to a Mattermost channel through an incoming webhook'
+    ),
     credentialLabel: 'Webhook URL',
     credentialPlaceholder: 'https://chat.example.com/hooks/...',
   },
@@ -162,8 +166,10 @@ const PROVIDERS = [
     icon: MessageSquare,
     color: 'text-[#5865F2]',
     bgColor: 'bg-[#5865F2]/10',
-    descriptionKey: 'notificationPresets.discord.description',
-    description: 'Send notifications via a Discord webhook',
+    description: t(
+      'notificationPresets.discord.description',
+      'Send notifications to a Discord channel through its webhook'
+    ),
     credentialLabel: 'Webhook URL',
     credentialPlaceholder: 'https://discord.com/api/webhooks/...',
   },
@@ -174,7 +180,7 @@ const PROVIDERS = [
     icon: Send,
     color: 'text-[#0088cc]',
     bgColor: 'bg-[#0088cc]/10',
-    description: 'Send notifications to Telegram chat',
+    description: t('notifications.providers.telegram', 'Send notifications to Telegram chat'),
     credentialLabel: 'Bot Token',
     credentialPlaceholder: '123456789:ABCdefGHIjklMNOpqrsTUVwxyz',
   },
@@ -185,7 +191,7 @@ const PROVIDERS = [
     icon: Webhook,
     color: 'text-muted-foreground',
     bgColor: 'bg-muted',
-    description: 'Send notifications to any HTTP endpoint',
+    description: t('notifications.providers.webhook', 'Send notifications to any HTTP endpoint'),
     credentialLabel: 'Webhook URL',
     credentialPlaceholder: 'https://example.com/webhook',
   },
@@ -196,11 +202,13 @@ const PROVIDERS = [
     icon: Mail,
     color: 'text-muted-foreground',
     bgColor: 'bg-muted',
-    description: 'Send notifications via email',
+    description: t('notifications.providers.email', 'Send notifications via email'),
     credentialLabel: 'SMTP Configuration',
     credentialPlaceholder: '',
   },
 ]
+
+type Provider = ReturnType<typeof buildProviders>[number]
 
 export function AddNotificationDialog({
   open,
@@ -209,8 +217,9 @@ export function AddNotificationDialog({
 }: AddNotificationDialogProps) {
   const { t } = useTranslation()
   const brand = useBrand()
+  const providers = useMemo(() => buildProviders(t), [t])
   const [step, setStep] = useState<'provider' | 'config'>('provider')
-  const [selectedProvider, setSelectedProvider] = useState<(typeof PROVIDERS)[number] | null>(null)
+  const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
   // The event-type catalog comes from the API, module-filtered for this tenant.
@@ -282,7 +291,7 @@ export function AddNotificationDialog({
 
   const { trigger: createIntegration, isMutating } = useCreateNotificationIntegrationApi()
 
-  const handleProviderSelect = (provider: (typeof PROVIDERS)[number]) => {
+  const handleProviderSelect = (provider: Provider) => {
     setSelectedProvider(provider)
     setValue('provider', provider.provider)
     setStep('config')
@@ -316,7 +325,9 @@ export function AddNotificationDialog({
           .filter((e) => e.length > 0)
 
         if (toEmailsList.length === 0) {
-          toast.error('At least one recipient email is required')
+          toast.error(
+            t('notifications.dialog.recipientRequired', 'At least one recipient email is required')
+          )
           return
         }
 
@@ -354,7 +365,11 @@ export function AddNotificationDialog({
         urgent_at_once: data.urgent_at_once,
       })
 
-      toast.success(`Notification channel "${data.name}" created`)
+      toast.success(
+        t('notifications.dialog.created', 'Notification channel "{name}" created', {
+          name: data.name,
+        })
+      )
       handleClose()
       await onSuccess?.()
     } catch (error) {
@@ -369,20 +384,27 @@ export function AddNotificationDialog({
           <DialogTitle className="flex items-center gap-2">
             <Bell className="h-5 w-5" />
             {step === 'provider'
-              ? 'Add Notification Channel'
-              : `Configure ${selectedProvider?.name}`}
+              ? t('notifications.dialog.addTitle', 'Add notification channel')
+              : t('notifications.dialog.configureTitle', 'Configure {provider}', {
+                  provider: selectedProvider?.name ?? '',
+                })}
           </DialogTitle>
           <DialogDescription>
             {step === 'provider'
-              ? 'Choose a notification provider to receive security alerts'
-              : `Set up your ${selectedProvider?.name} integration`}
+              ? t(
+                  'notifications.dialog.addDescription',
+                  'Choose a notification provider to receive security alerts'
+                )
+              : t('notifications.dialog.setupDescription', 'Set up your {provider} integration', {
+                  provider: selectedProvider?.name ?? '',
+                })}
           </DialogDescription>
         </DialogHeader>
 
         {step === 'provider' ? (
           <DialogBody>
             <div className="grid grid-cols-2 gap-3 py-2">
-              {PROVIDERS.map((provider) => {
+              {providers.map((provider) => {
                 const Icon = provider.icon
                 return (
                   <button
@@ -405,9 +427,7 @@ export function AddNotificationDialog({
                     </div>
                     <span className="font-medium text-sm">{provider.name}</span>
                     <span className="text-xs text-muted-foreground text-center">
-                      {provider.descriptionKey
-                        ? t(provider.descriptionKey, provider.description)
-                        : provider.description}
+                      {provider.description}
                     </span>
                   </button>
                 )
@@ -418,11 +438,18 @@ export function AddNotificationDialog({
           <DialogForm onSubmit={handleSubmit(onSubmit)}>
             <DialogBody className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
-                <Input id="name" placeholder="e.g., Security Alerts" {...register('name')} />
+                <Label htmlFor="name">{t('notifications.dialog.name', 'Name')}</Label>
+                <Input
+                  id="name"
+                  placeholder={t('notifications.dialog.namePlaceholder', 'e.g., Security Alerts')}
+                  {...register('name')}
+                />
                 {errors.name && <p className="text-sm text-destructive">{errors.name.message}</p>}
                 <p className="text-xs text-muted-foreground">
-                  A friendly name for this notification channel
+                  {t(
+                    'notifications.dialog.nameHelp',
+                    'A friendly name for this notification channel'
+                  )}
                 </p>
               </div>
 
@@ -445,12 +472,15 @@ export function AddNotificationDialog({
               {/* Email provider: SMTP configuration fields */}
               {selectedProvider?.id === 'email' && (
                 <div className="space-y-4 rounded-lg border p-4 bg-muted/30">
-                  <p className="text-sm font-medium">SMTP Configuration</p>
+                  <p className="text-sm font-medium">
+                    {t('notifications.dialog.smtpConfig', 'SMTP configuration')}
+                  </p>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
                       <Label htmlFor="smtp_host">
-                        SMTP Host <span className="text-destructive">*</span>
+                        {t('notifications.dialog.smtpHost', 'SMTP host')}{' '}
+                        <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         id="smtp_host"
@@ -460,7 +490,8 @@ export function AddNotificationDialog({
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="smtp_port">
-                        Port <span className="text-destructive">*</span>
+                        {t('notifications.dialog.port', 'Port')}{' '}
+                        <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         id="smtp_port"
@@ -473,7 +504,9 @@ export function AddNotificationDialog({
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
-                      <Label htmlFor="smtp_username">Username</Label>
+                      <Label htmlFor="smtp_username">
+                        {t('notifications.dialog.username', 'Username')}
+                      </Label>
                       <Input
                         id="smtp_username"
                         placeholder="your@email.com"
@@ -481,11 +514,13 @@ export function AddNotificationDialog({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="smtp_password">Password</Label>
+                      <Label htmlFor="smtp_password">
+                        {t('notifications.dialog.password', 'Password')}
+                      </Label>
                       <Input
                         id="smtp_password"
                         type="password"
-                        placeholder="App password"
+                        placeholder={t('notifications.dialog.passwordPlaceholder', 'App password')}
                         {...register('smtp_password')}
                       />
                     </div>
@@ -494,7 +529,8 @@ export function AddNotificationDialog({
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
                       <Label htmlFor="from_email">
-                        From Email <span className="text-destructive">*</span>
+                        {t('notifications.dialog.fromEmail', 'From email')}{' '}
+                        <span className="text-destructive">*</span>
                       </Label>
                       <Input
                         id="from_email"
@@ -504,14 +540,17 @@ export function AddNotificationDialog({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="from_name">From Name</Label>
+                      <Label htmlFor="from_name">
+                        {t('notifications.dialog.fromName', 'From name')}
+                      </Label>
                       <Input id="from_name" placeholder={brand.name} {...register('from_name')} />
                     </div>
                   </div>
 
                   <div className="space-y-2">
                     <Label htmlFor="to_emails">
-                      Recipients <span className="text-destructive">*</span>
+                      {t('notifications.dialog.recipients', 'Recipients')}{' '}
+                      <span className="text-destructive">*</span>
                     </Label>
                     <Input
                       id="to_emails"
@@ -519,7 +558,10 @@ export function AddNotificationDialog({
                       {...register('to_emails')}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Comma-separated list of email addresses
+                      {t(
+                        'notifications.dialog.recipientsHelp',
+                        'Comma-separated list of email addresses'
+                      )}
                     </p>
                   </div>
 
@@ -531,7 +573,7 @@ export function AddNotificationDialog({
                         onCheckedChange={(checked) => setValue('use_starttls', !!checked)}
                       />
                       <label htmlFor="use_starttls" className="text-sm cursor-pointer">
-                        STARTTLS (Port 587)
+                        {t('notifications.dialog.starttls', 'STARTTLS (port 587)')}
                       </label>
                     </div>
                     <div className="flex items-center space-x-2">
@@ -541,7 +583,7 @@ export function AddNotificationDialog({
                         onCheckedChange={(checked) => setValue('use_tls', !!checked)}
                       />
                       <label htmlFor="use_tls" className="text-sm cursor-pointer">
-                        Direct TLS (Port 465)
+                        {t('notifications.dialog.directTls', 'Direct TLS (port 465)')}
                       </label>
                     </div>
                   </div>
@@ -566,20 +608,27 @@ export function AddNotificationDialog({
               {selectedProvider?.id === 'telegram' && (
                 <div className="space-y-2">
                   <Label htmlFor="channel_id">
-                    Chat ID <span className="text-destructive">*</span>
+                    {t('notifications.dialog.chatId', 'Chat ID')}{' '}
+                    <span className="text-destructive">*</span>
                   </Label>
                   <Input
                     id="channel_id"
-                    placeholder="e.g., -1001274567890 or @channelname"
+                    placeholder={t(
+                      'notifications.dialog.chatIdPlaceholder',
+                      'e.g., -1001274567890 or @channelname'
+                    )}
                     {...register('channel_id', { required: selectedProvider?.id === 'telegram' })}
                   />
                   {errors.channel_id && (
-                    <p className="text-sm text-destructive">Chat ID is required for Telegram</p>
+                    <p className="text-sm text-destructive">
+                      {t('notifications.dialog.chatIdRequired', 'Chat ID is required for Telegram')}
+                    </p>
                   )}
                   <p className="text-xs text-muted-foreground">
-                    Get your chat ID: 1) Add @userinfobot to your group/channel, 2) It will reply
-                    with the chat ID. For groups/channels, use the numeric ID (e.g.,
-                    -1001274567890).
+                    {t(
+                      'notifications.dialog.chatIdHelpAdd',
+                      'Get your chat ID: 1) Add @userinfobot to your group or channel, 2) It will reply with the chat ID. For groups or channels, use the numeric ID (e.g., -1001274567890).'
+                    )}
                   </p>
                 </div>
               )}
@@ -587,30 +636,45 @@ export function AddNotificationDialog({
               {(selectedProvider?.provider === 'slack' ||
                 selectedProvider?.provider === 'teams') && (
                 <div className="space-y-2">
-                  <Label htmlFor="channel_name">Channel Name (optional)</Label>
+                  <Label htmlFor="channel_name">
+                    {t('notifications.dialog.channelName', 'Channel name (optional)')}
+                  </Label>
                   <Input
                     id="channel_name"
-                    placeholder="e.g., security-alerts"
+                    placeholder={t(
+                      'notifications.dialog.channelNamePlaceholder',
+                      'e.g., security-alerts'
+                    )}
                     {...register('channel_name')}
                   />
-                  <p className="text-xs text-muted-foreground">Display name for reference</p>
+                  <p className="text-xs text-muted-foreground">
+                    {t('notifications.dialog.channelNameHelp', 'Display name for reference')}
+                  </p>
                 </div>
               )}
 
               <div className="space-y-2">
-                <Label htmlFor="description">Description (optional)</Label>
+                <Label htmlFor="description">
+                  {t('notifications.dialog.description', 'Description (optional)')}
+                </Label>
                 <Textarea
                   id="description"
-                  placeholder="Describe the purpose of this channel..."
+                  placeholder={t(
+                    'notifications.dialog.descriptionPlaceholder',
+                    'Describe the purpose of this channel...'
+                  )}
                   className="resize-none"
                   {...register('description')}
                 />
               </div>
 
               <div className="space-y-3">
-                <Label>Severity Filters</Label>
+                <Label>{t('notifications.dialog.severityFilters', 'Severity filters')}</Label>
                 <p className="text-xs text-muted-foreground">
-                  Select which severity levels should trigger notifications
+                  {t(
+                    'notifications.dialog.severityFiltersHelp',
+                    'Select which severity levels should trigger notifications'
+                  )}
                 </p>
                 <div className="grid grid-cols-3 gap-3">
                   {ALL_NOTIFICATION_SEVERITIES.map((severity) => {
@@ -677,7 +741,7 @@ export function AddNotificationDialog({
                   >
                     <div className="flex items-center gap-2 text-sm font-medium">
                       <Settings2 className="h-4 w-4" />
-                      Advanced Settings
+                      {t('notifications.dialog.advancedSettings', 'Advanced settings')}
                     </div>
                     <ChevronDown
                       className={cn('h-4 w-4 transition-transform', advancedOpen && 'rotate-180')}
@@ -719,11 +783,11 @@ export function AddNotificationDialog({
 
             <DialogFooter className="sm:justify-between">
               <Button type="button" variant="outline" onClick={handleBack}>
-                Back
+                {t('notifications.dialog.back', 'Back')}
               </Button>
               <Button type="submit" disabled={isMutating}>
                 {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                Create Channel
+                {t('notifications.dialog.create', 'Create channel')}
               </Button>
             </DialogFooter>
           </DialogForm>

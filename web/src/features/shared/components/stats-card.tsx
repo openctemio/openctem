@@ -2,6 +2,7 @@
 
 import type * as React from 'react'
 import Link from '@/components/link'
+import { useTranslation } from '@/context/i18n-provider'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -46,6 +47,7 @@ export function StatsCard({
   infoLabel,
   href,
 }: StatsCardProps) {
+  const { t } = useTranslation()
   const changeColors = {
     positive: 'text-success',
     negative: 'text-destructive',
@@ -82,7 +84,10 @@ export function StatsCard({
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  aria-label={infoLabel ?? `How ${title} is measured`}
+                  aria-label={
+                    infoLabel ??
+                    t('components.shared.stats.howMeasured', 'How {title} is measured', { title })
+                  }
                   className="relative z-10 shrink-0 rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <Info className="h-3.5 w-3.5" />

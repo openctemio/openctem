@@ -17,6 +17,7 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { AlertTriangle } from 'lucide-react'
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -56,6 +57,7 @@ export function TruncatedText({
   detail,
   detailLabel,
 }: TruncatedTextProps) {
+  const { t } = useTranslation()
   const raw = value ?? ''
   if (raw.trim() === '') {
     return <span className={cn('text-muted-foreground', className)}>{fallback}</span>
@@ -97,7 +99,10 @@ export function TruncatedText({
         )}
         {hidden && (
           <span className="mt-1 block opacity-80">
-            Contains control or direction characters, shown as escapes.
+            {t(
+              'components.shared.truncated.hidden',
+              'Contains control or direction characters, shown as escapes.'
+            )}
           </span>
         )}
       </TooltipContent>

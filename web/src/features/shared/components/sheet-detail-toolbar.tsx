@@ -27,6 +27,7 @@ import { ExternalLink, Hash, Pencil, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 
 interface ToolbarAction {
@@ -66,13 +67,24 @@ export function SheetDetailToolbar({
   extraActions,
   className,
 }: SheetDetailToolbarProps) {
+  const { t } = useTranslation()
   const actions: ToolbarAction[] = [
-    ...(onCopyId ? [{ label: 'Copy ID', icon: Hash, onClick: onCopyId }] : []),
+    ...(onCopyId
+      ? [{ label: t('components.shared.toolbar.copyId', 'Copy ID'), icon: Hash, onClick: onCopyId }]
+      : []),
     ...(onOpenExternal
-      ? [{ label: 'Open in full page', icon: ExternalLink, onClick: onOpenExternal }]
+      ? [
+          {
+            label: t('components.shared.toolbar.openFullPage', 'Open in full page'),
+            icon: ExternalLink,
+            onClick: onOpenExternal,
+          },
+        ]
       : []),
     ...(extraActions?.filter((a) => a.show !== false) ?? []),
-    ...(onEdit ? [{ label: 'Edit', icon: Pencil, onClick: onEdit }] : []),
+    ...(onEdit
+      ? [{ label: t('components.shared.toolbar.edit', 'Edit'), icon: Pencil, onClick: onEdit }]
+      : []),
   ]
 
   return (
@@ -93,14 +105,15 @@ export function SheetDetailToolbar({
             <Button
               variant="ghost"
               size="icon"
-
-              aria-label="Close"
+              aria-label={t('components.shared.toolbar.close', 'Close')}
               onClick={onClose}
             >
               <X className="h-3.5 w-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">Close</TooltipContent>
+          <TooltipContent side="bottom">
+            {t('components.shared.toolbar.close', 'Close')}
+          </TooltipContent>
         </Tooltip>
       </div>
     </div>
