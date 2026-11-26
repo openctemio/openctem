@@ -71,3 +71,34 @@ func TestNewNotificationKeepsMessage(t *testing.T) {
 		t.Fatal("message lost")
 	}
 }
+
+// NUL never reaches the stored values (PostgreSQL refuses \u0000 in jsonb,
+// which would lose the notice), at any depth; text that only looks like an
+// escape is kept.
+func TestParamsJSONStripsNUL(t *testing.T) {
+	m := Lines("coverage.digest", []*Message{Msg("coverage.gap", "capability", "a\x00b")},
+		"name", "x\x00y", "literal", `\u0000 typed`, "action", Msg("coverage.action.x", "who", "\x00Ann"))
+	b, err := m.ParamsJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.ReplaceAll(string(b), `\\u0000`, ""), `\u0000`) {
+		t.Fatalf("NUL kept: %s", b)
+	}
+	got := ParseMessage(m.Code, b)
+	if got.Params["name"] != "xy" || got.Params["literal"] != `\u0000 typed` {
+		t.Fatalf("values %+v", got.Params)
+	}
+	line := got.Params["lines"].([]any)[0].(map[string]any)["params"].(map[string]any)
+	if line["capability"] != "ab" {
+		t.Fatalf("line %+v", line)
+	}
+	if who := got.Params["action"].(map[string]any)["params"].(map[string]any)["who"]; who != "Ann" {
+		t.Fatalf("nested %v", who)
+	}
+	// Values without NUL are encoded as they are.
+	plain := Msg("a.b", "n", 1)
+	if b, _ := plain.ParamsJSON(); string(b) != `{"n":1}` {
+		t.Fatalf("plain %s", b)
+	}
+}

@@ -724,9 +724,10 @@ generic webhook sends JSON. See RFC-040 §5.4.
 An in-app notification carries its text twice: the English `title` and `body`,
 and the same text as a stable message code with typed values
 (`message_code`, `message_params`; migration `20261126054042_notification_message_code`).
-The web renders the code from its `serverText` catalog in the reader's
-language (`web/src/lib/server-text.ts`); e-mail, chat and webhook deliveries
-and older consoles keep reading the English text.
+The redesigned web console (the `next` branch, `web/src/lib/server-text.ts`)
+renders the code from its `serverText` catalog in the reader's language; the
+current console, e-mail, chat and webhook deliveries keep reading the English
+text.
 
 - **Shape.** `notification.Message{Code, Params}` (`pkg/domain/notification/message.go`).
   A code is dotted lower case (`coverage.gap`, `team.added`); one code is one
@@ -739,11 +740,13 @@ and older consoles keep reading the English text.
   or a nested code the web catalog does not know, or values that do not decode
   show the stored English title and body; title and body always come from the
   same source. Old coverage notices whose stored text has one of the fixed
-  sentence shapes are read back to their code in the web
-  (`features/notifications/lib/legacy-message.ts`); anything else is left as
-  stored, never rewritten.
+  sentence shapes are read back to their code by the redesigned console
+  (`web/src/features/notifications/lib/legacy-message.ts` on `next`); anything
+  else is left as stored, never rewritten.
 - **Limits and safety.** `Notify` checks the message (`Message.Validate`: the
-  code pattern, values that encode as a JSON object of at most 12 KiB); a
+  code pattern, values that encode as a JSON object of at most 12 KiB;
+  NUL characters are removed from every value, since PostgreSQL refuses them
+  in jsonb); a
   message that fails is dropped and the notice is still sent with its English
   text. The table checks the same pattern and size. Values are display text
   only: the web inserts them after the catalog string is resolved (a value
