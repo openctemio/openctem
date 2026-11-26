@@ -142,6 +142,15 @@ describe('maskSensitiveText', () => {
     }
   })
 
+  it('masks a value that only starts like a mask', () => {
+    for (const [text, secret] of [
+      ['password=***s3cr3tvalue99', 's3cr3tvalue99'],
+      ['token=[REDACTED]hunter2actualvalue', 'hunter2actualvalue'],
+    ]) {
+      expect(maskSensitiveText(text), text).not.toContain(secret)
+    }
+  })
+
   it('never throws and takes anything', () => {
     expect(maskSensitiveText(null)).toBe('')
     expect(maskSensitiveText(undefined)).toBe('')
