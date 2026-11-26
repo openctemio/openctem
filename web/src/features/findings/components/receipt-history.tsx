@@ -334,7 +334,15 @@ export function ReceiptHistory() {
       {
         id: 'change',
         header: t('findings.receiptHistory.col.change', 'What changed'),
-        meta: { kind: 'text', label: t('findings.receiptHistory.col.change', 'What changed') },
+        meta: {
+          kind: 'text',
+          label: t('findings.receiptHistory.col.change', 'What changed'),
+          // Narrows before the table scrolls sideways and grows into spare
+          // width; a longer summary ends in an ellipsis (whole in its title).
+          width: 320,
+          minWidth: 200,
+          maxWidth: 560,
+        },
         cell: ({ row }) => changeCell(row.original),
       },
       count(
@@ -624,7 +632,10 @@ export function ReceiptHistory() {
             const r = row.receipt
             return (
               <div data-slot="receipt-card" className="flex min-w-0 flex-col gap-1 px-3 py-3">
-                <div className="flex min-w-0 items-center justify-between gap-3">
+                {/* The source and when at the ends of the first line, then
+                    what changed (the card's main line, with a status only
+                    when it needs a look), then the kind of source. */}
+                <div className="flex min-w-0 items-baseline justify-between gap-3">
                   <span
                     data-cut-tooltip
                     title={toolLabel(r)}
@@ -633,21 +644,28 @@ export function ReceiptHistory() {
                   >
                     {toolLabel(r)}
                   </span>
-                  {issueChip(r, 'shrink-0')}
+                  <span
+                    className="text-muted-foreground shrink-0 text-xs"
+                    title={formatAbsoluteTime(r.started_at, locale)}
+                  >
+                    {formatRelativeTime(r.started_at, locale)}
+                  </span>
                 </div>
-                <p
-                  data-slot="receipt-change"
-                  className={cn('text-sm tabular-nums', quiet && 'text-muted-foreground')}
-                >
-                  {text}
-                </p>
+                <div data-slot="receipt-change" className="flex min-w-0 items-center gap-2">
+                  {issueChip(r, 'shrink-0')}
+                  <p
+                    className={cn('min-w-0 text-sm tabular-nums', quiet && 'text-muted-foreground')}
+                  >
+                    {text}
+                  </p>
+                </div>
                 <MetaLine
                   oneLine
                   items={[
                     kindLabel(r.source?.kind),
-                    <span key="when" title={formatAbsoluteTime(r.started_at, locale)}>
-                      {formatRelativeTime(r.started_at, locale)}
-                    </span>,
+                    r.released_from_quarantine
+                      ? t('findings.receipts.releasedFromQuarantine', 'Released from quarantine')
+                      : null,
                   ]}
                 />
               </div>
