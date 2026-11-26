@@ -98,9 +98,11 @@ export function PostureCategoryList({
         const name = t(`dashboardKit.posture.category.${c.category}`, c.category)
         return (
           <li key={c.category} className="flex flex-col gap-1" data-category={c.category}>
-            <div className="flex items-baseline justify-between gap-3 text-sm">
+            {/* The name keeps its words whole: where the figures do not fit
+                beside it (a phone), they move under it, at the end. */}
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-sm">
               <span className="min-w-0 break-words">{name}</span>
-              <span className="flex shrink-0 items-baseline gap-3 tabular-nums">
+              <span className="ms-auto flex shrink-0 items-baseline gap-3 tabular-nums">
                 <span className="text-xs text-muted-foreground">
                   {t('dashboardKit.posture.issues', '{count} issues', { count: c.issues })}
                 </span>

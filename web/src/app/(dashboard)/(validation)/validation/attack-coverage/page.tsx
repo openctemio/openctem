@@ -679,13 +679,13 @@ function TacticHeader({ tactic }: { tactic: MitreTactic }) {
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        {/* A tactic's name wraps (hyphenated in a narrow column) rather than
-            end in an ellipsis: "Reconnaiss…" said nothing. */}
+        {/* A tactic's name wraps between words, never inside one: a column
+            is wide enough for the longest word ("Reconnaissance"), and every
+            header has room for three lines so the cells under the headers of
+            one line of columns start at the same height. */}
         <TooltipTrigger asChild>
-          <div className="bg-primary/10 flex h-full items-center justify-center rounded px-1 py-1.5 text-center">
-            <p className="text-primary text-xs leading-tight font-semibold hyphens-auto [overflow-wrap:anywhere]">
-              {label}
-            </p>
+          <div className="bg-primary/10 flex min-h-[3.25rem] items-center justify-center rounded px-1 py-0.5 text-center">
+            <p className="text-primary text-xs leading-tight font-semibold break-words">{label}</p>
           </div>
         </TooltipTrigger>
         <TooltipContent>
@@ -711,7 +711,7 @@ function TechniqueGrid({
   coverageMap: Map<string, TechniqueCell>
 }) {
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(4.5rem,1fr))] gap-x-1 gap-y-3">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-x-1 gap-y-3">
       {tactics.map((tactic) => (
         <div key={tactic.id} className="flex min-w-0 flex-col gap-1">
           <TacticHeader tactic={tactic} />
