@@ -309,6 +309,9 @@ export const ROUTE_STATES: Record<string, RouteState> = {
   // A page tab the bare route does not open: /sensors starts on its sensors
   // list, the scan zones (their list and the coverage card) are a tab.
   '/sensors@zones': { path: '/sensors?tab=zones' },
+  // A pentest campaign's Checklist tab (the seed records passed, failed, N/A
+  // and untested results on its OWASP Top 10 checklist).
+  '/pentest/campaigns/[id]@checklist': { path: '/pentest/campaigns/[id]?view=checklist' },
   // A list in Query mode: the search field is the query editor, one line
   // (`@query`) and expanded (`@query-open`), the state most of a filter
   // edit is written in.
@@ -706,8 +709,13 @@ export async function findMatrixBreaks(
           'tbody tr, [data-phone-card], [role=row]:not(:has([role=columnheader]))'
         )
       ).find(shown)
+      // A grouped list drawn as phone cards: its group headers sit between
+      // the cards, inside the cards' frame, so the list is that frame (the
+      // parent of the groups), not the rows of the first group.
       let list: Element | null = first
-        ? (first.closest('table, [role=table], [role=grid], ul, ol') ?? first.parentElement)
+        ? (first.closest('table, [role=table], [role=grid], ul, ol') ??
+          first.closest('[role=group]:has(> [data-slot="row-group-header"])')?.parentElement ??
+          first.parentElement)
         : null
       // An overlay without a list is a form: its labels and notes are not
       // rows of a list's toolbar.

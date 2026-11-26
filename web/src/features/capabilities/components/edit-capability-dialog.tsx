@@ -38,6 +38,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
+import { useTranslation } from '@/context/i18n-provider'
+import { getCategoryOptions, getIconOptions } from './capability-options'
 import { useUpdateCapability } from '@/lib/api/capability-hooks'
 import type { Capability } from '@/lib/api/capability-types'
 
@@ -54,34 +56,10 @@ const updateCapabilitySchema = z.object({
 
 type UpdateCapabilityFormData = z.infer<typeof updateCapabilitySchema>
 
-const ICON_OPTIONS = [
-  { value: 'zap', label: 'Zap' },
-  { value: 'code', label: 'Code' },
-  { value: 'package', label: 'Package' },
-  { value: 'globe', label: 'Globe' },
-  { value: 'key', label: 'Key' },
-  { value: 'server', label: 'Server' },
-  { value: 'box', label: 'Box' },
-  { value: 'search', label: 'Search' },
-  { value: 'layers', label: 'Layers' },
-  { value: 'shield', label: 'Shield' },
-  { value: 'lock', label: 'Lock' },
-  { value: 'eye', label: 'Eye' },
-  { value: 'file-text', label: 'File Text' },
-  { value: 'terminal', label: 'Terminal' },
-  { value: 'cpu', label: 'CPU' },
-]
-
 const COLOR_OPTIONS = CAPABILITY_COLOR_CHOICES.map((value) => ({
   value,
   label: value.charAt(0).toUpperCase() + value.slice(1),
 }))
-
-const CATEGORY_OPTIONS = [
-  { value: 'security', label: 'Security' },
-  { value: 'recon', label: 'Reconnaissance' },
-  { value: 'analysis', label: 'Analysis' },
-]
 
 interface EditCapabilityDialogProps {
   open: boolean
@@ -96,6 +74,9 @@ export function EditCapabilityDialog({
   capability,
   onSuccess,
 }: EditCapabilityDialogProps) {
+  const { t } = useTranslation()
+  const ICON_OPTIONS = getIconOptions(t)
+  const CATEGORY_OPTIONS = getCategoryOptions(t)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { trigger: updateCapability } = useUpdateCapability(capability.id)
 
@@ -125,7 +106,11 @@ export function EditCapabilityDialog({
     setIsSubmitting(true)
     try {
       await updateCapability(data)
-      toast.success(`Capability "${data.display_name}" updated`)
+      toast.success(
+        t('scans.capabilities.toast.updated', 'Capability "{name}" updated', {
+          name: data.display_name,
+        })
+      )
       onOpenChange(false)
       onSuccess?.()
     } catch (err) {
@@ -139,9 +124,12 @@ export function EditCapabilityDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit Capability</DialogTitle>
+          <DialogTitle>{t('scans.capabilities.dialog.editTitle', 'Edit capability')}</DialogTitle>
           <DialogDescription>
-            Update the capability details. The code name cannot be changed.
+            {t(
+              'scans.capabilities.dialog.editDescription',
+              'Update the capability details. The code name cannot be changed.'
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -159,9 +147,17 @@ export function EditCapabilityDialog({
                   name="display_name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Display Name</FormLabel>
+                      <FormLabel>
+                        {t('scans.capabilities.dialog.displayName', 'Display name')}
+                      </FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g., Web Application Security" {...field} />
+                        <Input
+                          placeholder={t(
+                            'scans.capabilities.dialog.displayNamePlaceholder',
+                            'e.g., Web application security'
+                          )}
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -173,10 +169,15 @@ export function EditCapabilityDialog({
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Description</FormLabel>
+                      <FormLabel>
+                        {t('scans.capabilities.dialog.description', 'Description')}
+                      </FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="Describe what this capability represents..."
+                          placeholder={t(
+                            'scans.capabilities.dialog.descriptionPlaceholder',
+                            'Describe what this capability represents...'
+                          )}
                           rows={3}
                           {...field}
                         />
@@ -193,11 +194,13 @@ export function EditCapabilityDialog({
                     name="category"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Category</FormLabel>
+                        <FormLabel>{t('scans.capabilities.dialog.category', 'Category')}</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select" />
+                              <SelectValue
+                                placeholder={t('scans.capabilities.dialog.select', 'Select')}
+                              />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -218,11 +221,13 @@ export function EditCapabilityDialog({
                     name="icon"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Icon</FormLabel>
+                        <FormLabel>{t('scans.capabilities.dialog.icon', 'Icon')}</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select" />
+                              <SelectValue
+                                placeholder={t('scans.capabilities.dialog.select', 'Select')}
+                              />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -243,11 +248,13 @@ export function EditCapabilityDialog({
                     name="color"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Color</FormLabel>
+                        <FormLabel>{t('scans.capabilities.dialog.color', 'Color')}</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select" />
+                              <SelectValue
+                                placeholder={t('scans.capabilities.dialog.select', 'Select')}
+                              />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -281,7 +288,7 @@ export function EditCapabilityDialog({
             disabled={isSubmitting}
             className="w-full sm:w-auto"
           >
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button
             type="submit"
@@ -290,7 +297,7 @@ export function EditCapabilityDialog({
             className="w-full sm:w-auto"
           >
             {isSubmitting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            Save Changes
+            {t('scans.capabilities.dialog.saveChanges', 'Save changes')}
           </Button>
         </DialogFooter>
       </DialogContent>
