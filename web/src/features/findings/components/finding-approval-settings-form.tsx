@@ -1,29 +1,23 @@
 'use client'
 
 /**
- * Settings > Approvals, section "Approval policy": the organization's
- * approval levels for false positives and accepted risks, the second-look
- * share and the backup contact (server/docs/architecture/
- * finding-status-lifecycle.md, "Approval levels"). The page owns the draft
- * and its one save bar (`FindingApprovalsForm`); this section draws it.
+ * Settings > Approvals, the approval levels: the organization's levels for
+ * false positives and accepted risks, the second-look share and the backup
+ * contact (server/docs/architecture/finding-status-lifecycle.md, "Approval
+ * levels"). Their draft helpers and the level selector the editors draw
+ * (`approval-editors.tsx`); `FindingApprovalsForm` saves them.
  * Saving needs settings:write and a recent sign-in (the API client asks for
  * re-authentication); every change is audited and the approvers are told. A
  * lower level takes effect 24 hours later; a higher one at once.
  */
 
-import { useId, useState } from 'react'
+import { useId } from 'react'
 import { AlertTriangle, Clock } from 'lucide-react'
-import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useTranslation } from '@/context/i18n-provider'
-import { getErrorMessage } from '@/lib/api/error-handler'
-import { SettingsBlock, SettingsRow, SettingsSection } from '@/features/shared'
 import {
-  updateFindingApprovalSettings,
   type FindingApprovalSettings,
   type FindingApprovalSettingsUpdate,
   type FPApprovalLevel,
@@ -101,12 +95,12 @@ function levelText(t: TFn, kind: ApprovalLevelKind, level: FPApprovalLevel) {
   return kind === 'accept' ? acceptLevelText(t, level) : fpLevelText(t, level)
 }
 
-function clampPercent(v: number): number {
+export function clampPercent(v: number): number {
   if (!Number.isFinite(v)) return 0
   return Math.min(10, Math.max(0, Math.round(v)))
 }
 
-interface LevelSelectorProps {
+export interface LevelSelectorProps {
   kind: ApprovalLevelKind
   value: FPApprovalLevel
   inForce: FPApprovalLevel
@@ -114,13 +108,24 @@ interface LevelSelectorProps {
   pendingAt?: string
   changed: boolean
   canEdit: boolean
-  canceling: boolean
   onChange: (level: FPApprovalLevel) => void
-  onCancelPending: () => void
+}
+
+/** What a level decides, in one sentence (the editor's description). */
+export function levelDescription(t: TFn, kind: ApprovalLevelKind): string {
+  return kind === 'accept'
+    ? t(
+        'findingApprovals.acceptLevel.description',
+        'When accepting the risk of a finding needs a second person. Bulk changes, suppression rules, task exceptions, imports and automation always need one.'
+      )
+    : t(
+        'findingApprovals.fpLevel.description',
+        'When marking a finding a false positive needs a second person.'
+      )
 }
 
 /** One level: its choices, the waiting lowering, and the warnings. */
-function LevelSelector({
+export function LevelSelector({
   kind,
   value,
   inForce,
@@ -128,9 +133,7 @@ function LevelSelector({
   pendingAt,
   changed,
   canEdit,
-  canceling,
   onChange,
-  onCancelPending,
 }: LevelSelectorProps) {
   const { t } = useTranslation()
   const id = useId()
@@ -138,25 +141,13 @@ function LevelSelector({
     kind === 'accept'
       ? t('findingApprovals.acceptLevel.title', 'Risk acceptance')
       : t('findingApprovals.fpLevel.title', 'False positive')
-  const description =
-    kind === 'accept'
-      ? t(
-          'findingApprovals.acceptLevel.description',
-          'When accepting the risk of a finding needs a second person. Bulk changes, suppression rules, task exceptions, imports and automation always need one.'
-        )
-      : t(
-          'findingApprovals.fpLevel.description',
-          'When marking a finding a false positive needs a second person.'
-        )
   const at = pendingAt ? formatDateTime(new Date(pendingAt)) : ''
   return (
     <fieldset className="min-w-0 space-y-3" aria-labelledby={`${id}-title`}>
-      <div className="space-y-1">
-        <h3 id={`${id}-title`} className="text-sm font-semibold">
-          {title}
-        </h3>
-        <p className="text-sm text-muted-foreground">{description}</p>
-      </div>
+      {/* The editor's title says what the choice is about: named for readers only. */}
+      <h3 id={`${id}-title`} className="sr-only">
+        {title}
+      </h3>
       {pending && (
         <Alert>
           <Clock className="h-4 w-4" aria-hidden />
@@ -174,18 +165,6 @@ function LevelSelector({
               }
             )}
           </AlertDescription>
-          {canEdit && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="col-start-2 mt-2 justify-self-start"
-              disabled={canceling}
-              onClick={onCancelPending}
-            >
-              {t('findingApprovals.settings.cancelPending', 'Cancel the change')}
-            </Button>
-          )}
         </Alert>
       )}
       <RadioGroup
@@ -282,209 +261,4 @@ export function levelsBody(
     ...(c.accept ? { accept_approval: draft.acceptLevel } : {}),
     ...(c.percent ? { second_look_percent: draft.percent } : {}),
   }
-}
-
-/** The names of the changed settings, for the save bar. */
-export function levelsChangeNames(t: TFn, draft: LevelsDraft, s: FindingApprovalSettings) {
-  const c = levelsChanged(draft, s)
-  return [
-    c.fp && t('findingApprovals.fpLevel.title', 'False positive'),
-    c.accept && t('findingApprovals.acceptLevel.title', 'Risk acceptance'),
-    c.percent && t('findingApprovals.fpLevel.secondLookName', 'Second look'),
-    c.email && t('findingApprovals.settings.backupTitle', 'Backup contact'),
-  ].filter((n): n is string => typeof n === 'string')
-}
-
-interface ApprovalLevelsSectionProps {
-  settings: FindingApprovalSettings
-  draft: LevelsDraft
-  onChange: (next: LevelsDraft) => void
-  canEdit: boolean
-  onSaved?: (next: FindingApprovalSettings) => void
-}
-
-/** The "Approval policy" section: both levels, the second look, the backup contact. */
-export function ApprovalLevelsSection({
-  settings,
-  draft,
-  onChange,
-  canEdit,
-  onSaved,
-}: ApprovalLevelsSectionProps) {
-  const { t } = useTranslation()
-  const id = useId()
-  const fpInForce: FPApprovalLevel = settings.fp_approval ?? 'all'
-  const acceptInForce: FPApprovalLevel = settings.accept_approval ?? 'all'
-  const percentInForce = settings.second_look_percent ?? 0
-  const changed = levelsChanged(draft, settings)
-  const [canceling, setCanceling] = useState<'fp' | 'accept' | 'percent' | null>(null)
-  const set = <K extends keyof LevelsDraft>(key: K, value: LevelsDraft[K]) =>
-    onChange({ ...draft, [key]: value })
-
-  const pendingPercentAt = settings.pending_second_look_at
-    ? formatDateTime(new Date(settings.pending_second_look_at))
-    : ''
-
-  // Cancel the waiting lowerings: the API drops them all and keeps the values
-  // in force (`what` only says which button shows the busy state). It applies
-  // at once, apart from the save bar.
-  const cancelPending = async (what: 'fp' | 'accept' | 'percent') => {
-    setCanceling(what)
-    try {
-      const next = await updateFindingApprovalSettings({ cancel_pending: true })
-      toast.success(
-        t('findingApprovals.settings.pendingCanceled', 'The waiting change was canceled')
-      )
-      onSaved?.(next)
-    } catch (err) {
-      toast.error(
-        getErrorMessage(
-          err,
-          t('findingApprovals.settings.cancelFailed', 'Could not cancel the waiting change')
-        )
-      )
-    } finally {
-      setCanceling(null)
-    }
-  }
-
-  return (
-    <SettingsSection
-      framed
-      id="approval-levels"
-      title={t('findingApprovals.approvalPolicy.title', 'Approval policy')}
-      description={t(
-        'findingApprovals.approvalPolicy.description',
-        'Whether a second person must approve before a finding is marked a false positive or its risk is accepted. The two settings are separate. Whoever decides, a reason is required, the decision is audited and an accepted risk ends on its date.'
-      )}
-    >
-      <SettingsBlock>
-        <div className="grid min-w-0 gap-6 @[45rem]:grid-cols-2">
-          <LevelSelector
-            kind="fp"
-            value={draft.fpLevel}
-            inForce={fpInForce}
-            pending={settings.pending_fp_approval}
-            pendingAt={settings.pending_fp_approval_at}
-            changed={changed.fp}
-            canEdit={canEdit}
-            canceling={canceling !== null}
-            onChange={(v) => set('fpLevel', v)}
-            onCancelPending={() => void cancelPending('fp')}
-          />
-          <LevelSelector
-            kind="accept"
-            value={draft.acceptLevel}
-            inForce={acceptInForce}
-            pending={settings.pending_accept_approval}
-            pendingAt={settings.pending_accept_approval_at}
-            changed={changed.accept}
-            canEdit={canEdit}
-            canceling={canceling !== null}
-            onChange={(v) => set('acceptLevel', v)}
-            onCancelPending={() => void cancelPending('accept')}
-          />
-        </div>
-      </SettingsBlock>
-      {settings.pending_second_look_percent !== undefined && (
-        <SettingsBlock>
-          <Alert>
-            <Clock className="h-4 w-4" aria-hidden />
-            <AlertTitle>
-              {t(
-                'findingApprovals.fpLevel.pendingPercentTitle',
-                'A lower second-look share is waiting'
-              )}
-            </AlertTitle>
-            <AlertDescription>
-              {t(
-                'findingApprovals.fpLevel.pendingPercentBody',
-                '{next} % takes effect at {at}. Until then {current} % of single-person decisions get a second look.',
-                {
-                  next: String(settings.pending_second_look_percent),
-                  current: String(percentInForce),
-                  at: pendingPercentAt,
-                }
-              )}
-            </AlertDescription>
-            {canEdit && (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="col-start-2 mt-2 justify-self-start"
-                disabled={canceling !== null}
-                onClick={() => void cancelPending('percent')}
-              >
-                {t('findingApprovals.settings.cancelPending', 'Cancel the change')}
-              </Button>
-            )}
-          </Alert>
-        </SettingsBlock>
-      )}
-      <SettingsRow
-        label={
-          <label htmlFor={`${id}-second-look`}>
-            {t('findingApprovals.fpLevel.secondLook', 'Second look (% of single-person decisions)')}
-          </label>
-        }
-        hintId={`${id}-second-look-hint`}
-        hint={
-          <>
-            {t(
-              'findingApprovals.fpLevel.secondLookHelp',
-              'A random share of false positives decided by one person is flagged for another person to look at. 0 turns it off; at most 10.'
-            )}
-            {changed.percent && draft.percent < percentInForce && (
-              <>
-                {' '}
-                {t(
-                  'findingApprovals.fpLevel.lowerPercentDelay',
-                  'A lower second-look share takes effect 24 hours after you save it. A higher share takes effect at once.'
-                )}
-              </>
-            )}
-          </>
-        }
-      >
-        <Input
-          id={`${id}-second-look`}
-          type="number"
-          min={0}
-          max={10}
-          step={1}
-          value={draft.percent}
-          disabled={!canEdit}
-          aria-describedby={`${id}-second-look-hint`}
-          onChange={(e) => set('percent', clampPercent(Number(e.target.value)))}
-          className="w-28"
-        />
-      </SettingsRow>
-      <SettingsRow
-        wide
-        label={
-          <label htmlFor={`${id}-email`}>
-            {t('findingApprovals.settings.backupTitle', 'Backup contact')}
-          </label>
-        }
-        hintId={`${id}-email-hint`}
-        hint={t(
-          'findingApprovals.settings.backupDescription',
-          'An advisor or auditor outside the organization who is emailed whenever its only member approves their own finding request.'
-        )}
-      >
-        <Input
-          id={`${id}-email`}
-          type="email"
-          maxLength={254}
-          autoComplete="email"
-          aria-describedby={`${id}-email-hint`}
-          placeholder={t('findingApprovals.settings.backupPlaceholder', 'advisor@example.com')}
-          value={draft.email}
-          disabled={!canEdit}
-          onChange={(e) => set('email', e.target.value)}
-        />
-      </SettingsRow>
-    </SettingsSection>
-  )
 }
