@@ -67,6 +67,24 @@ describe('LoopViz', () => {
     expect(within(items[2]).getByText('f.exploitable')).toBeInTheDocument()
   })
 
+  it('marks the current step on the note line, not as an extra pill row', () => {
+    render(<LoopViz result={loop} />)
+    const marker = screen.getByTestId('stage-act-here')
+    // A bordered pill was taller than the note line and gave one tile an extra
+    // row, so its status chip sat off the others' baseline.
+    expect(marker.className).not.toMatch(/\bborder\b|\bpy-0\.5\b|rounded-full/)
+    expect(marker.className).toContain('text-xs')
+  })
+
+  it('the last stage closes the short row of two or three columns (no blank cell)', () => {
+    render(<LoopViz result={loop} />)
+    const items = within(screen.getByRole('list', { name: 'Stages' })).getAllByRole('listitem')
+    for (const li of items) {
+      expect(li.className).toContain('last:col-span-2')
+      expect(li.className).toContain('@min-[680px]:last:col-span-1')
+    }
+  })
+
   it('every figure opens the list it counts, the second figure its own', () => {
     render(<LoopViz result={loop} />)
     expect(screen.getByRole('link', { name: 'Scoping: 9' })).toHaveAttribute(
