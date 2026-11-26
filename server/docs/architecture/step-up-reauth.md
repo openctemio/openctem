@@ -140,7 +140,7 @@ authenticate the user again:
 | Protocol | Request | Checked on the way back |
 |---|---|---|
 | OIDC (`GET /api/v1/auth/sso/{provider}/authorize?…&reauth=true`) | `prompt=login` and `max_age=0` (Google: `max_age=0` with its own `prompt`); the flag rides in the signed `state` | the id_token must carry `auth_time` no older than 5 minutes (2 minutes of skew); otherwise the sign-in is refused |
-| SAML (`GET /api/v1/auth/saml/{org}/login?reauth=1`) | `ForceAuthn="true"` in the AuthnRequest; the request-tracking cookie remembers it | the signed assertion's `AuthnInstant` must be no older than 5 minutes; otherwise the sign-in is refused |
+| SAML (`GET /api/v1/auth/saml/{connection}/login?reauth=1`) | `ForceAuthn="true"` in the AuthnRequest; the request-tracking cookie remembers it | the signed assertion's `AuthnInstant` must be no older than 5 minutes; otherwise the sign-in is refused |
 
 The window itself never depends on the flag: it opens only from the
 provider's signed authentication time (see Model). Entra ID includes
