@@ -26,6 +26,10 @@ type SAMLProvider struct {
 	enabled        bool
 	createdAt      time.Time
 	updatedAt      time.Time
+	// legacyPathKey is the frozen address key of a configuration that existed
+	// before addresses were keyed by connection id (the organization's slug
+	// at that time). Empty for every newer configuration.
+	legacyPathKey string
 }
 
 // New creates a SAML provider config (disabled-state controlled by Enabled).
@@ -62,7 +66,25 @@ func Reconstruct(id, tenantID shared.ID, idpEntityID, idpSSOURL, idpCert string,
 	}
 }
 
-func (p *SAMLProvider) ID() shared.ID            { return p.id }
+func (p *SAMLProvider) ID() shared.ID { return p.id }
+
+// LegacyPathKey is the frozen pre-connection-id address key ("" for a
+// configuration created since).
+func (p *SAMLProvider) LegacyPathKey() string { return p.legacyPathKey }
+
+// WithLegacyPathKey sets the frozen address key read from persistence.
+func (p *SAMLProvider) WithLegacyPathKey(k string) *SAMLProvider { p.legacyPathKey = k; return p }
+
+// PathKey is the key in this connection's public addresses
+// (/api/v1/auth/saml/<key>/{metadata,login,acs}) and in its SP entity ID:
+// the connection id, or the frozen legacy key of an older configuration
+// whose identity provider still holds that address.
+func (p *SAMLProvider) PathKey() string {
+	if p.legacyPathKey != "" {
+		return p.legacyPathKey
+	}
+	return p.id.String()
+}
 func (p *SAMLProvider) TenantID() shared.ID      { return p.tenantID }
 func (p *SAMLProvider) IDPEntityID() string      { return p.idpEntityID }
 func (p *SAMLProvider) IDPSSOURL() string        { return p.idpSSOURL }
@@ -95,7 +117,20 @@ func (p *SAMLProvider) IsDomainAllowed(emailDomain string) bool {
 // Repository persists per-tenant SAML config.
 type Repository interface {
 	GetByTenant(ctx context.Context, tenantID shared.ID) (*SAMLProvider, error)
+	// GetByIDUnscoped finds a configuration by its connection id across
+	// tenants. Only the public SAML routes call it: their addresses carry the
+	// random connection id and no tenant, and the tenant comes from the row.
+	GetByIDUnscoped(ctx context.Context, id shared.ID) (*SAMLProvider, error)
+	// GetByLegacyPathKey finds the configuration that holds this frozen
+	// legacy address key. It never reads tenants.slug.
+	GetByLegacyPathKey(ctx context.Context, key string) (*SAMLProvider, error)
+	// ReserveConnectionID returns the connection id the tenant's next SAML
+	// configuration takes, creating it on first use, so its addresses can be
+	// given to the identity provider before the configuration exists.
+	ReserveConnectionID(ctx context.Context, tenantID shared.ID) (shared.ID, error)
 	Upsert(ctx context.Context, p *SAMLProvider) error
+	// Delete removes the configuration and its reserved id: the address is
+	// retired, and a new configuration gets a new one.
 	Delete(ctx context.Context, tenantID shared.ID) error
 }
 
