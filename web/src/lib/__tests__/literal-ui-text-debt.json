@@ -107,7 +107,6 @@
   "features/organization/components/member-access-report.tsx": 1,
   "features/organization/components/personal-accounts-card.tsx": 6,
   "features/organization/components/storage-config-card.tsx": 3,
-  "features/pentest/components/finding-section-nav.tsx": 1,
   "features/programs/components/program-preview.tsx": 4,
   "features/remediation/components/create-jira-epic-dialog.tsx": 1,
   "features/repositories/components/repository-workspace.tsx": 128,
