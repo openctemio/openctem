@@ -92,6 +92,7 @@ import vi_settings from './vi/settings.json'
 import vi_securityOverview from './vi/securityOverview.json'
 import vi_supportAccess from './vi/supportAccess.json'
 import vi_riskScore from './vi/riskScore.json'
+import vi_serverText from './vi/serverText.json'
 import vi_severity from './vi/severity.json'
 import vi_userMenu from './vi/userMenu.json'
 import vi_validation from './vi/validation.json'
@@ -202,6 +203,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   settings: vi_settings,
   securityOverview: vi_securityOverview,
   supportAccess: vi_supportAccess,
+  serverText: vi_serverText,
   severity: vi_severity,
   userMenu: vi_userMenu,
   validation: vi_validation,

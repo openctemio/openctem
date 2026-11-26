@@ -1,4 +1,10 @@
 {
+  "assetCoverage.capability.capture.screenshot": "Chụp ảnh màn hình",
+  "assetCoverage.capability.check.takeover": "Kiểm tra chiếm quyền tên miền",
+  "assetCoverage.capability.crawl.web": "Thu thập trang web",
+  "assetCoverage.capability.discover.active": "Phát hiện chủ động",
+  "assetCoverage.capability.discover.hosts": "Phát hiện máy chủ",
+  "assetCoverage.capability.discover.passive": "Phát hiện thụ động",
   "assetCoverage.capability.discover.subdomains": "Phát hiện tên miền con",
   "assetCoverage.capability.dns.dangling": "Kiểm tra DNS treo",
   "assetCoverage.capability.dns.email": "Kiểm tra bảo mật email",
