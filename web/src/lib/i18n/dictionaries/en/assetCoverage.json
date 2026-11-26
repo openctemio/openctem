@@ -1,4 +1,10 @@
 {
+  "assetCoverage.capability.capture.screenshot": "Screenshots",
+  "assetCoverage.capability.check.takeover": "Takeover check",
+  "assetCoverage.capability.crawl.web": "Web crawl",
+  "assetCoverage.capability.discover.active": "Active discovery",
+  "assetCoverage.capability.discover.hosts": "Host discovery",
+  "assetCoverage.capability.discover.passive": "Passive discovery",
   "assetCoverage.capability.discover.subdomains": "Subdomain discovery",
   "assetCoverage.capability.dns.dangling": "Dangling DNS check",
   "assetCoverage.capability.dns.email": "Email security check",
