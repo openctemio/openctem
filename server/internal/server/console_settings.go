@@ -108,6 +108,7 @@ func newAdminPlatformSettingsHandler(repos *Repositories, svc *Services, approva
 	h.ScopeNames = svc.ScopeNames
 	h.PrivateDestinations = svc.PrivateDestinations
 	h.VulnFeedSources = svc.VulnFeedSources
+	h.FeedLimits = svc.FeedLimits
 	return h
 }
 

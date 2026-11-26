@@ -52,9 +52,15 @@ type BundleSource struct {
 	Fresh bool
 }
 
-// Build computes the view of one status row. catalog is the size of the
-// stored catalog (for the bundle feed it is read from the row).
+// Build computes the view of one status row under the default limits.
+// catalog is the size of the stored catalog (for the bundle feed it is read
+// from the row).
 func Build(st *threatintel.SyncStatus, catalog int64, now time.Time) View {
+	return BuildWith(st, catalog, now, DefaultLimits())
+}
+
+// BuildWith is Build under the stale limits in force.
+func BuildWith(st *threatintel.SyncStatus, catalog int64, now time.Time, limits Limits) View {
 	meta := st.Metadata()
 	source := st.SourceName()
 	v := View{
@@ -69,7 +75,7 @@ func Build(st *threatintel.SyncStatus, catalog int64, now time.Time) View {
 		CatalogRecords: catalog,
 		Interval:       Interval(source),
 		DeliveredVia:   metaString(meta["delivered_via"]),
-		StaleAfter:     StaleAfter(source),
+		StaleAfter:     limits.StaleAfter(source),
 	}
 	if c, ok := meta[threatintel.MetaErrorCode].(string); ok {
 		v.ErrorCode = c
@@ -81,7 +87,7 @@ func Build(st *threatintel.SyncStatus, catalog int64, now time.Time) View {
 
 	in := Input{
 		Source: source, Enabled: v.Enabled, Status: st.LastSyncStatus(), UpdatedAt: st.UpdatedAt(),
-		LastSuccessAt: v.LastSuccessAt, FailingSince: v.FailingSince, ErrorCode: v.ErrorCode,
+		LastSuccessAt: v.LastSuccessAt, FailingSince: v.FailingSince, ErrorCode: v.ErrorCode, Limits: limits,
 	}
 	switch source {
 	case SourceVulnfeed:
@@ -94,7 +100,7 @@ func Build(st *threatintel.SyncStatus, catalog int64, now time.Time) View {
 		}
 		for _, raw := range metaList(meta["sources"]) {
 			bs := BundleSource{Name: metaString(raw["name"]), AsOf: metaTime(raw["as_of"])}
-			bs.Fresh = bs.AsOf != nil && now.Sub(*bs.AsOf) <= StaleAfterVulnfeed
+			bs.Fresh = bs.AsOf != nil && now.Sub(*bs.AsOf) <= limits.Bundle()
 			d.Sources = append(d.Sources, bs)
 		}
 		v.Bundle = d
@@ -117,6 +123,7 @@ func Build(st *threatintel.SyncStatus, catalog int64, now time.Time) View {
 	case SourceKEV:
 		// When the collector last read the catalog (the release says so).
 		v.DataAsOf = metaTime(meta["bundle_fetched_at"])
+		in.DataAsOf = v.DataAsOf
 		if v.DataAsOf == nil {
 			v.DataAsOf = v.LastSuccessAt
 		}
@@ -213,4 +220,34 @@ func metaList(v any) []map[string]any {
 		return out
 	}
 	return nil
+}
+
+// AlignBundleCycle gives KEV and EPSS the vulnerability bundle feed's
+// schedule: both arrive only inside the bundle release, so their next run
+// is the bundle import's, not a cycle of their own.
+func AlignBundleCycle(views []View) {
+	var bundle *View
+	for i := range views {
+		if views[i].Source == SourceVulnfeed {
+			bundle = &views[i]
+		}
+	}
+	if bundle == nil {
+		return
+	}
+	for i := range views {
+		v := &views[i]
+		if v.Source != SourceKEV && v.Source != SourceEPSS {
+			continue
+		}
+		v.Interval = bundle.Interval
+		if !v.Enabled || v.State == StateRunning {
+			continue
+		}
+		v.NextRunAt = nil
+		if bundle.Enabled && bundle.NextRunAt != nil {
+			next := *bundle.NextRunAt
+			v.NextRunAt = &next
+		}
+	}
 }
