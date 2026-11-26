@@ -1533,6 +1533,16 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   `data-cut-tooltip` and sits in a tooltip trigger (or carries the full text in
   its `title`). The layout matrix's `cutMeaning` detector fails every other
   cut, with the visible and the full text.
+- A card is as tall as its content. A framed card (rounded, bordered, with a
+  background) whose last visible content ends more than max(64 px, 30% of its
+  height) above its inner bottom edge fails the layout matrix's `hollowCard`
+  detector. A card stretched by a row neighbour that fills the row passes
+  (neighbours in a row share one height by design); its own content should
+  still fill sensibly (a chart or list grows, an empty state centres). The
+  only fill areas, whose whole box counts as content, are a chart's plot box
+  (`.recharts-responsive-container`), a zoomable canvas (`.react-flow`,
+  `[data-layout-canvas]`) and the shared empty state
+  (`[data-slot="empty-state"]`, which centres itself in the room it is given).
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a
   fixed column count without breakpoints.
 - `e2e/specs/75a-layout-breaks-lists.spec.ts` (and 75b settings, 75c shell, 75d detail) check the lists and their overlays at

@@ -40,6 +40,18 @@ import { submitSignIn } from './auth'
  *                    full text is reachable: a `title`, `aria-label` or
  *                    `aria-description` holding it, or a tooltip trigger. A
  *                    line reads `cut "<visible>…" of "<full>" at <selector>`.
+ *   hollowCard       a framed card (rounded, bordered, with a background) whose
+ *                    last visible content ends more than max(64 px, 30% of the
+ *                    card's height) above its inner bottom edge: a row floor
+ *                    or a stored height left a blank band (the dashboard's
+ *                    CTEM loop stood 120 px above its tiles, owner 2026-11-26).
+ *                    Exempt: (a) a card in a row whose neighbour fills it
+ *                    (equal-height rows are by design: the neighbour sets the
+ *                    height), and (b) the fill areas of HOLLOW_FILL, whose
+ *                    whole box is content: a chart's plot box, a zoomable
+ *                    canvas, the shared empty state (it centres itself in the
+ *                    room it is given). A line reads `card ends <gap>px below
+ *                    its last content (<height>px tall) at <selector>`.
  */
 
 export type MatrixBreaks = {
@@ -51,6 +63,7 @@ export type MatrixBreaks = {
   joined: string[]
   emptyTail: string[]
   cutMeaning: string[]
+  hollowCard: string[]
 }
 
 export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
@@ -62,6 +75,7 @@ export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
   'joined',
   'emptyTail',
   'cutMeaning',
+  'hollowCard',
 ]
 
 /** Widths of the v2 matrix with the height of their device class. */
@@ -274,6 +288,17 @@ export const ROUTE_STATES: Record<string, RouteState> = {
     get path() {
       const id = process.env.E2E_MCP_CONFIRM_ID
       return id ? `/mcp/confirm/${encodeURIComponent(id)}` : '/mcp/confirm/[id]'
+    },
+  },
+  // The dashboard's editor (Customize): its previews stand as the widgets
+  // will on the dashboard, so the hollowCard check covers it too.
+  '/@customize': {
+    path: '/?customize=1',
+    act: async (page) => {
+      await page
+        .locator('main [data-testid="editor-grid"]')
+        .waitFor({ state: 'visible', timeout: 20_000 })
+      await page.waitForLoadState('networkidle').catch(() => {})
     },
   },
   // Wrong credentials of an account that does not exist: the error banner.
@@ -578,6 +603,7 @@ export async function findMatrixBreaks(
       joined: [] as string[],
       emptyTail: [] as string[],
       cutMeaning: [] as string[],
+      hollowCard: [] as string[],
     }
     const roots = Array.from(document.querySelectorAll(scope))
     if (!roots.length) return out
@@ -1275,6 +1301,153 @@ export async function findMatrixBreaks(
     for (const [sel, { c, n }] of groups)
       out.cutMeaning.push(
         `cut "${short(c.visible, 60)}…" of "${short(c.full, 120)}" at ${sel}${n > 1 ? ` (${n} elements)` : ''}${c.note}`
+      )
+
+    // ---- hollowCard: a framed card whose content stops well above its
+    // inner bottom edge. Content is what paints: text (its line boxes, not the
+    // box that holds it), media and controls, a box with a background or a
+    // border, cut to any box that clips it. A fill area (HOLLOW_FILL) is
+    // content to its whole box: it is drawn to fill the room on purpose.
+    const HOLLOW_FILL = [
+      // A chart's plot box (recharts sizes its SVG to it).
+      '.recharts-responsive-container',
+      // A zoomable canvas (React Flow): its nodes sit where a person put them.
+      '.react-flow',
+      '[data-layout-canvas]',
+      // The shared empty state: it centres itself in the room it is given.
+      '[data-slot="empty-state"]',
+    ].join(',')
+    const MEDIA = /^(IMG|svg|CANVAS|VIDEO|IFRAME|INPUT|TEXTAREA|SELECT|BUTTON)$/
+    const clear = (c: string) => /rgba\(0, 0, 0, 0\)|transparent/.test(c)
+    const textRange = document.createRange()
+    const contentBottom = (box: Element, clipAt: number): number => {
+      let bottom = -Infinity
+      const walk = (e: Element, clip: number) => {
+        const s = getComputedStyle(e)
+        if (s.display === 'none' || s.visibility === 'hidden' || s.opacity === '0') return
+        const r = e.getBoundingClientRect()
+        const big = r.width >= 2 && r.height >= 2
+        if (e.matches(HOLLOW_FILL) || MEDIA.test(e.tagName)) {
+          if (big) bottom = Math.max(bottom, Math.min(r.bottom, clip))
+          return
+        }
+        if (
+          big &&
+          (!clear(s.backgroundColor) ||
+            parseFloat(s.borderBottomWidth) > 0 ||
+            parseFloat(s.borderTopWidth) > 0)
+        )
+          bottom = Math.max(bottom, Math.min(r.bottom, clip))
+        for (const n of Array.from(e.childNodes)) {
+          if (n.nodeType !== 3 || !(n.textContent ?? '').trim()) continue
+          textRange.selectNodeContents(n)
+          const t = textRange.getBoundingClientRect()
+          if (t.height > 0) bottom = Math.max(bottom, Math.min(t.bottom, clip))
+        }
+        const inner = s.overflowY === 'visible' ? clip : Math.min(clip, r.bottom)
+        for (const c of Array.from(e.children)) walk(c, inner)
+      }
+      for (const c of Array.from(box.children)) walk(c, clipAt)
+      for (const n of Array.from(box.childNodes)) {
+        if (n.nodeType !== 3 || !(n.textContent ?? '').trim()) continue
+        textRange.selectNodeContents(n)
+        const t = textRange.getBoundingClientRect()
+        if (t.height > 0) bottom = Math.max(bottom, Math.min(t.bottom, clipAt))
+      }
+      return bottom
+    }
+    const framed = (el: Element) => {
+      // A field is not a card (a tall text area is empty until typed in).
+      if (el.matches(`input,select,textarea,[role=textbox],[contenteditable],${HOLLOW_FILL}`))
+        return false
+      if (el.closest('svg, .react-flow, [data-layout-canvas]')) return false
+      const s = getComputedStyle(el)
+      if (parseFloat(s.borderTopLeftRadius) < 4 && parseFloat(s.borderBottomRightRadius) < 4)
+        return false
+      if (clear(s.backgroundColor)) return false
+      return (['Top', 'Right', 'Bottom', 'Left'] as const).every(
+        (k) => parseFloat(s[`border${k}Width`]) > 0 && s[`border${k}Style`] !== 'none'
+      )
+    }
+    type Hollow = { gap: number; height: number; limit: number }
+    const measureCard = (el: Element): Hollow => {
+      const r = el.getBoundingClientRect()
+      const s = getComputedStyle(el)
+      const top = r.top + parseFloat(s.borderTopWidth) + parseFloat(s.paddingTop)
+      const innerBottom = r.bottom - parseFloat(s.borderBottomWidth) - parseFloat(s.paddingBottom)
+      const clipAt = s.overflowY === 'visible' ? Infinity : r.bottom
+      const last = Math.max(top, contentBottom(el, clipAt))
+      return {
+        gap: Math.round(innerBottom - last),
+        height: Math.round(r.height),
+        limit: Math.max(64, Math.round(r.height * 0.3)),
+      }
+    }
+    // The neighbours in the row the card stands in: it climbs through
+    // wrappers it reaches the bottom of (a cell with a heading above the
+    // card), then takes the siblings of a grid or row flex box that share its
+    // height band.
+    const rowNeighbours = (card: Element, root: Element): Element[] => {
+      let x: Element = card
+      for (let i = 0; i < 8 && x !== root; i++) {
+        const p = x.parentElement
+        if (!p) break
+        const ps = getComputedStyle(p)
+        const xr = x.getBoundingClientRect()
+        const row =
+          /grid/.test(ps.display) || (/flex/.test(ps.display) && !/column/.test(ps.flexDirection))
+        if (row) {
+          const sibs = Array.from(p.children).filter((c) => {
+            if (c === x || !shown(c)) return false
+            const cr = c.getBoundingClientRect()
+            const band = Math.min(cr.bottom, xr.bottom) - Math.max(cr.top, xr.top)
+            const side = cr.right <= xr.left + 2 || cr.left >= xr.right - 2
+            return side && band > Math.min(cr.height, xr.height) / 2
+          })
+          if (sibs.length) return sibs
+        }
+        const pr = p.getBoundingClientRect()
+        const room = pr.bottom - parseFloat(ps.borderBottomWidth) - parseFloat(ps.paddingBottom)
+        if (room - xr.bottom > 4) break
+        x = p
+      }
+      return []
+    }
+    // A neighbour fills the row: the card in it (or the cell itself) is not
+    // hollow.
+    const fillsRow = (cell: Element) => {
+      const cr = cell.getBoundingClientRect()
+      const cards = [cell, ...Array.from(cell.querySelectorAll('*'))].filter(
+        (e) => Math.abs(e.getBoundingClientRect().bottom - cr.bottom) <= 4 && framed(e)
+      )
+      if (cards.length) {
+        const m = measureCard(cards[0])
+        return m.gap <= m.limit
+      }
+      return cr.bottom - Math.max(cr.top, contentBottom(cell, Infinity)) <= 64
+    }
+    type HollowHit = { el: Element; sel: string; m: Hollow }
+    const hollows: HollowHit[] = []
+    for (const root of roots) {
+      for (const el of [root, ...Array.from(root.querySelectorAll('*'))]) {
+        if (!framed(el) || !shown(el)) continue
+        const r = el.getBoundingClientRect()
+        if (r.width < 120) continue
+        const m = measureCard(el)
+        if (m.gap <= m.limit) continue
+        if (rowNeighbours(el, root).some(fillsRow)) continue
+        hollows.push({ el, sel: selectorOf(el), m })
+      }
+    }
+    const hollowGroups = new Map<string, { h: HollowHit; n: number }>()
+    for (const h of hollows) {
+      const g = hollowGroups.get(h.sel)
+      if (g) g.n++
+      else hollowGroups.set(h.sel, { h, n: 1 })
+    }
+    for (const [sel, { h, n }] of hollowGroups)
+      out.hollowCard.push(
+        `card ends ${h.m.gap}px below its last content (${h.m.height}px tall, limit ${h.m.limit}px) at ${sel}${n > 1 ? ` (${n} cards)` : ''} "${short(h.el.textContent, 40)}"`
       )
 
     for (const k of Object.keys(out) as (keyof typeof out)[]) out[k] = [...new Set(out[k])]
