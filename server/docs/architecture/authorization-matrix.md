@@ -1812,6 +1812,8 @@ to `scoped`.
 | Member with no scope row | **nothing**, in every organization |
 | Request caller that is not an administrator and has neither a user nor an API key | refused: the list compiler (`datascope.ListActor`, like the query engine) never reads such a caller as an internal call |
 
+The resolver answers with an explicit kind (`datascope.ResolveForKind`): `ResolutionScoped` (a scope applies), `ResolutionUnrestricted` (owner, administrator or full-data role holder: no scope, by right) or `ResolutionNone` (nothing resolved). Request paths that must fail closed (`ListActor`, the query engine) refuse `ResolutionNone` and never read a nil scope alone as unrestricted.
+
 **Full data access is the Layer 2 bypass** (owner decision D3, research doc
 15 L-11). `roles.has_full_data_access` used to be stored, shown in the role
 editor ("Access all data regardless of group membership") and guarded on
