@@ -30,7 +30,6 @@ import { useVisibleSectionTabs } from '@/lib/permissions'
 import { safeHref } from '@/lib/safe-href'
 import { useAttentionCount } from './use-attention-count'
 import { formatNumber } from '@/lib/app-locale'
-import { useIsMobile } from '@/hooks/use-mobile'
 
 const ATTENTION_HREF = '/assets/attention'
 
@@ -64,7 +63,6 @@ export function AttentionQueueHeader({
 }: AttentionQueueHeaderProps) {
   const { t } = useTranslation()
   const router = useRouter()
-  const isPhone = useIsMobile()
   const visible = useVisibleSectionTabs(ASSET_ATTENTION_REASONS)
   const current = ASSET_ATTENTION_REASONS.find((r) => r.id === reason)
   if (!current) return null
@@ -76,22 +74,25 @@ export function AttentionQueueHeader({
 
   const why = t(current.whyKey, current.why)
   const inventoryLabel = t('assets.attention.openInInventory', 'Open in the inventory')
-  // A phone keeps the heading row to one line: the inventory link joins the
-  // queue's More there instead of wrapping onto a line of its own.
+  // The heading row is one line at every width: below 1280 px the inventory
+  // link is an item of the queue's More (an icon) and the why line takes the
+  // rest of the row, wrapped; from 1280 px the link is a button. Both are
+  // drawn and CSS picks one, so nothing moves after the page loads.
+  const ownItems = moreItems ?? []
   const menuItems: ActionMenuEntry[] = [
-    ...(isPhone && href
+    ...(href
       ? [
           {
             id: 'inventory',
             label: inventoryLabel,
             // Alone it turns the trigger into the link (an icon is needed);
             // beside Select, icons for all items or none.
-            icon: moreItems?.length ? undefined : ArrowRight,
+            icon: ownItems.length ? undefined : ArrowRight,
             onSelect: () => router.push(href),
           },
         ]
       : []),
-    ...(moreItems ?? []),
+    ...ownItems,
   ]
 
   return (
@@ -102,10 +103,12 @@ export function AttentionQueueHeader({
     <div
       // One line on a phone: the reason name ends in an ellipsis (whole in
       // the menu) rather than push the count and More onto a line of their own.
-      className="flex flex-wrap items-center gap-x-3 gap-y-2 max-md:flex-nowrap"
+      className="flex items-center gap-x-3"
       data-testid="attention-queue-header"
     >
-      <div className="flex min-w-0 items-center gap-1">
+      {/* The heading keeps its width from 768 px (the why line gives way);
+          on a phone it ends in an ellipsis, whole in its title and the menu. */}
+      <div className="flex min-w-0 items-center gap-1 md:shrink-0">
         <Button asChild variant="ghost" size="icon">
           <Link href={ATTENTION_HREF} aria-label={t('assets.attention.back', 'Needs attention')}>
             <ChevronLeft className="size-4 rtl:rotate-180" aria-hidden />
@@ -174,29 +177,29 @@ export function AttentionQueueHeader({
             : `${formatNumber(count)} ${t(current.unitKey, current.unit, { count })}`
         }
       />
-      {/* A sentence, read whole and never hidden behind a menu where there is
-          room for it: from 768 px it wraps in what the heading row has left
-          (at least 8rem, so the inventory link keeps its place beside it).
-          Where the row has less, it starts the next line and the inventory
-          link follows it there, so neither takes a row of its own above the
-          list. On a phone it is read at the top of the reason menu. */}
+      {/* A sentence, read whole beside the heading (never on a row of its
+          own above the list): it wraps in what the row has left. On a phone
+          it is read at the top of the reason menu. */}
       <p
         data-slot="attention-why"
-        className="min-w-32 flex-1 basis-0 text-sm text-muted-foreground max-md:hidden"
+        className="min-w-0 flex-1 basis-0 text-sm text-muted-foreground max-md:hidden"
       >
         {why}
       </p>
-      {((href && !isPhone) || menuItems.length > 0) && (
+      {menuItems.length > 0 && (
         <div className="ms-auto flex shrink-0 items-center gap-2">
-          {href && !isPhone && (
-            <Button asChild variant="outline">
+          {href && (
+            <Button asChild variant="outline" className="max-xl:hidden">
               <Link href={href}>
                 {inventoryLabel}
                 <ArrowRight className="ms-1.5 h-3.5 w-3.5" aria-hidden />
               </Link>
             </Button>
           )}
-          {menuItems.length > 0 && (
+          <div
+            data-slot="attention-more"
+            className={ownItems.length ? 'contents' : 'contents xl:hidden'}
+          >
             <ActionMenu
               title={t(current.labelKey, current.label)}
               label={t('common.actionMenu.label', 'Actions for {name}', {
@@ -213,7 +216,7 @@ export function AttentionQueueHeader({
                 </Button>
               }
             />
-          )}
+          </div>
         </div>
       )}
     </div>

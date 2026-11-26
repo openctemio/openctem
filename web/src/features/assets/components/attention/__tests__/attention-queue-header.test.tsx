@@ -70,10 +70,26 @@ describe('AttentionQueueHeader', () => {
     render(<AttentionQueueHeader reason="no_owner" count={549} />)
     const why = document.querySelector('[data-slot="attention-why"]')
     // Hidden only on a phone (read at the top of the reason menu there).
-    expect(why).toHaveClass('max-md:hidden', 'flex-1', 'basis-0', 'min-w-32')
+    expect(why).toHaveClass('max-md:hidden', 'flex-1')
     expect(why).not.toHaveClass('max-xl:hidden')
     // Never forced onto a line of its own above the list.
     expect(why?.className).not.toMatch(/basis-full|order-last/)
+  })
+
+  it('keeps one heading row: below 1280 px the inventory link is the More, never a row alone', () => {
+    render(
+      <AttentionQueueHeader reason="no_owner" count={549} inventoryHref="/assets?has_owner=false" />
+    )
+    const row = screen.getByTestId('attention-queue-header')
+    expect(row.className).not.toMatch(/flex-wrap/)
+    // The button shows from 1280 px; below it the More (alone, the link itself) holds it.
+    const link = screen.getByRole('link', { name: /open in the inventory/i })
+    expect(link).toHaveClass('max-xl:hidden')
+    const more = document.querySelector('[data-slot="attention-more"]')
+    expect(more).toHaveClass('xl:hidden')
+    expect(more).toContainElement(screen.getByRole('button', { name: /open in the inventory/i }))
+    // The why line takes what the row has left.
+    expect(document.querySelector('[data-slot="attention-why"]')).toHaveClass('flex-1', 'min-w-0')
   })
 
   it('has no inventory link for a reason with no inventory view', () => {
