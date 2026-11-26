@@ -15,13 +15,7 @@ import {
   DialogTitle,
   DialogBody,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { Loader2, Search, Box, Check, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -33,6 +27,8 @@ import {
 import { useAssets } from '@/features/assets/hooks/use-assets'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useSearchQuery } from '@/hooks/use-search-query'
+import { OwnershipSelectItems } from './ownership-select-items'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface BulkAddAssetsDialogProps {
   groupId: string | null
@@ -49,6 +45,7 @@ export function BulkAddAssetsDialog({
   existingAssets,
   onSuccess,
 }: BulkAddAssetsDialogProps) {
+  const { t } = useTranslation()
   const { bulkAssignAssets, isAssigning } = useBulkAssignAssets(open ? groupId : null)
 
   const [search, setSearch] = useState('')
@@ -109,13 +106,21 @@ export function BulkAddAssetsDialog({
 
         if (success_count > 0) {
           toast.success(
-            success_count === 1
-              ? '1 asset assigned to group'
-              : `${success_count} assets assigned to group`
+            t(
+              'org.bulkAssign.assigned',
+              '{count, plural, one {# asset assigned to group} other {# assets assigned to group}}',
+              { count: success_count }
+            )
           )
         }
         if (failed_count > 0) {
-          toast.error(`Failed to assign ${failed_count} asset(s)`)
+          toast.error(
+            t(
+              'org.bulkAssign.failedCount',
+              'Failed to assign {count, plural, one {# asset} other {# assets}}',
+              { count: failed_count }
+            )
+          )
         }
 
         if (success_count > 0) {
@@ -146,10 +151,13 @@ export function BulkAddAssetsDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Layers className="h-5 w-5" />
-            Bulk Assign Assets
+            {t('org.bulkAssign.title', 'Bulk assign assets')}
           </DialogTitle>
           <DialogDescription>
-            Select multiple assets to assign to this group at once.
+            {t(
+              'org.bulkAssign.description',
+              'Select multiple assets to assign to this group at once.'
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -159,7 +167,7 @@ export function BulkAddAssetsDialog({
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search assets..."
+                placeholder={t('org.bulkAssign.search', 'Search assets...')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="ps-9"
@@ -170,15 +178,18 @@ export function BulkAddAssetsDialog({
             {availableAssets.length > 0 && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">
-                  {selectedAssetIds.size} of {availableAssets.length} selected
+                  {t('common.table.selectedOf', '{selected} of {total} selected', {
+                    selected: selectedAssetIds.size,
+                    total: availableAssets.length,
+                  })}
                 </span>
                 <div className="flex items-center gap-2">
                   <Button variant="ghost" size="sm" onClick={selectAll}>
-                    Select All
+                    {t('org.bulkAssign.selectAll', 'Select all')}
                   </Button>
                   {selectedAssetIds.size > 0 && (
                     <Button variant="ghost" size="sm" onClick={clearSelection}>
-                      Clear
+                      {t('org.bulkAssign.clear', 'Clear')}
                     </Button>
                   )}
                 </div>
@@ -195,7 +206,9 @@ export function BulkAddAssetsDialog({
                 <div className="flex flex-col items-center justify-center py-12 text-center px-4">
                   <Box className="h-8 w-8 text-muted-foreground/50 mb-2" />
                   <p className="text-sm text-muted-foreground">
-                    {search ? 'No assets match your search' : 'All assets are already assigned'}
+                    {search
+                      ? t('org.bulkAssign.noMatch', 'No assets match your search')
+                      : t('org.bulkAssign.allAssigned', 'All assets are already assigned')}
                   </p>
                 </div>
               ) : (
@@ -245,7 +258,7 @@ export function BulkAddAssetsDialog({
 
             {/* Ownership Type */}
             <div className="space-y-2">
-              <Label>Ownership Type</Label>
+              <Label>{t('org.ownership.type', 'Ownership type')}</Label>
               <Select
                 value={ownershipType}
                 onValueChange={(value: AssetOwnershipType) => setOwnershipType(value)}
@@ -254,38 +267,7 @@ export function BulkAddAssetsDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="primary">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Primary</span>
-                      <span className="text-xs text-muted-foreground">
-                        Main owner with full access and responsibility
-                      </span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="secondary">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Secondary</span>
-                      <span className="text-xs text-muted-foreground">
-                        Co-owner with full access and shared responsibility
-                      </span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="stakeholder">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Stakeholder</span>
-                      <span className="text-xs text-muted-foreground">
-                        View access, receives critical notifications
-                      </span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="informed">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Informed</span>
-                      <span className="text-xs text-muted-foreground">
-                        No direct access, receives summary notifications
-                      </span>
-                    </div>
-                  </SelectItem>
+                  <OwnershipSelectItems />
                 </SelectContent>
               </Select>
             </div>
@@ -294,7 +276,7 @@ export function BulkAddAssetsDialog({
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => handleOpenChange(false)}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button onClick={handleBulkAssign} disabled={isAssigning || selectedAssetIds.size === 0}>
             {isAssigning ? (
@@ -302,8 +284,15 @@ export function BulkAddAssetsDialog({
             ) : (
               <Layers className="me-2 h-4 w-4" />
             )}
-            Assign {selectedAssetIds.size > 0 ? `${selectedAssetIds.size} ` : ''}Asset
-            {selectedAssetIds.size !== 1 ? 's' : ''}
+            {selectedAssetIds.size > 0
+              ? t(
+                  'org.bulkAssign.submit',
+                  'Assign {count, plural, one {# asset} other {# assets}}',
+                  {
+                    count: selectedAssetIds.size,
+                  }
+                )
+              : t('org.bulkAssign.submitNone', 'Assign assets')}
           </Button>
         </DialogFooter>
       </DialogContent>

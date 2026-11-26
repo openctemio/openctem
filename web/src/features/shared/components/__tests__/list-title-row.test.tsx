@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 import { ListCount, ListTitleRow, ListViewChanged } from '../list-title-row'
 
@@ -142,7 +143,7 @@ describe('ListViewChanged', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
-  it('shows Modified, then Save view and Reset, on a changed view', () => {
+  it('shows Modified, then one Save view menu with Save view and Reset, on a changed view', async () => {
     const onSave = vi.fn()
     const onReset = vi.fn()
     const { container } = render(
@@ -159,27 +160,37 @@ describe('ListViewChanged', () => {
       'text-cap',
       'text-muted-foreground'
     )
+    // One button, so a narrow title row keeps room for the view's name.
     const names = Array.from(container.querySelectorAll('button')).map((b) => b.textContent)
-    expect(names).toEqual(['Save view', 'Reset'])
-    fireEvent.click(screen.getByRole('button', { name: 'Save view' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
+    expect(names).toEqual(['Save view'])
+    await userEvent.click(screen.getByRole('button', { name: 'Save view' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Save view' }))
     expect(onSave).toHaveBeenCalledTimes(1)
+    await userEvent.click(screen.getByRole('button', { name: 'Save view' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Reset' }))
     expect(onReset).toHaveBeenCalledTimes(1)
   })
 
-  it('leaves Save view out for someone who may not save, and takes a save menu', () => {
+  it('offers Save changes and Save as new view to the owner of a saved view', async () => {
+    const onSaveChanges = vi.fn()
+    render(
+      <ListViewChanged changed onSave={() => {}} onSaveChanges={onSaveChanges} onReset={() => {}} />
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Save view' }))
+    const items = (await screen.findAllByRole('menuitem')).map((i) => i.textContent)
+    expect(items).toEqual(['Save changes', 'Save as new view…', 'Reset'])
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Save changes' }))
+    expect(onSaveChanges).toHaveBeenCalledTimes(1)
+  })
+
+  it('is a plain Reset for someone who may not save, and folds where the page says', () => {
     const { rerender } = render(<ListViewChanged changed onReset={() => {}} />)
     expect(screen.queryByRole('button', { name: 'Save view' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Reset' })).toBeInTheDocument()
     rerender(
-      <ListViewChanged
-        changed
-        onSave={() => {}}
-        save={<button type="button">Save menu</button>}
-        actionsClassName="hidden"
-      />
+      <ListViewChanged changed onSave={() => {}} onReset={() => {}} actionsClassName="hidden" />
     )
-    expect(screen.queryByRole('button', { name: 'Save view' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Save menu' }).parentElement).toHaveClass('hidden')
+    expect(screen.queryByRole('button', { name: 'Reset' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Save view' }).parentElement).toHaveClass('hidden')
   })
 })

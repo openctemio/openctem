@@ -14,6 +14,7 @@
 
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -47,6 +48,7 @@ export function EventTypeSelector({
   isLoading = false,
   error,
 }: EventTypeSelectorProps) {
+  const { t } = useTranslation()
   const toggle = (type: string, checked: boolean) => {
     onChange(checked ? [...value, type] : value.filter((t) => t !== type))
   }
@@ -55,9 +57,12 @@ export function EventTypeSelector({
 
   return (
     <div className="space-y-3">
-      <Label>Event Types</Label>
+      <Label>{t('notifications.eventTypes.title', 'Event types')}</Label>
       <p className="text-xs text-muted-foreground">
-        Select which event types should be sent to this channel
+        {t(
+          'notifications.eventTypes.help',
+          'Select which event types should be sent to this channel'
+        )}
       </p>
 
       {isLoading ? (
@@ -88,8 +93,10 @@ export function EventTypeSelector({
           <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
             <p className="text-xs text-muted-foreground">
-              Could not load the event-type list. Your current selection is shown below and will be
-              kept as-is if you save.
+              {t(
+                'notifications.eventTypes.loadError',
+                'Could not load the event-type list. Your current selection is shown below and will be kept as-is if you save.'
+              )}
             </p>
           </div>
           {value.length > 0 && (
@@ -114,8 +121,10 @@ export function EventTypeSelector({
         </div>
       ) : groups.length === 0 ? (
         <p className="text-xs text-muted-foreground" data-testid="event-types-empty">
-          No event types are available for this workspace. Enable a module in Settings to route
-          notifications for it.
+          {t(
+            'notifications.eventTypes.empty',
+            'No event types are available for this organization. Enable a module in Settings to route notifications for it.'
+          )}
         </p>
       ) : (
         <div className="space-y-4" data-testid="event-types-list">

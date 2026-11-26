@@ -137,9 +137,12 @@ describe('Social login settings', () => {
     render(<SocialLoginSettingsForm settings={s} canEdit onSaved={() => {}} />)
     const card = within(screen.getByTestId('social-github'))
     expect(card.getByText('Set by the server environment')).toBeInTheDocument()
-    expect(
-      card.getByText(/Locked by the server configuration \(OAUTH_GITHUB_CLIENT_SECRET\)/)
-    ).toBeInTheDocument()
+    const code = Array.from(screen.getByTestId('social-github').querySelectorAll('code')).find(
+      (c) => c.textContent === 'OAUTH_GITHUB_CLIENT_SECRET'
+    )
+    expect(code?.closest('[role="status"]')).toHaveTextContent(
+      /Locked by the server configuration \(OAUTH_GITHUB_CLIENT_SECRET\)/
+    )
     expect(card.getByLabelText('Client ID')).toBeDisabled()
     expect(card.queryByRole('button', { name: 'Save changes' })).toBeNull()
     // An editable provider shows its save bar once something changed.

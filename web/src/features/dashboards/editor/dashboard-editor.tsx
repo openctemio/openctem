@@ -6,7 +6,9 @@
  * and redo, then Save (or Cancel to drop every change). Each widget shows its
  * stored figures, or its preview when it is new or changed.
  *
- * Keyboard, with a widget focused: arrows move it, Shift+arrows resize it,
+ * Keyboard, with a widget focused: arrows move it, Shift+Left/Right change its
+ * width, Shift+Up/Down the rows it spans beside its neighbours (a widget is
+ * as tall as its content; its rows only place it),
  * Enter configures, D duplicates, Delete removes (with Undo). Ctrl/Cmd+Z and
  * Ctrl/Cmd+Shift+Z undo and redo. Every change is announced.
  */
@@ -51,9 +53,9 @@ import { updateDashboard, updateOrgDashboard } from '../api/use-dashboards-api'
 import type { DashboardData, WidgetValue } from '../api/widget-data'
 import type { CatalogMetric, WidgetSpec } from '../api/widget-spec'
 import { specOf } from '../api/widget-adapter'
+import { rowsOnView } from '../components/dashboard-view'
 import { WidgetView } from '../components/widget-view'
 import {
-  ROW_HEIGHT,
   colSpanFor,
   editorColumnsClass,
   editorSpanClass,
@@ -233,7 +235,7 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
       })
     } else if (e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       next = ops.resizeHeight(layout, i, e.key === 'ArrowDown' ? 1 : -1)
-      msg = t('dashboards.editor.height', '{name}: {rows} rows tall', {
+      msg = t('dashboards.editor.rows', '{name}: spans {rows} rows beside its neighbours', {
         name,
         rows: (next[i] ?? w).h,
       })
@@ -421,7 +423,7 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
       <p id="dashboard-editor-help" className="text-xs text-muted-foreground max-sm:sr-only">
         {t(
           'dashboards.editor.help',
-          'Drag a widget by its handle, or focus it and use the arrow keys to move it, Shift and the arrow keys to resize it, Enter to configure, D to duplicate and Delete to remove.'
+          'Drag a widget by its handle, or focus it and use the arrow keys to move it, Shift and the left or right arrow to change its width, Shift and the up or down arrow to change how many rows it spans beside its neighbours, Enter to configure, D to duplicate and Delete to remove.'
         )}
       </p>
       <div aria-live="polite" className="sr-only" data-testid="editor-announcer">
@@ -439,12 +441,11 @@ export function DashboardEditor({ dashboard, kind, data, onExit }: DashboardEdit
       ) : (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
           <SortableContext items={layout.map((w) => w.uid)} strategy={rectSortingStrategy}>
+            {/* Rows are as tall as their content, as on the dashboard
+                (DashboardView): a preview stands as tall as the widget will.
+                A widget's rows only place it beside its neighbours. */}
             <div
-              className={cn(
-                'grid gap-3 sm:gap-4 sm:[grid-auto-rows:minmax(var(--row),auto)]',
-                editorColumnsClass(cols)
-              )}
-              style={{ '--row': `${ROW_HEIGHT}px` } as React.CSSProperties}
+              className={cn('grid gap-3 sm:gap-4', editorColumnsClass(cols))}
               data-testid="editor-grid"
             >
               {layout.map((w, i) => (
@@ -557,8 +558,9 @@ function EditorCard({
   } = useSortable({ id: widget.uid })
   const typed = !!specOf(widget)
   const span = colSpanFor(widget.w, columns)
-  // 44px targets on a phone, compact from 640px.
-  const iconBtn = 'size-11 shrink-0 sm:size-8'
+  // Kit icon buttons at the kit's sizes: every control of the header row
+  // shares one height (36 px on a phone, 32 px from 640 px).
+  const iconBtn = 'shrink-0'
   return (
     <div
       ref={setNodeRef}
@@ -566,7 +568,7 @@ function EditorCard({
         {
           '--span': gridColumnSpan(span),
           '--span-sm': gridColumnSpan(Math.min(2, span)),
-          gridRow: widgetRowSpan(widget.h),
+          gridRow: widgetRowSpan(rowsOnView(widget, value, columns)),
           transform: CSS.Transform.toString(transform),
           transition,
         } as React.CSSProperties
@@ -602,23 +604,23 @@ function EditorCard({
           className="@container flex min-w-0 items-center gap-0.5 overflow-hidden rounded-t-lg border bg-muted/40 px-1 py-0.5 max-sm:rounded-b-lg sm:border-b-0"
           data-testid="editor-chrome"
         >
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             ref={setActivatorNodeRef}
             {...attributes}
             {...listeners}
             tabIndex={-1}
-            className={cn(
-              iconBtn,
-              'inline-flex cursor-grab touch-none items-center justify-center rounded text-muted-foreground'
-            )}
+            className={cn(iconBtn, 'cursor-grab touch-none text-muted-foreground')}
             aria-label={t('dashboards.editor.drag', 'Drag {name}', { name })}
           >
             <GripVertical className="h-4 w-4" aria-hidden />
-          </button>
+          </Button>
           <span
             className="min-w-0 flex-1 truncate px-1 text-sm text-muted-foreground sm:text-xs"
             title={name}
+            data-cut-tooltip
           >
             {name}
           </span>
@@ -705,26 +707,26 @@ function EditorCard({
                 onSelect: () => onWidth(1),
               },
               {
-                id: 'shorter',
-                label: t('dashboards.editor.shorter', 'Shorter'),
+                id: 'fewer-rows',
+                label: t('dashboards.editor.fewerRows', 'Span one row fewer'),
                 icon: ArrowUpToLine,
                 shortcut: '⇧↑',
                 section: 'size',
                 disabledReason:
                   widget.h <= ops.MIN_ROWS
-                    ? t('dashboards.editor.reason.shortest', 'Already as short as it goes')
+                    ? t('dashboards.editor.reason.oneRow', 'Already spans one row')
                     : undefined,
                 onSelect: () => onHeight(-1),
               },
               {
-                id: 'taller',
-                label: t('dashboards.editor.taller', 'Taller'),
+                id: 'more-rows',
+                label: t('dashboards.editor.moreRows', 'Span one more row'),
                 icon: ArrowDownToLine,
                 shortcut: '⇧↓',
                 section: 'size',
                 disabledReason:
                   widget.h >= ops.MAX_ROWS
-                    ? t('dashboards.editor.reason.tallest', 'Already as tall as it goes')
+                    ? t('dashboards.editor.reason.mostRows', 'Already spans the most rows')
                     : undefined,
                 onSelect: () => onHeight(1),
               },
@@ -775,6 +777,9 @@ function EditorCard({
                 : undefined)
             }
             asOf={asOf}
+            // As on the dashboard: the freshness line shows only when a
+            // widget's time differs from the page's.
+            pageAsOf={asOf}
             className="flex-1 rounded-t-none"
           />
         </div>

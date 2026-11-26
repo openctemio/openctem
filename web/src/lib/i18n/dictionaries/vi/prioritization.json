@@ -287,5 +287,6 @@
   "prioritization.rules.tune": "Tinh chỉnh chấm điểm rủi ro",
   "prioritization.rules.value.false": "Sai",
   "prioritization.rules.value.select": "Chọn",
-  "prioritization.rules.value.true": "Đúng"
+  "prioritization.rules.value.true": "Đúng",
+  "prioritization.rules.valuePlaceholder": "critical, high"
 }

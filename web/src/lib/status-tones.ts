@@ -113,6 +113,13 @@ export const STATUS_TONES = {
       labelKey: 'findings.receiptHistory.status.completed',
     },
     failed: { tone: 'open', icon: RingDotGlyph, labelKey: 'findings.receiptHistory.status.failed' },
+    // Not a server status: a completed receipt that could not store some of
+    // its findings or reported problems (lib/import-rows.ts receiptIssue).
+    partial: {
+      tone: 'waiting',
+      icon: ThreeQuarterCircleGlyph,
+      labelKey: 'findings.receiptHistory.status.partial',
+    },
   },
   // Web page monitoring watches (RFC-138): the outcome of the last check.
   webWatch: {

@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { useTranslation } from '@/context/i18n-provider'
 import {
   dateInputDaysFromNow,
   endOfDayISO,
@@ -62,10 +63,15 @@ export function MembershipEndFields({
   disabled?: boolean
   idPrefix: string
 }) {
+  const { t } = useTranslation()
   return (
     <>
       <div className="space-y-2">
-        <Label htmlFor={`${idPrefix}-ends`}>Membership ends{required ? '' : ' (optional)'}</Label>
+        <Label htmlFor={`${idPrefix}-ends`}>
+          {required
+            ? t('org.membershipEnd.label', 'Membership ends')
+            : t('org.membershipEnd.labelOptional', 'Membership ends (optional)')}
+        </Label>
         <Input
           id={`${idPrefix}-ends`}
           type="date"
@@ -78,14 +84,25 @@ export function MembershipEndFields({
         />
         <p className="text-xs text-muted-foreground">
           {required
-            ? 'This is an external team: every member needs an end date, at most a year ahead.'
-            : 'Leave empty for a membership with no end. At most a year ahead.'}{' '}
-          The member leaves the team, and loses its assets and roles, on that day.
+            ? t(
+                'org.membershipEnd.hintRequired',
+                'This is an external team: every member needs an end date, at most a year ahead.'
+              )
+            : t(
+                'org.membershipEnd.hintOptional',
+                'Leave empty for a membership with no end. At most a year ahead.'
+              )}{' '}
+          {t(
+            'org.membershipEnd.leaves',
+            'The member leaves the team, and loses its assets and roles, on that day.'
+          )}
         </p>
       </div>
       {value.endsOn && (
         <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-reason`}>Reason (optional)</Label>
+          <Label htmlFor={`${idPrefix}-reason`}>
+            {t('org.membershipEnd.reason', 'Reason (optional)')}
+          </Label>
           <Textarea
             id={`${idPrefix}-reason`}
             maxLength={500}
@@ -93,7 +110,10 @@ export function MembershipEndFields({
             value={value.reason}
             onChange={(e) => onChange({ ...value, reason: e.target.value })}
             disabled={disabled}
-            placeholder="Penetration test, fourth quarter"
+            placeholder={t(
+              'org.membershipEnd.reasonPlaceholder',
+              'Penetration test, fourth quarter'
+            )}
           />
         </div>
       )}
@@ -116,6 +136,7 @@ export function MembershipEndDialog({
   onOpenChange: (open: boolean) => void
   onSaved?: () => void
 }) {
+  const { t } = useTranslation()
   const [value, setValue] = useState<MembershipEnd>({ endsOn: '', reason: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -130,7 +151,12 @@ export function MembershipEndDialog({
     e.preventDefault()
     if (!member) return
     if (required && !value.endsOn) {
-      setError('This is an external team: choose when the membership ends.')
+      setError(
+        t(
+          'org.membershipEnd.requiredError',
+          'This is an external team: choose when the membership ends.'
+        )
+      )
       return
     }
     setBusy(true)
@@ -142,8 +168,13 @@ export function MembershipEndDialog({
       })
       toast.success(
         value.endsOn
-          ? `${member.name} leaves the team on ${formatShortDate(endOfDayISO(value.endsOn))}`
-          : `${member.name} stays in the team with no end date`
+          ? t('org.membershipEnd.leavesOn', '{name} leaves the team on {date}', {
+              name: member.name,
+              date: formatShortDate(endOfDayISO(value.endsOn)),
+            })
+          : t('org.membershipEnd.stays', '{name} stays in the team with no end date', {
+              name: member.name,
+            })
       )
       onSaved?.()
       onOpenChange(false)
@@ -159,9 +190,11 @@ export function MembershipEndDialog({
       <DialogContent size="sm">
         <DialogForm onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>Change end date</DialogTitle>
+            <DialogTitle>{t('org.membershipEnd.title', 'Change end date')}</DialogTitle>
             <DialogDescription>
-              When {member?.name}&apos;s membership of this team ends.
+              {t('org.membershipEnd.description', "When {name}'s membership of this team ends.", {
+                name: member?.name ?? '',
+              })}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
@@ -179,11 +212,11 @@ export function MembershipEndDialog({
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t('common.cancel', 'Cancel')}
             </Button>
             <Button type="submit" disabled={busy}>
               {busy && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              Save
+              {t('common.save', 'Save')}
             </Button>
           </DialogFooter>
         </DialogForm>

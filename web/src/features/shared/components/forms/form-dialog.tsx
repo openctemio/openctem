@@ -50,8 +50,12 @@ export interface FormDialogProps {
   /** The fields (a FormStack). */
   children: ReactNode
   onSubmit: () => void
-  /** The primary action's label (a verb: Create, Save, Add). */
-  submitLabel: ReactNode
+  /**
+   * The primary action's label (a verb: Create, Save, Add). null leaves the
+   * primary out: a view-only form for someone who may not change it, closed
+   * by Cancel (labelled Close by the caller), X or Escape.
+   */
+  submitLabel: ReactNode | null
   submitting?: boolean
   /** False while the form cannot be submitted (the button is disabled). */
   canSubmit?: boolean
@@ -104,7 +108,7 @@ export function FormDialog({
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     e.stopPropagation()
-    if (submitting || !canSubmit) return
+    if (submitting || !canSubmit || submitLabel === null) return
     onSubmit()
   }
   return (
@@ -145,16 +149,18 @@ export function FormDialog({
                 {reason}
               </p>
             )}
-            <Button
-              type="submit"
-              variant={destructive ? 'destructive' : 'default'}
-              disabled={submitting || !canSubmit}
-              aria-describedby={reason && !canSubmit ? reasonId : undefined}
-              data-testid="form-dialog-submit"
-            >
-              {submitting && <Loader2 className="animate-spin" aria-hidden />}
-              {submitLabel}
-            </Button>
+            {submitLabel !== null && (
+              <Button
+                type="submit"
+                variant={destructive ? 'destructive' : 'default'}
+                disabled={submitting || !canSubmit}
+                aria-describedby={reason && !canSubmit ? reasonId : undefined}
+                data-testid="form-dialog-submit"
+              >
+                {submitting && <Loader2 className="animate-spin" aria-hidden />}
+                {submitLabel}
+              </Button>
+            )}
           </DialogFooter>
         </DialogForm>
       </DialogContent>

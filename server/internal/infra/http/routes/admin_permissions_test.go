@@ -127,6 +127,8 @@ var legacyMinimumTier = map[string]admin.AdminRole{
 	"PUT /api/v1/admin/settings/leaked-secret-storage/":                      admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/private-destinations/":                       admin.AdminRoleSuperAdmin,
 	"POST /api/v1/admin/settings/private-destinations/test":                  admin.AdminRoleSuperAdmin,
+	"PUT /api/v1/admin/settings/vulnfeed-sources/":                           admin.AdminRoleSuperAdmin,
+	"POST /api/v1/admin/settings/vulnfeed-sources/test":                      admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/legal/":                                      admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/limits/":                                     admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/platform-sensor-proof/":                      admin.AdminRoleSuperAdmin,

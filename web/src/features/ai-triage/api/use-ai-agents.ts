@@ -87,3 +87,53 @@ export const runAIAgentAction = (id: string, action: AIAgentAction) =>
   post<AIAgent>(aiAgentUrl(id, `/${AI_AGENT_ACTION_VERB[action]}`), {})
 
 export const deleteAIAgent = (id: string) => del(aiAgentUrl(id))
+
+/** One suggestion of a run and what became of it (codes only, never model text). */
+export interface AIRunAction {
+  /** verdict, severity, summary, remediation_steps */
+  kind: string
+  /** applied, requested, commented, skipped */
+  outcome: string
+  /** Why it was held or skipped, as a code (suggest_mode, finding_changed, ...). */
+  reason?: string
+}
+
+/** A run of an AI agent on a finding (GET /api/v1/findings/{id}/ai/runs). */
+export interface AIRun {
+  id: string
+  ai_agent_id?: string
+  /** The AI agent's name now (empty once it is deleted). */
+  ai_agent_name?: string
+  kind: string
+  /** builtin or tenant_worker (runs on the organization's AI workers). */
+  executor: string
+  /** The AI worker that returned the result (worker runs). */
+  sensor_id?: string
+  status: string
+  provider?: string
+  model?: string
+  model_family?: string
+  /** applied, proposed, no_change, abstained (finished runs). */
+  outcome?: string
+  action_log?: AIRunAction[]
+  error_code?: string
+  trigger: string
+  accountable: AIOwner[]
+  created_at: string
+  completed_at?: string
+}
+
+/**
+ * The AI agent runs on a finding, newest first. Needs findings:read and
+ * ai_triage:read; pass enabled=false without them (no request is sent). On
+ * the finding page the answer comes from the page view
+ * (GET /findings/{id}/view carries this URL as a part), so it costs no
+ * request of its own.
+ */
+export function useFindingAIRuns(findingId: string, enabled: boolean) {
+  return useSWR<AIRun[]>(
+    enabled && findingId ? `/api/v1/findings/${encodeURIComponent(findingId)}/ai/runs` : null,
+    async (url: string) => (await get<{ data: AIRun[] }>(url)).data ?? [],
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  )
+}

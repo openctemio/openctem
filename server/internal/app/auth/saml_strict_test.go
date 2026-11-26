@@ -199,7 +199,7 @@ func TestSAMLArtifactBindingRefused(t *testing.T) {
 	f := newSAMLACSFixture(t)
 	_, _ = f.respond(t, false, time.Now(), nil)
 	r := newSAMLPost("SAMLart", "AAQAAMh48/1oXIM+sDo7Dh2qMp1HM4IF5DaRNmDj6RdUmllwn9jJHyEgIi8=")
-	_, err := f.svc.ACS(context.Background(), "acme", samlACSBase, r, []string{f.requestID}, false)
+	_, err := f.svc.ACS(context.Background(), f.key, samlACSBase, r, []string{f.requestID}, false)
 	mustRefuse(t, err)
 }
 
@@ -261,7 +261,7 @@ func TestSAMLNameIDCommentInjectionReadsWholeValue(t *testing.T) {
 		nid.CreateComment("x")
 		nid.CreateText(".evil.example")
 	})
-	sp, rc, err := f.svc.resolveServiceProvider(context.Background(), "acme", samlACSBase)
+	sp, rc, err := f.svc.resolveServiceProvider(context.Background(), f.key, samlACSBase)
 	if err != nil {
 		t.Fatal(err)
 	}

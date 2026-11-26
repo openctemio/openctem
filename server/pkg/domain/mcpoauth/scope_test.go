@@ -9,8 +9,8 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
-func TestReadScopesAreTheFiveReadScopes(t *testing.T) {
-	want := []Scope{ScopeAssetsRead, ScopeComplianceRead, ScopeFindingsRead, ScopePentestRead, ScopeScopeRead}
+func TestReadScopesAreTheSixReadScopes(t *testing.T) {
+	want := []Scope{ScopeAssetsRead, ScopeComplianceRead, ScopeFindingsRead, ScopePathsRead, ScopePentestRead, ScopeScopeRead}
 	if got := ReadScopes(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("ReadScopes() = %v, want %v", got, want)
 	}

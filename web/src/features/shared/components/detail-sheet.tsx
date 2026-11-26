@@ -29,6 +29,7 @@ import { ChevronRight, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { copyToClipboard } from '@/lib/clipboard'
+import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { Meter } from './meter'
 
@@ -417,20 +418,24 @@ export function DetailCopyId({
   copiedMessage,
   className,
 }: DetailCopyIdProps) {
+  const { t } = useTranslation()
+  const lowerLabel = `${label.charAt(0).toLowerCase()}${label.slice(1)}`
   return (
     <button
       type="button"
       // The name contains the visible ID (WCAG 2.5.3, label in name), so a
       // speech user can say what they see.
       title={id}
-      aria-label={`${ariaLabel ?? `Copy ${label.charAt(0).toLowerCase()}${label.slice(1)}`} ${id}`}
+      aria-label={`${ariaLabel ?? t('components.shared.detail.copy', 'Copy {label}', { label: lowerLabel })} ${id}`}
       className={cn(
         'inline-flex max-w-full items-center gap-1.5 rounded-sm font-mono text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
         className
       )}
       onClick={() => {
         copyToClipboard(id)
-        toast.success(copiedMessage ?? `${label} copied`)
+        toast.success(
+          copiedMessage ?? t('components.shared.detail.copied', '{label} copied', { label })
+        )
       }}
     >
       {/* An ID is copied, not read: it may end in an ellipsis, whole in the

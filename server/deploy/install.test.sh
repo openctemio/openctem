@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck source-path=SCRIPTDIR
 # Tests for install.sh, setup.sh and lib/common.sh with a stub docker and stub
 # host tools (no containers, no network, no real keys).
 # Run: bash server/deploy/install.test.sh
@@ -313,6 +314,45 @@ rc="$(STUB_PS_DIR="$d/deploy" STUB_PS_FILES="$running" run_install "$d" --yes)"
 check "sensor running, .env edited without it, no flag: kept (rerun keeps the running set)" bash -c "[ '$rc' != 0 ] && grep -q 'COMPOSE_FILE=docker-compose.yml:docker-compose.sensor.yml' '$d/out'"
 rc="$(STUB_PS_DIR="$d/deploy" STUB_PS_FILES="$running" run_install "$d" --yes --no-sensor)"
 check "sensor running, explicit --no-sensor: allowed" bash -c "[ '$rc' = 0 ] && grep -qx 'COMPOSE_FILE=docker-compose.yml' '$d/deploy/.env'"
+
+# 23. A sensor profile image is verified against its release tag's identity.
+# shellcheck source=lib/common.sh
+id_of() { (source "$src/lib/common.sh" >/dev/null 2>&1; signing_identity "$1"); }
+check "relay profile image: release tag identity" [ "$(id_of ghcr.io/openctemio/sensor:v0.42.0-relay)" = "https://github.com/openctemio/sensor/.github/workflows/docker-publish.yml@refs/tags/v0.42.0" ]
+check "plain sensor image: unchanged identity" [ "$(id_of ghcr.io/openctemio/sensor:v0.41.1)" = "https://github.com/openctemio/sensor/.github/workflows/docker-publish.yml@refs/tags/v0.41.1" ]
+check "server image: unchanged identity" [ "$(id_of ghcr.io/openctemio/openctem-server:v0.24.1)" = "https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/v0.24.1" ]
+
+# 24. docker-compose.override.yml: listed last when it exists, never when absent.
+d="$(fixture)"
+printf 'services: {}\n' >"$d/deploy/docker-compose.override.yml"
+rc="$(run_install "$d" --yes --host ctem.example.com --version v9.9.9)"
+check "override present, new install: listed last" bash -c "[ '$rc' = 0 ] && grep -qx 'COMPOSE_FILE=docker-compose.yml:docker-compose.sensor.yml:docker-compose.override.yml' '$d/deploy/.env'"
+d="$(fixture)"
+rc="$(run_install "$d" --yes --host ctem.example.com --version v9.9.9)"
+check "override absent, new install: not listed" bash -c "[ '$rc' = 0 ] && ! grep -q override '$d/deploy/.env'"
+printf 'services: {}\n' >"$d/deploy/docker-compose.override.yml"
+rc="$(run_install "$d" --yes)"
+check "rerun with a new override: added last, said so" bash -c "[ '$rc' = 0 ] && grep -qx 'COMPOSE_FILE=docker-compose.yml:docker-compose.sensor.yml:docker-compose.override.yml' '$d/deploy/.env' && grep -q 'docker-compose.override.yml is now listed in COMPOSE_FILE' '$d/out'"
+rc="$(run_install "$d" --yes --no-sensor)"
+check "rerun dropping the sensor keeps the override last" bash -c "[ '$rc' = 0 ] && grep -qx 'COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml' '$d/deploy/.env'"
+rm -f "$d/deploy/docker-compose.override.yml"
+rc="$(run_install "$d" --yes --no-sensor)"
+check "override file removed: rerun does not list it" bash -c "[ '$rc' = 0 ] && grep -qx 'COMPOSE_FILE=docker-compose.yml' '$d/deploy/.env'"
+
+# 25. The summary names the feed mode and what it needs.
+d="$(fixture)"
+rc="$(run_install "$d" --yes --host ctem.example.com --version v9.9.9)"
+check "summary, sensor on: relay through the bundled sensor, hosts named" bash -c "[ '$rc' = 0 ] && grep -q 'Vulnerability feed: the bundled sensor relays the feed' '$d/out' && grep -q 'github.com, release-assets.githubusercontent.com and objects.githubusercontent.com' '$d/out' && grep -q 'docs.openctem.io/operations/vulnerability-feed-setup/' '$d/out'"
+d="$(fixture)"
+rc="$(run_install "$d" --yes --host 192.0.2.10 --version v9.9.9)"
+check "summary, IP host without sensor: direct, says why and how to add it" bash -c "[ '$rc' = 0 ] && grep -q 'Vulnerability feed: direct' '$d/out' && grep -q 'OPENCTEM_HTTPSEC_FEED_PROXY' '$d/out' && grep -q 'left out because the host is an IP address' '$d/out' && grep -q -- '--sensor' '$d/out'"
+rc="$(run_install "$d" --yes)"
+check "summary, rerun: mode lives in the database, plus the needs" bash -c "[ '$rc' = 0 ] && grep -q 'Feed delivery' '$d/out' && grep -q 'Without the bundled sensor: direct mode' '$d/out' && ! grep -q 'left out because' '$d/out'"
+d="$(fixture)"
+rc="$(run_install "$d" --yes --host ctem.example.com --version v9.9.9 --no-sensor --set VULNFEED_BUNDLE_DIR=/vulnfeed)"
+check "summary, explicit --no-sensor on a DNS name: no IP-address remark" bash -c "[ '$rc' = 0 ] && ! grep -q 'left out because' '$d/out'"
+check "summary, bundle dir: offline folder, 7-day rule" bash -c "grep -q 'Vulnerability feed: offline folder' '$d/out' && grep -q 'older than 7 days is refused' '$d/out' && ! grep -q 'Vulnerability feed: direct' '$d/out'"
+check "summary has no middle-dot separator" bash -c "! grep -q ' · ' '$d/out'"
 
 echo "${pass} passed, ${failed} failed"
 [ "$failed" -eq 0 ]

@@ -42,8 +42,14 @@ import { ChartOrTable, Legend, useLabel, usePrefersReducedMotion } from './viz-p
 import type { DrillFn, Polarity, TimeSeriesResult } from './types'
 
 export { CHART_HEIGHT }
-/** Plot height: shorter on a phone so a chart and its legend fit one screen. */
-const PLOT_CLASS = 'h-[180px] sm:h-[220px]'
+/**
+ * Plot height: at least 180 px (220 px from 640 px; shorter on a phone so a
+ * chart and its legend fit one screen), and it grows with the card: a chart
+ * in a row whose neighbour is taller fills its card instead of leaving a
+ * blank band under its legend. The plot draws in an absolute box, so the
+ * chart's own size never feeds back into the row's height.
+ */
+const PLOT_CLASS = 'relative min-h-[180px] flex-1 sm:min-h-[220px]'
 
 type Row = Record<string, number | string>
 
@@ -184,52 +190,54 @@ export function ColumnViz({
     <ChartOrTable
       summary={summary}
       chart={
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-1 flex-col gap-2">
           <div className={PLOT_CLASS}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={rows} margin={{ top: 4, right: 4, bottom: 0, left: -12 }}>
-                {hatchDefs(hatchId)}
-                <CartesianGrid {...CHART_GRID} />
-                <XAxis
-                  dataKey="t"
-                  {...CHART_AXIS}
-                  tickFormatter={(v: string) => formatBucket(v, result.bucket, locale)}
-                />
-                <YAxis
-                  {...CHART_AXIS}
-                  allowDecimals={false}
-                  tickFormatter={(v: number) => formatCount(v, locale)}
-                />
-                <Tooltip
-                  {...tooltipProps(
-                    rows,
-                    meta,
-                    stacked ? 'stack' : 'lines',
-                    result.bucket,
-                    unit,
-                    CHART_BAR_CURSOR,
-                    polarity
-                  )}
-                />
-                {meta.map((m, i) => (
-                  <Bar
-                    key={m.key}
-                    dataKey={m.key}
-                    name={m.label}
-                    fill={m.fill}
-                    stackId={stacked ? 'a' : undefined}
-                    stroke="var(--card)"
-                    strokeWidth={stacked ? 2 : 1}
-                    radius={!stacked || i === meta.length - 1 ? [4, 4, 0, 0] : 0}
-                    cursor={drill ? 'pointer' : undefined}
-                    onClick={(d: { payload?: Row }) =>
-                      go({ series: m.key, t: String(d?.payload?.t ?? '') })
-                    }
-                    {...motion}
+            <div className="absolute inset-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={rows} margin={{ top: 4, right: 4, bottom: 0, left: -12 }}>
+                  {hatchDefs(hatchId)}
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis
+                    dataKey="t"
+                    {...CHART_AXIS}
+                    tickFormatter={(v: string) => formatBucket(v, result.bucket, locale)}
                   />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
+                  <YAxis
+                    {...CHART_AXIS}
+                    allowDecimals={false}
+                    tickFormatter={(v: number) => formatCount(v, locale)}
+                  />
+                  <Tooltip
+                    {...tooltipProps(
+                      rows,
+                      meta,
+                      stacked ? 'stack' : 'lines',
+                      result.bucket,
+                      unit,
+                      CHART_BAR_CURSOR,
+                      polarity
+                    )}
+                  />
+                  {meta.map((m, i) => (
+                    <Bar
+                      key={m.key}
+                      dataKey={m.key}
+                      name={m.label}
+                      fill={m.fill}
+                      stackId={stacked ? 'a' : undefined}
+                      stroke="var(--card)"
+                      strokeWidth={stacked ? 2 : 1}
+                      radius={!stacked || i === meta.length - 1 ? [4, 4, 0, 0] : 0}
+                      cursor={drill ? 'pointer' : undefined}
+                      onClick={(d: { payload?: Row }) =>
+                        go({ series: m.key, t: String(d?.payload?.t ?? '') })
+                      }
+                      {...motion}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
           <Legend entries={meta.map((m) => ({ ...m, color: m.swatch }))} />
         </div>
@@ -302,47 +310,49 @@ export function AreaLineViz({
     <ChartOrTable
       summary={summary}
       chart={
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-1 flex-col gap-2">
           <div className={PLOT_CLASS}>
-            <ResponsiveContainer width="100%" height="100%">
-              {mode === 'area' ? (
-                <AreaChart {...common}>
-                  {hatchDefs(hatchId)}
-                  {axes}
-                  {meta.map((m) => (
-                    <Area
-                      key={m.key}
-                      dataKey={m.key}
-                      name={m.label}
-                      type="monotone"
-                      stackId="a"
-                      stroke="var(--card)"
-                      strokeWidth={1.5}
-                      fill={m.fill}
-                      fillOpacity={1}
-                      {...motion}
-                    />
-                  ))}
-                </AreaChart>
-              ) : (
-                <LineChart {...common}>
-                  {axes}
-                  {meta.map((m) => (
-                    <Line
-                      key={m.key}
-                      dataKey={m.key}
-                      name={m.label}
-                      type="monotone"
-                      stroke={m.color}
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 4 }}
-                      {...motion}
-                    />
-                  ))}
-                </LineChart>
-              )}
-            </ResponsiveContainer>
+            <div className="absolute inset-0">
+              <ResponsiveContainer width="100%" height="100%">
+                {mode === 'area' ? (
+                  <AreaChart {...common}>
+                    {hatchDefs(hatchId)}
+                    {axes}
+                    {meta.map((m) => (
+                      <Area
+                        key={m.key}
+                        dataKey={m.key}
+                        name={m.label}
+                        type="monotone"
+                        stackId="a"
+                        stroke="var(--card)"
+                        strokeWidth={1.5}
+                        fill={m.fill}
+                        fillOpacity={1}
+                        {...motion}
+                      />
+                    ))}
+                  </AreaChart>
+                ) : (
+                  <LineChart {...common}>
+                    {axes}
+                    {meta.map((m) => (
+                      <Line
+                        key={m.key}
+                        dataKey={m.key}
+                        name={m.label}
+                        type="monotone"
+                        stroke={m.color}
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={{ r: 4 }}
+                        {...motion}
+                      />
+                    ))}
+                  </LineChart>
+                )}
+              </ResponsiveContainer>
+            </div>
           </div>
           <Legend entries={meta.map((m) => ({ ...m, color: m.swatch }))} />
         </div>
@@ -393,58 +403,60 @@ export function DivergingViz({
         range ? t('dashboardKit.summary.join', '{a}. {b}', { a: summary, b: range }) : summary
       }
       chart={
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-1 flex-col gap-2">
           <p className="text-xs text-muted-foreground" aria-hidden>
             {summary}
           </p>
           <div className={PLOT_CLASS}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={rows}
-                stackOffset="sign"
-                margin={{ top: 4, right: 4, bottom: 0, left: -12 }}
-              >
-                {hatchDefs(hatchId)}
-                <CartesianGrid {...CHART_GRID} />
-                <XAxis
-                  dataKey="t"
-                  {...CHART_AXIS}
-                  tickFormatter={(v: string) => formatBucket(v, result.bucket, locale)}
-                />
-                <YAxis
-                  {...CHART_AXIS}
-                  allowDecimals={false}
-                  tickFormatter={(v: number) => formatCount(Math.abs(v), locale)}
-                />
-                <ReferenceLine y={0} stroke="var(--border)" />
-                <Tooltip
-                  {...tooltipProps(
-                    rows,
-                    meta,
-                    'flow',
-                    result.bucket,
-                    'count',
-                    CHART_BAR_CURSOR,
-                    polarity
-                  )}
-                />
-                {meta.map((m) => (
-                  <Bar
-                    key={m.key}
-                    dataKey={m.key}
-                    name={m.label}
-                    fill={m.fill}
-                    stackId="flow"
-                    radius={m.key === 'fixed' ? [0, 0, 4, 4] : [4, 4, 0, 0]}
-                    cursor={drill ? 'pointer' : undefined}
-                    onClick={(d: { payload?: Row }) =>
-                      go({ series: m.key, t: String(d?.payload?.t ?? '') })
-                    }
-                    {...motion}
+            <div className="absolute inset-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={rows}
+                  stackOffset="sign"
+                  margin={{ top: 4, right: 4, bottom: 0, left: -12 }}
+                >
+                  {hatchDefs(hatchId)}
+                  <CartesianGrid {...CHART_GRID} />
+                  <XAxis
+                    dataKey="t"
+                    {...CHART_AXIS}
+                    tickFormatter={(v: string) => formatBucket(v, result.bucket, locale)}
                   />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
+                  <YAxis
+                    {...CHART_AXIS}
+                    allowDecimals={false}
+                    tickFormatter={(v: number) => formatCount(Math.abs(v), locale)}
+                  />
+                  <ReferenceLine y={0} stroke="var(--border)" />
+                  <Tooltip
+                    {...tooltipProps(
+                      rows,
+                      meta,
+                      'flow',
+                      result.bucket,
+                      'count',
+                      CHART_BAR_CURSOR,
+                      polarity
+                    )}
+                  />
+                  {meta.map((m) => (
+                    <Bar
+                      key={m.key}
+                      dataKey={m.key}
+                      name={m.label}
+                      fill={m.fill}
+                      stackId="flow"
+                      radius={m.key === 'fixed' ? [0, 0, 4, 4] : [4, 4, 0, 0]}
+                      cursor={drill ? 'pointer' : undefined}
+                      onClick={(d: { payload?: Row }) =>
+                        go({ series: m.key, t: String(d?.payload?.t ?? '') })
+                      }
+                      {...motion}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
           <Legend entries={meta.map((m) => ({ ...m, color: m.swatch }))} />
         </div>

@@ -62,15 +62,17 @@ type EmergingThreatSummary struct {
 	// CriticalHosts counts the affected hosts of criticality "critical";
 	// Product names the best match and ProductCount the distinct matching
 	// products, all over the caller's scope.
-	CriticalHosts int                   `json:"critical_hosts"`
-	Product       string                `json:"product"`
-	ProductCount  int                   `json:"product_count"`
-	ETSBreakdown  threatalert.Breakdown `json:"ets_breakdown"`
-	LastEventKind string                `json:"last_event_kind"`
-	EventAt       *time.Time            `json:"event_at"`
-	SourceAt      *time.Time            `json:"source_at"`
-	CreatedAt     time.Time             `json:"created_at"`
-	UpdatedAt     time.Time             `json:"updated_at"`
+	CriticalHosts int    `json:"critical_hosts"`
+	Product       string `json:"product"`
+	ProductCount  int    `json:"product_count"`
+	// ETSBreakdown is the parts of ets, null when the stored parts do not
+	// add up to ets: the API never sends parts that contradict the score.
+	ETSBreakdown  *threatalert.Breakdown `json:"ets_breakdown"`
+	LastEventKind string                 `json:"last_event_kind"`
+	EventAt       *time.Time             `json:"event_at"`
+	SourceAt      *time.Time             `json:"source_at"`
+	CreatedAt     time.Time              `json:"created_at"`
+	UpdatedAt     time.Time              `json:"updated_at"`
 }
 
 // EmergingThreatListResponse is a page of alerts and the viewer's counts.
@@ -175,17 +177,21 @@ type EmergingThreatStateRequest struct {
 }
 
 func toEmergingSummary(a *threatalert.Alert) EmergingThreatSummary {
+	var parts *threatalert.Breakdown
+	if b, ok := a.ScoreParts(); ok {
+		parts = &b
+	}
 	return EmergingThreatSummary{ID: a.ID.String(), VulnID: a.VulnID, Title: a.Title, Severity: a.Severity,
 		Level: string(a.Level), Tier: string(a.Tier), State: string(a.State), ETS: a.ETS, InKEV: a.InKEV,
 		KEVRansomware: a.KEVRansomware, EPSS: a.EPSS, ConfirmedHosts: a.Confirmed, LikelyHosts: a.Likely,
 		PossibleHosts: a.Possible, InternetFacingHosts: a.InternetFacing, CriticalHosts: a.Critical, Product: a.Product, ProductCount: a.ProductCount,
-		ETSBreakdown: a.Breakdown, LastEventKind: a.LastEventKind, EventAt: a.EventAt, SourceAt: a.SourceAt,
+		ETSBreakdown: parts, LastEventKind: a.LastEventKind, EventAt: a.EventAt, SourceAt: a.SourceAt,
 		CreatedAt: a.CreatedAt, UpdatedAt: a.UpdatedAt}
 }
 
 func toEmergingDetail(d *threatalert.Detail) EmergingThreatDetail {
 	out := EmergingThreatDetail{EmergingThreatSummary: toEmergingSummary(&d.Alert),
-		RecommendedAction: threatalert.RecommendedAction(d.Alert.Tier, d.Alert.Breakdown),
+		RecommendedAction: threatalert.ActionFor(&d.Alert, d.Vuln),
 		Description:       threatalert.PlainText(d.Vuln.Description, 1000), CVSSScore: d.Vuln.CVSSScore,
 		PublishedAt: d.Vuln.Published, StateReason: d.Alert.StateReason, StateNote: d.Alert.StateNote,
 		StateChangedAt: d.Alert.StateChangedAt, SuppressedUntil: d.Alert.SuppressedUntil, CanSuppress: d.AllInScope,

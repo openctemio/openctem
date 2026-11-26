@@ -16,7 +16,11 @@
  * summary politely.
  */
 
+import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { english, type FallbackT } from '../lib/english'
+
+type PreviewT = FallbackT
 
 export type ScopeChangeMark = 'add' | 'remove' | 'change' | 'same' | 'refused'
 
@@ -73,24 +77,31 @@ export interface ScopeChangeConsequence {
   stepUp?: boolean
 }
 
-export function consequenceText(c: ScopeChangeConsequence): string {
+export function consequenceText(c: ScopeChangeConsequence, t: PreviewT = english): string {
   const parts: string[] = []
-  if (c.isRequest) parts.push('This is a request: a scope approver must accept it.')
+  if (c.isRequest)
+    parts.push(t('scope.preview.request', 'This is a request: a scope approver must accept it.'))
   else if ((c.approvalsRequired ?? 0) > 0)
     parts.push(
-      `Needs ${c.approvalsRequired} ${c.approvalsRequired === 1 ? 'approval' : 'approvals'} from another approver; nothing changes for scans until then.`
+      t(
+        'scope.preview.needsApprovals',
+        'Needs {count, plural, one {# approval} other {# approvals}} from another approver; nothing changes for scans until then.',
+        { count: c.approvalsRequired ?? 0 }
+      )
     )
-  else parts.push('Takes effect now.')
-  if (c.stepUp) parts.push('You will be asked to confirm it is you.')
+  else parts.push(t('scope.preview.now', 'Takes effect now.'))
+  if (c.stepUp) parts.push(t('scope.preview.stepUp', 'You will be asked to confirm it is you.'))
   return parts.join(' ')
 }
 
-export function previewSummary(lines: ScopeChangeLine[]): string {
+export function previewSummary(lines: ScopeChangeLine[], t: PreviewT = english): string {
   const count = (m: ScopeChangeMark) => lines.filter((l) => l.mark === m).length
   const parts = (['add', 'remove', 'change', 'same', 'refused'] as ScopeChangeMark[])
     .filter((m) => count(m) > 0)
-    .map((m) => `${count(m)} ${MARK_WORD[m]}`)
-  return parts.length ? `Preview: ${parts.join(', ')}` : 'Preview: no changes'
+    .map((m) => `${count(m)} ${t(`scope.preview.mark.${m}`, MARK_WORD[m])}`)
+  return parts.length
+    ? t('scope.preview.summary', 'Preview: {parts}', { parts: parts.join(', ') })
+    : t('scope.preview.noChanges', 'Preview: no changes')
 }
 
 interface ScopeChangePreviewProps {
@@ -106,14 +117,17 @@ export function ScopeChangePreview({
   loading,
   className,
 }: ScopeChangePreviewProps) {
+  const { t } = useTranslation()
   return (
     <section
-      aria-label="Review changes"
+      aria-label={t('scope.preview.label', 'Review changes')}
       aria-busy={loading}
       className={cn('space-y-3 rounded-md border p-3', className)}
     >
       <p className="sr-only" aria-live="polite">
-        {loading ? 'Working out what changes' : previewSummary(lines)}
+        {loading
+          ? t('scope.preview.loading', 'Working out what changes')
+          : previewSummary(lines, t)}
       </p>
       <ul className="space-y-3">
         {lines.map((l) => (
@@ -126,7 +140,9 @@ export function ScopeChangePreview({
             </span>
             <div className="min-w-0 flex-1 space-y-1">
               <p className="text-sm">
-                <span className="sr-only">{MARK_WORD[l.mark]}: </span>
+                <span className="sr-only">
+                  {t(`scope.preview.mark.${l.mark}`, MARK_WORD[l.mark])}:{' '}
+                </span>
                 <code className="break-all font-medium">{l.pattern}</code>
                 {l.summary && <span className="text-muted-foreground">, {l.summary}</span>}
               </p>
@@ -163,7 +179,9 @@ export function ScopeChangePreview({
                       ))}
                       {g.names.length > SAMPLE && (
                         <li className="text-xs text-muted-foreground">
-                          and {g.names.length - SAMPLE} more
+                          {t('scope.preview.more', 'and {count} more', {
+                            count: g.names.length - SAMPLE,
+                          })}
                         </li>
                       )}
                     </ul>
@@ -176,7 +194,7 @@ export function ScopeChangePreview({
       </ul>
       {consequence && (
         <p className="border-t pt-2 text-sm text-muted-foreground">
-          {consequenceText(consequence)}
+          {consequenceText(consequence, t)}
         </p>
       )}
     </section>

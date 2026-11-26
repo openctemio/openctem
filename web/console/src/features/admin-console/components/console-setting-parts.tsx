@@ -20,6 +20,49 @@ import type { SettingChange } from '../types'
  * dialog that asks for a reason.
  */
 
+/**
+ * A server environment variable an administrator has to set by hand: drawn
+ * as code (it is typed exactly), wrapping only after its underscores or
+ * slashes. Plain sentences say "the server's setting" instead; only a step
+ * the reader takes on the server names the variable.
+ */
+export function ServerVariable({ name }: { name: string }) {
+  const parts = name.split(/([_/])/)
+  return (
+    <code className="font-mono">
+      {parts.map((part, i) =>
+        part === '_' || part === '/' ? (
+          <span key={i}>
+            {part}
+            <wbr />
+          </span>
+        ) : (
+          part
+        )
+      )}
+    </code>
+  )
+}
+
+/**
+ * A translated sentence with one `{name}` drawn as `node` (a code element),
+ * so the sentence stays one dictionary entry in both languages.
+ */
+export function withPlaceholder(text: string, node: ReactNode): ReactNode {
+  const [before, ...rest] = text.split('\u0000')
+  return (
+    <>
+      {before}
+      {rest.map((part, i) => (
+        <span key={i}>
+          {node}
+          {part}
+        </span>
+      ))}
+    </>
+  )
+}
+
 /** "Locked by the server configuration (NAME)": the console cannot change it. */
 export function LockedByEnvironment({ envVar }: { envVar: string }) {
   const { t } = useTranslation()
@@ -27,10 +70,13 @@ export function LockedByEnvironment({ envVar }: { envVar: string }) {
     <Alert>
       <Lock className="size-4" aria-hidden />
       <AlertDescription>
-        {t(
-          'admin.settings.lockedByEnvironment',
-          'Locked by the server configuration ({name}). Change it on the server and restart, or remove the variable to manage it here.',
-          { name: envVar }
+        {withPlaceholder(
+          t(
+            'admin.settings.lockedByEnvironment',
+            'Locked by the server configuration ({name}). Change it on the server and restart, or remove the variable to manage it here.',
+            { name: '\u0000' }
+          ),
+          <ServerVariable name={envVar} />
         )}
       </AlertDescription>
     </Alert>

@@ -55,6 +55,8 @@ export function useMcpLabels() {
           return t('mcp.scope.findings.short', 'Findings')
         case 'mcp:assets.read':
           return t('mcp.scope.assets.short', 'Assets')
+        case 'mcp:paths.read':
+          return t('mcp.scope.paths.short', 'Attack paths')
         case 'mcp:compliance.read':
           return t('mcp.scope.compliance.short', 'Compliance')
         case 'mcp:pentest.read':
@@ -84,7 +86,9 @@ export function useMcpLabels() {
             'Read findings, vulnerabilities, priorities and remediation groups'
           )
         case 'mcp:assets.read':
-          return t('mcp.scope.assets.title', 'Read assets and attack paths')
+          return t('mcp.scope.assets.title', 'Read assets')
+        case 'mcp:paths.read':
+          return t('mcp.scope.paths.title', 'Read attack paths and exposure chains')
         case 'mcp:compliance.read':
           return t('mcp.scope.compliance.title', 'Read compliance posture')
         case 'mcp:pentest.read':

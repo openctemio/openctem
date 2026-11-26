@@ -222,6 +222,9 @@ type Usage struct {
 	TokensOut int    `json:"tokens_out"`
 	Steps     int    `json:"steps,omitempty"`
 	ToolCalls int    `json:"tool_calls,omitempty"`
+	// ModelFamily names the model's family in lower case (optional), so
+	// the platform can tell independent checks apart.
+	ModelFamily string `json:"model_family,omitempty"`
 }
 
 // TemplateRef is the template an execution used.

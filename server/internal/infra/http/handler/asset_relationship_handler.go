@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	assetapp "github.com/openctemio/openctem/server/internal/app/asset"
+	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/pkg/apierror"
 	"github.com/openctemio/openctem/server/pkg/domain/asset"
@@ -233,6 +234,7 @@ func (h *AssetRelationshipHandler) Create(w http.ResponseWriter, r *http.Request
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordRelationship(r, auditdom.ActionAssetRelationshipCreated, result, "Asset relationship created")
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -285,6 +287,7 @@ func (h *AssetRelationshipHandler) Update(w http.ResponseWriter, r *http.Request
 		h.handleServiceError(w, err)
 		return
 	}
+	h.recordRelationship(r, auditdom.ActionAssetRelationshipUpdated, result, "Asset relationship updated")
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -368,6 +371,18 @@ func (h *AssetRelationshipHandler) BatchCreate(w http.ResponseWriter, r *http.Re
 		h.handleServiceError(w, err)
 		return
 	}
+	// One entry per relationship the batch created.
+	for _, it := range result.Results {
+		if it.Status != assetapp.BatchCreateStatusCreated || it.RelationshipID == "" {
+			continue
+		}
+		recordConfigAudit(r.Context(), h.audit, h.logger, configAuditContext(r),
+			auditapp.NewSuccessEvent(auditdom.ActionAssetRelationshipCreated, auditdom.ResourceTypeAssetRelationship, it.RelationshipID).
+				WithSeverity(auditdom.SeverityForAction(auditdom.ActionAssetRelationshipCreated)).
+				WithMetadata("source_asset_id", pathAssetID).
+				WithMetadata("target_asset_id", it.TargetAssetID).
+				WithMessage("Asset relationship created"))
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -377,6 +392,24 @@ func (h *AssetRelationshipHandler) BatchCreate(w http.ResponseWriter, r *http.Re
 // =============================================================================
 // Helpers
 // =============================================================================
+
+// recordRelationship records a relationship write that succeeded, named by
+// the stored relationship ("source -> type -> target", loaded in the caller's
+// tenant), never by request values.
+func (h *AssetRelationshipHandler) recordRelationship(r *http.Request, action auditdom.Action, rwa *asset.RelationshipWithAssets, message string) {
+	if rwa == nil || rwa.Relationship == nil {
+		return
+	}
+	rel := rwa.Relationship
+	recordConfigAudit(r.Context(), h.audit, h.logger, configAuditContext(r),
+		auditapp.NewSuccessEvent(action, auditdom.ResourceTypeAssetRelationship, rel.ID().String()).
+			WithResourceName(rwa.SourceAssetName+" -> "+rel.Type().String()+" -> "+rwa.TargetAssetName).
+			WithSeverity(auditdom.SeverityForAction(action)).
+			WithMetadata("type", rel.Type().String()).
+			WithMetadata("source_asset_id", rel.SourceAssetID().String()).
+			WithMetadata("target_asset_id", rel.TargetAssetID().String()).
+			WithMessage(message))
+}
 
 func toRelationshipResponse(rwa *asset.RelationshipWithAssets) RelationshipResponse {
 	rel := rwa.Relationship

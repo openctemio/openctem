@@ -246,27 +246,77 @@ function suppressions(scen: Scenario) {
   return { data, total: data.length }
 }
 
-/** Import and run receipts with long tool names and big counts. */
+/**
+ * Import and run receipts, the mix a real organization has: runs that changed
+ * findings (big counts, a long tool name), runs that only re-detected, runs of
+ * asset-discovery tools that received no findings (several in a row, the
+ * repeated rows the list folds), a partial run (some findings not stored), and
+ * failed, processing and queued ones.
+ */
 function receipts(scen: Scenario) {
-  const counts = (k: number) => ({
+  const zero = {
+    created: 0,
+    updated: 0,
+    reactivated: 0,
+    closed: 0,
+    skipped: 0,
+    failed: 0,
+    suppressed: 0,
+  }
+  const changed = (k: number) => ({
+    ...zero,
     created: 12 * k,
     updated: 1280 * k,
     reactivated: 3,
     closed: 40 * k,
-    skipped: 9,
-    failed: 1,
     suppressed: 4,
   })
   const kinds = ['upload', 'scan_run', 'command', 'ci_run', 'connector', 'sensor', 'platform']
-  const all = Array.from({ length: 25 }, (_, i) => ({
-    id: `rcpt-${i}`,
-    status: ['completed', 'processing', 'failed', 'queued'][i % 4],
-    source: { kind: kinds[i % kinds.length], ref: `run-${i}` },
-    tool: i % 5 === 4 ? '' : ['nuclei', 'network vulnerability scanner export', 'trivy'][i % 3],
-    received: 18402 - i,
-    counts: counts(i + 1),
-    started_at: new Date(Date.now() - (i + 1) * 3600_000).toISOString(),
-  }))
+  const all = Array.from({ length: 25 }, (_, i) => {
+    const row = {
+      id: `rcpt-${i}`,
+      status: 'completed',
+      source: { kind: kinds[i % kinds.length], ref: `run-${i}` },
+      tool: ['nuclei', 'network vulnerability scanner export', 'trivy'][i % 3],
+      received: 18402 - i,
+      counts: changed(i + 1),
+      assets: { created: 0, updated: 0, recorded_on_name: 0 },
+      errors: [] as { index: number; code: string }[],
+      started_at: new Date(Date.now() - (i + 1) * 3600_000).toISOString(),
+    }
+    // Asset discovery (subfinder, dnsx): no findings at all, only assets.
+    if ([1, 2, 3, 5, 6, 9, 10, 13, 16, 17, 20, 21, 23].includes(i)) {
+      return {
+        ...row,
+        source: { kind: 'scan_run', ref: `run-${i}` },
+        tool: i % 4 === 0 ? 'dnsx' : 'subfinder',
+        received: 0,
+        counts: zero,
+        assets: { created: i % 3, updated: 14 + i, recorded_on_name: 0 },
+      }
+    }
+    // Re-detected only: received findings, nothing changed.
+    if (i === 7 || i === 12)
+      return { ...row, tool: 'httpx', counts: { ...zero, updated: 18402 - i } }
+    if (i === 8)
+      return {
+        ...row,
+        status: 'failed',
+        counts: zero,
+        received: 0,
+        errors: [{ index: 0, code: 'parse_error' }],
+      }
+    if (i === 11)
+      return {
+        ...row,
+        counts: { ...changed(2), skipped: 9, failed: 57 },
+        errors: [{ index: 3, code: 'invalid_finding' }],
+      }
+    if (i === 14) return { ...row, status: 'processing', counts: { ...zero, created: 4 } }
+    if (i === 18) return { ...row, status: 'queued', received: 0, counts: zero }
+    if (i % 5 === 4) return { ...row, tool: '' }
+    return row
+  })
   const data = all.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : all.length)
   const total = scen === 'rich' ? 380 : data.length
   return {
@@ -509,7 +559,63 @@ function taskPage(scen: Scenario) {
   return { data, total: data.length, page: 1, per_page: 25 }
 }
 
+/**
+ * Finding approval settings with every lowering waiting (levels, second look,
+ * a relaxed policy with a security pool), the floors and defaults of the
+ * platform (server/pkg/domain/approvalpolicy/tier.go).
+ */
+function approvalsWaiting() {
+  const at = new Date(Date.now() + 20 * 3600_000).toISOString()
+  const tiers: Record<string, string> = {}
+  const floors: Record<string, string> = {}
+  const defaults: Record<string, string> = {}
+  for (const cls of ['standard', 'high', 'critical']) {
+    floors[`false_positive.${cls}`] = 'single'
+    defaults[`false_positive.${cls}`] = 'peer'
+    floors[`rule_false_positive.${cls}`] = 'peer'
+    defaults[`rule_false_positive.${cls}`] = cls === 'standard' ? 'peer' : 'security'
+    for (const kind of ['accepted', 'rule_accepted']) {
+      floors[`${kind}.${cls}`] = cls === 'standard' ? 'peer' : 'security'
+      defaults[`${kind}.${cls}`] =
+        cls === 'standard' ? 'peer' : cls === 'high' ? 'security' : 'dual'
+    }
+  }
+  tiers['false_positive.critical'] = 'dual'
+  const policy = {
+    tiers,
+    security_pool_strict: false,
+    exclude_assignee: true,
+    step_up_all_tiers: false,
+    max_acceptance_days: { critical: 30 },
+    decide_within_days: 7,
+    epss_threshold: 0.2,
+    on_material_change_accepted: 'end_on_tier_rise',
+    on_material_change_single_person_fp: 'flag',
+  }
+  return {
+    backup_contact_email: 'advisor@example.com',
+    fp_approval: 'all',
+    pending_fp_approval: 'off',
+    pending_fp_approval_at: at,
+    accept_approval: 'all',
+    pending_accept_approval: 'high_and_above',
+    pending_accept_approval_at: at,
+    second_look_percent: 5,
+    pending_second_look_percent: 2,
+    pending_second_look_at: at,
+    policy,
+    pending_policy: { ...policy, tiers: {}, exclude_assignee: false },
+    pending_policy_at: at,
+    floors,
+    defaults,
+  }
+}
+
 const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknown }[]> = {
+  // Lowered protections waiting their 24 hours: the notice with its cancel.
+  '/settings/approvals@waiting': [
+    { url: '**/api/v1/organization/settings/finding-approvals', body: approvalsWaiting },
+  ],
   '/settings/risk-scoring': [
     { url: '**/api/v1/tenants/*/settings/risk-scoring/presets', body: riskPresets },
     { url: '**/api/v1/tenants/*/settings/risk-scoring', body: riskSettings },
@@ -1502,6 +1608,21 @@ export function layoutMatrix({ session = 'tenant', data, ...options }: MatrixOpt
               await settle(page)
             }
             let scope = 'main'
+            // A state whose act opened an overlay (an editor dialog) is
+            // measured in it; the matrix overlays are not opened over it.
+            const stateLayer = ROUTE_STATES[route]?.layer
+            if (stateLayer) {
+              const opened = await page
+                .locator(`${stateLayer}:visible`)
+                .first()
+                .isVisible()
+                .catch(() => false)
+              if (!opened || v.overlay) {
+                report[v.tag] = 'no such overlay'
+                continue
+              }
+              scope = stateLayer
+            }
             if (v.overlay) {
               const layer = await openOverlay(page, v.overlay)
               if (!layer) {
@@ -1524,16 +1645,17 @@ export function layoutMatrix({ session = 'tenant', data, ...options }: MatrixOpt
             // document. Any other
             // scroller (a boxed list inside the page) keeps its box: growing
             // the window by its height left a screen of empty page under it.
-            const tall = v.overlay
-              ? 0
-              : await page.evaluate(() =>
-                  Math.max(
-                    0,
-                    ...[document.querySelector('#content'), document.scrollingElement].map((e) =>
-                      e ? e.scrollHeight - e.clientHeight : 0
+            const tall =
+              v.overlay || stateLayer
+                ? 0
+                : await page.evaluate(() =>
+                    Math.max(
+                      0,
+                      ...[document.querySelector('#content'), document.scrollingElement].map((e) =>
+                        e ? e.scrollHeight - e.clientHeight : 0
+                      )
                     )
                   )
-                )
             if (tall > 0)
               await page.setViewportSize({
                 width: v.width,
@@ -1549,10 +1671,10 @@ export function layoutMatrix({ session = 'tenant', data, ...options }: MatrixOpt
             await keep(
               testInfo,
               `${dir}/${v.tag}.png`,
-              await page.screenshot({ fullPage: !v.overlay, timeout: 30_000 })
+              await page.screenshot({ fullPage: !v.overlay && !stateLayer, timeout: 30_000 })
             )
             if (tall > 0) await page.setViewportSize({ width: v.width, height: v.height })
-            if (v.overlay) await page.keyboard.press('Escape').catch(() => {})
+            if (v.overlay || stateLayer) await page.keyboard.press('Escape').catch(() => {})
           }
           await keep(testInfo, `${dir}/w${size.width}.json`, JSON.stringify(report, null, 1))
           await ctx?.close()

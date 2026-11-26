@@ -212,9 +212,7 @@ export function MFAFloorForm({ settings, canEdit, onSaved }: MFAFloorFormProps) 
           </SettingsFieldGrid>
           <p className="text-cap text-muted-foreground">
             {settings.source === 'default'
-              ? t('admin.mfaFloor.sourceDefault', 'Server default ({name}).', {
-                  name: settings.env_var,
-                })
+              ? t('admin.mfaFloor.sourceDefault', 'Server default.')
               : t('admin.mfaFloor.sourceConsole', 'Set in this console.')}
             {settings.effective_from &&
               ' ' +

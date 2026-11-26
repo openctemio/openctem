@@ -36,6 +36,17 @@ export function useTargetTypeText() {
   }
 }
 
+/** The i18n translate function, or the English fallback itself when none is given. */
+type Translate = (key: string, fallback: string, vars?: Record<string, string | number>) => string
+const english: Translate = (_key, fallback, vars) => {
+  const plural = /^\{(\w+), plural, one \{(.*)\} other \{(.*)\}\}$/.exec(fallback)
+  const text = plural ? (Number(vars?.[plural[1]]) === 1 ? plural[2] : plural[3]) : fallback
+  return text.replace(/\{(\w+)\}|#/g, (m, k) => {
+    if (m === '#') return plural ? String(vars?.[plural[1]] ?? m) : m
+    return String(vars?.[k] ?? m)
+  })
+}
+
 export interface TargetMappingFormValues {
   priority: string
   description: string
@@ -45,7 +56,10 @@ export interface TargetMappingFormValues {
  * Client-side copy of the API's rules, so the dialog can say what is wrong
  * before a round trip. The API stays the authority.
  */
-export function validateTargetMappingForm(v: TargetMappingFormValues): {
+export function validateTargetMappingForm(
+  v: TargetMappingFormValues,
+  t: Translate = english
+): {
   priority?: string
   description?: string
 } {
@@ -53,12 +67,21 @@ export function validateTargetMappingForm(v: TargetMappingFormValues): {
   const trimmed = v.priority.trim()
   const n = Number(trimmed)
   if (trimmed === '' || !Number.isInteger(n)) {
-    errors.priority = 'Enter a whole number'
+    errors.priority = t('admin.targetMappingDialog.priorityWhole', 'Enter a whole number')
   } else if (n < MIN_PRIORITY || n > MAX_PRIORITY) {
-    errors.priority = `Between ${MIN_PRIORITY} and ${MAX_PRIORITY}`
+    errors.priority = t('admin.targetMappingDialog.priorityRange', 'Between {min} and {max}', {
+      min: MIN_PRIORITY,
+      max: MAX_PRIORITY,
+    })
   }
   if (v.description.trim().length > MAX_DESCRIPTION_LENGTH) {
-    errors.description = `At most ${MAX_DESCRIPTION_LENGTH} characters`
+    errors.description = t(
+      'admin.targetMappingDialog.descriptionMax',
+      '{max, plural, one {At most # character} other {At most # characters}}',
+      {
+        max: MAX_DESCRIPTION_LENGTH,
+      }
+    )
   }
   return errors
 }

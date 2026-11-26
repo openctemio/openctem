@@ -84,7 +84,11 @@ export function CreateFirstOwnerDialog({
       else setCreated(res as AdminCreatedOrganizationUser)
       onCreated()
     } catch (err) {
-      setError(err instanceof AdminApiError ? err.message : 'Could not create the owner')
+      setError(
+        err instanceof AdminApiError
+          ? err.message
+          : t('admin.createFirstOwnerDialog.createFailed', 'Could not create the owner')
+      )
     } finally {
       setBusy(false)
     }
