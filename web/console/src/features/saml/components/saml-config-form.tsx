@@ -35,6 +35,7 @@ import {
 import { CopyableUrl } from '@console/features/sso/components/copyable-url'
 import {
   downloadSpMetadata,
+  createSamlAddress,
   importIdPMetadata,
   readMetadataFile,
   type IdPMetadata,
@@ -77,6 +78,7 @@ export function SamlConfigForm({
   const [metadataUrl, setMetadataUrl] = useState('')
   const [isImporting, setIsImporting] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
+  const [isCreatingAddress, setIsCreatingAddress] = useState(false)
   const [imported, setImported] = useState<IdPMetadata | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
   const { data: spMetadata, mutate: mutateSpMetadata } = useSpMetadata(tenantId)
@@ -101,7 +103,7 @@ export function SamlConfigForm({
 
   // The SP addresses come from the API, keyed by the connection (never by
   // the organization's slug) and built on its public address (APP_URL).
-  const spURLs = spMetadata
+  const spURLs = spMetadata?.has_address
     ? {
         metadata: spMetadata.entity_id,
         acs: spMetadata.acs_url,
@@ -211,6 +213,22 @@ export function SamlConfigForm({
       )
     } finally {
       setIsDownloading(false)
+    }
+  }
+
+  const handleCreateAddress = async () => {
+    setIsCreatingAddress(true)
+    try {
+      await mutateSpMetadata(await createSamlAddress(tenantId), { revalidate: false })
+    } catch (e) {
+      toast.error(
+        getErrorMessage(
+          e,
+          t('admin.samlConfigForm.createAddressFailed', 'Could not create the SAML address')
+        )
+      )
+    } finally {
+      setIsCreatingAddress(false)
     }
   }
 
@@ -577,6 +595,27 @@ export function SamlConfigForm({
                         {t('admin.samlConfigForm.downloadSpMetadata', 'Download SP metadata (XML)')}
                       </Button>
                     </>
+                  ) : spMetadata ? (
+                    <div className="space-y-3">
+                      <p className="text-muted-foreground text-sm">
+                        {t(
+                          'admin.samlConfigForm.noAddressYet',
+                          'This organization has no SAML address yet. Create it to get the addresses and metadata to register at your identity provider. It stays the same when you save the configuration.'
+                        )}
+                      </p>
+                      {canManage && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => void handleCreateAddress()}
+                          disabled={isCreatingAddress}
+                        >
+                          {isCreatingAddress && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                          {t('admin.samlConfigForm.createAddress', 'Create the SAML address')}
+                        </Button>
+                      )}
+                    </div>
                   ) : (
                     <p className="text-muted-foreground text-sm">
                       {t(

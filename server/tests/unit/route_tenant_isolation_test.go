@@ -183,6 +183,7 @@ var tenantIsolationRoutes = map[string]string{ //nolint:gochecknoglobals // regi
 	// comes from the stored row, and the organization's slug never resolves.
 	"GET /api/v1/auth/saml/{connection}/login":                      "test: TestSAMLConnection_LegacyKeyIsFrozenAgainstSlugTakeover",
 	"GET /api/v1/auth/saml/{connection}/metadata":                   "scope: public SP metadata built from the path key and APP_URL only; it reads no row of any organization",
+	"POST /api/v1/admin/tenants/{tenantId}/sso/saml/address":        "scope: platform console write under the console's tenant scope middleware; it reserves an id for that organization only and reads nothing of another",
 	"POST /api/v1/auth/saml/{connection}/acs":                       "test: TestSAMLConnection_ResponseForAnotherConnectionIsRefused",
 	"GET /api/v1/assets/{id}/addresses":                             "test: TestNameAddresses_DataScopeAndTenant",
 	"POST /api/v1/ci/trust-configs/{id}/allow":                      "test: TestCIRefusal_WorkflowValueAndAllow",

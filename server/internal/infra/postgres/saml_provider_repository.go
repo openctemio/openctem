@@ -76,6 +76,21 @@ func (r *SAMLProviderRepository) GetByLegacyPathKey(ctx context.Context, key str
 		`SELECT `+samlProviderColumns+` FROM saml_providers WHERE legacy_path_key = $1`, key))
 }
 
+// GetReservedConnectionID reads the tenant's reserved SAML connection id
+// without creating one (samlprovider.ErrNotFound when none).
+func (r *SAMLProviderRepository) GetReservedConnectionID(ctx context.Context, tenantID shared.ID) (shared.ID, error) {
+	var idStr string
+	err := r.db.QueryRowContext(ctx, `SELECT connection_id FROM saml_connection_ids WHERE tenant_id = $1`,
+		tenantID.String()).Scan(&idStr)
+	if errors.Is(err, sql.ErrNoRows) {
+		return shared.ID{}, samlprovider.ErrNotFound
+	}
+	if err != nil {
+		return shared.ID{}, fmt.Errorf("read saml connection id: %w", err)
+	}
+	return shared.IDFromString(idStr)
+}
+
 // ReserveConnectionID returns the tenant's reserved SAML connection id,
 // creating it (random) on first use.
 func (r *SAMLProviderRepository) ReserveConnectionID(ctx context.Context, tenantID shared.ID) (shared.ID, error) {
@@ -132,14 +147,23 @@ func upsertSAMLProvider(ctx context.Context, exec executor, p *samlprovider.SAML
 	return nil
 }
 
-// Delete removes the tenant's configuration and its reserved connection id,
-// so the address is retired and the next configuration gets a new one.
+// Delete removes the tenant's configuration and its reserved connection id
+// in one transaction, so the address is retired and the next configuration
+// gets a new one; a failure leaves both as they were.
 func (r *SAMLProviderRepository) Delete(ctx context.Context, tenantID shared.ID) error {
-	if _, err := r.db.ExecContext(ctx, `DELETE FROM saml_providers WHERE tenant_id = $1`, tenantID.String()); err != nil {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
 		return fmt.Errorf("delete saml provider: %w", err)
 	}
-	if _, err := r.db.ExecContext(ctx, `DELETE FROM saml_connection_ids WHERE tenant_id = $1`, tenantID.String()); err != nil {
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM saml_providers WHERE tenant_id = $1`, tenantID.String()); err != nil {
+		return fmt.Errorf("delete saml provider: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM saml_connection_ids WHERE tenant_id = $1`, tenantID.String()); err != nil {
 		return fmt.Errorf("delete saml connection id: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("delete saml provider: %w", err)
 	}
 	return nil
 }

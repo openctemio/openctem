@@ -260,6 +260,7 @@ var adminRoutePermissions = map[string]platformauthz.Permission{
 	"PUT /api/v1/admin/tenants/{tenantId}/sso/identity-providers/{id}":       platformauthz.TenantsSSOWrite,
 	"PUT /api/v1/admin/tenants/{tenantId}/sso/saml":                          platformauthz.TenantsSSOWrite,
 	"POST /api/v1/admin/tenants/{tenantId}/sso/saml/idp-metadata":            platformauthz.TenantsSSOWrite,
+	"POST /api/v1/admin/tenants/{tenantId}/sso/saml/address":                 platformauthz.TenantsSSOWrite,
 	"PUT /api/v1/admin/version-check/enabled":                                platformauthz.SettingsGeneralWrite,
 	"GET /api/v1/admin/openapi.yaml":                                         platformauthz.ConsoleRead,
 	"GET /api/v1/admin/docs":                                                 platformauthz.ConsoleRead,
