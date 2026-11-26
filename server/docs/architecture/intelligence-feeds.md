@@ -96,7 +96,7 @@ platform's vulnerability data whatever the delivery mode (direct or relay):
 |---|---|---|
 | `data_stale:<feed>` | the data a feed holds is older than its limit (below): the bundle by the applied bundle's creation time, KEV by the date the release carries (when the collector read it), EPSS by its last successful check; or a feed never loaded data 2 hours after the watch first ran | yes |
 | `import_refused:<feed>` | the last import was refused (expired, bad signature, rollback, guard): at once, even while the data is still current | no |
-| `import_failing:<feed>` | imports have failed for two runs (at least 30 minutes) | no |
+| `import_failing:<feed>` | imports have failed for two runs (at least 30 minutes); at once for a server setting refused at start-up (`config_invalid`, or `blocked_address` with the setting named), which no later run can fix | no |
 | `newest_record_old` | the newest published CVE in the corpus is older than 12 hours, or than the bundle limit when that is higher (about 280 CVEs are published a day) | yes |
 | `volume_low` | the CVEs published in the last 24 hours are under 30% of the daily average of the 30 days before (only on a corpus averaging 50 a day or more) | no |
 
@@ -121,11 +121,15 @@ open and one when they clear (e-mail and the alert webhook); the operator metric
 ([monitoring](../operations/monitoring.md#feedfreshness)).
 
 While a banner condition holds, every signed-in user sees a banner under the header that cannot be dismissed:
-vulnerability data is out of date, new vulnerabilities may not be shown, the administrators have been told. It reads
+vulnerability data is out of date, which data (`sources`: the vulnerability catalog, the known exploited list, the
+exploit likelihood scores, in plain words), new vulnerabilities may not be shown, the administrators have been told. It reads
 `GET /api/v1/threat-intel/freshness` (any signed-in user, no permission: platform-wide state only, no organization data,
 answered from the stored state with no feed or corpus query per request). The emerging-threat list and detail pages show
-"Data as of <time>" from the same answer. The platform console shows its own banner with each condition's explanation
-and a link to this status (`GET /api/v1/admin/threat-intel/freshness`, any admin). If the watch itself has not run for 30
+"Data as of <time>" from the same answer. The platform console shows its own banner: for each banner condition the feed,
+what is wrong with its data (never loaded, or its age against the limit) and, from an import problem of the same feed,
+why and the fix, in the reader's language, with a link to this status (`GET /api/v1/admin/threat-intel/freshness`,
+any admin; each condition carries `limit_seconds`, `error_code`, `error_params` and `failing_since` beside the English
+`detail` used in e-mails). If the watch itself has not run for 30
 minutes, the banner says so (`check_not_running`) rather than staying quiet.
 
 In relay mode the relay alerts only on what is its own (no relay sensor online, a failed round); the age of the data is
@@ -146,8 +150,13 @@ the watch's. Shipped.
 ### Error codes
 
 `publisher_empty`, `unreachable`, `http_status`, `signature_invalid`, `keyset_rollback`, `sequence_rollback`,
-`expired`, `bundle_invalid`, `guard_refused`, `empty_feed`, `not_configured`, `disabled`, `interrupted`, `failed`.
-Fetchers return typed errors (`feedstatus.HTTPError`, `GuardError`, `Tag`); the bundle verifier reports by
+`expired`, `bundle_invalid`, `guard_refused`, `empty_feed`, `not_configured`, `disabled`, `interrupted`, `failed`,
+`source_stale`, `blocked_address` (the host or mirror resolves to an address the outbound guard blocks, usually a
+private range that is not allowed), `proxy_refused` (the feed proxy answered CONNECT with a refusal; `status`),
+`proxy_unreachable` (the feed proxy itself cannot be reached) and `config_invalid` (the server's `VULNFEED_BASE_URL`
+was refused at start-up, so the import is off until it is fixed and the API restarted; recorded on the card with
+`setting` and `host`). The feed client returns `httpsec.ProxyRefusedError` and `httpsec.ProxyUnreachableError` for the
+two proxy cases. Fetchers return typed errors (`feedstatus.HTTPError`, `GuardError`, `Tag`); the bundle verifier reports by
 message and is classified by `TagVerify`.
 
 ## Who sees what

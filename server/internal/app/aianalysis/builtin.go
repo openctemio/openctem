@@ -11,6 +11,7 @@ import (
 
 	"github.com/openctemio/openctem/server/internal/app/aibundle"
 	"github.com/openctemio/openctem/server/internal/app/aipolicy"
+	"github.com/openctemio/openctem/server/internal/app/aiprompt"
 	"github.com/openctemio/openctem/server/internal/infra/llm"
 	"github.com/openctemio/openctem/server/pkg/aimask"
 	aidom "github.com/openctemio/openctem/server/pkg/domain/aianalysis"
@@ -100,6 +101,13 @@ type TokenBudget interface {
 	Record(ctx context.Context, tenantID shared.ID, tokens int) error
 }
 
+// AutonomyGate is the organization's switch and limits on changes AI agents
+// make without a person (tenantai.Service). It is asked right before such a
+// change; false holds the change as a suggestion with the reason.
+type AutonomyGate interface {
+	AllowAutomaticChange(ctx context.Context, tenantID shared.ID) (bool, string)
+}
+
 // ExecutorConfig bounds the model call.
 type ExecutorConfig struct {
 	MaxTokens   int
@@ -129,9 +137,14 @@ type BuiltinExecutor struct {
 	// worker sends the runs of AI agents that run on the organization's
 	// AI workers (nil: such runs are refused).
 	worker *WorkerExecutor
-	cfg    ExecutorConfig
-	logger *logger.Logger
-	now    func() time.Time
+	// autonomy caps and pauses changes without a person (nil: every such
+	// change is held, fail closed).
+	autonomy AutonomyGate
+	// sanitizer flags injection patterns in model output.
+	sanitizer *aiprompt.Sanitizer
+	cfg       ExecutorConfig
+	logger    *logger.Logger
+	now       func() time.Time
 }
 
 // NewBuiltinExecutor builds the executor; SetAgents wires the AI agent
@@ -148,8 +161,13 @@ func NewBuiltinExecutor(findings FindingReader, commands FindingCommands, settin
 		cfg.Timeout = 90 * time.Second
 	}
 	return &BuiltinExecutor{findings: findings, commands: commands, settings: settings, llm: llmFactory, inputs: inputs,
-		bundles: bundles, maps: maps, cfg: cfg, logger: log.With("component", "ai_builtin_executor"), now: time.Now}
+		bundles: bundles, maps: maps, sanitizer: aiprompt.NewSanitizer(), cfg: cfg,
+		logger: log.With("component", "ai_builtin_executor"), now: time.Now}
 }
+
+// SetAutonomy wires the organization's switch and limits on changes
+// without a person.
+func (e *BuiltinExecutor) SetAutonomy(g AutonomyGate) { e.autonomy = g }
 
 // SetAgents wires the AI agent service (principals and the run ledger).
 func (e *BuiltinExecutor) SetAIAgents(svc *Service) { e.svc = svc }
@@ -359,9 +377,14 @@ func (e *BuiltinExecutor) execute(ctx context.Context, p *Principal, run *aidom.
 		}
 	}
 
-	actions, err := e.apply(ctx, p, run, finding, kind, bundle, prep.ret, prep.uc, resp.Content)
+	in := applyInput{content: []byte(strings.TrimSpace(resp.Content)), injection: bundle.InjectionSuspected,
+		knowledgeRefs: bundle.KnowledgeRefs, ret: prep.ret}
+	actions, cited, err := e.apply(ctx, p, run, finding, kind, in, prep.uc)
 	if err != nil {
 		return actions, err
+	}
+	if len(bundle.KnowledgeRefs) > 0 {
+		e.record(ctx, run, prep.ret, bundle, cited)
 	}
 	e.finish(ctx, run, aidom.RunCompleted, nil)
 	return actions, nil
@@ -436,6 +459,10 @@ func (e *BuiltinExecutor) prepare(ctx context.Context, p *Principal, run *aidom.
 	run.DataClass = aidom.DataClass(bundle.DataClass)
 	run.BundleDigest = bundle.Digest
 	run.InjectionSuspected = bundle.InjectionSuspected
+	if finding.HasRowVersion() {
+		v := finding.RowVersion()
+		run.SubjectRowVersion = &v
+	}
 	for _, f := range bundle.FieldsSent {
 		run.FieldsSent = append(run.FieldsSent, string(f))
 	}
@@ -494,47 +521,73 @@ func unmaskPayload(u *aimask.Unmasker, raw json.RawMessage) (json.RawMessage, bo
 	return b, unknown, err
 }
 
-// apply validates the model output against the kind's schema, maps
-// placeholders back through the stored mapping, and turns each item into the
-// command a person would call, as the AI agent:
+// applyInput is what apply needs about a run's output, from either
+// executor: the output document (a model's answer, or the suggestions of a
+// worker's result), the bundle's injection flag, the evidence references
+// the bundle offered beyond its fields, the knowledge the run retrieved
+// (nil: not known here) and the finding's row version when the run built its
+// bundle (nil: the finding as read now).
+type applyInput struct {
+	content       []byte
+	injection     bool
+	knowledgeRefs []string
+	ret           *retrieval
+	seenVersion   *int64
+	// provenance adds what only the caller knows (the worker, the result).
+	provenance func(aidom.Provenance) aidom.Provenance
+}
+
+// apply validates the output against the kind's schema, maps placeholders
+// back through the stored mapping, and turns each item into the command a
+// person would call, as the AI agent:
 //
 //   - summary, remediation steps, needs-info verdicts and anything the
 //     AI agent may not do itself become a comment by the AI agent;
-//   - a true-positive verdict confirms a new finding (findings:status);
+//   - a true-positive verdict confirms a new finding (findings:status),
+//     within the organization's switch and limits on changes without a
+//     person;
 //   - a severity proposal goes through the severity command; a downgrade
 //     becomes a severity request (the AI agent can never approve);
 //   - a likely-false-positive verdict becomes a false-positive approval
 //     request (findings:write), decided by a person.
 //
 // Output that cites nothing real, carries a placeholder the run did not
-// issue, or comes from a bundle with injection markers is written as a
-// comment only. Before each change the finding is read again: if someone
-// else changed it since the AI agent last saw it, the change is skipped (the
-// AI agent never overwrites a later decision), and every command carries the
-// row version it expects.
+// issue, comes from a bundle with injection markers or carries injection
+// markers itself is written as a comment only. Model text is written as
+// plain text (markdown and HTML are escaped). Before each change the
+// finding is read again: if someone else changed it since the AI agent saw
+// it, the change is skipped (the AI agent never overwrites a later decision),
+// and every command carries the row version it expects. It returns the
+// actions and the evidence references the output cited.
 func (e *BuiltinExecutor) apply(ctx context.Context, p *Principal, run *aidom.Run, finding *vulnerability.Finding,
-	kind analyze.Kind, bundle *aibundle.Bundle, ret *retrieval, uc aidom.UseCaseSetting, content string,
-) ([]Action, error) {
-	out, err := analyze.ParseOutput(kind.Name, []byte(strings.TrimSpace(content)))
+	kind analyze.Kind, in applyInput, uc aidom.UseCaseSetting,
+) ([]Action, map[string]bool, error) {
+	out, err := analyze.ParseOutput(kind.Name, in.content)
 	if err != nil {
-		return nil, failed(RunErrInvalidOutput)
+		return nil, nil, failed(RunErrInvalidOutput)
 	}
 	_, snap, err := e.maps.Load(ctx, run.TenantID, run.ID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	unm := aimask.NewUnmasker(snap)
 	known := make(map[string]bool, len(run.FieldsSent))
 	for _, f := range run.FieldsSent {
 		known["bundle:"+f] = true
 	}
-	for _, ref := range bundle.KnowledgeRefs {
+	for _, ref := range in.knowledgeRefs {
 		known[ref] = true
 	}
 	cited := map[string]bool{}
 
-	actx := aidom.WithProvenance(ctx, p.Provenance(run))
+	base := p.Provenance(run)
+	if in.provenance != nil {
+		base = in.provenance(base)
+	}
 	ac := &actor{e: e, p: p, run: run, uc: uc, finding: finding.ID(), version: finding.RowVersion(), versioned: finding.HasRowVersion()}
+	if in.seenVersion != nil {
+		ac.version, ac.versioned = *in.seenVersion, true
+	}
 	actions := make([]Action, 0, len(out.Suggestions))
 	for _, sg := range out.Suggestions {
 		payload, unknown, err := unmaskPayload(unm, sg.Payload)
@@ -562,23 +615,105 @@ func (e *BuiltinExecutor) apply(ctx context.Context, p *Principal, run *aidom.Ru
 		if knowledgeOnly(clean) {
 			reasons = append(reasons, ReviewKnowledgeOnly)
 		}
+		refs := make([]string, 0, len(clean))
 		for _, x := range clean {
 			cited[x.Ref] = true
+			refs = append(refs, x.Ref)
 		}
-		ac.suffix = sourcesLine(clean, ret)
+		ac.suffix = sourcesLine(clean, in.ret)
 		if unknown {
 			reasons = append(reasons, aidom.ReviewUnknownPlaceholder)
 		}
-		if bundle.InjectionSuspected {
+		if in.injection {
 			reasons = append(reasons, aidom.ReviewInjectionSuspected)
 		}
-		actions = append(actions, ac.do(actx, k, norm, sg.Confidence, reasons))
+		if e.outputInjection(sg.Payload) {
+			reasons = append(reasons, ReviewOutputInjection)
+		}
+		prov := base
+		prov.Evidence = refs
+		actions = append(actions, ac.do(aidom.WithProvenance(ctx, prov), k, norm, sg.Confidence, reasons))
 	}
 	run.Actions = ac.done
-	if len(bundle.KnowledgeRefs) > 0 {
-		e.record(ctx, run, ret, bundle, cited)
+	run.ActionLog, run.Outcome = actionLog(actions), runOutcome(actions)
+	return actions, cited, nil
+}
+
+// ReviewOutputInjection: the output itself carries text that matches a
+// prompt-injection pattern, so it may only become a comment.
+const ReviewOutputInjection = "output_injection_suspected"
+
+// outputInjection reports whether any string of a payload matches a known
+// prompt-injection pattern (the patterns the bundle sanitizer filters).
+func (e *BuiltinExecutor) outputInjection(raw json.RawMessage) bool {
+	var v any
+	if json.Unmarshal(raw, &v) != nil {
+		return false
 	}
-	return actions, nil
+	hit := false
+	var walk func(any)
+	walk = func(x any) {
+		switch t := x.(type) {
+		case string:
+			if !hit && strings.Contains(e.sanitizer.SanitizeForPrompt(t), aiprompt.FilteredMarker) &&
+				!strings.Contains(t, aiprompt.FilteredMarker) {
+				hit = true
+			}
+		case []any:
+			for _, y := range t {
+				walk(y)
+			}
+		case map[string]any:
+			for _, y := range t {
+				walk(y)
+			}
+		}
+	}
+	walk(v)
+	return hit
+}
+
+// actionLog is the run's action log (codes only), bounded.
+func actionLog(actions []Action) []aidom.ActionLogEntry {
+	n := len(actions)
+	if n > aidom.MaxActionLog {
+		n = aidom.MaxActionLog
+	}
+	out := make([]aidom.ActionLogEntry, 0, n)
+	for _, a := range actions[:n] {
+		out = append(out, aidom.ActionLogEntry{Kind: a.Kind, Outcome: string(a.Outcome), Reason: a.Reason})
+	}
+	return out
+}
+
+// runOutcome sums up what the run did: applied when any change was made,
+// proposed when a request or a held change waits for a person, no_change
+// when it only added information, abstained when nothing came of it.
+func runOutcome(actions []Action) aidom.RunOutcome {
+	out := aidom.OutcomeAbstained
+	for _, a := range actions {
+		switch {
+		case a.Outcome == ActionApplied:
+			return aidom.OutcomeApplied
+		case a.Outcome == ActionRequested:
+			out = aidom.OutcomeProposed
+		case a.Outcome == ActionCommented && heldChange(a) && out != aidom.OutcomeProposed:
+			out = aidom.OutcomeProposed
+		case a.Outcome == ActionCommented && out == aidom.OutcomeAbstained:
+			out = aidom.OutcomeNoChange
+		}
+	}
+	return out
+}
+
+// heldChange reports a verdict or severity written as a comment because it
+// was held back, so a person decides it (not one that agrees with the
+// finding as it is).
+func heldChange(a Action) bool {
+	if a.Kind != string(aidom.KindVerdict) && a.Kind != string(aidom.KindSeverity) {
+		return false
+	}
+	return a.Reason != "" && a.Reason != reasonNotNew
 }
 
 // minActConfidence is the confidence below which a verdict or severity is
@@ -611,20 +746,20 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 	case aidom.KindSummary:
 		var v aidom.SummaryPayload
 		_ = json.Unmarshal(payload, &v)
-		return a.comment(ctx, k, "AI analysis: "+v.Text, "")
+		return a.comment(ctx, k, "AI analysis: "+plainText(v.Text), "")
 	case aidom.KindRemediationSteps:
 		var v aidom.RemediationPayload
 		_ = json.Unmarshal(payload, &v)
 		var b strings.Builder
 		b.WriteString("AI remediation plan:")
 		for i, st := range v.Steps {
-			fmt.Fprintf(&b, "\n%d. %s", i+1, st.Description)
+			fmt.Fprintf(&b, "\n%d. %s", i+1, plainText(st.Description))
 		}
 		return a.comment(ctx, k, b.String(), "")
 	case aidom.KindVerdict:
 		var v aidom.VerdictPayload
 		_ = json.Unmarshal(payload, &v)
-		text := "AI verdict: " + v.Verdict + ". " + v.Reason
+		text := "AI verdict: " + v.Verdict + ". " + plainText(v.Reason)
 		switch {
 		case !mayChange:
 			return a.comment(ctx, k, text, hold)
@@ -640,9 +775,20 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 		case v.Verdict == aidom.VerdictTruePositive && a.p.Can("findings:status"):
 			f, err := a.e.findings.GetByID(ctx, a.run.TenantID, a.finding)
 			if err != nil || f.Status() != vulnerability.FindingStatusNew {
-				return a.comment(ctx, k, text, "not_new")
+				return a.comment(ctx, k, text, reasonNotNew)
 			}
 			return a.change(ctx, k, text, func() (ActionOutcome, error) {
+				// A change without a person: within the organization's
+				// switch and limits, asked at this moment so a pause stops
+				// runs already in flight.
+				// Without the gate wired, nothing changes on its own (fail
+				// closed).
+				if a.e.autonomy == nil {
+					return ActionSkipped, heldError{reason: aidom.HoldAutonomyPaused}
+				}
+				if ok, why := a.e.autonomy.AllowAutomaticChange(ctx, a.run.TenantID); !ok {
+					return ActionSkipped, heldError{reason: why}
+				}
 				return ActionApplied, a.e.commands.SetStatus(ctx, a.run.TenantID, a.finding, a.p.AIAgent.ID,
 					string(vulnerability.FindingStatusConfirmed))
 			})
@@ -651,7 +797,7 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 	case aidom.KindSeverity:
 		var v aidom.SeverityPayload
 		_ = json.Unmarshal(payload, &v)
-		text := "AI severity: " + v.Severity + ". " + v.Reason
+		text := "AI severity: " + v.Severity + ". " + plainText(v.Reason)
 		if !mayChange || !a.p.Can("findings:severity") {
 			return a.comment(ctx, k, text, hold)
 		}
@@ -681,6 +827,16 @@ func (a *actor) do(ctx context.Context, k aidom.Kind, payload json.RawMessage, c
 	}
 	return Action{Kind: string(k), Outcome: ActionSkipped, Reason: "unknown_kind"}
 }
+
+// reasonNotNew: a true-positive verdict on a finding that is no longer new
+// (it agrees with a decision already made, or comes too late to apply).
+const reasonNotNew = "not_new"
+
+// heldError holds a change as a suggestion for a reason that is not a
+// refusal of the command (the organization's switch or limits).
+type heldError struct{ reason string }
+
+func (h heldError) Error() string { return h.reason }
 
 // reasonTriggeredByUser: a run a person started never files a risk-lowering
 // request (false positive, severity downgrade), because that person could
@@ -722,7 +878,7 @@ func (a *actor) holdReason(reasons []string, confidence float64) string {
 
 // aiJustification bounds the model's reason as a request justification.
 func aiJustification(reason string) string {
-	reason = strings.TrimSpace(reason)
+	reason = plainText(strings.TrimSpace(reason))
 	if reason == "" {
 		reason = "Proposed by the AI agent."
 	}
@@ -775,6 +931,10 @@ func (a *actor) change(ctx context.Context, k aidom.Kind, text string, cmd func(
 	}
 	outcome, err := cmd()
 	if err != nil {
+		var held heldError
+		if errors.As(err, &held) {
+			return a.comment(ctx, k, text, held.reason)
+		}
 		var conflict *vulnerability.FindingConflictError
 		if errors.As(err, &conflict) {
 			a.conflict = true

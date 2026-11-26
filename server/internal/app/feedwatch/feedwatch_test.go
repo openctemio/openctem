@@ -230,6 +230,9 @@ func TestCheckRefusedFeedIsLoudAndRecovers(t *testing.T) {
 	if !b.Stale || !slices.Equal(b.Codes, []string{CodeDataStale, CodeNewestRecordOld}) || b.StaleSince == nil || !b.StaleSince.Equal(applied) {
 		t.Fatalf("banner: %+v", b)
 	}
+	if !slices.Equal(b.Sources, []string{feedstatus.SourceVulnfeed}) {
+		t.Fatalf("banner sources: %v", b.Sources)
+	}
 
 	// Recovered: a new bundle applied, a new record published.
 	f.now = f.now.Add(CheckEvery)
@@ -302,5 +305,45 @@ func TestCheckFeedReadError(t *testing.T) {
 	}
 	if f.n.Count() != 0 {
 		t.Fatalf("mail: %v", f.n.Subjects)
+	}
+}
+
+// Each condition carries what the console needs to explain it in the
+// reader's language: the feed, the limit, the error code and its params.
+func TestEvaluateStructuredConditions(t *testing.T) {
+	now := t0
+	failing := bundleView(now.Add(-time.Hour), now.Add(-time.Hour))
+	failing.State, failing.LastSyncStatus = feedstatus.StateFailing, "failed"
+	failing.ErrorCode, failing.ErrorParams = feedstatus.CodeProxyRefused, map[string]string{"status": "407", "host": "github.com"}
+	failing.FailingSince = ptr(now.Add(-time.Hour))
+	cs := Evaluate([]feedstatus.View{failing, kevView(now.Add(-13 * time.Hour))}, nil, now.Add(-24*time.Hour), now)
+	byKey := map[string]Condition{}
+	for _, c := range cs {
+		byKey[c.Key] = c
+	}
+	f := byKey["import_failing:vulnfeed"]
+	if f.ErrorCode != feedstatus.CodeProxyRefused || f.ErrorParams["status"] != "407" || f.FailingSince == nil || f.Source != feedstatus.SourceVulnfeed {
+		t.Fatalf("failing condition: %+v", f)
+	}
+	k := byKey["data_stale:kev"]
+	if k.LimitSeconds != int64(feedstatus.StaleAfter(feedstatus.SourceKEV)/time.Second) || k.AsOf == nil {
+		t.Fatalf("stale condition: %+v", k)
+	}
+}
+
+// A server setting refused at start-up (the import is off until a restart)
+// alerts at the next check, not after two runs that never come.
+func TestEvaluateStartUpRefusalAlertsAtOnce(t *testing.T) {
+	now := t0
+	v := feedstatus.View{Source: feedstatus.SourceVulnfeed, Enabled: true, State: feedstatus.StateFailing,
+		LastSyncStatus: "failed", Interval: feedstatus.IntervalVulnfeed, FailingSince: ptr(now.Add(-time.Minute)),
+		ErrorCode: feedstatus.CodeBlockedAddress, ErrorParams: map[string]string{"setting": "VULNFEED_BASE_URL", "host": "10.0.0.5"}}
+	got := keys(Evaluate([]feedstatus.View{v}, nil, now, now))
+	if !slices.Equal(got, []string{"import_failing:vulnfeed"}) {
+		t.Fatalf("got %v", got)
+	}
+	v.ErrorParams = nil
+	if got := keys(Evaluate([]feedstatus.View{v}, nil, now, now)); len(got) != 0 {
+		t.Fatalf("a run-time failure alerted after one minute: %v", got)
 	}
 }

@@ -78,6 +78,8 @@ type CommandHandler struct {
 	// findingScope checks the finding a command is about against the
 	// caller's data scope (GET /commands/{id}/logs).
 	findingScope findingScope
+	// analysisResults takes AI worker results (nil: the sweep does).
+	analysisResults analysisResultApplier
 }
 
 // SetCommandLogs serves POST /api/v2/sensor/commands/{id}/logs with svc.
