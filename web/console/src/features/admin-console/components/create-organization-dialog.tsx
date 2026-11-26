@@ -110,7 +110,11 @@ export function CreateOrganizationDialog({
       }
       finish(org)
     } catch (err) {
-      setError(err instanceof AdminApiError ? err.message : 'Could not create the organization')
+      setError(
+        err instanceof AdminApiError
+          ? err.message
+          : t('admin.createOrganizationDialog.createFailed', 'Could not create the organization')
+      )
     } finally {
       setBusy(false)
     }

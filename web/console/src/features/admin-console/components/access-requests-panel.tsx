@@ -108,7 +108,11 @@ function ApproveDialog({
         onDone()
       }
     } catch (err) {
-      setError(err instanceof AdminApiError ? err.message : 'Could not approve the request')
+      setError(
+        err instanceof AdminApiError
+          ? err.message
+          : t('admin.accessRequestsPanel.approveFailed', 'Could not approve the request')
+      )
     } finally {
       setBusy(false)
     }

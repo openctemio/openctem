@@ -93,7 +93,7 @@ export function TargetMappingDialog({
   // On edit, a stored priority from before the API's bounds existed must not
   // block an unrelated change, so it is only checked once it is edited.
   const priorityChanged = !editing || priority.trim() !== String(mapping.priority)
-  const formErrors = validateTargetMappingForm({ priority, description })
+  const formErrors = validateTargetMappingForm({ priority, description }, t)
   const errors = priorityChanged ? formErrors : { description: formErrors.description }
   const isPrimary = priority.trim() === String(PRIMARY_PRIORITY)
   const pairMissing = !editing && (!targetType || !assetType)
@@ -132,9 +132,12 @@ export function TargetMappingDialog({
       setError(
         err instanceof AdminApiError
           ? err.status === 409
-            ? 'This target type is already mapped to this asset type.'
+            ? t(
+                'admin.targetMappingDialog.duplicatePair',
+                'This target type is already mapped to this asset type.'
+              )
             : err.message
-          : 'The mapping could not be saved'
+          : t('admin.targetMappingDialog.saveFailed', 'The mapping could not be saved')
       )
     } finally {
       setBusy(false)
