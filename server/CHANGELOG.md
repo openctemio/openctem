@@ -8,6 +8,119 @@ with images, checksums and upgrade commands, are on
 
 Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/README.md) and folded in here at release.
 
+## v0.24.2 (2026-11-26)
+
+### Upgrade notes
+
+#### Before you upgrade
+
+- **Security: attack paths need their own read permission**: right after the upgrade, a signed-in member may get 403 on the attack-path pages until their cached permissions refresh (at the latest when the permission cache expires, a few minutes, or at the next sign-in).
+- **Security: creating a SAML address is an audited write**: before upgrading, check whether an organization that uses SAML gave up its slug and another organization took it since the identity provider was configured. Such an identity provider still posts to the old slug address, which the upgrade freezes to the organization that holds that slug when the migration runs. Fix such a case by recreating the affected SAML configuration and registering its new address at the identity provider.
+- **Security: SAML addresses are keyed by connection, not by the organization's name**: nothing to change at existing identity providers. To move a legacy connection to a permanent address, delete and recreate the configuration, then upload its new metadata to the identity provider.
+
+### Security: attack paths need their own read permission
+
+- Attack-path scores and detail, exposure chains, threat models and the MCP `get_exposure_chains` tool now need the new permission `attack_surface:paths:read` (generating a threat model needs it with `assets:write`). Before, `assets:read` was enough, so any role that could list assets also got the computed routes to compromise them. Asset lists, relationships and the neighbourhood still need only `assets:read`.
+- Migration `20261126022931_attack_paths_read_permission` adds the permission and gives it to the owner, administrator and member roles and to every custom role that holds `assets:read`, so nobody who reads attack paths today loses them. The viewer role does not get it. API keys and MCP grants are not widened: an API key that should read attack paths must add the new scope, and an MCP application asks for the new read scope `mcp:paths.read` (the exposure chains tool), which `mcp:assets.read` no longer covers. Role templates that work with attack paths include it (new template versions).
+- The dashboard widget "attack paths to crown jewels" needs the new permission too, on personal and organization dashboards; without it the widget shows no rows. The yes/no signals derived from attack paths (`on_attack_path` on exposures, the attack-path reason in a finding's priority explanation) stay under their existing permissions: they name no route.
+- **Upgrade note:** right after the upgrade, a signed-in member may get 403 on the attack-path pages until their cached permissions refresh (at the latest when the permission cache expires, a few minutes, or at the next sign-in).
+- Creating, editing and approving asset relationships is now audited (`asset_relationship.created`, `asset_relationship.updated`, `asset_relationship.approved`), like deleting one.
+- Docs: server/docs/architecture/authorization-matrix.md
+
+### Security: gorilla/websocket updated for GO-2026-6278
+
+- The WebSocket library is updated to a release that generates masking keys with a cryptographically secure random source, which fixes the Go vulnerability GO-2026-6278 reported by the dependency scan.
+- Docs: none (dependency update only, no behaviour change)
+
+### Security: list reads refuse a non-administrator caller without a resolved scope
+
+- The list compiler used by the asset list, its IP contexts and network counts, the exposure items, certificates, technologies, web endpoints, the posture views and the assistant's asset search read a caller who was neither an administrator nor tied to a user as unrestricted. Such a caller is now refused, a user-less API key reads an empty scope, and a missing data-scope enforcer or a scope that does not resolve is an error. The data-scope resolver now tells "sees the whole organization by right" (owner, administrator, a role with full data access) apart from "nothing resolved", so members holding a full-data role keep their lists. Members and administrators see what they saw before.
+- Custom queries and search suggestions no longer refuse a member who holds a full-data role (they answered "data scope did not resolve").
+- Docs: server/docs/architecture/authorization-matrix.md
+
+### Security: every path that grants a role needs a recent sign-in
+
+- Binding a role to a team, changing a team's access or upgrading its preset, sending an invitation, creating a user, and changing a member's team role now need step-up (critical tier), like the role routes. Before, these needed it only when they granted an administrator or a privileged role. Outside the window the API answers `403 STEP_UP_REQUIRED`, and the web console asks the person to confirm their identity, then retries.
+- Docs: server/docs/architecture/step-up-reauth.md
+
+### Security: role changes need a recent sign-in
+
+- Creating, editing or deleting a role, applying a template update to a role, and granting roles (to one user, a replaced role set, or many users at once) now need step-up, the same critical rule as API keys, SCIM tokens and the other organization-control changes: outside the window the API answers `403 STEP_UP_REQUIRED` and the web console asks the person to confirm their identity, then retries. Taking a role away from a user stays one click. Every one of these writes is audited.
+- Docs: server/docs/architecture/step-up-reauth.md
+
+### Security: creating a SAML address is an audited write
+
+- Reading an organization's SAML SP metadata in the admin console (`GET /api/v1/admin/tenants/{tenantId}/sso/saml/sp-metadata`) no longer reserves a connection id: it only reads, and answers `has_address: false` while the organization has neither a configuration nor an address. The address is created with the new console write `POST /api/v1/admin/tenants/{tenantId}/sso/saml/address` (SSO step-up, audited as `organization.saml_address_create`); the console shows a "Create the SAML address" button. Saving or validating a configuration never reserves one either.
+- Deleting a SAML configuration removes it and its address in one transaction.
+- **Upgrade note:** before upgrading, check whether an organization that uses SAML gave up its slug and another organization took it since the identity provider was configured. Such an identity provider still posts to the old slug address, which the upgrade freezes to the organization that holds that slug when the migration runs. Fix such a case by recreating the affected SAML configuration and registering its new address at the identity provider.
+- Docs: server/docs/architecture/saml-sso.md
+
+### Security: SAML addresses are keyed by connection, not by the organization's name
+
+- The SAML sign-in addresses and the SP entity ID (`/api/v1/auth/saml/<key>/{metadata,login,acs}`) were built on the organization's current slug. After a rename, another organization could take the old slug and be addressed by the first organization's identity provider. They are now keyed by the SAML connection's random id, and the organization's current slug never addresses a connection. Renaming an organization no longer changes its SAML addresses.
+- Configurations that exist when you upgrade keep their current address, frozen: migration `20261126024604_saml_connection_addresses` stores each one's slug at that moment as its legacy key, and only that configuration answers on it, also after a rename. This legacy address is deprecated: each sign-in through it logs a warning. New configurations get only the connection-id address.
+- The admin console shows the addresses returned by the API (`GET /api/v1/admin/tenants/{tenantId}/sso/saml/sp-metadata` now returns `entity_id`, `acs_url`, `login_url`, `connection_key` and `legacy`). They exist before the first save, which takes the same id. Deleting the configuration retires its address.
+- The AuthnRequest no longer sends a RelayState.
+- **Upgrade note:** nothing to change at existing identity providers. To move a legacy connection to a permanent address, delete and recreate the configuration, then upload its new metadata to the identity provider.
+- Docs: server/docs/architecture/saml-sso.md
+
+### Security: accounts signed in by an organization's single sign-on get no password by email
+
+- A password-less account that an organization's single sign-on signed in can no longer set a password through forgot-password or a set-password link. Such a password would be a way in that the organization's identity provider does not control. Forgot-password gives the same answer as for any address and stores and sends nothing. A link that still reaches such an account answers "invalid or expired".
+- Every organization sign-on (OIDC or SAML, with or without a stable identifier) records the first time and the organization on the account (migration `20261126054521`, new columns `users.sso_signed_in_at` and `users.sso_tenant_id`; backfilled from existing single sign-on identities). In the same statement it voids an outstanding set-password or reset link, such as the 24-hour link sent when an administrator created the user.
+- Password accounts are unaffected. Break-glass: an active owner of the organization whose single sign-on manages the account keeps forgot-password while that organization is active, and so does an active platform administrator. Owning another organization does not count.
+- Docs: server/docs/architecture/sso-authentication.md (No password for accounts the organization's SSO manages)
+
+### Fixed: Docker Compose passes the vulnerability feed settings, and the installer lists the override file and names the feed mode
+
+- The `api` service now passes `VULNFEED_BASE_URL`, `VULNFEED_MIRRORS`, `VULNFEED_BUNDLE_DIR`, `VULNFEED_ROOT_KEY_ID`, `OPENCTEM_HTTPSEC_FEED_PROXY`, `OPENCTEM_HTTPSEC_FEED_NO_PROXY` and `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` from `.env` (empty by default, so nothing changes when they are unset). Before, a value set in `.env` never reached the API. `VULNFEED_BUNDLE_DIR` still needs a read-only volume in an extra compose file.
+- `install.sh` adds `docker-compose.override.yml` to the end of `COMPOSE_FILE` when the file exists next to it (new install and rerun); Compose ignores that file once `COMPOSE_FILE` is set. A missing file is never listed.
+- The installer summary prints the vulnerability feed mode and the outbound access it needs, and says when the bundled sensor was left out because the host is an IP address.
+- Docs: https://docs.openctem.io/operations/vulnerability-feed-setup/
+
+### Fixed: the vulnerability feed says which feed failed and why
+
+- Platform console: the freshness banner names each feed whose data is missing or out of date,
+  why (the feed's last error, in the reader's language) and the fix, with a link to System >
+  Threat intelligence. `GET /api/v1/admin/threat-intel/freshness` conditions carry
+  `limit_seconds`, `error_code`, `error_params` and `failing_since`.
+- Web app: the banner every user sees also says which data is affected (the vulnerability
+  catalog, the known exploited list, the exploit likelihood scores). `GET
+  /api/v1/threat-intel/freshness` adds `sources` (feed names only, no error detail).
+- New feed error codes instead of `unreachable`: `blocked_address` (the host is on a private
+  address that is not allowed), `proxy_refused` (the feed proxy answered the CONNECT with a
+  refusal, param `status`), `proxy_unreachable` (the feed proxy cannot be reached) and
+  `config_invalid`.
+- A `VULNFEED_BASE_URL` the API refuses at start-up (a blocked private address, or not an https
+  URL) is now a feed status error on the vulnerability bundle card (`blocked_address` or
+  `config_invalid`, with the setting and host) and alerts the administrators at the next check,
+  instead of one log line.
+- Feed delivery: a platform sensor that cannot relay says why: `inactive`, `version_too_old`
+  (with `min_version`, v0.36.0), `no_signing_key`, `relay_off` (`SENSOR_FEED_RELAY=0` on its
+  host) or `no_capability` (the sensor reports too little to tell). The reason is read from the
+  sensor's own report and only explains; it never makes a sensor eligible.
+- Docs: https://docs.openctem.io/operations/vulnerability-feed-setup/
+
+### Fixed: the vulnerability data banner no longer comes and goes between releases, and offline sites can set the limit
+
+- **Behaviour change: the default KEV limit moved from 6 to 12 hours.** KEV arrives inside the
+  signed vulnerability release (published every 2 to 6 hours), so its fixed 6-hour limit made the
+  banner flap between releases. KEV now takes the bundle's limit (12 hours by default) and is
+  judged by the date the release carries; EPSS takes the bundle limit plus a day (at least 36
+  hours, never more than the 7 days a release is valid). The newest-record check follows a raised
+  bundle limit.
+- New console setting, System > Threat intelligence > "How old the data may be": the bundle (and
+  KEV) limit, 6 to 168 hours, for a site that copies releases to `VULNFEED_BUNDLE_DIR` by hand.
+  Raising it does not only quiet the banner: it also loosens which KEV and EPSS side data of a
+  release counts as current (an older copy is no longer refused as `source_stale`).
+  `GET`/`PUT /api/v1/admin/settings/feed-freshness` (any admin reads; a super admin changes it
+  with a fresh step-up and a reason; a critical audit entry `platform.feed_freshness_limits_changed`,
+  every administrator is told). A setting that cannot be read gives the strictest limit (6 hours).
+  A release older than 7 days is still refused.
+- The KEV and EPSS cards show the bundle import's next run (every 20 minutes), not an hourly or
+  daily one.
+- Docs: https://docs.openctem.io/operations/vulnerability-feed-setup/
+
 ## v0.23.0 (2026-11-15)
 
 ### Upgrade notes
