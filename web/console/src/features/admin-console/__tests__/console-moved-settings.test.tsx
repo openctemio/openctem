@@ -83,9 +83,13 @@ describe('CAPTCHA settings', () => {
         onSaved={() => {}}
       />
     )
-    expect(
-      screen.getByText(/Locked by the server configuration \(CAPTCHA_TURNSTILE_SECRET\)/)
-    ).toBeInTheDocument()
+    // The variable is typed on the server: it reads as code in the sentence.
+    const code = Array.from(document.querySelectorAll('code')).find(
+      (c) => c.textContent === 'CAPTCHA_TURNSTILE_SECRET'
+    )
+    expect(code?.closest('[role="status"]')).toHaveTextContent(
+      /Locked by the server configuration \(CAPTCHA_TURNSTILE_SECRET\)\. Change it on the server/
+    )
     expect(screen.getByLabelText('Site key (public)')).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
   })

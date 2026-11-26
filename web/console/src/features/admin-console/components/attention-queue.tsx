@@ -8,6 +8,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-href'
 import type { AttentionItem, AttentionSeverity } from '../lib/attention'
+import { resolveNamedVars } from '../lib/named-vars'
 
 const SEVERITY: Record<
   AttentionSeverity,
@@ -82,16 +83,17 @@ export function AttentionQueue({
         const sev = SEVERITY[item.severity]
         const Icon = sev.icon
         const href = item.href && item.actionKey ? safeHref(item.href) : undefined
+        const vars = resolveNamedVars(t, item.vars, item.named)
         const body = (
           <>
             <Icon className={cn('mt-0.5 size-4 shrink-0', sev.className)} aria-hidden="true" />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="text-body font-medium">
                 <span className="sr-only">{t(sev.labelKey)}: </span>
-                {t(item.titleKey, item.title, item.vars)}
+                {t(item.titleKey, item.title, vars)}
               </span>
               <span className="text-body text-muted-foreground">
-                {t(item.detailKey, item.detail, item.vars)}
+                {t(item.detailKey, item.detail, vars)}
               </span>
             </span>
           </>
