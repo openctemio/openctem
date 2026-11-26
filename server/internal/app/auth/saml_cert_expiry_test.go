@@ -135,6 +135,14 @@ func TestSAMLCertExpirySweep(t *testing.T) {
 		t.Fatalf("alert must name the expiry date: %q", inApp.got[0].Body)
 	}
 
+	if m := inApp.got[0].Message; m == nil || m.Code != "saml.cert_expiring" {
+		t.Fatalf("expiring alert message = %+v", m)
+	} else if d, ok := m.Params["days"].(int); !ok || d < 1 {
+		t.Fatalf("days = %v", m.Params["days"])
+	} else if _, err := time.Parse(time.RFC3339, m.Params["expires_at"].(string)); err != nil || m.Params["org"] == nil {
+		t.Fatalf("params = %+v", m.Params)
+	}
+
 	if n, _ := svc.SweepCertificateExpiry(context.Background(), now.Add(time.Hour)); n != 0 {
 		t.Fatalf("the same level must not alert twice, got %d", n)
 	}
@@ -147,6 +155,9 @@ func TestSAMLCertExpirySweep(t *testing.T) {
 	last := inApp.got[len(inApp.got)-1]
 	if !strings.Contains(last.Title, "expired") {
 		t.Fatalf("expired alert title: %q", last.Title)
+	}
+	if last.Message == nil || last.Message.Code != "saml.cert_expired" || last.Message.Params["expires_at"] == nil {
+		t.Fatalf("expired alert message = %+v", last.Message)
 	}
 }
 

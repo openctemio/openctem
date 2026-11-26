@@ -1937,7 +1937,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	s.Pentest.SetEvidenceImageReader(s.Attachment) // evidence images in reports
 	// Authorization letters keep their file in the attachment storage (RFC-065 §13).
 	s.ScopeLetters = scope.NewLetterService(postgres.NewAuthorizationLetterRepository(&postgres.DB{DB: deps.DB}),
-		letterFiles{svc: s.Attachment}, s.Scope.NotifyAdmins)
+		letterFiles{svc: s.Attachment}, s.Scope.NotifyAdminsMsg)
 	// A revoked letter's entries leave the job signer's ledger at once.
 	s.ScopeLetters.OnRevoke(s.Scope.NarrowLetter)
 	// Wire per-tenant storage resolution (tenants can configure S3/MinIO in settings)

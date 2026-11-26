@@ -10,6 +10,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
 	"github.com/openctemio/openctem/server/pkg/sensorproto/pairing"
 )
@@ -143,5 +144,7 @@ func (s *Service) fingerprintMismatch(ctx context.Context, actor Actor, p *senso
 		WithMetadata("reason", "fingerprint_mismatch").
 		WithMetadata("key_fingerprint", pairing.KeyFingerprint(p.Thumbprint)).
 		WithMetadata("source_ip", from).WithMetadata("host_facts", p.HostFacts))
-	s.notifyAdmins(ctx, actor.TenantID, "Sensor pairing closed: wrong fingerprint", msg, "high")
+	s.notifyAdminsMsg(ctx, actor.TenantID,
+		notificationdom.Msg("sensor.pairing_wrong_fingerprint", "by", actor.Email, "from", enrollFromParam(from)),
+		"Sensor pairing closed: wrong fingerprint", msg, "high")
 }

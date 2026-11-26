@@ -18,7 +18,7 @@ func (g *autoTriageGate) RequireRecentAuth(context.Context, string) error { retu
 
 type autoTriageNotices struct{ titles []string }
 
-func (n *autoTriageNotices) NotifyPolicyLoosened(_ context.Context, _ string, _ auditapp.AuditContext, title, _, _ string) {
+func (n *autoTriageNotices) NotifyPolicyLoosenedWith(_ context.Context, _ string, _ auditapp.AuditContext, _, title, _, _ string, _ ...any) {
 	n.titles = append(n.titles, title)
 }
 

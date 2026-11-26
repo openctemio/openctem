@@ -35,6 +35,7 @@ type HomedLister interface {
 func (s *TenantService) homeAccessEnded(ctx context.Context, home shared.ID, user shared.ID) {
 	uid := user
 	n := s.suspendHomed(ctx, tenantdom.HomedFilter{Home: home, User: &uid}, tenantdom.SuspendedReasonHomeAccessEnded,
+		notificationdom.Msg("trust.home_access_ended"),
 		"A member's own organization removed them",
 		"A member from another organization was disabled or removed by that organization; their access here is suspended.")
 	if n > 0 {
@@ -65,6 +66,7 @@ func (s *TenantService) homeAccessRestored(ctx context.Context, home shared.ID, 
 // any more).
 func (s *TenantService) HomeDomainLost(ctx context.Context, home shared.ID, domain string) {
 	s.suspendHomed(ctx, tenantdom.HomedFilter{Home: home, Domain: strings.ToLower(domain)}, tenantdom.SuspendedReasonHomeDomainLapsed,
+		notificationdom.Msg("trust.home_domain_lapsed"),
 		"External members suspended",
 		"The organization that manages some of your external members no longer holds their email domain; their access is suspended until it does.")
 }
@@ -75,7 +77,7 @@ func (s *TenantService) HomeDomainRestored(ctx context.Context, home shared.ID, 
 	s.restoreHomed(ctx, tenantdom.HomedFilter{Home: home, Domain: strings.ToLower(domain), SuspendedReason: tenantdom.SuspendedReasonHomeDomainLapsed})
 }
 
-func (s *TenantService) suspendHomed(ctx context.Context, f tenantdom.HomedFilter, reason, title, body string) int {
+func (s *TenantService) suspendHomed(ctx context.Context, f tenantdom.HomedFilter, reason string, msg *notificationdom.Message, title, body string) int {
 	lister, ok := s.repo.(HomedLister)
 	if !ok {
 		return 0
@@ -96,7 +98,7 @@ func (s *TenantService) suspendHomed(ctx context.Context, f tenantdom.HomedFilte
 		n++
 	}
 	for host := range hosts {
-		s.notifyAdmins(ctx, host, title, body, notificationdom.SeverityHigh)
+		s.notifyAdminsMsg(ctx, host, msg, title, body, notificationdom.SeverityHigh)
 	}
 	return n
 }

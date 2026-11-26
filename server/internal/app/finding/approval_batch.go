@@ -306,7 +306,9 @@ func (s *VulnerabilityService) notifyBatchApprovers(ctx context.Context, b *vuln
 		if err := s.approvalInApp.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: b.TenantID, Audience: notificationdom.AudienceUser, AudienceID: &u,
 			NotificationType: notificationdom.TypeFindingApproval, Title: title,
-			Body:     fmt.Sprintf("Tier %s, %d approval(s) needed.", res.Tier, res.Required),
+			Body: fmt.Sprintf("Tier %s, %d approval(s) needed.", res.Tier, res.Required),
+			Message: notificationdom.Msg("finding.approval.batch_requested", "status", approvalSubject(statusLabel(string(b.RequestedStatus))),
+				"count", b.MemberCount, "tier", notificationdom.Msg("finding.approval.tier."+codeSegment(string(res.Tier))), "required", res.Required),
 			Severity: notificationdom.SeverityMedium, ResourceType: "approval_batch", ResourceID: &b.ID, URL: approvalInboxURL,
 		}); err != nil {
 			s.logger.Warn("group exception: in-app notification", "error", logger.SanitizeError(err))

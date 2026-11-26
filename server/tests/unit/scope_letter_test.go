@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	"github.com/openctemio/openctem/server/internal/app/scope"
 	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
@@ -65,7 +67,11 @@ func TestLetterUpload(t *testing.T) {
 	repo := &memLetters{byID: map[shared.ID]*scopedom.Letter{}}
 	files := &memFiles{}
 	notes := 0
-	svc := scope.NewLetterService(repo, files, func(context.Context, shared.ID, string, string) { notes++ })
+	var noteMsg *notificationdom.Message
+	svc := scope.NewLetterService(repo, files, func(_ context.Context, _ shared.ID, _, _ string, m *notificationdom.Message) {
+		notes++
+		noteMsg = m
+	})
 	tid, user := shared.NewID(), shared.NewID()
 	body := []byte("%PDF-1.7 letter")
 	in := scope.UploadLetterInput{TenantID: tid, UploadedBy: user, Title: "Acme engagement", Issuer: "Acme Ltd",
@@ -100,6 +106,9 @@ func TestLetterUpload(t *testing.T) {
 
 	if _, err := svc.Revoke(ctx, tid, l.ID, user); err != nil || notes != 1 {
 		t.Fatalf("revoke: %v notes=%d", err, notes)
+	}
+	if noteMsg == nil || noteMsg.Code != "scope.letter_revoked" || noteMsg.Params["letter"] != "Acme engagement" {
+		t.Fatalf("revoke message = %+v", noteMsg)
 	}
 	if _, err := svc.Revoke(ctx, shared.NewID(), l.ID, user); !errors.Is(err, scopedom.ErrLetterNotFound) {
 		t.Fatalf("another tenant: %v", err)

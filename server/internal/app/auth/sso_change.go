@@ -299,9 +299,13 @@ func (s *SSOChangeService) notifyOwners(ctx context.Context, c *ssochange.Change
 	}
 	summary := DescribeSSOChange(c)
 	requester := c.RequestedByEmail
+	var requesterParam any = requester
 	if requester == "" {
 		requester = "a platform administrator"
+		requesterParam = notificationdom.Msg("sso.platform_admin")
 	}
+	msg := notificationdom.Msg("sso.change_pending", "requester", requesterParam, "org", orgName,
+		"summary", describeSSOChangeMessage(c), "expires_at", c.ExpiresAt.UTC().Format(time.RFC3339))
 	body := fmt.Sprintf("A platform administrator (%s) proposed this SSO change for %s: %s. "+
 		"It does not take effect until an owner approves it, and expires on %s.",
 		requester, orgName, summary, c.ExpiresAt.UTC().Format("2006-01-02 15:04 MST"))
@@ -316,6 +320,7 @@ func (s *SSOChangeService) notifyOwners(ctx context.Context, c *ssochange.Change
 				NotificationType: notificationdom.TypeSSOChangePending,
 				Title:            "An SSO change is waiting for your approval",
 				Body:             body,
+				Message:          msg,
 				Severity:         notificationdom.SeverityHigh,
 				ResourceType:     "sso_change",
 				ResourceID:       &changeID,
@@ -388,6 +393,80 @@ func DescribeSSOChange(c *ssochange.Change) string {
 		return describeDomainJIT(c)
 	}
 	return string(c.Kind)
+}
+
+// describeSSOChangeMessage is DescribeSSOChange as a nested message: one code
+// per kind of change, with the same values the English sentence shows.
+func describeSSOChangeMessage(c *ssochange.Change) *notificationdom.Message {
+	switch c.Kind {
+	case ssochange.KindSAMLConfig:
+		var p SAMLChangePayload
+		_ = json.Unmarshal(c.Payload, &p)
+		var fp any = shortFingerprint(CertificateFingerprint(p.IDPCertificate))
+		if fp == "(none)" {
+			fp = notificationdom.Msg("sso.fingerprint_none")
+		}
+		return notificationdom.Msg("sso.change.saml_config", "entity", p.IDPEntityID, "sign_in_url", p.IDPSSOURL,
+			"fingerprint", fp, "auto_provision", onOffMessage(p.AutoProvision), "enabled", onOffMessage(p.Enabled))
+	case ssochange.KindIdPCreate:
+		var p IdPCreatePayload
+		_ = json.Unmarshal(c.Payload, &p)
+		return notificationdom.Msg("sso.change.idp_create", "provider", identityProviderNounMessage(p.Provider),
+			"name", p.DisplayName, "client_id", p.ClientID, "auto_provision", onOffMessage(p.AutoProvision))
+	case ssochange.KindIdPUpdate:
+		var p IdPUpdatePayload
+		_ = json.Unmarshal(c.Payload, &p)
+		var fields []*notificationdom.Message
+		add := func(set bool, name string) {
+			if set {
+				fields = append(fields, notificationdom.Msg("sso.field."+name))
+			}
+		}
+		add(p.DisplayName != nil, "display_name")
+		add(p.ClientID != nil, "client_id")
+		add(p.ClientSecretChanged, "client_secret")
+		add(p.IssuerURL != nil, "issuer_url")
+		add(p.TenantIdentifier != nil, "tenant_identifier")
+		add(p.Scopes != nil, "scopes")
+		add(p.AllowedDomains != nil, "allowed_domains")
+		add(p.AutoProvision != nil, "auto_provision")
+		add(p.DefaultRole != nil, "default_role")
+		add(p.IsActive != nil, "active")
+		if len(fields) == 0 {
+			fields = []*notificationdom.Message{notificationdom.Msg("sso.field.none")}
+		}
+		target := notificationdom.Msg("sso.change.target_generic")
+		if p.TargetName != "" {
+			target = notificationdom.Msg("sso.change.target", "provider", identityProviderNounMessage(p.TargetProvider), "name", p.TargetName)
+		}
+		return notificationdom.Lines("sso.change.idp_update", fields, "target", target)
+	case ssochange.KindDomainJIT:
+		var p DomainJITPayload
+		_ = json.Unmarshal(c.Payload, &p)
+		if !p.JITEnabled {
+			return notificationdom.Msg("sso.change.domain_jit_off", "domain", p.Domain)
+		}
+		var role any = p.JITRole
+		if p.JITRole == "" {
+			role = notificationdom.Msg("sso.default_role")
+		}
+		return notificationdom.Msg("sso.change.domain_jit_on", "domain", p.Domain, "role", role)
+	}
+	return notificationdom.Msg("sso.change.other")
+}
+
+func onOffMessage(b bool) *notificationdom.Message {
+	if b {
+		return notificationdom.Msg("sso.on")
+	}
+	return notificationdom.Msg("sso.off")
+}
+
+func identityProviderNounMessage(provider string) *notificationdom.Message {
+	if label := identityproviderdom.Provider(provider).Label(); label != "" {
+		return notificationdom.Msg("sso.idp_noun", "label", label)
+	}
+	return notificationdom.Msg("sso.idp_noun_generic")
 }
 
 func onOff(b bool) string {

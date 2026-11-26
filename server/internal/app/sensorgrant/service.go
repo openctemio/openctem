@@ -349,7 +349,9 @@ func (s *Service) onChangedWith(ctx context.Context, actor Actor, cur, next sens
 	}
 	s.logAudit(ctx, actor, ev)
 	if len(widened) > 0 {
-		s.notifyAdmins(ctx, actor.TenantID, "Sensor grant widened: "+name, msg)
+		s.notifyAdminsMsg(ctx, actor.TenantID,
+			notificationdom.Msg("sensor.grant_widened", "sensor", name, "by", actor.Email, "changed", strings.Join(changed, ", ")),
+			"Sensor grant widened: "+name, msg)
 	}
 }
 
@@ -514,7 +516,9 @@ func (s *Service) logAudit(ctx context.Context, a Actor, ev auditapp.AuditEvent)
 	}
 }
 
-func (s *Service) notifyAdmins(ctx context.Context, tenantID shared.ID, title, body string) {
+// notifyAdminsMsg tells the organization's administrators, with the
+// language-neutral message next to the English text.
+func (s *Service) notifyAdminsMsg(ctx context.Context, tenantID shared.ID, m *notificationdom.Message, title, body string) {
 	if s.admins == nil || s.notifier == nil {
 		return
 	}
@@ -527,7 +531,7 @@ func (s *Service) notifyAdmins(ctx context.Context, tenantID shared.ID, title, b
 		uid := id
 		if err := s.notifier.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-			NotificationType: notificationdom.TypeSensorSecurity, Title: title, Body: body, Severity: "high",
+			NotificationType: notificationdom.TypeSensorSecurity, Title: title, Body: body, Message: m, Severity: "high",
 			ResourceType: "sensor", URL: "/sensors",
 		}); err != nil {
 			s.log.Warn("notify admin of sensor grant change", "error", err)

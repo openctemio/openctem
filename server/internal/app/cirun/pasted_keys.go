@@ -112,7 +112,8 @@ func (s *Service) notePastedKeyUnknown(ctx context.Context, tenantID shared.ID, 
 				WithMetadata("pasted_kids", known))
 		alert := AdminAlert{
 			EventType: string(integration.EventTypeCITokenRefusals), Severity: notificationdom.SeverityHigh,
-			Title: "CI signing keys out of date: " + name,
+			Message: notificationdom.Msg("ci.signing_keys_out_of_date", "trust", name, "key", kid, "keys", strings.Join(known, ", ")),
+			Title:   "CI signing keys out of date: " + name,
 			Body: fmt.Sprintf("A CI job's token for the trust configuration %q is signed with the key %q, which is not among "+
 				"the keys pasted in it (%s). The CI provider has probably rotated its keys, and every upload of these "+
 				"pipelines is refused until the provider's current keys are pasted in the trust configuration.",

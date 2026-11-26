@@ -1242,7 +1242,18 @@ func (s *Service) onApproved(ctx context.Context, actor Actor, res *sensordom.Pa
 		WithMetadata("source_ip", from).WithMetadata("host_facts", p.HostFacts).
 		WithMetadata("grant_profile", profile).WithMetadata("revoked_keys", res.RevokedKeys)
 	s.logAudit(ctx, s.auditContext(actor), ev)
-	s.notifyAdmins(ctx, actor.TenantID, "Sensor "+verb+": "+name, msg, "high")
+	code := "sensor.paired"
+	if res.Repair {
+		code = "sensor.repaired"
+	}
+	var fromParam any = from
+	if p.SourceIP == nil {
+		fromParam = notificationdom.Msg("sensor.unknown_address")
+	}
+	s.notifyAdminsMsg(ctx, actor.TenantID,
+		notificationdom.Msg(code, "sensor", name, "by", actor.Email, "from", fromParam, "sas", p.SAS,
+			"key_fingerprint", pairing.KeyFingerprint(p.Thumbprint), "profile", sensorProfileMessage(profile)),
+		"Sensor "+verb+": "+name, msg, "high")
 	if res.Repair {
 		s.onRepaired(ctx, actor, res, name)
 	}
@@ -1337,7 +1348,21 @@ func (s *Service) logAudit(ctx context.Context, actx auditapp.AuditContext, ev a
 	}
 }
 
-func (s *Service) notifyAdmins(ctx context.Context, tenantID shared.ID, title, body, severity string) {
+// sensorProfileMessage is the nested message for a grant profile (the
+// profile names use hyphens; a code segment may not).
+func sensorProfileMessage(profile string) *notificationdom.Message {
+	seg := strings.ReplaceAll(profile, "-", "_")
+	switch seg {
+	case "legacy_broad", "easm_external", "internal_network_scanner", "authenticated_scanner", "collector",
+		"scan_connector", "ci_runner", "endpoint_agent", "ai_worker", "custom":
+	default:
+		seg = "other"
+	}
+	return notificationdom.Msg("sensor.profile." + seg)
+}
+
+// notifyAdminsMsg is notifyAdmins with the language-neutral message.
+func (s *Service) notifyAdminsMsg(ctx context.Context, tenantID shared.ID, m *notificationdom.Message, title, body, severity string) {
 	if s.admins == nil || s.notifier == nil {
 		return
 	}
@@ -1350,7 +1375,7 @@ func (s *Service) notifyAdmins(ctx context.Context, tenantID shared.ID, title, b
 		uid := id
 		if err := s.notifier.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-			NotificationType: notificationdom.TypeSensorSecurity, Title: title, Body: body, Severity: severity,
+			NotificationType: notificationdom.TypeSensorSecurity, Title: title, Body: body, Message: m, Severity: severity,
 			ResourceType: "sensor", URL: "/sensors",
 		}); err != nil {
 			s.log.Warn("notify admin of sensor pairing", "error", err)
