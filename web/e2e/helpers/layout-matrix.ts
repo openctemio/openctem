@@ -309,6 +309,9 @@ export const ROUTE_STATES: Record<string, RouteState> = {
   // A page tab the bare route does not open: /sensors starts on its sensors
   // list, the scan zones (their list and the coverage card) are a tab.
   '/sensors@zones': { path: '/sensors?tab=zones' },
+  // A pentest campaign's Checklist tab (the seed records passed, failed, N/A
+  // and untested results on its OWASP Top 10 checklist).
+  '/pentest/campaigns/[id]@checklist': { path: '/pentest/campaigns/[id]?view=checklist' },
   // A list in Query mode: the search field is the query editor, one line
   // (`@query`) and expanded (`@query-open`), the state most of a filter
   // edit is written in.
