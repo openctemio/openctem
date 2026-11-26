@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	assetapp "github.com/openctemio/openctem/server/internal/app/asset"
 	"github.com/openctemio/openctem/server/internal/app/integration"
 	"github.com/openctemio/openctem/server/internal/infra/http/handler"
+	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/pkg/domain/asset"
 	"github.com/openctemio/openctem/server/pkg/domain/attribution"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
@@ -29,6 +31,15 @@ var testTenantID = shared.NewID()
 // Uses "tenant_id" key to match middleware.GetTenantID() which extracts from JWT claims.
 func withTenantContext(req *http.Request) *http.Request {
 	ctx := context.WithValue(req.Context(), logger.ContextKey("tenant_id"), testTenantID.String())
+	return req.WithContext(ctx)
+}
+
+// withAdminContext is withTenantContext for an authenticated administrator of
+// the tenant: list reads compile the caller's data scope, and a caller who is
+// neither an administrator nor tied to a user is refused (fail closed).
+func withAdminContext(req *http.Request) *http.Request {
+	ctx := context.WithValue(withTenantContext(req).Context(), middleware.IsAdminKey, true)
+	ctx = context.WithValue(ctx, middleware.UserIDKey, shared.NewID().String())
 	return req.WithContext(ctx)
 }
 
@@ -581,7 +592,7 @@ func TestAssetHandler_List_Success(t *testing.T) {
 
 	// List assets
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/test-team/assets", nil)
-	req = withTenantContext(req)
+	req = withAdminContext(req)
 	rec := httptest.NewRecorder()
 
 	h.List(rec, req)
@@ -617,13 +628,34 @@ func TestAssetHandler_List_WithFilters(t *testing.T) {
 
 	// List with page parameter
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/test-team/assets?page=1&per_page=10", nil)
-	listReq = withTenantContext(listReq)
+	listReq = withAdminContext(listReq)
 	listRec := httptest.NewRecorder()
 
 	h.List(listRec, listReq)
 
 	if listRec.Code != http.StatusOK {
 		t.Errorf("expected status 200, got %d", listRec.Code)
+	}
+}
+
+// A list read by a caller who is neither an administrator nor tied to a user
+// (no user, no API key) is refused, never answered as an unrestricted read.
+// This handler has no data-scope enforcer, so the refusal is the
+// "enforcer not configured" error; with one, the caller gets 403
+// (datascope.TestListActor_NonAdminFailsClosed).
+func TestAssetHandler_List_CallerWithoutUserIsRefused(t *testing.T) {
+	h := newTestHandler()
+	body, _ := json.Marshal(map[string]any{"name": "Hidden", "type": "host", "criticality": "high"})
+	req := withTenantContext(httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/tenants/test-team/assets", bytes.NewReader(body)))
+	h.Create(httptest.NewRecorder(), req)
+
+	rec := httptest.NewRecorder()
+	h.List(rec, withTenantContext(httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/tenants/test-team/assets", nil)))
+	if rec.Code < http.StatusBadRequest {
+		t.Errorf("list without a user: status %d, want a refusal; body %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "Hidden") {
+		t.Error("list without a user returned assets")
 	}
 }
 
