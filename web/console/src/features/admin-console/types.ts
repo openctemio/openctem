@@ -1015,6 +1015,46 @@ export interface PrivateRange {
 }
 
 /** System > Private networks: the private ranges outbound requests may reach. */
+/**
+ * System > Threat intelligence > Feed address: where the signed
+ * vulnerability feed is fetched from (GET/PUT /admin/settings/vulnfeed-sources).
+ * The signing root and the local bundle folder are read only here.
+ */
+export interface VulnFeedSourcesSettings extends SettingChange {
+  base_url: string
+  /** tried after the release address in direct mode only */
+  mirrors: string[]
+  default_base_url: string
+  default_mirrors: string[]
+  /** default, environment or console */
+  source: string
+  locked_by_environment: boolean
+  env_vars: string[]
+  max_mirrors: number
+  /** the pinned root is the official feed's (otherwise set on the server) */
+  root_official: boolean
+  /** the pinned root's public key fingerprint */
+  root_key_id: string
+  /** the server reads the feed from a local folder (the path is never sent) */
+  bundle_dir_set: boolean
+  version: number
+}
+
+/** One address of a feed test fetch (POST /admin/settings/vulnfeed-sources/test). */
+export interface FeedProbeResult {
+  origin: string
+  ok: boolean
+  format?: string
+  sequence?: number
+  created_at?: string
+  keyset_version?: number
+  /** the newest release there is older than the one applied */
+  behind?: boolean
+  /** blocked_address, unreachable, not_found, http_error, root_mismatch, pointer_invalid, not_configured */
+  error?: string
+  http_status?: number
+}
+
 export interface PrivateDestinationsSettings extends SettingChange {
   /** set on the server (OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS), read only here */
   server_ranges: PrivateRange[]

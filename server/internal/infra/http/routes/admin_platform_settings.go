@@ -42,6 +42,11 @@ import (
 //	                                           + reason (critical audit, admins told);
 //	                                           test: the same permission, rate limited,
 //	                                           resolves only
+//	/admin/settings/vulnfeed-sources       any admin   PUT: platform owner
+//	                                           (platform.settings.feed_sources) + fresh
+//	                                           step-up + reason (critical audit, admins
+//	                                           told); test: the same permission, rate
+//	                                           limited, verifies only (never imports)
 //
 // Secrets are never returned by any of them.
 func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlewares []Middleware,
@@ -137,6 +142,19 @@ func registerAdminPlatformSettingsRoutes(router Router, h Handlers, adminMiddlew
 			testMW = append(testMW, h.AdminDestinationTestLimiter.WriteMiddleware())
 		}
 		r.POST("/test", on(privateDest, ps.TestPrivateDestination), testMW...)
+	}, adminMiddlewares...)
+	// Vulnerability feed address: the test makes outbound requests to the
+	// addresses given (through the guarded feed client), bounded per
+	// administrator like the destination test.
+	feedSources := ps.VulnFeedSources != nil
+	router.Group("/api/v1/admin/settings/vulnfeed-sources", func(r Router) {
+		r.GET("/", on(feedSources, ps.GetVulnFeedSources))
+		r.PUT("/", on(feedSources, ps.UpdateVulnFeedSources), freshStepUp("settings.vulnfeed_sources"))
+		testMW := []Middleware{}
+		if h.AdminDestinationTestLimiter != nil {
+			testMW = append(testMW, h.AdminDestinationTestLimiter.WriteMiddleware())
+		}
+		r.POST("/test", on(feedSources, ps.TestVulnFeedSources), testMW...)
 	}, adminMiddlewares...)
 	router.Group("/api/v1/admin/settings/social-login-providers", func(r Router) {
 		r.GET("/", on(social, ps.GetSocialLogin))

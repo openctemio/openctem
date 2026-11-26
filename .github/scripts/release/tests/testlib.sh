@@ -136,6 +136,9 @@ YAML
     image: x:${API_VERSION:-${OPENCTEM_VERSION:?run setup.sh}}
     image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.6.4}
 YAML
+  cat >"$d/server/deploy/docker-compose.relay-sensor.yml" <<'YAML'
+    image: ${SENSOR_IMAGE:-ghcr.io/openctemio/sensor}:${SENSOR_VERSION:-v0.6.4}-relay
+YAML
   echo "export const CI_RELEASE_FALLBACK = 'v0.2.0'" >"$d/web/src/features/ci-runners/lib/ci.ts"
   printf '{\n  "name": "w",\n  "version": "0.0.0",\n  "private": true\n}\n' >"$d/web/package.json"
 }

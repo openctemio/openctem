@@ -43,6 +43,7 @@ elevation is required, the default).
 | `platform.sensors.read` | yes | yes | yes | yes | yes | yes | yes | yes |
 | `platform.settings.ai.write` |  | yes |  |  |  |  |  |  |
 | `platform.settings.email.write` |  | yes |  |  |  |  |  |  |
+| `platform.settings.feed_sources` |  | yes |  |  |  |  |  |  |
 | `platform.settings.general.write` |  | yes |  |  |  |  |  |  |
 | `platform.settings.legal.write` |  | yes |  |  |  |  |  |  |
 | `platform.settings.limits.write` |  | yes |  |  |  |  |  |  |
@@ -89,6 +90,7 @@ elevation is required, the default).
 | `platform.sensors.read` | Shared sensors, scan zones, the job queue and the scanning settings |
 | `platform.settings.ai.write` | Platform AI and the organizations' AI policy |
 | `platform.settings.email.write` | Platform e-mail relay and its test message |
+| `platform.settings.feed_sources` | Where the vulnerability feed is fetched from (release URL and mirrors), and the test fetch |
 | `platform.settings.general.write` | CAPTCHA, region, alerts, storage quota and the version check |
 | `platform.settings.legal.write` | Legal pages |
 | `platform.settings.limits.write` | Default limits of self-service organizations |
@@ -268,6 +270,9 @@ session, no permission). `public`: a sign-in step before a session exists.
 | `POST /api/v1/admin/settings/social-login-providers/{provider}/test` | `platform.settings.signup.write` |
 | `GET /api/v1/admin/settings/storage-quota/` | `platform.settings.read` |
 | `PUT /api/v1/admin/settings/storage-quota/` | `platform.settings.general.write` |
+| `GET /api/v1/admin/settings/vulnfeed-sources/` | `platform.settings.read` |
+| `PUT /api/v1/admin/settings/vulnfeed-sources/` | `platform.settings.feed_sources` |
+| `POST /api/v1/admin/settings/vulnfeed-sources/test` | `platform.settings.feed_sources` |
 | `GET /api/v1/admin/shared-sensors/` | `platform.sensors.read` |
 | `POST /api/v1/admin/shared-sensors/enrollment-tokens` | `platform.sensors.manage` |
 | `GET /api/v1/admin/shared-sensors/jobs` | `platform.sensors.read` |

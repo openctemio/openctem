@@ -245,6 +245,24 @@ var stepUpRoutes = []string{
 	"POST /api/v1/scan-approvals/{id}/approve",
 	"POST /api/v1/pentest/campaigns/{id}/secrets/{id}/reveal",
 	"DELETE /api/v1/pentest/campaigns/{id}/secrets/{id}",
+	// Roles decide who can do what: creating, changing, deleting a role and
+	// granting one (one user, a replaced set, or many users at once).
+	"POST /api/v1/roles",
+	"PUT /api/v1/roles/{id}",
+	"DELETE /api/v1/roles/{id}",
+	"POST /api/v1/roles/{id}/template/apply",
+	"POST /api/v1/roles/{id}/members/bulk",
+	"POST /api/v1/users/{id}/roles",
+	"PUT /api/v1/users/{id}/roles",
+	// Every other path that grants a role: a team's roles and access (its
+	// members inherit them), an invitation or a created user (both carry
+	// role ids), and a member's team role.
+	"POST /api/v1/groups/{id}/roles",
+	"PUT /api/v1/groups/{id}/access",
+	"POST /api/v1/groups/{id}/access/upgrade",
+	"POST /api/v1/tenants/acme/invitations",
+	"POST /api/v1/tenants/acme/users",
+	"PATCH /api/v1/tenants/acme/members/{id}",
 }
 
 // leadCampaignRoles answers every campaign as existing with the caller as its
@@ -340,6 +358,8 @@ func TestStepUpRoutes_RequireRecentAuth(t *testing.T) {
 			scanH.SetApprovals(&handler.ScanApprovalHandler{})
 			registerScanRoutes(router, scanH, auth, nil, nil)
 			registerServiceAccountRoutes(router, &handler.ServiceAccountHandler{}, auth, nil)
+			registerRoleRoutes(router, &handler.RoleHandler{}, auth, nil)
+			registerGroupRoutes(router, &handler.GroupHandler{}, auth, nil)
 			registerScanApprovalRoutes(router, &handler.ScanApprovalHandler{}, auth, nil)
 			registerPentestRoutes(router, &handler.PentestHandler{}, nil, auth, nil, leadCampaignRoles{}, chain())
 			mux := router.(interface{ Handler() http.Handler }).Handler()

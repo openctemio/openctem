@@ -69,6 +69,7 @@ import { FindingCodeLocation, codeLocationOf } from './finding-code-location'
 import { FindingIssueGroupSection } from './finding-issue-group-section'
 import { FindingIdentitySection } from './finding-identity-section'
 import { formatDate, formatDateTime } from '@/lib/app-locale'
+import { FindingAIReviewSection } from './finding-ai-review-section'
 
 interface OverviewTabProps {
   finding: FindingDetail
@@ -135,6 +136,7 @@ export function OverviewTab({ finding, scannerOutput = true }: OverviewTabProps)
   return (
     <DetailSections>
       {triage && <AITriageSummary data={triage} />}
+      <FindingAIReviewSection findingId={finding.id} />
 
       <DetailSection title={t('findings.overviewTab.description', 'Description')} icon={FileText}>
         {descText ? (

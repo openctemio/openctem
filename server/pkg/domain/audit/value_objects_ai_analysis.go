@@ -23,20 +23,30 @@ const (
 	// ActionAIAnalysisJobQueued records an analysis job sent to the
 	// organization's AI workers for a run (never the bundle text).
 	ActionAIAnalysisJobQueued Action = "ai_agent.analysis_job_queued"
+	// ActionAIAnalysisResultApplied records an AI worker's result taken for
+	// a run: the worker, the model, the result digest and what each
+	// suggestion became (never model text).
+	ActionAIAnalysisResultApplied Action = "ai_agent.analysis_result_applied"
+	// ActionAIAnalysisResultRefused records an AI worker's result that was
+	// not applied (invalid, another job, the AI agent unavailable, a
+	// refusal or failure the worker reported).
+	ActionAIAnalysisResultRefused Action = "ai_agent.analysis_result_refused"
 )
 
 // ResourceTypeAIAnalysis is the resource of AI agent audit rows.
 const ResourceTypeAIAnalysis ResourceType = "ai_analysis"
 
 var _ = registerActions("ai_analysis", map[Action]Severity{
-	ActionAIAgentCreated:         SeverityHigh,
-	ActionAIAgentDeleted:         SeverityHigh,
-	ActionAIAgentOwnersChanged:   SeverityHigh,
-	ActionAIAgentRoleChanged:     SeverityCritical,
-	ActionAIAgentAttested:        SeverityMedium,
-	ActionAIAgentPaused:          SeverityHigh,
-	ActionAIAgentResumed:         SeverityHigh,
-	ActionAIAgentDisabled:        SeverityCritical,
-	ActionAIAgentExecutorChanged: SeverityCritical,
-	ActionAIAnalysisJobQueued:    SeverityMedium,
+	ActionAIAgentCreated:          SeverityHigh,
+	ActionAIAgentDeleted:          SeverityHigh,
+	ActionAIAgentOwnersChanged:    SeverityHigh,
+	ActionAIAgentRoleChanged:      SeverityCritical,
+	ActionAIAgentAttested:         SeverityMedium,
+	ActionAIAgentPaused:           SeverityHigh,
+	ActionAIAgentResumed:          SeverityHigh,
+	ActionAIAgentDisabled:         SeverityCritical,
+	ActionAIAgentExecutorChanged:  SeverityCritical,
+	ActionAIAnalysisJobQueued:     SeverityMedium,
+	ActionAIAnalysisResultApplied: SeverityMedium,
+	ActionAIAnalysisResultRefused: SeverityHigh,
 })

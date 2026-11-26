@@ -277,7 +277,8 @@ func (im *Importer) fetcherV2For(dir string) (*transfer.Fetcher, error) {
 		im.dirFetchers[dir] = f
 		return f, nil
 	}
-	if im.transfer.Registerer != nil {
+	if im.transfer.Registerer != nil && !im.fetcherMetrics {
+		im.fetcherMetrics = true
 		if err := f.Register(im.transfer.Registerer, "openctem", FeedV2); err != nil {
 			im.logger.Warn("vulnfeed: fetcher metrics not registered", "error", err)
 		}

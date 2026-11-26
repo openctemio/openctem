@@ -15,6 +15,10 @@ import {
   useThreatIntelFeeds,
 } from '@console/features/admin-console/api/use-system'
 import { FeedRelayCard } from '@console/features/admin-console/components/feed-relay-card'
+import {
+  FEED_SOURCES_PERMISSION,
+  VulnFeedSourcesCard,
+} from '@console/features/admin-console/components/vulnfeed-sources-card'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { adminHas } from '@console/features/admin-console/types'
 import { BundleDetail } from '@console/features/admin-console/components/bundle-detail'
@@ -187,6 +191,7 @@ export default function ThreatIntelFeedsPage() {
           </div>
         )}
         <FeedRelayCard canEdit={adminHas(admin, 'platform.settings.general.write')} />
+        <VulnFeedSourcesCard canEdit={adminHas(admin, FEED_SOURCES_PERMISSION)} />
       </PageStack>
     </Main>
   )

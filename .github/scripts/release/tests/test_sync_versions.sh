@@ -61,8 +61,9 @@ committed_fixture "$tmp/sensorbump"
 rel_yaml_set "$tmp/sensorbump/versions.yaml" sensor.latest v0.7.0
 bash "$SYNC" --root "$tmp/sensorbump" >/dev/null 2>&1
 assert_eq "sensor bump: the manifest, its embedded copy and the bundled sensor default change" \
-  "$(printf 'server/deploy/docker-compose.sensor.yml\nserver/internal/versions/versions.yaml\nversions.yaml')" "$(changed_files "$tmp/sensorbump")"
+  "$(printf 'server/deploy/docker-compose.relay-sensor.yml\nserver/deploy/docker-compose.sensor.yml\nserver/internal/versions/versions.yaml\nversions.yaml')" "$(changed_files "$tmp/sensorbump")"
 assert_contains "sensor bump: bundled sensor default follows" "SENSOR_VERSION:-v0.7.0}" "$(cat "$tmp/sensorbump/server/deploy/docker-compose.sensor.yml")"
+assert_contains "sensor bump: relay sensor default follows" "SENSOR_VERSION:-v0.7.0}-relay" "$(cat "$tmp/sensorbump/server/deploy/docker-compose.relay-sensor.yml")"
 assert_contains "sensor bump: embedded copy follows" "latest: v0.7.0" "$(cat "$tmp/sensorbump/server/internal/versions/versions.yaml")"
 assert_rc "sensor bump: in sync" 0 bash "$SYNC" --check --root "$tmp/sensorbump"
 
