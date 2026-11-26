@@ -7,6 +7,7 @@ import type {
   CaptchaSettings,
   EmailRelayMode,
   EmailRelaySettings,
+  FeedFreshnessLimits,
   LeakedSecretStorageSettings,
   PrivateDestinationsSettings,
   DestinationTestResult,
@@ -38,6 +39,7 @@ const EMAIL_RELAY = '/settings/email-relay'
 const LEAKED_SECRETS = '/settings/leaked-secret-storage'
 const PRIVATE_DESTINATIONS = '/settings/private-destinations'
 const SCAN_IDENT = '/settings/scan-identification'
+const FEED_FRESHNESS = '/settings/feed-freshness'
 
 export const useCaptchaSettings = () => useSWR<CaptchaSettings>(CAPTCHA, adminFetcher)
 export const useRegionSettings = () => useSWR<RegionSettings>(REGION, adminFetcher)
@@ -53,6 +55,8 @@ export const usePrivateDestinations = () =>
   useSWR<PrivateDestinationsSettings>(PRIVATE_DESTINATIONS, adminFetcher)
 export const useScanIdentification = () =>
   useSWR<ScanIdentificationSettings>(SCAN_IDENT, adminFetcher)
+export const useFeedFreshnessLimits = () =>
+  useSWR<FeedFreshnessLimits>(FEED_FRESHNESS, adminFetcher)
 
 /** Step-up and a reason; every administrator is notified. */
 export function saveScanIdentification(input: {
@@ -135,6 +139,15 @@ export function verifyCaptchaSecret(secret?: string) {
 /** Sets the region once, before the first organization exists. */
 export function setRegion(input: { region: string; reason: string }) {
   return adminFetch<RegionSettings>(REGION, { method: 'PUT', body: input })
+}
+
+/** Super admin, fresh step-up and a reason; critical audit, every administrator is told. */
+export function saveFeedFreshnessLimits(input: {
+  bundle_hours: number
+  version: number
+  reason: string
+}) {
+  return adminFetch<FeedFreshnessLimits>(FEED_FRESHNESS, { method: 'PUT', body: input })
 }
 
 export function saveStorageQuota(input: { default_mb: number; version: number }) {

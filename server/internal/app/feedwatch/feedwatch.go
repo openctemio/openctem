@@ -52,7 +52,7 @@ const CheckEvery = 10 * time.Minute
 // Limits.
 const (
 	// NewestRecordStaleAfter: the newest published CVE record may be this
-	// old. About 280 CVEs are published a day, so a gap this long means the
+	// old (or as old as the bundle may be, when that limit is higher). About 280 CVEs are published a day, so a gap this long means the
 	// corpus stopped moving even if every import "succeeds".
 	NewestRecordStaleAfter = 12 * time.Hour
 	// VolumeFloor: the CVEs published in the last 24 hours may not fall
@@ -271,12 +271,19 @@ func Evaluate(views []feedstatus.View, stats *CorpusStats, first, now time.Time)
 		if !v.Enabled {
 			continue // switched off by an administrator: nothing to expect
 		}
-		limit := feedstatus.StaleAfter(v.Source)
+		// The limit in force (the view carries it: the console setting, or
+		// the default).
+		limit := v.StaleAfter
+		if limit == 0 {
+			limit = feedstatus.StaleAfter(v.Source)
+		}
 		if limit == 0 {
 			continue
 		}
+		// The bundle and KEV are judged by the date the release carries,
+		// EPSS by its last successful check.
 		ref := v.LastSuccessAt
-		if v.Source == feedstatus.SourceVulnfeed {
+		if v.Source == feedstatus.SourceVulnfeed || v.Source == feedstatus.SourceKEV && v.DataAsOf != nil {
 			ref = v.DataAsOf
 		}
 		switch {
@@ -307,12 +314,18 @@ func Evaluate(views []feedstatus.View, stats *CorpusStats, first, now time.Time)
 	if stats == nil {
 		return out
 	}
-	if stats.NewestPublished != nil && now.Sub(*stats.NewestPublished) > NewestRecordStaleAfter {
+	newestLimit := NewestRecordStaleAfter
+	if v, ok := findView(views, feedstatus.SourceVulnfeed); ok {
+		// A site whose bundle may be older (a raised limit) is not told
+		// its newest record is old before its bundle is.
+		newestLimit = max(newestLimit, v.StaleAfter)
+	}
+	if stats.NewestPublished != nil && now.Sub(*stats.NewestPublished) > newestLimit {
 		at := *stats.NewestPublished
 		out = append(out, Condition{Key: CodeNewestRecordOld, Code: CodeNewestRecordOld, Source: feedstatus.SourceVulnfeed,
-			Banner: true, AsOf: &at, Since: now, LimitSeconds: int64(NewestRecordStaleAfter / time.Second),
+			Banner: true, AsOf: &at, Since: now, LimitSeconds: int64(newestLimit / time.Second),
 			Detail: fmt.Sprintf("The newest CVE record in the corpus was published %s ago (limit %s): new vulnerabilities are not arriving.",
-				hours(now.Sub(at)), hours(NewestRecordStaleAfter))})
+				hours(now.Sub(at)), hours(newestLimit))})
 	}
 	baseline := float64(stats.PublishedPrior30d) / 30
 	if baseline >= VolumeMinBaseline && float64(stats.Published24h) < VolumeFloor*baseline {
