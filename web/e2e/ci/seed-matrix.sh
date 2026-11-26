@@ -163,11 +163,16 @@ SELECT id AS web FROM assets WHERE tenant_id = :'tid' AND name = 'e2e-web.exampl
 SELECT id AS app FROM assets WHERE tenant_id = :'tid' AND name = 'https://e2e-app.example.com' \gset
 
 WITH a AS (
-  INSERT INTO threat_alerts (tenant_id, vuln_id, title, severity, level, tier, ets, in_kev, epss,
+  -- The score is what its parts give (KEV 40, critical 20, internet-facing
+  -- 20, fresh 10, confirmed so confidence 1): the API sends no parts that
+  -- do not add up to ets.
+  INSERT INTO threat_alerts (tenant_id, vuln_id, title, severity, level, tier, ets, ets_breakdown, in_kev, epss,
                              confirmed_assets, possible_assets, internet_facing_assets, last_event_kind,
                              source_at, event_at)
   VALUES (:'tid', 'CVE-2099-0201', 'Remote code execution in the e2e request parser', 'critical', 'immediate',
-          'confirmed', 87, true, 0.97, 1, 1, 1, 'kev_added', now() - interval '6 hours', now() - interval '5 hours')
+          'confirmed', 90,
+          '{"exploitation":40,"exploitation_basis":"kev","severity":20,"exposure":20,"freshness":10,"confidence":1,"total":90}',
+          true, 0.97, 1, 1, 1, 'kev_added', now() - interval '6 hours', now() - interval '5 hours')
   RETURNING id)
 INSERT INTO threat_alert_assets (tenant_id, alert_id, asset_id, match_kind, confidence, internet_facing,
                                  criticality, product, version_seen, host_key)
