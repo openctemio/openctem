@@ -61,6 +61,33 @@ function valueAt(data: DashboardData | undefined, index: number): WidgetValue | 
   return data?.widgets.find((w) => w.index === index)
 }
 
+/**
+ * The rows a widget spans beside its neighbours, on the dashboard and in its
+ * editor alike (the editor's previews stand as they will on the page). A
+ * full-width widget with no figure (nothing yet, or not measured) takes one
+ * row; a narrower one keeps its rows, so the widgets placed beside it do not
+ * move. The key figures strip is always one row of tiles (older layouts
+ * stored it taller).
+ */
+export function rowsOnView(
+  w: DashboardWidget,
+  value: WidgetValue | undefined,
+  columns: number | undefined
+): number {
+  return value?.shape === 'kpis' || isCompact(w, value, columns) ? 1 : w.h || 1
+}
+
+/** A full-width widget with no figure: one row, whatever it stored. */
+function isCompact(
+  w: DashboardWidget,
+  value: WidgetValue | undefined,
+  columns: number | undefined
+): boolean {
+  const cols = normalizeColumns(columns)
+  const state = value ? widgetModel(value, specOf(w), false).state : undefined
+  return (state === 'no_data_yet' || state === 'not_measured') && colSpanFor(w.w, cols) === cols
+}
+
 export function DashboardView({ dashboard, data, loading, failed, onRetry }: DashboardViewProps) {
   const { t } = useTranslation()
   const [allOnPhone, setAllOnPhone] = useState(false)
@@ -110,15 +137,8 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
           const value = failed
             ? { id: '', index: i, widget_type: w.widget_type, state: 'error' as const }
             : valueAt(data, i)
-          // A full-width widget with no figure (nothing yet, or not measured)
-          // takes one row. A narrower one keeps its rows, so the widgets
-          // placed beside it do not move.
-          const state = value ? widgetModel(value, specOf(w), false).state : undefined
-          const compact =
-            (state === 'no_data_yet' || state === 'not_measured') && colSpanFor(w.w, cols) === cols
-          // The key figures strip is always one row of tiles (older layouts
-          // stored it taller).
-          const rows = compact || value?.shape === 'kpis' ? 1 : w.h
+          const rows = rowsOnView(w, value, cols)
+          const compact = isCompact(w, value, cols)
           return (
             <div
               key={spec?.id ?? `${w.widget_type}-${i}`}

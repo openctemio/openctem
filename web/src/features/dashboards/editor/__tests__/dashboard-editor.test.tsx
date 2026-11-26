@@ -122,6 +122,25 @@ describe('DashboardEditor', () => {
     expect(onExit).toHaveBeenCalledWith(true)
   })
 
+  it('sizes rows to content as the dashboard does: no row floor, the stored rows only place a widget', () => {
+    // The editor kept a 128 px floor per row after the view dropped it, so a
+    // preview stood taller than the widget on the dashboard.
+    const tall = { ...stat('w_t', 'findings.open'), h: 2 }
+    render(
+      <DashboardEditor
+        dashboard={{ ...dashboard, layout: [tall, stat('w_b', 'intel.kev_open')] }}
+        kind="personal"
+        onExit={() => {}}
+      />
+    )
+    const grid = screen.getByTestId('editor-grid')
+    expect(grid.className).not.toMatch(/grid-auto-rows|auto-rows-/)
+    expect(grid.style.getPropertyValue('--row')).toBe('')
+    const cells = screen.getAllByTestId('editor-card').map((c) => c.parentElement as HTMLElement)
+    expect(cells[0].style.gridRow).toBe('span 2 / span 2')
+    expect(cells[1].style.gridRow).toBe('span 1 / span 1')
+  })
+
   it('a widget header holds only the handle, the title, Configure and More; the rest is in the menu', async () => {
     render(<DashboardEditor dashboard={dashboard} kind="personal" onExit={() => {}} />)
     const chrome = screen.getAllByTestId('editor-chrome')[0]
@@ -129,7 +148,14 @@ describe('DashboardEditor', () => {
     expect(within(chrome).getByTitle('Open findings')).toHaveClass('truncate', 'min-w-0')
     expect(chrome).toHaveClass('overflow-hidden', 'min-w-0')
     // No row of move and resize buttons in the header.
-    for (const name of ['Move earlier', 'Move later', 'Narrower', 'Wider', 'Shorter', 'Taller'])
+    for (const name of [
+      'Move earlier',
+      'Move later',
+      'Narrower',
+      'Wider',
+      'Span one row fewer',
+      'Span one more row',
+    ])
       expect(within(chrome).queryByRole('button', { name })).toBeNull()
     expect(
       within(chrome).getByRole('button', { name: 'Configure Open findings' })
@@ -157,8 +183,8 @@ describe('DashboardEditor', () => {
       'Move later',
       'Narrower',
       'Wider',
-      'Shorter',
-      'Taller',
+      'Span one row fewer',
+      'Span one more row',
       'Duplicate',
       'Remove',
     ])

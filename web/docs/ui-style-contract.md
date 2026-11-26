@@ -1000,6 +1000,16 @@ Every settings page is built from the same parts (`@/features/shared`):
   marker on one item of a set (the loop's "Act here") sits in a slot every
   item has, never on a row of its own, so the items keep one height and their
   status chips one baseline.
+- **The editor (Customize) lays widgets out as the dashboard does.** Its grid
+  has no row floor either, and a preview spans the rows it will span on the
+  dashboard (one row for the key figures strip and for a full-width widget
+  with no figure), so a preview is as tall as the widget will be. Its height
+  control places a widget: "Span one more row" / "Span one row fewer"
+  (Shift+Down / Shift+Up) set how many rows it spans beside its neighbours.
+- **A shorter widget stretched by its row fills its card.** A chart's plot
+  grows with the card (at least 180 px, 220 px from 640 px), and a state
+  message or empty state centres in it; no blank band is left under the
+  content.
 
 ## 5. Typography
 

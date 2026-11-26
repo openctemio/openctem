@@ -3,8 +3,9 @@
  *
  * A dashboard renders as `columns` equal columns (1..4). Each widget stores its
  * width `w` on a 12-unit grid (so templates and older layouts keep working); at
- * render time that width is mapped to a column span of 1..columns. Rows have a
- * fixed pixel height so a short stat widget never balloons to fill space.
+ * render time that width is mapped to a column span of 1..columns. Rows are as
+ * tall as their content; a widget's stored height `h` is the number of rows it
+ * spans beside its neighbours, never a floor.
  */
 
 /** Underlying grid the stored `w` is expressed in. */
@@ -12,9 +13,6 @@ export const BASE_GRID = 12
 
 /** Default number of columns a dashboard is arranged in. */
 export const DEFAULT_COLUMNS = 2
-
-/** Fixed height (px) of one grid row. A widget of height `h` spans `h` rows. */
-export const ROW_HEIGHT = 128
 
 /** Clamp a raw columns value to the supported 1..4 range (default 2). */
 export function normalizeColumns(columns: number | undefined): number {
