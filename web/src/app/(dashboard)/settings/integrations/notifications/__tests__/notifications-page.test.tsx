@@ -36,9 +36,11 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: React.ReactNode }) => children,
   usePermissions: () => ({ can: () => true, permissions: [], isLoading: false }),
+  useHasPermission: () => true,
   Permission: {
     NotificationsWrite: 'notifications:write',
     NotificationsDelete: 'notifications:delete',
+    IntegrationsManage: 'integrations:manage',
   },
 }))
 
