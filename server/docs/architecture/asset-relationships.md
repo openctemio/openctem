@@ -52,6 +52,21 @@ flowchart TD
   (`ctis2_members.go`), so this placement only applies to server-built
   reports.
 
+## Access
+
+Relationships and the neighbourhood are inventory: reading them needs
+`assets:read`, inside the caller's data scope. The routes computed from them
+(attack-path scores and detail, exposure chains, threat models and the MCP
+`get_exposure_chains` tool) need `attack_surface:paths:read`, so a role can
+see the inventory without the ranked route to compromise it. The owner,
+administrator and member roles hold it; the viewer role does not; migration
+`20261126022931_attack_paths_read_permission` gave it to every custom role that
+held `assets:read`. API keys and MCP grants must name it explicitly.
+
+Every relationship write is audited (`asset_relationship.created`,
+`.updated`, `.approved`, `.deleted`; see
+[security-overview.md](security-overview.md)).
+
 ## Neighborhood
 
 `GET /api/v1/assets/{id}/neighborhood` (`assets:read`, relationships module):

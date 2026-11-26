@@ -89,6 +89,7 @@ type dsHarness struct {
 // permission the probed routes need, so a 404 can only come from data scope.
 var dsMemberPerms = []string{ //nolint:gochecknoglobals // test fixture
 	permission.AssetsRead.String(), permission.AssetsWrite.String(), permission.AssetsDelete.String(),
+	permission.AttackPathsRead.String(),
 	permission.FindingsRead.String(), permission.FindingsWrite.String(), permission.FindingsDelete.String(),
 	permission.FindingsStatus.String(), permission.FindingsTriage.String(), permission.FindingsAssign.String(),
 	permission.FindingsBulkUpdate.String(), permission.FindingsVerify.String(),
