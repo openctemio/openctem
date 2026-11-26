@@ -123,10 +123,8 @@ const REVIEWED: Record<string, string> = {
     'Gap: removing an asset from a business unit has no confirmation.',
   'src/features/content-catalog/components/requests-tab.tsx':
     'Withdraws your own install request; it can be asked again.',
-  'src/features/findings/components/approval-policy-form.tsx':
-    'Cancels a pending loosening of the approval policy: keeps the stricter policy.',
-  'src/features/findings/components/finding-approval-settings-form.tsx':
-    'Cancels a pending loosening of the approval settings: keeps the stricter settings.',
+  'src/features/findings/components/finding-approvals-form.tsx':
+    'Cancels the pending loosenings of the approval settings and policy: keeps the stricter values.',
   'src/features/findings/components/detail/finding-approval-band.tsx':
     'Gap: cancelling an approval request from the finding has no confirmation (the approvals page asks).',
   'src/features/integrations/components/jira-webhook-dialog.tsx':

@@ -2,6 +2,7 @@
 
 import { useId, type ReactNode } from 'react'
 import { Lock } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
@@ -16,6 +17,8 @@ import { cn } from '@/lib/utils'
  *   does not fit beside 13rem of text, and a `wide` control (a field, a
  *   select), goes under the text.
  * - `SettingsSwitchRow`: a row whose control is a switch.
+ * - `SettingsSummaryRow`: a group of settings told in one line, whose editor
+ *   opens on demand (a dialog; a bottom sheet on a phone) from its button.
  * - `SettingsBlock`: a padded block for anything else (a field grid, a note).
  * - `SettingsFieldGrid` + `SettingsField`: text fields with the label above,
  *   as many columns as fit at 16.25rem each.
@@ -142,6 +145,70 @@ export function SettingsSwitchRow({
         disabled={disabled}
         aria-describedby={hint ? hintId : undefined}
       />
+    </SettingsRow>
+  )
+}
+
+export interface SettingsSummaryRowProps {
+  /** What the group of settings is ("False positives"). */
+  label: string
+  /** What is set, in plain words. */
+  summary: ReactNode
+  /** A second line under the summary (a waiting change). */
+  note?: ReactNode
+  /** The button's text: "Change", or "View" for someone who may not change it. */
+  actionLabel: string
+  onAction: () => void
+  /** A hook on the button (the editor it opens), for tests and in-page links. */
+  editor?: string
+  id?: string
+  className?: string
+}
+
+/**
+ * A group of settings summarised on one row, its editor opened on demand: the
+ * page stays a short list of what is set, and the detail is an overlay (owner
+ * rules "do not cram", "one screen one job"). The button is named after the
+ * row ("Change False positives") so every row's button has its own name.
+ */
+export function SettingsSummaryRow({
+  label,
+  summary,
+  note,
+  actionLabel,
+  onAction,
+  editor,
+  id,
+  className,
+}: SettingsSummaryRowProps) {
+  const auto = useId()
+  const labelId = `${auto}-label`
+  const hintId = `${auto}-hint`
+  return (
+    <SettingsRow
+      id={id}
+      className={className}
+      label={label}
+      labelId={labelId}
+      hintId={hintId}
+      hint={
+        <>
+          <span className="block">{summary}</span>
+          {note && <span className="mt-0.5 block font-medium text-foreground">{note}</span>}
+        </>
+      }
+    >
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        data-editor={editor}
+        aria-labelledby={`${auto}-action ${labelId}`}
+        aria-describedby={hintId}
+        onClick={onAction}
+      >
+        <span id={`${auto}-action`}>{actionLabel}</span>
+      </Button>
     </SettingsRow>
   )
 }
