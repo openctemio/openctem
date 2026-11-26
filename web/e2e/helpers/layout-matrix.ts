@@ -290,6 +290,17 @@ export const ROUTE_STATES: Record<string, RouteState> = {
       return id ? `/mcp/confirm/${encodeURIComponent(id)}` : '/mcp/confirm/[id]'
     },
   },
+  // The dashboard's editor (Customize): its previews stand as the widgets
+  // will on the dashboard, so the hollowCard check covers it too.
+  '/@customize': {
+    path: '/?customize=1',
+    act: async (page) => {
+      await page
+        .locator('main [data-testid="editor-grid"]')
+        .waitFor({ state: 'visible', timeout: 20_000 })
+      await page.waitForLoadState('networkidle').catch(() => {})
+    },
+  },
   // Wrong credentials of an account that does not exist: the error banner.
   '/login@error': {
     path: '/login',
