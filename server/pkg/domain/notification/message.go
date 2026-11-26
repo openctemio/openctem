@@ -1,9 +1,11 @@
 package notification
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 // Message is the language-neutral form of a notice's text: a stable code
@@ -86,11 +88,44 @@ func (m *Message) Validate() error {
 }
 
 // ParamsJSON is the stored form of the values (nil when there are none).
+// NUL characters are removed from every string, at any depth: PostgreSQL
+// refuses \u0000 in jsonb, and a refused insert would lose the notice.
 func (m *Message) ParamsJSON() ([]byte, error) {
 	if m == nil || len(m.Params) == 0 {
 		return nil, nil
 	}
-	return json.Marshal(m.Params)
+	b, err := json.Marshal(m.Params)
+	if err != nil || !bytes.Contains(b, []byte(`\u0000`)) {
+		return b, err
+	}
+	// Decode to plain JSON values and strip NUL from every string; a literal
+	// backslash-u0000 typed as text stays (it is encoded as \\u0000).
+	var v any
+	if err := json.Unmarshal(b, &v); err != nil {
+		return nil, err
+	}
+	return json.Marshal(stripNUL(v))
+}
+
+// stripNUL removes NUL characters from the strings of a decoded JSON value.
+func stripNUL(v any) any {
+	switch t := v.(type) {
+	case string:
+		return strings.ReplaceAll(t, "\x00", "")
+	case []any:
+		for i := range t {
+			t[i] = stripNUL(t[i])
+		}
+		return t
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, x := range t {
+			out[strings.ReplaceAll(k, "\x00", "")] = stripNUL(x)
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // ParseMessage rebuilds a stored message; an empty code means the notice has
