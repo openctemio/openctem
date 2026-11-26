@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/audit"
 	"github.com/openctemio/openctem/server/internal/infra/postgres"
 	"github.com/openctemio/openctem/server/internal/testdb"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
@@ -20,7 +21,19 @@ import (
 // an audit row in the organization's log, with the acting user, against the
 // real repositories. The routes for these writes also need step-up
 // (routes/step_up_routes_test.go).
-func TestRoleWrites_AreAudited(t *testing.T) {
+type roleAuditEnv struct {
+	ctx           context.Context
+	db            *sql.DB
+	svc           *accesscontrol.RoleService
+	actx          audit.AuditContext
+	tenantID      string
+	owner, m1, m2 string
+}
+
+// newRoleAuditEnv is an organization with an owner and two members, and a
+// role service writing to the real audit log.
+func newRoleAuditEnv(t *testing.T) *roleAuditEnv {
+	t.Helper()
 	dsn := testdb.URL()
 	if dsn == "" {
 		t.Skip("DATABASE_URL not set; skipping role write audit DB test")
@@ -67,6 +80,24 @@ func TestRoleWrites_AreAudited(t *testing.T) {
 		accesscontrol.WithRoleAuditService(audit.NewAuditService(postgres.NewAuditRepository(pg), log)))
 	actx := audit.AuditContext{TenantID: tenantID, ActorID: owner, ActorEmail: "owner@it.test"}
 
+	return &roleAuditEnv{ctx: ctx, db: db, svc: svc, actx: actx, tenantID: tenantID, owner: owner, m1: m1, m2: m2}
+}
+
+// count is the number of audit rows of action on resource by the owner.
+func (e *roleAuditEnv) count(t *testing.T, action, resource string) int {
+	t.Helper()
+	var n int
+	if err := e.db.QueryRowContext(e.ctx, `SELECT count(*) FROM audit_logs
+		WHERE tenant_id = $1 AND action = $2 AND resource_id = $3 AND actor_id = $4`,
+		e.tenantID, action, resource, e.owner).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func TestRoleWrites_AreAudited(t *testing.T) {
+	e := newRoleAuditEnv(t)
+	ctx, db, svc, actx, tenantID, owner, m1, m2 := e.ctx, e.db, e.svc, e.actx, e.tenantID, e.owner, e.m1, e.m2
 	r, err := svc.CreateRole(ctx, accesscontrol.CreateRoleInput{TenantID: tenantID, Slug: "audit-readers",
 		Name: "Audit readers", HierarchyLevel: 10, Permissions: []string{"assets:read"}}, owner, actx)
 	if err != nil {
@@ -102,5 +133,48 @@ func TestRoleWrites_AreAudited(t *testing.T) {
 		if n != want {
 			t.Errorf("%s: %d audit rows by the acting user, want %d", action, n, want)
 		}
+	}
+}
+
+// A single role grant, a replaced role set and a template update applied to
+// a role each leave an audit row by the acting user.
+func TestRoleAssignSetAndTemplateApply_AreAudited(t *testing.T) {
+	e := newRoleAuditEnv(t)
+	r, err := e.svc.CreateRole(e.ctx, accesscontrol.CreateRoleInput{TenantID: e.tenantID, Slug: "audit-researchers",
+		Name: "Audit researchers", HierarchyLevel: 10, TemplateID: "researcher",
+		Permissions: []string{"assets:read"}}, e.owner, e.actx)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	roleID := r.ID().String()
+
+	if err := e.svc.AssignRole(e.ctx, accesscontrol.AssignRoleInput{TenantID: e.tenantID, UserID: e.m1, RoleID: roleID}, e.owner, e.actx); err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+	if n := e.count(t, "role.assigned", roleID); n != 1 {
+		t.Errorf("role.assigned rows = %d, want 1", n)
+	}
+	if err := e.svc.SetUserRoles(e.ctx, accesscontrol.SetUserRolesInput{TenantID: e.tenantID, UserID: e.m2, RoleIDs: []string{roleID}}, e.owner, e.actx); err != nil {
+		t.Fatalf("set user roles: %v", err)
+	}
+	if n := e.count(t, "user.roles_updated", e.m2); n != 1 {
+		t.Errorf("user.roles_updated rows = %d, want 1", n)
+	}
+
+	// The role now follows an older template version: applying the update
+	// is a role update.
+	tpl, ok := permission.RoleTemplateByID("researcher")
+	if !ok {
+		t.Fatal("no researcher template")
+	}
+	if _, err := e.db.ExecContext(e.ctx, `UPDATE roles SET template_version = $2 WHERE id = $1`, roleID, tpl.Version-1); err != nil {
+		t.Fatal(err)
+	}
+	before := e.count(t, "role.updated", roleID)
+	if _, err := e.svc.ApplyTemplateUpdate(e.ctx, e.tenantID, roleID, tpl.Version, e.actx); err != nil {
+		t.Fatalf("apply template update: %v", err)
+	}
+	if n := e.count(t, "role.updated", roleID); n != before+1 {
+		t.Errorf("role.updated rows after the template update = %d, want %d", n, before+1)
 	}
 }
