@@ -446,8 +446,9 @@ type FeedFreshnessLimitsResponse struct {
 
 // UpdateFeedFreshnessLimitsRequest changes the limit.
 type UpdateFeedFreshnessLimitsRequest struct {
-	BundleHours int `json:"bundle_hours"`
-	Version     int `json:"version"`
+	BundleHours int    `json:"bundle_hours"`
+	Version     int    `json:"version"`
+	Reason      string `json:"reason"`
 }
 
 func (h *AdminPlatformSettingsHandler) feedLimitsResponse(ctx context.Context, s feedlimits.Settings) FeedFreshnessLimitsResponse {
@@ -475,7 +476,7 @@ func (h *AdminPlatformSettingsHandler) GetFeedFreshnessLimits(w http.ResponseWri
 
 // UpdateFeedFreshnessLimits changes how old the vulnerability data may be.
 // @Summary      Change the vulnerability data age limit
-// @Description  Super admin with a step-up. For a site that copies releases by hand: 6 to 168 hours; a release older than 7 days is still refused. Applies at the next check, without a restart. Audited; every administrator is told.
+// @Description  Super admin with a fresh step-up and a reason. For a site that copies releases by hand: 6 to 168 hours; a release older than 7 days is still refused. Raising it also loosens which release side data (KEV, EPSS) counts as current. Applies at the next check, without a restart. Critical audit entry; every administrator is told.
 // @Tags         Admin System
 // @Accept       json
 // @Produce      json
@@ -494,7 +495,7 @@ func (h *AdminPlatformSettingsHandler) UpdateFeedFreshnessLimits(w http.Response
 	if !decodeSetting(w, r, &req) {
 		return
 	}
-	s, err := h.FeedLimits.Update(r.Context(), actor, req.BundleHours, req.Version, middleware.ClientIP(r), r.UserAgent())
+	s, err := h.FeedLimits.Update(r.Context(), actor, req.BundleHours, req.Version, req.Reason, middleware.ClientIP(r), r.UserAgent())
 	if err != nil {
 		h.writeSettingError(w, "vulnerability data age limit", err)
 		return

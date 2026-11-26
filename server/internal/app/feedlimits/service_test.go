@@ -3,11 +3,14 @@ package feedlimits
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/server/internal/app/consolesetting"
 	cst "github.com/openctemio/openctem/server/internal/app/consolesetting/consolesettingtest"
 	"github.com/openctemio/openctem/server/internal/app/feedstatus"
+	"github.com/openctemio/openctem/server/pkg/domain/admin"
 	"github.com/openctemio/openctem/server/pkg/domain/platformsetting"
 	"github.com/openctemio/openctem/server/pkg/logger"
 )
@@ -36,7 +39,7 @@ func TestUpdateRaisesEveryLimit(t *testing.T) {
 	audit, n := &cst.Audit{}, &cst.Notifier{}
 	svc := NewService(cst.NewRepo(), cst.Recorder(audit, n), logger.NewNop())
 	ctx := context.Background()
-	got, err := svc.Update(ctx, cst.SuperAdmin(t), 48, 0, "192.0.2.1", "test")
+	got, err := svc.Update(ctx, cst.SuperAdmin(t), 48, 0, "offline site, daily copy", "192.0.2.1", "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,14 +51,17 @@ func TestUpdateRaisesEveryLimit(t *testing.T) {
 		l.StaleAfter(feedstatus.SourceEPSS) != 72*time.Hour {
 		t.Fatalf("limits %+v", l)
 	}
-	if len(audit.Entries) != 1 || audit.Entries[0].Action != ActionChanged {
-		t.Fatalf("audit %d", len(audit.Entries))
+	if len(audit.Entries) != 1 || audit.Entries[0].Action != ActionChanged || audit.Entries[0].Severity != admin.SeverityCritical {
+		t.Fatalf("audit %d %+v", len(audit.Entries), audit.Entries)
+	}
+	if !strings.Contains(audit.JSON(t), "offline site, daily copy") {
+		t.Fatal("the reason is not in the audit entry")
 	}
 	if n.Count() != 1 {
 		t.Fatalf("administrators not told: %v", n.Subjects)
 	}
 	// A stale version is a conflict, not a silent overwrite.
-	if _, err := svc.Update(ctx, cst.SuperAdmin(t), 24, 0, "", ""); !errors.Is(err, platformsetting.ErrVersionConflict) {
+	if _, err := svc.Update(ctx, cst.SuperAdmin(t), 24, 0, "again", "", ""); !errors.Is(err, platformsetting.ErrVersionConflict) {
 		t.Fatalf("stale version: %v", err)
 	}
 }
@@ -65,17 +71,63 @@ func TestUpdateRaisesEveryLimit(t *testing.T) {
 func TestUpdateBounds(t *testing.T) {
 	svc := NewService(cst.NewRepo(), nil, logger.NewNop())
 	for _, h := range []int{0, 5, 169, -1} {
-		if _, err := svc.Update(context.Background(), cst.SuperAdmin(t), h, 0, "", ""); !errors.Is(err, ErrInvalid) {
+		if _, err := svc.Update(context.Background(), cst.SuperAdmin(t), h, 0, "bounds", "", ""); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%d hours: %v", h, err)
 		}
 	}
 	for _, h := range []int{6, 168} {
 		svc := NewService(cst.NewRepo(), nil, logger.NewNop())
-		if _, err := svc.Update(context.Background(), cst.SuperAdmin(t), h, 0, "", ""); err != nil {
+		if _, err := svc.Update(context.Background(), cst.SuperAdmin(t), h, 0, "bounds", "", ""); err != nil {
 			t.Errorf("%d hours refused: %v", h, err)
 		}
 	}
-	if _, err := svc.Update(context.Background(), nil, 24, 0, "", ""); !errors.Is(err, ErrNoActor) {
+	if _, err := svc.Update(context.Background(), nil, 24, 0, "x", "", ""); !errors.Is(err, ErrNoActor) {
 		t.Fatalf("no actor: %v", err)
+	}
+}
+
+// A change needs a reason (it is a guarded, critical change).
+func TestUpdateNeedsAReason(t *testing.T) {
+	svc := NewService(cst.NewRepo(), nil, logger.NewNop())
+	for _, r := range []string{"", "   ", "line\nbreak"} {
+		if _, err := svc.Update(context.Background(), cst.SuperAdmin(t), 48, 0, r, "", ""); !errors.Is(err, consolesetting.ErrReasonRequired) {
+			t.Errorf("reason %q: %v", r, err)
+		}
+	}
+}
+
+// brokenRepo fails every read.
+type brokenRepo struct{ *cst.Repo }
+
+func (brokenRepo) Get(context.Context, string) (platformsetting.State, error) {
+	return platformsetting.State{}, errors.New("database down")
+}
+
+// A setting that cannot be read gives the strictest limit, never the
+// looser default: an administrator who stored 6 hours is not moved to 12.
+func TestUnreadableSettingIsStrictest(t *testing.T) {
+	svc := NewService(brokenRepo{cst.NewRepo()}, nil, logger.NewNop())
+	l := svc.Limits(context.Background())
+	if l.StaleAfter(feedstatus.SourceVulnfeed) != feedstatus.MinStaleAfterVulnfeed ||
+		l.StaleAfter(feedstatus.SourceKEV) != feedstatus.MinStaleAfterVulnfeed {
+		t.Fatalf("fallback %v", l.StaleAfter(feedstatus.SourceVulnfeed))
+	}
+}
+
+// No derived limit exceeds the 7 days a release is valid.
+func TestDerivedLimitsAreCapped(t *testing.T) {
+	svc := NewService(cst.NewRepo(), nil, logger.NewNop())
+	got, err := svc.Update(context.Background(), cst.SuperAdmin(t), MaxHours, 0, "rare copies", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := svc.Limits(context.Background())
+	for _, src := range []string{feedstatus.SourceVulnfeed, feedstatus.SourceKEV, feedstatus.SourceEPSS} {
+		if l.StaleAfter(src) > feedstatus.MaxBundleValidity {
+			t.Errorf("%s: %v over the release validity", src, l.StaleAfter(src))
+		}
+	}
+	if got.EPSSHours != MaxHours {
+		t.Fatalf("EPSS hours %d, want %d", got.EPSSHours, MaxHours)
 	}
 }

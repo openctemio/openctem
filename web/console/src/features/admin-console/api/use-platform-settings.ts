@@ -164,8 +164,12 @@ export function setRegion(input: { region: string; reason: string }) {
   return adminFetch<RegionSettings>(REGION, { method: 'PUT', body: input })
 }
 
-/** Super admin and the step-up; audited, every administrator is told. */
-export function saveFeedFreshnessLimits(input: { bundle_hours: number; version: number }) {
+/** Super admin, fresh step-up and a reason; critical audit, every administrator is told. */
+export function saveFeedFreshnessLimits(input: {
+  bundle_hours: number
+  version: number
+  reason: string
+}) {
   return adminFetch<FeedFreshnessLimits>(FEED_FRESHNESS, { method: 'PUT', body: input })
 }
 

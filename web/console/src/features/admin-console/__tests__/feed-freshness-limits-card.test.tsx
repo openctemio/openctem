@@ -39,6 +39,8 @@ describe('FeedFreshnessLimitsCard', () => {
     expect(epssHoursFor(6)).toBe(36)
     expect(epssHoursFor(12)).toBe(36)
     expect(epssHoursFor(48)).toBe(72)
+    // A release is valid 7 days: no derived limit goes beyond it.
+    expect(epssHoursFor(168)).toBe(168)
   })
 
   it('an offline site raises the limit; EPSS follows and the save sends the version read', async () => {
@@ -52,7 +54,17 @@ describe('FeedFreshnessLimitsCard', () => {
       screen.getByText('EPSS scores are dated by day: their limit is 72 hours.')
     ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /save/i }))
-    expect(saveFeedFreshnessLimits).toHaveBeenCalledWith({ bundle_hours: 48, version: 0 })
+    // A guarded change: nothing is sent before a reason is given.
+    expect(saveFeedFreshnessLimits).not.toHaveBeenCalled()
+    const confirm = screen.getByRole('button', { name: 'Change the limit' })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(screen.getByLabelText('Reason'), 'offline site, daily copy')
+    await userEvent.click(confirm)
+    expect(saveFeedFreshnessLimits).toHaveBeenCalledWith({
+      bundle_hours: 48,
+      version: 0,
+      reason: 'offline site, daily copy',
+    })
   })
 
   it('refuses a value outside the bounds and does not offer to save it', async () => {
