@@ -176,7 +176,7 @@ export const THREAT_MODEL_SECTION_TABS: readonly SectionTab[] = [
     href: '/threat-model',
     icon: Crosshair,
     module: 'threat_model',
-    permission: Permission.AssetsRead,
+    permission: Permission.AttackPathsRead,
   },
   {
     label: 'Attacker profiles',

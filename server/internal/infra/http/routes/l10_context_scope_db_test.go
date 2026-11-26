@@ -92,7 +92,7 @@ func newL10cHarness(t *testing.T) *l10cHarness {
 			ctx = context.WithValue(ctx, middleware.TenantIDKey, h.tenantA)
 			ctx = context.WithValue(ctx, middleware.IsAdminKey, r.Header.Get("X-Test-Admin") == "1")
 			ctx = context.WithValue(ctx, middleware.PermissionsKey, []string{
-				permission.AssetsRead.String(), permission.AssetsWrite.String(),
+				permission.AssetsRead.String(), permission.AssetsWrite.String(), permission.AttackPathsRead.String(),
 				permission.BusinessServicesRead.String(), permission.BusinessServicesWrite.String(),
 				permission.CTEMCyclesRead.String(),
 			})
