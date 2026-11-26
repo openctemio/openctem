@@ -69,7 +69,7 @@ func TestMigrationSAMLConnectionAddresses(t *testing.T) {
 	if err != nil || p.TenantID().String() != tenantOld {
 		t.Fatalf("old slug after takeover resolves to %v (%v), want the original organization", p, err)
 	}
-	taker, err := repo.GetByID(ctx, shared.MustIDFromString(cfgTaker))
+	taker, err := repo.GetByIDUnscoped(ctx, shared.MustIDFromString(cfgTaker))
 	if err != nil || taker.LegacyPathKey() != "" || taker.PathKey() != cfgTaker {
 		t.Fatalf("new configuration: %v %v", taker, err)
 	}
