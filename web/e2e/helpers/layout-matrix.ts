@@ -194,6 +194,34 @@ type RouteState = {
   path: string
   act?: (page: Page) => Promise<void>
   as?: () => { email: string; password: string } | null
+  /**
+   * The overlay `act` opens (a dialog or sheet selector): the checks run in
+   * it and the picture is the window, as for the matrix overlays. When the
+   * act opened none (a page without that editor), the variant reads
+   * "no such overlay" instead of measuring the page under it.
+   */
+  layer?: string
+}
+
+/** The editor dialog a settings row opens: its button carries `data-editor`. */
+const EDITOR_LAYER = '[role=dialog]'
+
+function editorStates(route: string, editors: string[]): Record<string, RouteState> {
+  return Object.fromEntries(
+    editors.map((editor) => [
+      `${route}@${editor}`,
+      {
+        path: route,
+        layer: EDITOR_LAYER,
+        act: async (page: Page) => {
+          await page.locator(`main [data-editor="${editor}"]`).first().click({ timeout: 15_000 })
+          await page.locator(`${EDITOR_LAYER}:visible`).first().waitFor({ timeout: 10_000 })
+          // Past its open animation.
+          await page.waitForTimeout(400)
+        },
+      },
+    ])
+  )
 }
 
 const account = (prefix: string) => () => {
@@ -318,6 +346,18 @@ export const ROUTE_STATES: Record<string, RouteState> = {
   ...queryStates('/findings'),
   ...queryStates('/assets'),
   ...queryStates('/scans'),
+  // Settings > Approvals: each approval type's editor, opened from its row,
+  // and the page with lowered protections waiting (its data in ROUTE_DATA of
+  // helpers/layout-breaks.ts).
+  ...editorStates('/settings/approvals', [
+    'false-positives',
+    'accepted-risks',
+    'suppression-rules',
+    'approvers',
+    'deadlines',
+    'backup-contact',
+  ]),
+  '/settings/approvals@waiting': { path: '/settings/approvals' },
   // A text of its own applied on top of the view (the view then reads as
   // changed: Modified, Save view and Reset join the title row), then the
   // editor expanded: the state a filter edit is left in.

@@ -9,18 +9,8 @@ import { findHardcodedText, isProse } from './helpers/hardcoded-text'
  */
 const ROOT = path.resolve(__dirname, '..')
 
-// Files not checked, each with the reason.
-const ALLOW_FILES: Record<string, string> = {
-  // rewritten in the users/catalog branch
-  'app/(console)/users': 'rewritten in the users/catalog branch',
-  'features/admin-console/components/platform-user-': 'rewritten in the users/catalog branch',
-  'features/admin-console/api/use-platform-users.ts': 'rewritten in the users/catalog branch',
-  'app/(console)/system/content-packs': 'rewritten in the users/catalog branch',
-  'features/admin-console/components/add-content-pack-dialog.tsx':
-    'rewritten in the users/catalog branch',
-  'features/admin-console/components/content-lint-report.tsx':
-    'rewritten in the users/catalog branch',
-}
+// Files not checked, each with the reason. None: every console component is checked.
+const ALLOW_FILES: Record<string, string> = {}
 
 function files(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -60,6 +50,31 @@ describe('hard-coded text detector', () => {
       'Yes please',
       'Saved it',
     ])
+  })
+})
+
+describe('hard-coded text detector, error paths and keyed tables', () => {
+  it('finds setError, adminErrorMessage and reason assignments', () => {
+    const src = `
+      function f() {
+        setError('Could not save it')
+        toast.error(adminErrorMessage(e, 'Sign in failed', t('k', 'Fine')))
+        let disabledReason = null
+        disabledReason = 'Needs a super admin'
+      }`
+    expect(findHardcodedText(src, 'a.tsx').map((h) => h.text)).toEqual([
+      'Could not save it',
+      'Sign in failed',
+      'Needs a super admin',
+    ])
+  })
+
+  it('accepts an English fallback that sits next to its key, and slug examples', () => {
+    const src = `
+      const ACTIONS = [{ label: 'Sign out everywhere', labelKey: 'a.b', title: 'Raw words' }]
+      const STATE_LABELS = { all: 'All the things', locked: 'Locked out' }
+      export const A = () => <input placeholder="nuclei-core" />`
+    expect(findHardcodedText(src, 'a.tsx').map((h) => h.text)).toEqual(['Raw words'])
   })
 })
 
