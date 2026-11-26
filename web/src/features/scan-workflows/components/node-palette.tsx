@@ -302,17 +302,21 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                 {/* Category Header */}
                 <button
                   onClick={() => toggleCategory(category)}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/50 text-sm font-medium"
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/50 text-start text-sm font-medium"
                 >
                   {isExpanded ? (
-                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   ) : (
-                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   )}
-                  <span className="truncate">
+                  {/* A category's name wraps rather than end in an ellipsis
+                      ("Infrastructure code sec…" lost its meaning). */}
+                  <span className="min-w-0 break-words">
                     {t(`workflowStages.palette.category.${categoryKey(category)}`, category)}
                   </span>
-                  <span className="ms-auto text-xs text-muted-foreground">{tools.length}</span>
+                  <span className="ms-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+                    {tools.length}
+                  </span>
                 </button>
 
                 {/* Tools in Category */}

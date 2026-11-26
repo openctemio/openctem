@@ -174,48 +174,54 @@ export function AttentionQueueHeader({
             : `${formatNumber(count)} ${t(current.unitKey, current.unit, { count })}`
         }
       />
-      {/* A sentence, read whole and never hidden behind a menu where there is
-          room for it: from 768 px it wraps in what the heading row has left
-          (at least 8rem, so the inventory link keeps its place beside it).
-          Where the row has less, it starts the next line and the inventory
-          link follows it there, so neither takes a row of its own above the
-          list. On a phone it is read at the top of the reason menu. */}
-      <p
-        data-slot="attention-why"
-        className="min-w-32 flex-1 basis-0 text-sm text-muted-foreground max-md:hidden"
+      {/* The why line and the inventory link travel together: a sentence,
+          read whole and never hidden behind a menu where there is room for
+          it, with the link at its end. From 768 px they share what the
+          heading row has left when that is at least 24rem; where it is less,
+          both start the next line, so the link never takes a row of its own
+          above the list. On a phone the why is read at the top of the reason
+          menu and the link is in the More. */}
+      <div
+        data-slot="attention-why-row"
+        className="flex min-w-[min(100%,24rem)] flex-1 items-center gap-x-3 max-md:ms-auto max-md:min-w-0 max-md:flex-none"
       >
-        {why}
-      </p>
-      {((href && !isPhone) || menuItems.length > 0) && (
-        <div className="ms-auto flex shrink-0 items-center gap-2">
-          {href && !isPhone && (
-            <Button asChild variant="outline">
-              <Link href={href}>
-                {inventoryLabel}
-                <ArrowRight className="ms-1.5 h-3.5 w-3.5" aria-hidden />
-              </Link>
-            </Button>
-          )}
-          {menuItems.length > 0 && (
-            <ActionMenu
-              title={t(current.labelKey, current.label)}
-              label={t('common.actionMenu.label', 'Actions for {name}', {
-                name: t(current.labelKey, current.label),
-              })}
-              items={menuItems}
-              trigger={
-                <Button
-                  variant="outline"
-                  size="icon"
-                  aria-label={t('assets.inventoryPage.moreActions', 'More actions')}
-                >
-                  <MoreHorizontal className="h-4 w-4" aria-hidden />
-                </Button>
-              }
-            />
-          )}
-        </div>
-      )}
+        <p
+          data-slot="attention-why"
+          className="min-w-0 flex-1 text-sm text-muted-foreground max-md:hidden"
+        >
+          {why}
+        </p>
+        {((href && !isPhone) || menuItems.length > 0) && (
+          <div className="ms-auto flex shrink-0 items-center gap-2">
+            {href && !isPhone && (
+              <Button asChild variant="outline">
+                <Link href={href}>
+                  {inventoryLabel}
+                  <ArrowRight className="ms-1.5 h-3.5 w-3.5" aria-hidden />
+                </Link>
+              </Button>
+            )}
+            {menuItems.length > 0 && (
+              <ActionMenu
+                title={t(current.labelKey, current.label)}
+                label={t('common.actionMenu.label', 'Actions for {name}', {
+                  name: t(current.labelKey, current.label),
+                })}
+                items={menuItems}
+                trigger={
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    aria-label={t('assets.inventoryPage.moreActions', 'More actions')}
+                  >
+                    <MoreHorizontal className="h-4 w-4" aria-hidden />
+                  </Button>
+                }
+              />
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
