@@ -28,9 +28,9 @@ type ListCaller struct {
 // not narrowed to scope rows, but private program assets stay hidden from
 // those who are neither owners nor members of the program. It fails
 // closed: a caller who is not an administrator always gets a resolved
-// scope (a user-less API key gets one with no rows), and a missing
-// enforcer or a scope that does not resolve is an error, never an
-// unrestricted read.
+// scope (a user-less API key gets one with no rows; a has_full_data_access
+// role holder sees the tenant), and a missing enforcer or a scope that does
+// not resolve is an error, never an unrestricted read.
 func ListActor(ctx context.Context, e *Enforcer, c ListCaller) (filterspec.Actor, shared.ID, error) {
 	tenantID, err := shared.IDFromString(c.TenantID)
 	if err != nil {
@@ -51,8 +51,11 @@ func ListActor(ctx context.Context, e *Enforcer, c ListCaller) (filterspec.Actor
 		if e == nil {
 			return filterspec.Actor{}, tenantID, errors.New("data scope enforcer not configured")
 		}
-		scope, err = e.ResolveFor(ctx, tenantID, Caller{UserID: c.UserID, APIKey: c.APIKey})
-		if err == nil && scope == nil {
+		var kind Resolution
+		scope, kind, err = e.ResolveForKind(ctx, tenantID, Caller{UserID: c.UserID, APIKey: c.APIKey})
+		// A nil scope is fine only when the caller sees the whole tenant by
+		// right (a has_full_data_access role); nothing resolved is refused.
+		if err == nil && kind == ResolutionNone {
 			return filterspec.Actor{}, tenantID, ErrScopeUnresolved
 		}
 	case c.UserID != "" && e != nil:

@@ -57,7 +57,8 @@ type inScopeKey struct {
 }
 
 type scopeEntry struct {
-	scope *shared.DataScope // nil: unrestricted
+	scope *shared.DataScope // nil: unrestricted or unresolved, see kind
+	kind  Resolution
 }
 
 type requestMemo struct {
@@ -107,20 +108,20 @@ func copyScope(s *shared.DataScope) *shared.DataScope {
 	return &c
 }
 
-func (m *requestMemo) scope(k scopeKey) (*shared.DataScope, bool) {
+func (m *requestMemo) scope(k scopeKey) (*shared.DataScope, Resolution, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	e, ok := m.scopes[k]
 	if !ok {
-		return nil, false
+		return nil, ResolutionNone, false
 	}
-	return copyScope(e.scope), true
+	return copyScope(e.scope), e.kind, true
 }
 
-func (m *requestMemo) putScope(k scopeKey, s *shared.DataScope) {
+func (m *requestMemo) putScope(k scopeKey, s *shared.DataScope, kind Resolution) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.scopes[k] = scopeEntry{scope: copyScope(s)}
+	m.scopes[k] = scopeEntry{scope: copyScope(s), kind: kind}
 }
 
 func (m *requestMemo) isAllowed(k verdictKey) bool {
