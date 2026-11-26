@@ -87,9 +87,7 @@ export function EmailRelayForm({ settings, canEdit, onSaved }: EmailRelayFormPro
         meta={
           <>
             {settings.source === 'default'
-              ? t('admin.emailRelay.sourceDefault', 'Server default ({name}).', {
-                  name: settings.env_var,
-                })
+              ? t('admin.emailRelay.sourceDefault', 'Server default.')
               : t('admin.emailRelay.sourceConsole', 'Set in this console.')}{' '}
             <SettingChangedLine change={settings} />
           </>

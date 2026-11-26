@@ -12,8 +12,11 @@ import type {
   PathExclusionFields,
 } from '../api/scope-api.types'
 import type { PillTone } from '@/features/shared'
+import { english, type FallbackT } from './english'
 
 export type PathExclusion = ApiScopeExclusion & PathExclusionFields
+
+type PathT = FallbackT
 
 export const HTTP_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] as const
 /** The suggested rule for a sensitive path: block what changes state. */
@@ -34,8 +37,8 @@ export function pathRuleLabel(x: PathExclusion): string {
 }
 
 /** Which methods it blocks, in words. */
-export function methodsText(methods: string[] | undefined): string {
-  if (!methods || methods.length === 0) return 'every method'
+export function methodsText(methods: string[] | undefined, t: PathT = english): string {
+  if (!methods || methods.length === 0) return t('scope.exclusion.everyMethod', 'every method')
   return methods.join(', ')
 }
 
@@ -67,22 +70,47 @@ export function testingImpact(
   from: ExclusionTesting,
   to: ExclusionTesting,
   rule: string,
-  methods: string[] | undefined
+  methods: string[] | undefined,
+  t: PathT = english
 ): string {
-  if (from === to) return 'Nothing changes.'
+  if (from === to) return t('scope.testing.impact.same', 'Nothing changes.')
   if (to === 'blocked')
-    return `Scans stop sending requests to ${rule} (${methodsText(methods)} blocked again).`
+    return t(
+      'scope.testing.impact.blocked',
+      'Scans stop sending requests to {rule} ({methods} blocked again).',
+      { rule, methods: methodsText(methods, t) }
+    )
   if (to === 'read_only')
-    return `Endpoints under ${rule} become testable with GET and HEAD; ${methodsText(methods)} stay blocked otherwise.`
-  return `Endpoints under ${rule} are tested like any in-scope path until the end date. Hosts outside your scope stay refused.`
+    return t(
+      'scope.testing.impact.readOnly',
+      'Endpoints under {rule} become testable with GET and HEAD; {methods} stay blocked otherwise.',
+      { rule, methods: methodsText(methods, t) }
+    )
+  return t(
+    'scope.testing.impact.allowed',
+    'Endpoints under {rule} are tested like any in-scope path until the end date. Hosts outside your scope stay refused.',
+    { rule }
+  )
 }
 
 /** Validate a testing change: allowed needs an end date; at most 90 days. */
-export function testingProblem(to: ExclusionTesting, days: number | null): string | null {
+export function testingProblem(
+  to: ExclusionTesting,
+  days: number | null,
+  t: PathT = english
+): string | null {
   if (days !== null && (!Number.isInteger(days) || days < 1 || days > MAX_TESTING_DAYS))
-    return `The end must be 1 to ${MAX_TESTING_DAYS} days from now.`
+    return t(
+      'scope.testing.problem.range',
+      'The end must be 1 to {count, plural, one {# day} other {# days}} from now.',
+      { count: MAX_TESTING_DAYS }
+    )
   if (to === 'allowed' && days === null)
-    return 'Allowed testing needs an end date (at most 90 days).'
+    return t(
+      'scope.testing.problem.needsEnd',
+      'Allowed testing needs an end date (at most {count, plural, one {# day} other {# days}}).',
+      { count: MAX_TESTING_DAYS }
+    )
   return null
 }
 
@@ -91,13 +119,16 @@ export function testingProblem(to: ExclusionTesting, days: number | null): strin
  * encoded slashes or NUL, "*" only as a whole segment. The server checks
  * again; this only explains before the click.
  */
-export function pathPrefixProblem(prefix: string): string | null {
+export function pathPrefixProblem(prefix: string, t: PathT = english): string | null {
   const p = prefix.trim()
-  if (!p) return 'Enter the path prefix, for example /admin.'
-  if (!p.startsWith('/')) return 'The path starts with /.'
-  if (/%2f|%5c|%00/i.test(p)) return 'Encoded slashes are not allowed in the path.'
+  if (!p) return t('scope.pathPrefix.empty', 'Enter the path prefix, for example /admin.')
+  if (!p.startsWith('/')) return t('scope.pathPrefix.slash', 'The path starts with /.')
+  if (/%2f|%5c|%00/i.test(p))
+    return t('scope.pathPrefix.encoded', 'Encoded slashes are not allowed in the path.')
   const segs = p.split('/').slice(1)
-  if (segs.some((s) => s === '.' || s === '..')) return 'Dot segments (. or ..) are not allowed.'
-  if (segs.some((s) => s.includes('*') && s !== '*')) return '* may stand only for a whole segment.'
+  if (segs.some((s) => s === '.' || s === '..'))
+    return t('scope.pathPrefix.dots', 'Dot segments (. or ..) are not allowed.')
+  if (segs.some((s) => s.includes('*') && s !== '*'))
+    return t('scope.pathPrefix.wildcard', '* may stand only for a whole segment.')
   return null
 }

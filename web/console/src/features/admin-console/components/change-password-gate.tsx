@@ -64,7 +64,8 @@ export function ChangePasswordGate({ admin }: { admin: AdminIdentity }) {
       setError(
         adminErrorMessage(
           err,
-          t('admin.changePassword.failed', 'The password could not be changed')
+          t('admin.changePassword.failed', 'The password could not be changed'),
+          t('admin.login.tooMany', 'Too many attempts. Wait a minute and try again.')
         )
       )
       setBusy(false)

@@ -522,7 +522,11 @@ export function EditCredentialDialog({
                 <FormItem>
                   <FormLabel>{t('scans.credentials.field.tenantId', 'Tenant ID')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" {...field} />
+                    <Input
+                      // i18n-ok: identifier format sample
+                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -626,6 +630,7 @@ export function EditCredentialDialog({
                   <FormLabel>{t('scans.credentials.field.privateKey', 'Private Key')}</FormLabel>
                   <FormControl>
                     <Textarea
+                      // i18n-ok: PEM format sample
                       placeholder="-----BEGIN RSA PRIVATE KEY-----"
                       className="font-mono text-xs"
                       rows={6}

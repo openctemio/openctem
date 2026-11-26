@@ -91,7 +91,8 @@ func TestEmergingThreatHandler(t *testing.T) {
 	// product, the crown-jewel count and the score breakdown.
 	store.alert.Product, store.alert.ProductCount, store.alert.Critical = "WordPress", 2, 1
 	store.alert.Confirmed, store.alert.Likely, store.alert.Possible, store.alert.InternetFacing = 3, 1, 2, 2
-	store.alert.Breakdown = threatalert.Breakdown{Exploitation: 40, Total: 40}
+	store.alert.ETS = 40
+	store.alert.Breakdown = threatalert.Breakdown{Exploitation: 40, Confidence: 1, Total: 40}
 	w := do(h.List, emergingReq(http.MethodGet, "/api/v1/emerging-threats?kev=true", "", tenant, ""))
 	if w.Code != http.StatusOK || !store.lastFilter.KEVOnly {
 		t.Fatalf("kev list: %d %+v", w.Code, store.lastFilter)
@@ -174,5 +175,27 @@ func TestToEmergingDetail_AssetGroups(t *testing.T) {
 	}
 	if empty := toEmergingDetail(&threatalert.Detail{}); empty.AssetGroups == nil || len(empty.AssetGroups) != 0 {
 		t.Fatalf("no assets: an empty list, not null")
+	}
+}
+
+// The payload never pairs a score with parts that do not give it: a row
+// stored with ets 87 and no recorded parts sends ets_breakdown null (the
+// page then says the parts were not recorded), and recorded parts are sent
+// with a total equal to ets.
+func TestEmergingSummary_ScoreAndPartsAgree(t *testing.T) {
+	stale := threatalert.Alert{ETS: 87, Tier: threatalert.TierConfirmed}
+	if got := toEmergingSummary(&stale); got.ETSBreakdown != nil {
+		t.Fatalf("parts that do not explain 87 were sent: %+v", got.ETSBreakdown)
+	}
+	b := threatalert.Breakdown{Exploitation: 40, ExploitationBasis: threatalert.BasisKEV, Severity: 20, Exposure: 20, Freshness: 10, Confidence: 1, Total: 90}
+	ok := threatalert.Alert{ETS: 90, Tier: threatalert.TierConfirmed, Breakdown: b}
+	got := toEmergingSummary(&ok)
+	if got.ETSBreakdown == nil || *got.ETSBreakdown != b || got.ETSBreakdown.Total != got.ETS {
+		t.Fatalf("recorded parts: %+v (ets %d)", got.ETSBreakdown, got.ETS)
+	}
+	// The advice of a row without parts follows the vulnerability (KEV).
+	d := toEmergingDetail(&threatalert.Detail{Alert: stale, Vuln: threatalert.Vuln{InKEV: true}})
+	if d.ETSBreakdown != nil || d.RecommendedAction != threatalert.ActionPatchNow {
+		t.Fatalf("detail without parts: %+v %s", d.ETSBreakdown, d.RecommendedAction)
 	}
 }
