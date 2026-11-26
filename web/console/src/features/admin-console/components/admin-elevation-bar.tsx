@@ -106,10 +106,13 @@ export function AdminElevationBar({
           <span className="sr-only" role="status">
             {activeText}
           </span>
+          {/* The role and the time from 1536 px; below, the time only (the
+              role is in the sidebar's header), so the breadcrumb beside the
+              search keeps its names. */}
           <TonePill
             tone="warning"
             title={activeText}
-            className="hidden sm:inline-flex"
+            className="hidden 2xl:inline-flex"
             label={t('admin.elevation.chip', '{role} until {until}', {
               role: t(acting.key, acting.fallback),
               until,
@@ -118,7 +121,7 @@ export function AdminElevationBar({
           <TonePill
             tone="warning"
             title={activeText}
-            className="sm:hidden"
+            className="2xl:hidden"
             label={t('admin.elevation.chipShort', 'Until {until}', { until })}
           />
           <Button size="sm" variant="outline" disabled={busy} onClick={() => void end()}>
