@@ -993,6 +993,13 @@ Every settings page is built from the same parts (`@/features/shared`):
   never colour alone.
 - Every chart has a text alternative: its one-sentence summary as the figure's
   accessible name, and its table one menu item away.
+- **A widget is as tall as its content.** The dashboard grid sets no row
+  floor: a widget's stored height (`h`) only places it, spanning that many
+  rows beside its neighbours. Widgets in one row share its height, and a
+  visualization fills its frame (the CTEM loop's tiles stretch to it). A
+  marker on one item of a set (the loop's "Act here") sits in a slot every
+  item has, never on a row of its own, so the items keep one height and their
+  status chips one baseline.
 
 ## 5. Typography
 
