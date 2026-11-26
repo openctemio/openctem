@@ -140,7 +140,7 @@ authenticate the user again:
 | Protocol | Request | Checked on the way back |
 |---|---|---|
 | OIDC (`GET /api/v1/auth/sso/{provider}/authorize?…&reauth=true`) | `prompt=login` and `max_age=0` (Google: `max_age=0` with its own `prompt`); the flag rides in the signed `state` | the id_token must carry `auth_time` no older than 5 minutes (2 minutes of skew); otherwise the sign-in is refused |
-| SAML (`GET /api/v1/auth/saml/{org}/login?reauth=1`) | `ForceAuthn="true"` in the AuthnRequest; the request-tracking cookie remembers it | the signed assertion's `AuthnInstant` must be no older than 5 minutes; otherwise the sign-in is refused |
+| SAML (`GET /api/v1/auth/saml/{connection}/login?reauth=1`) | `ForceAuthn="true"` in the AuthnRequest; the request-tracking cookie remembers it | the signed assertion's `AuthnInstant` must be no older than 5 minutes; otherwise the sign-in is refused |
 
 The window itself never depends on the flag: it opens only from the
 provider's signed authentication time (see Model). Entra ID includes
@@ -220,6 +220,10 @@ offboarding without step-up and is removed.
 | Route | Why |
 |---|---|
 | `POST /api/v1/api-keys`, `DELETE /api/v1/api-keys/{id}` | A new key outlives the session; deleting one hides it. Revoking stays one click. |
+| `POST /api/v1/roles`, `PUT`/`DELETE /api/v1/roles/{id}`, `POST /api/v1/roles/{id}/template/apply` | A role decides what its holders can do; creating, changing or deleting one changes access for everyone who holds it. |
+| `POST /api/v1/roles/{id}/members/bulk`, `POST /api/v1/users/{id}/roles`, `PUT /api/v1/users/{id}/roles` | Granting a role, to one person or many at once, gives access. Taking a role away (`DELETE /api/v1/users/{id}/roles/{role_id}`) only narrows access and stays one click. Each of these writes is audited (`role.created`, `role.updated`, `role.deleted`, `role.assigned`, `role.unassigned`, `user.roles_updated`). |
+| `POST /api/v1/groups/{id}/roles`, `PUT /api/v1/groups/{id}/access`, `POST /api/v1/groups/{id}/access/upgrade` | A team's roles reach every member of the team: binding a role or changing the team's access grants it to all of them. |
+| `POST /api/v1/tenants/{tenant}/invitations`, `POST /api/v1/tenants/{tenant}/users`, `PATCH /api/v1/tenants/{tenant}/members/{id}` | An invitation and a created user always carry roles, and a member's team role is a role: every path that grants a role needs step-up, whatever the role. |
 | `POST /api/v1/scim-tokens`, `POST /api/v1/scim-tokens/{id}/rotate` | A SCIM token creates, suspends and re-roles every member; a rotation hands out a new one. |
 | `PUT /api/v1/scim-tokens/group-mappings` | The mapping decides which role a directory group's members receive. |
 | `POST /api/v1/integrations`, `POST /api/v1/integrations/notifications`, `PUT`/`DELETE /api/v1/integrations/{id}`, `POST /api/v1/integrations/{id}/disable`, `PUT /api/v1/integrations/{id}/notification` | Connecting, repointing or removing an integration decides where data and credentials go. |
@@ -250,6 +254,10 @@ offboarding without step-up and is removed.
 | `PUT /api/v1/organization/settings/scan-governance/mode` (owner), `PUT …/scan-governance/rules`, `PATCH /api/v1/organization/settings/finding-approvals` | Who must approve a scan or a finding decision. Lowering the scan approval mode (strict, on, off), loosening the rules (an enforcing rule removed, turned off, set to monitor or edited), or scheduling a lower false-positive or risk acceptance level (two people to one), second-look share or policy is audited critical and every owner and administrator is told (`TenantService.UpdateScanGovernanceSettings`, `UpdateFindingApprovalSettings`). |
 
 ### Actions that need step-up only in some cases
+
+The role routes above already need step-up for every write; the role checks
+below stay in the service so that the same rule holds on any other path that
+reaches it.
 
 Some routes need step-up only for one kind of change, which only the service
 can tell. The service asks a `shared.RecentAuthGate` (wired at startup to

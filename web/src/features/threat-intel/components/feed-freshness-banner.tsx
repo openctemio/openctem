@@ -39,6 +39,8 @@ export function FeedFreshnessBanner() {
     )
   }
 
+  const which = (freshness.sources ?? []).map((src) => dataName(src, t))
+
   return (
     <div
       className="px-4 pt-2"
@@ -60,6 +62,10 @@ export function FeedFreshnessBanner() {
           }
         >
           {what}{' '}
+          {which.length > 0 &&
+            t('threatIntel.freshness.banner.which', 'Affected: {list}.', {
+              list: which.join(', '),
+            }) + ' '}
           {t(
             'threatIntel.freshness.banner.impact',
             'New vulnerabilities may not be shown. The platform administrators have been told.'
@@ -68,6 +74,23 @@ export function FeedFreshnessBanner() {
       </div>
     </div>
   )
+}
+
+/** The plain name of a feed's data, for users who do not know feed names. */
+function dataName(
+  source: string,
+  t: (key: string, fallback: string, params?: Record<string, string | number>) => string
+): string {
+  switch (source) {
+    case 'vulnfeed':
+      return t('threatIntel.freshness.data.vulnfeed', 'the vulnerability catalog (CVEs)')
+    case 'kev':
+      return t('threatIntel.freshness.data.kev', 'the known exploited list (CISA KEV)')
+    case 'epss':
+      return t('threatIntel.freshness.data.epss', 'the exploit likelihood scores (EPSS)')
+    default:
+      return source
+  }
 }
 
 /**

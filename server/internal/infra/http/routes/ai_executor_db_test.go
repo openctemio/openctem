@@ -141,6 +141,9 @@ func newAIExecHarness(t *testing.T) *aiExecHarness {
 	// run (docs/architecture/ai-use-cases.md).
 	out.useCases = postgres.NewTenantAISettingsRepository(db)
 	out.executor.SetUseCases(tenantai.NewService(out.useCases, nil, nil, nil, nil, nil))
+	// The organization's switch and limits on changes without a person
+	// (defaults: not paused, 100 an hour); without it nothing applies.
+	out.executor.SetAutonomy(tenantai.NewService(out.useCases, nil, nil, nil, nil, nil))
 
 	out.org = h.tenantWithFindings()
 	out.owner = h.member(out.org, "owner")

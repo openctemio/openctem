@@ -12,11 +12,21 @@ import { adminFetch } from '@console/lib/admin-api/client'
 /** Largest metadata file the form sends (the API refuses more than 1 MiB). */
 export const MAX_IDP_METADATA_FILE_BYTES = 1024 * 1024
 
-/** The organization's SP metadata, built by the API on its public address. */
+/**
+ * The organization's SP metadata and its connection's addresses, built by the
+ * API on its public address. The addresses are keyed by the connection, not
+ * by the organization's name, so they never change on a rename.
+ */
 export interface SpMetadata {
   filename: string
   xml: string
   base_url: string
+  connection_key: string
+  entity_id: string
+  acs_url: string
+  login_url: string
+  /** The connection still uses its address from before connection ids. */
+  legacy: boolean
 }
 
 /**

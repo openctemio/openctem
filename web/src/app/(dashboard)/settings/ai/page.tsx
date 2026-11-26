@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import { AIActivityCard } from '@/features/ai-triage/components/ai-activity-card'
 import { AIAgentsSection } from '@/features/ai-triage/components/ai-agents-section'
+import { AIAutonomyCard } from '@/features/ai-triage/components/ai-autonomy-card'
 import { AIAutoTriageCard } from '@/features/ai-triage/components/ai-auto-triage-card'
 import { AIConsentCard } from '@/features/ai-triage/components/ai-consent-card'
 import { AIKnowledgeSection } from '@/features/ai-triage/components/ai-knowledge-section'
@@ -33,6 +34,7 @@ const ANCHOR_TAB: Record<string, AISettingsTab> = {
   'ai-triage': 'provider',
   'ai-source': 'provider',
   'ai-use-cases': 'use-cases',
+  'ai-autonomy': 'use-cases',
   'ai-auto-triage': 'features',
   'ai-agents': 'features',
   'ai-knowledge': 'knowledge',
@@ -193,7 +195,10 @@ export default function AISettingsPage() {
           </TabsContent>
 
           <TabsContent value="use-cases">
-            <AIUseCasesSection canEdit={canEdit} aiEnabled={enabled} />
+            <PageStack>
+              <AIUseCasesSection canEdit={canEdit} aiEnabled={enabled} />
+              <AIAutonomyCard canEdit={canEdit} />
+            </PageStack>
           </TabsContent>
 
           <TabsContent value="features">

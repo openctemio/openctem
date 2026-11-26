@@ -1,6 +1,7 @@
 # Base tables with a tenant_id column. Generated: TENANTSQL_UPDATE=1 go test ./tools/lint/tenantsql -run TestTenantTablesMatchSchema
 ai_agent_owners
 ai_agents
+ai_auto_change_counts
 ai_knowledge_chunks
 ai_knowledge_documents
 ai_knowledge_source_teams
@@ -265,6 +266,7 @@ report_schedules
 risk_snapshots
 roles
 runtime_telemetry_events
+saml_connection_ids
 saml_providers
 saved_views
 scan_approval_requests

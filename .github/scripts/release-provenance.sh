@@ -47,7 +47,7 @@ latest_only() { # latest_only FILE PARENT V
   case "$f" in
     versions.yaml | server/internal/versions/versions.yaml)
       norm='s/^([[:space:]]+latest:[[:space:]]*)v[0-9]+\.[0-9]+\.[0-9]+/\1vX/' ;;
-    server/deploy/docker-compose.sensor.yml | web/src/features/ci-runners/lib/ci.ts)
+    server/deploy/docker-compose.sensor.yml | server/deploy/docker-compose.relay-sensor.yml | web/src/features/ci-runners/lib/ci.ts)
       norm='s/v[0-9]+\.[0-9]+\.[0-9]+/vX/g' ;;
     *) return 1 ;;
   esac
