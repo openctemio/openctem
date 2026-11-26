@@ -382,3 +382,4 @@ R3 DELETE /api/v1/service-accounts/{id}/api-keys/{key_id}
 # SAML metadata (download SP, read IdP) sit under the /admin/tenants/{tenantId} group.
 R3 GET /api/v1/admin/tenants/{tenantId}/sso/saml/sp-metadata
 R3 POST /api/v1/admin/tenants/{tenantId}/sso/saml/idp-metadata
+R3 POST /api/v1/admin/tenants/{tenantId}/sso/saml/address
