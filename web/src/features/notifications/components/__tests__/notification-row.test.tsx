@@ -25,6 +25,50 @@ const base: UserNotification = {
 afterEach(cleanup)
 
 describe('NotificationRow', () => {
+  it('words a coded notice from the catalog, without the raw capability key', () => {
+    render(
+      <NotificationRow
+        notification={{
+          ...base,
+          notification_type: 'coverage_gap',
+          title: 'Coverage paused: capture.screenshot',
+          body: 'capture.screenshot is paused on 3 assets: screenshots are off for this organization. Turn screenshots on.',
+          message_code: 'coverage.readiness',
+          message_params: {
+            capability: 'capture.screenshot',
+            count: 3,
+            readiness: { code: 'coverage.readiness.feature_off' },
+            action: { code: 'coverage.action.open_assets' },
+          },
+        }}
+        onMarkAsRead={() => {}}
+      />
+    )
+    expect(screen.getByText('Coverage paused: Screenshots')).toBeTruthy()
+    const body = screen.getByText(/is paused on 3 assets/)
+    expect(body.textContent).toBe(
+      'Screenshots is paused on 3 assets: screenshots are off for this organization. Open the assets to see which ones and why.'
+    )
+    expect(body.getAttribute('translate')).toBeNull()
+  })
+
+  it('shows the stored English text for a code this build does not know', () => {
+    render(
+      <NotificationRow
+        notification={{
+          ...base,
+          title: 'Something new',
+          body: 'Stored body',
+          message_code: 'future.event',
+          message_params: { count: 1 },
+        }}
+        onMarkAsRead={() => {}}
+      />
+    )
+    expect(screen.getByText('Something new')).toBeTruthy()
+    expect(screen.getByText('Stored body').getAttribute('translate')).toBe('no')
+  })
+
   it('keeps the line breaks of the body instead of return marks', () => {
     render(
       <NotificationRow

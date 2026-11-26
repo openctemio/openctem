@@ -92,6 +92,7 @@ import en_settings from './en/settings.json'
 import en_securityOverview from './en/securityOverview.json'
 import en_supportAccess from './en/supportAccess.json'
 import en_riskScore from './en/riskScore.json'
+import en_serverText from './en/serverText.json'
 import en_severity from './en/severity.json'
 import en_userMenu from './en/userMenu.json'
 import en_validation from './en/validation.json'
@@ -202,6 +203,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   settings: en_settings,
   securityOverview: en_securityOverview,
   supportAccess: en_supportAccess,
+  serverText: en_serverText,
   severity: en_severity,
   userMenu: en_userMenu,
   validation: en_validation,

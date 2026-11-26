@@ -7,9 +7,11 @@ import type { Severity } from '@/features/shared/types'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatRelativeTime } from '@/lib/format-metric'
 import { safeInternalHref } from '@/lib/safe-href'
+import { hasServerText, messageOf, serverText } from '@/lib/server-text'
 import { toDisplayBlock, toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 import type { UserNotification } from '../api/use-notification-api'
+import { legacyCoverageMessage } from '../lib/legacy-message'
 import { NOTIFICATION_TYPE_ICONS, NOTIFICATION_TYPE_LABELS } from '../lib/notification-types'
 
 /** The fixed titles the server writes (in English), by catalog key. */
@@ -50,15 +52,31 @@ export function NotificationRow({
     NOTIFICATION_TYPE_LABELS[notification.notification_type] ||
       t('notificationTypes.other.name', 'Notification')
   )
-  // The server writes a notification's text in English. A fixed title shows in
-  // the reader's language; any other title and the body are stored text.
+  // A notice with a message code is worded from the serverText catalog in the
+  // reader's language (src/lib/server-text.ts). Older notices, and a code
+  // this build does not know, show the English text the server stored: a
+  // fixed title in the reader's language, any other title and the body as
+  // stored text.
+  const storedBody = notification.body ? toDisplayBlock(notification.body, 4000) : ''
   const titleKey = Object.hasOwn(SERVER_TITLE_KEYS, notification.title)
     ? SERVER_TITLE_KEYS[notification.title]
     : undefined
-  const title = titleKey ? t(titleKey, notification.title) : toDisplayText(notification.title)
+  const storedTitle = titleKey ? t(titleKey, notification.title) : toDisplayText(notification.title)
+  // Title and body come from the catalog together or not at all, so one
+  // notice never mixes two languages.
+  const raw =
+    messageOf(notification.message_code, notification.message_params) ??
+    legacyCoverageMessage(notification.notification_type, notification.title, notification.body)
+  const coded =
+    raw !== undefined &&
+    hasServerText(t, locale, raw, 'title') &&
+    (!storedBody || hasServerText(t, locale, raw, 'body'))
+  const title = coded ? serverText(t, locale, raw, storedTitle, 'title') : storedTitle
   // The body keeps its line breaks (a list of changes reads as lines, never
   // as one paragraph strung with return marks).
-  const body = notification.body ? toDisplayBlock(notification.body, 4000) : ''
+  const body = coded && storedBody ? serverText(t, locale, raw, storedBody, 'body') : storedBody
+  const titleTranslated = coded || Boolean(titleKey)
+  const bodyTranslated = coded
   const unread = !notification.is_read
   const severity = (notification.severity || '').toLowerCase()
 
@@ -80,7 +98,7 @@ export function NotificationRow({
         <div className="flex items-start justify-between gap-2">
           <p
             dir="auto"
-            translate={titleKey ? undefined : 'no'}
+            translate={titleTranslated ? undefined : 'no'}
             data-cut-tooltip={compact ? '' : undefined}
             title={compact ? title : undefined}
             className={cn(
@@ -98,7 +116,7 @@ export function NotificationRow({
         {body && (
           <p
             dir="auto"
-            translate="no"
+            translate={bodyTranslated ? undefined : 'no'}
             data-cut-tooltip={compact ? '' : undefined}
             title={compact ? body : undefined}
             className={cn(

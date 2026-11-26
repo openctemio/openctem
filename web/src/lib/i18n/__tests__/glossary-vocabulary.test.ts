@@ -122,6 +122,7 @@ const RULES: Rule[] = [
     allowKeys: [],
     allowPrefixes: [
       { prefix: 'scans.ci.', why: 'a CI job is the CI provider’s own word (GitHub, GitLab)' },
+      { prefix: 'serverText.ci.', why: 'CI notices name a CI job, the CI provider’s own word' },
     ],
     catches: 'Sensor không nhận job mới',
     spares: 'Sensor không nhận tác vụ mới',
