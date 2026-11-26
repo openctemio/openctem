@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { CATEGORIES, layoutWorkflow, workflowEdges } from '../lib/mapping-utils'
+import { issueText } from '../lib/issue-text'
 import { mappingApi } from '../api/use-ticket-mapping-api'
 import type {
   CatalogView,
@@ -212,7 +213,7 @@ export function WorkflowMapper({
   readOnly,
   dirty,
 }: Props) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const wf: Workflow = workflow ?? { statuses: [], transitions: [], resolutions: [] }
   const statuses = wf.statuses ?? []
   const resolutions = wf.resolutions ?? []
@@ -387,7 +388,7 @@ export function WorkflowMapper({
                   </label>
                   {iss.length > 0 && (
                     <p className="text-xs text-destructive md:col-span-5">
-                      {iss.map((i) => i.message).join(', ')}
+                      {iss.map((i) => issueText(t, locale, i)).join(', ')}
                     </p>
                   )}
                 </li>

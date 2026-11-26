@@ -420,7 +420,7 @@ func (s *Service) CheckDrift(ctx context.Context, tenantID, id shared.ID) ([]tic
 	}
 	live := s.liveMeta(ctx, p)
 	if live == nil || v.Snapshot == nil {
-		return []ticketmapdom.Issue{{Severity: ticketmapdom.IssueWarning, Code: "no_metadata", Message: "the tracker could not be reached"}}, nil
+		return []ticketmapdom.Issue{ticketmapdom.TrackerUnreachable()}, nil
 	}
 	issues := ticketmapdom.Drift(*v.Snapshot, *live, v.Spec)
 	issues = append(issues, ticketmapdom.Validate(p.ObjectKind, v.Spec, live)...)
