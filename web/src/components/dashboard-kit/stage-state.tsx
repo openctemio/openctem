@@ -57,13 +57,27 @@ export function useStageStateText(): (state: StageState) => string {
   }
 }
 
-/** "Act here": the stage with the largest gap, a neutral pill with the brand marker dot. */
-export function ActHere({ label, className }: { label?: string; className?: string }) {
+/**
+ * "Act here": the stage with the largest gap, a neutral pill with the brand
+ * marker dot. `inline` draws it as one text line (dot and words, no pill), for
+ * a place where every peer has a plain text line in the same slot: the loop's
+ * tiles keep one height and their status chips one baseline.
+ */
+export function ActHere({
+  label,
+  className,
+  inline = false,
+}: {
+  label?: string
+  className?: string
+  inline?: boolean
+}) {
   const { t } = useTranslation()
   return (
     <span
       className={cn(
-        'inline-flex w-fit items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium',
+        'inline-flex w-fit max-w-full items-center gap-1.5 text-xs font-medium',
+        !inline && 'rounded-full border px-2 py-0.5',
         className
       )}
       data-testid="stage-act-here"

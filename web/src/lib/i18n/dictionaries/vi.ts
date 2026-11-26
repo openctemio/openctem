@@ -54,6 +54,7 @@ import vi_licensePolicy from './vi/licensePolicy.json'
 import vi_notificationTypes from './vi/notificationTypes.json'
 import vi_notifications from './vi/notifications.json'
 import vi_notificationChannels from './vi/notificationChannels.json'
+import vi_scmConnections from './vi/scmConnections.json'
 import vi_scmIntegration from './vi/scmIntegration.json'
 import vi_notificationPresets from './vi/notificationPresets.json'
 import vi_lookalikes from './vi/lookalikes.json'
@@ -163,6 +164,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   notificationTypes: vi_notificationTypes,
   notifications: vi_notifications,
   notificationChannels: vi_notificationChannels,
+  scmConnections: vi_scmConnections,
   scmIntegration: vi_scmIntegration,
   notificationPresets: vi_notificationPresets,
   lookalikes: vi_lookalikes,

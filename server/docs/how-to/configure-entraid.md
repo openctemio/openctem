@@ -75,11 +75,11 @@ flowchart LR
         SC["SCIM provisioning client"]
     end
 
-    B -- "1 SAML: GET /api/v1/auth/saml/{org}/login" --> A
+    B -- "1 SAML: GET /api/v1/auth/saml/{connection}/login" --> A
     A -- "302 AuthnRequest (redirect binding)" --> B
     B -- "2 sign in, MFA" --> L
     L -- "3 HTML form POST SAMLResponse" --> B
-    B -- "4 POST /api/v1/auth/saml/{org}/acs" --> A
+    B -- "4 POST /api/v1/auth/saml/{connection}/acs" --> A
     B -- "OIDC: /auth/sso/callback/entra_id" --> W
     W -- "POST /api/v1/auth/sso/entra_id/callback" --> A
     A -- "OIDC only: token exchange + JWKS (https)" --> L
@@ -735,7 +735,13 @@ exchange of two metadata files; nothing is typed by hand.
    organization with an owner gets a pending change that an owner approves.
 5. **Verify the domain and test.** Under Verified domains, publish the TXT
    record and verify the organization's email domain (JIT and the claim of
-   invited accounts need it). Test with `https://<app>/login?org=<slug>`.
+   invited accounts need it). Test with the **Login URL (SP-initiated)** the
+   form shows (`https://<app>/api/v1/auth/saml/<connection-id>/login`).
+
+The addresses in the metadata carry the connection's id, not the
+organization's name, so renaming the organization never breaks them. Deleting
+the SAML configuration retires them: a new configuration gets new addresses,
+and its metadata must be uploaded to Entra again.
 
 The import fetches the URL over https only, through the outbound SSRF guard,
 and refuses a document with a DOCTYPE or entity declaration; certificates come

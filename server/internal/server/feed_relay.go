@@ -41,15 +41,22 @@ func newFeedRelayService(cfg *config.Config, db *sql.DB, repos *Repositories, s 
 
 // registerRelayFeeds adds the feeds the relay serves: the vulnerability
 // feed (with its side files) and the version check's release feed. The
-// relay fetches the vulnerability feed from VULNFEED_BASE_URL only: the
-// mirrors of direct mode would need to be in the job signer's allowlist too.
+// relay fetches the vulnerability feed from the release base URL in force
+// only (the console setting, else VULNFEED_BASE_URL): the mirrors of direct
+// mode would need to be in the job signer's allowlist too.
 func registerRelayFeeds(cfg *config.Config, svc *Services, im *vulnfeed.Importer) {
 	r := svc.FeedRelay
 	if r == nil {
 		return
 	}
 	if im != nil {
-		r.AddFeed(&feedrelay.VulnFeed{Importer: im, URLs: []string{strings.TrimRight(cfg.Worker.VulnFeedBaseURL, "/") + "/latest/download"}})
+		vf := &feedrelay.VulnFeed{Importer: im, URLs: []string{strings.TrimRight(cfg.Worker.VulnFeedBaseURL, "/") + "/latest/download"}}
+		// The release base URL in force (console or environment) at every
+		// round.
+		if svc.VulnFeedSources != nil {
+			vf.Origin = svc.VulnFeedSources.RelayOrigin
+		}
+		r.AddFeed(vf)
 	}
 	if svc.VersionCheck != nil && svc.VersionCheck.Configured() {
 		r.AddFeed(&feedrelay.VersionCheck{Service: svc.VersionCheck, URL: cfg.Worker.VersionCheckURL})

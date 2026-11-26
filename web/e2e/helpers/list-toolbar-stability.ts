@@ -36,11 +36,12 @@ import { test, expect } from '../fixtures/authenticated-page'
  *   toolbar: the table moves down by at most that row's height plus its gap
  *   (not at all beside a chips row that is already there), and back when the
  *   text is put right;
- * - the title row's start (view name, count, Modified, Save view, Reset)
+ * - the title row's start (view name, count, Modified, the Save view menu)
  *   follows the view's name and count; its buttons are checked never to
  *   disappear, and the title row's end (Refresh, Export, More) never moves;
- * - a changed view's Modified lozenge, Save view and Reset
- *   (`list-modified`, `list-view-actions`) come with the first change and go
+ * - a changed view's Modified lozenge and its one Save view menu (Save view
+ *   and Reset in it) (`list-modified`, `list-view-actions`) come with the
+ *   first change and go
  *   with the last, in the row's start group: they move nothing else.
  *
  * Measured after the page settles (network idle, reduced motion, two frames).
@@ -979,19 +980,28 @@ export function pagingHoldsStill(route: Route) {
 
 /**
  * A changed view (owner rule): the title keeps a real view's name, and right
- * after the count come the Modified lozenge (20 px with its dashed border),
- * Save view and Reset. On a row under 42rem and on a phone the two buttons
- * are in the row's More and only the lozenge stays. The end group (Refresh,
- * Export, Task or More) keeps its boxes when they come and when they go, and
+ * after the count come the Modified lozenge (20 px with its dashed border)
+ * and one Save view menu button (Save view and Reset in it). On a row under
+ * 42rem and on a phone the menu's items are in the row's More and only the
+ * lozenge stays. The end group (Refresh, Export, Task or More) keeps its
+ * boxes when they come and when they go, the view's name is never cut on a
+ * changed view (1024 px vi cut "Đang hoạt động" to "Đan…", 2026-11-26), and
  * Reset returns to the exact base view.
  */
 export function changedViewSaysSo() {
-  for (const width of [1440, 1024, 390]) {
-    test(`/findings a changed view shows Modified, Save view, Reset at ${width}px`, async ({
+  for (const [width, locale] of [
+    [1440, 'en'],
+    [1024, 'en'],
+    [1024, 'vi'],
+    [390, 'en'],
+  ] as const) {
+    test(`/findings a changed view shows Modified and one Save view menu at ${width}px ${locale}`, async ({
       page,
+      baseURL,
     }) => {
       await page.emulateMedia({ reducedMotion: 'reduce' })
       await page.setViewportSize({ width, height: width < 768 ? 844 : 900 })
+      await page.context().addCookies([{ name: 'locale', value: locale, url: baseURL! }])
       await page.goto('/findings')
       const row = page.getByTestId('findings-toolbar-primary')
       await expect(row).toBeVisible({ timeout: 45_000 })
@@ -1002,7 +1012,6 @@ export function changedViewSaysSo() {
       const baseUrl = await page.evaluate(() => window.location.search)
       const modified = row.locator('[data-slot="list-modified"]')
       const save = row.locator('[data-slot="list-view-save"]')
-      const reset = row.locator('[data-slot="list-view-reset"]')
       await expect(modified).toHaveCount(0)
       await expect(save).toHaveCount(0)
       const before = await snap(page)
@@ -1014,14 +1023,19 @@ export function changedViewSaysSo() {
       await expect(title).toHaveText(baseName)
       await expect(title).not.toHaveText(/custom view|saved view/i)
       const changed = await snap(page)
-      compare(`/findings ${width}: a filter added`, before, changed)
+      compare(`/findings ${width} ${locale}: a filter added`, before, changed)
+      // The name is read whole beside Modified and the menu (from a tablet up).
+      if (width >= 768) {
+        const cut = await title.evaluate((el) => el.scrollWidth > el.clientWidth + 1)
+        expect(cut, `view name "${baseName}" cut at ${width}px ${locale}`).toBe(false)
+      }
 
       // The pill and the lozenge are 20 px; the count's tooltip names the scope.
       const count = row.locator('[data-slot="list-count"]')
       expect(Math.round((await count.boundingBox())!.height)).toBe(20)
       expect(Math.round((await modified.boundingBox())!.height)).toBe(20)
-      await expect(count).toHaveAttribute('title', /data scope/i)
-      // Order in the start group: count, Modified, then the two buttons.
+      if (locale === 'en') await expect(count).toHaveAttribute('title', /data scope/i)
+      // Order in the start group: count, Modified, then the one menu button.
       const order = await row.evaluate((el) =>
         Array.from(
           el.querySelectorAll(
@@ -1032,6 +1046,7 @@ export function changedViewSaysSo() {
           .map((n) => ({ slot: n.getAttribute('data-slot'), x: n.getBoundingClientRect().x }))
       )
       expect(order.map((o) => o.slot).slice(0, 2)).toEqual(['list-count', 'list-modified'])
+      expect(order.map((o) => o.slot)).not.toContain('list-view-reset')
       expect([...order].sort((a, b) => a.x - b.x)).toEqual(order)
       // Nothing in the row is drawn over its neighbour or past the row.
       const overlap = await row.evaluate((el) => {
@@ -1051,30 +1066,30 @@ export function changedViewSaysSo() {
       })
       expect(overlap, 'title row parts overlap or leave the row').toBe(false)
 
+      const words =
+        locale === 'en'
+          ? { save: 'Save view', reset: 'Reset' }
+          : { save: 'Lưu chế độ xem', reset: 'Đặt lại' }
+      const menu = page.getByRole('menu').or(page.getByRole('dialog'))
       const rowWidth = (await row.boundingBox())!.width
       if (rowWidth >= 672) {
         await expect(save).toBeVisible()
-        await expect(reset).toBeVisible()
-        expect(Math.round((await save.boundingBox())!.height)).toBe(
-          Math.round((await reset.boundingBox())!.height)
-        )
-        await reset.click()
+        await save.click()
       } else {
-        // Folded: only the lozenge stays; the row's More holds the two.
+        // Folded: only the lozenge stays; the row's More holds the items.
+        expect(locale, 'the folded row is checked in English').toBe('en')
         await expect(save).toBeHidden()
-        await expect(reset).toBeHidden()
         await row.getByRole('button', { name: 'More actions' }).click()
-        const menu = page.getByRole('menu').or(page.getByRole('dialog'))
-        await expect(menu.getByText('Save view', { exact: true })).toBeVisible()
-        await menu.getByText('Reset', { exact: true }).click()
       }
+      await expect(menu.getByText(words.save, { exact: true })).toBeVisible()
+      await menu.getByText(words.reset, { exact: true }).click()
       await settle(page)
       await expect(modified).toHaveCount(0)
       await expect(title).toHaveText(baseName)
       expect(
         new URLSearchParams(await page.evaluate(() => window.location.search)).has('severity')
       ).toBe(false)
-      compare(`/findings ${width}: reset to the view`, changed, await snap(page))
+      compare(`/findings ${width} ${locale}: reset to the view`, changed, await snap(page))
     })
   }
 

@@ -65,9 +65,12 @@ type Service struct {
 	audit    *auditapp.AuditService
 	modules  ModuleGuard
 	// jobs cancels the analysis jobs of overdue worker runs (nil: none).
-	jobs   JobCanceler
-	now    func() time.Time
-	logger *logger.Logger
+	jobs JobCanceler
+	// results takes the results of completed analysis jobs that were not
+	// taken when the job completed (nil: none).
+	results PendingResultApplier
+	now     func() time.Time
+	logger  *logger.Logger
 }
 
 // ModuleGuard reports the modules a tenant has off (*module.ModuleService).
@@ -531,7 +534,7 @@ func (s *Service) pauseFor(ctx context.Context, a *aidom.AIAgent, reason aidom.P
 	}
 	if moved {
 		a.Status, a.PauseReason = aidom.StatusPaused, reason
-		s.log(ctx, auditapp.AuditContext{TenantID: a.TenantID.String(), ActorEmail: "system:ai-agent"},
+		s.log(ctx, auditapp.AuditContext{TenantID: a.TenantID.String(), ActorEmail: systemAIAgentActor},
 			audit.ActionAIAgentPaused, a, fmt.Sprintf("AI agent %q paused: %s", a.Name, reason),
 			map[string]any{"reason": string(reason)})
 	}

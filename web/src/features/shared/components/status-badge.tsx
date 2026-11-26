@@ -11,24 +11,32 @@ interface StatusBadgeProps {
 }
 
 /** The lifecycle of an asset or a run, as a machine state. */
-const STATUS_STATE: Record<Status, { state: HealthState; label: string }> = {
-  active: { state: 'ok', label: 'Active' },
-  stale: { state: 'warn', label: 'Stale' },
-  inactive: { state: 'off', label: 'Inactive' },
-  archived: { state: 'off', label: 'Archived' },
-  pending: { state: 'queued', label: 'Pending' },
-  completed: { state: 'ok', label: 'Completed' },
-  failed: { state: 'down', label: 'Failed' },
+const STATUS_STATE: Record<Status, HealthState> = {
+  active: 'ok',
+  stale: 'warn',
+  inactive: 'off',
+  archived: 'off',
+  pending: 'queued',
+  completed: 'ok',
+  failed: 'down',
 }
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   const { t } = useTranslation()
-  const config = STATUS_STATE[status]
+  const labels: Record<Status, string> = {
+    active: t('labels.status.active', 'Active'),
+    stale: t('labels.status.stale', 'Stale'),
+    inactive: t('labels.status.inactive', 'Inactive'),
+    archived: t('labels.status.archived', 'Archived'),
+    pending: t('labels.status.pending', 'Pending'),
+    completed: t('labels.status.completed', 'Completed'),
+    failed: t('labels.status.failed', 'Failed'),
+  }
   return (
     <HealthStatus
-      state={config.state}
+      state={STATUS_STATE[status]}
       value={status}
-      label={t(`labels.status.${status}`, config.label)}
+      label={labels[status]}
       className={className}
     />
   )

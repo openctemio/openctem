@@ -239,6 +239,8 @@ export const KEV_STATUS_CONFIG = {
 export interface FeedFreshness {
   stale: boolean
   reasons: string[]
+  /** The feeds whose data is missing or out of date: vulnfeed, kev, epss. */
+  sources?: string[]
   stale_since?: string
   data_as_of?: string
   checked_at?: string

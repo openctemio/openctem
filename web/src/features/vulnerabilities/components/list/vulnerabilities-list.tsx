@@ -1113,23 +1113,7 @@ function VulnerabilitiesListBody() {
           // On a row under 42rem the two buttons are in the row's More.
           actionsClassName="hidden @2xl/actions:flex"
           onSave={openSaveView}
-          save={
-            canUpdateView ? (
-              <ActionMenu
-                title={viewTitle}
-                label={t('common.actionMenu.label', 'Actions for {name}', { name: viewTitle })}
-                items={[
-                  { id: 'view-save-changes', label: saveChangesLabel, onSelect: saveViewChanges },
-                  { id: 'view-save', label: saveAsNewLabel, onSelect: openSaveView },
-                ]}
-                trigger={
-                  <Button data-slot="list-view-save" variant="outline" size="sm">
-                    {saveViewLabel}
-                  </Button>
-                }
-              />
-            ) : undefined
-          }
+          onSaveChanges={canUpdateView ? saveViewChanges : undefined}
           onReset={resetView}
         />
       }

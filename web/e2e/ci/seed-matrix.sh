@@ -10,7 +10,9 @@
 #     sensor (benchmarking and RFC 5737 ranges): the zones tab at real volume
 #   - one row behind each detail page the matrix opens by id: SBOM components,
 #     a CTEM cycle, an asset group, a pentest campaign in testing with a
-#     finding, an own pentest template, an own scan workflow (a copy of a
+#     finding and the built-in OWASP Top 10 checklist (results recorded on part
+#     of it: passed, failed with a note, not applicable, untested), an own
+#     pentest template, an own scan workflow (a copy of a
 #     built-in one), an import mapping, a bug bounty program (through the API,
 #     as the owner); an emerging-threat alert, a Jira ticket mapping draft and
 #     a pending AI-application confirmation (SQL: no API writes them)
@@ -135,6 +137,14 @@ api POST /api/v1/asset-groups/ "{\"name\":\"Public web (example.com)\",\"descrip
 CAMP=$(api POST /api/v1/pentest/campaigns/ "{\"name\":\"Web application test, shop.example.com\",\"description\":\"Grey-box test of the shop\",\"methodology\":\"OWASP WSTG\",\"client_name\":\"Example Shop\",\"start_date\":\"2099-01-05\",\"end_date\":\"2099-01-30\",\"objectives\":[\"Find authorization flaws\"],\"asset_ids\":[\"$ASSET\"],\"approach\":\"grey_box\",\"environment\":\"staging\",\"tlp\":\"amber\"}" | jq -r .id)
 api PATCH "/api/v1/pentest/campaigns/$CAMP/status" '{"status":"in_progress"}' >/dev/null
 api POST "/api/v1/pentest/campaigns/$CAMP/findings" "{\"title\":\"Order history readable by another customer (IDOR)\",\"description\":\"The order endpoint returns any order by its number.\",\"asset_id\":\"$ASSET\",\"severity\":\"high\",\"status\":\"draft\",\"cvss_score\":7.5,\"cvss_vector\":\"CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N\",\"cvss_version\":\"3.1\",\"cwe_id\":\"CWE-639\",\"owasp_category\":\"A01:2021\",\"steps_to_reproduce\":[\"Sign in as customer A\",\"Open /api/orders/1001, an order of customer B\"],\"business_impact\":\"Customers can read each other's orders.\",\"remediation_guidance\":\"Check the order owner on every request.\",\"affected_assets\":[\"https://shop.example.com/api/orders\"],\"tags\":[\"idor\"]}" >/dev/null
+# The campaign's Checklist tab (/pentest/campaigns/[id]@checklist): the
+# built-in OWASP Top 10 checklist with every kind of result.
+CLT=$(api GET /api/v1/pentest/checklist-templates/ | jq -r '[.data[] | select(.builtin and .name=="OWASP Top 10 web essentials")][0].id')
+CL=$(api POST "/api/v1/pentest/campaigns/$CAMP/checklists" "{\"template_ids\":[\"$CLT\"]}" | jq -r '.checklist_ids[0]')
+items() { api PATCH "/api/v1/pentest/campaigns/$CAMP/checklists/$CL/items" "$1" >/dev/null; }
+items '{"item_ids":["A01-02","A01-03","A01-04","A01-05","A02-01","A02-02","A03-01","A03-02","A03-03"],"status":"passed"}'
+items '{"item_ids":["A01-01"],"status":"failed","notes":"Order numbers of other customers return their orders."}'
+items '{"item_ids":["A06-01","A06-02","A10-01","A10-02"],"status":"not_applicable"}'
 api POST /api/v1/pentest/templates/ '{"name":"Order lookup without ownership check","category":"authorization","severity":"high","owasp_category":"A01:2021","cwe_id":"CWE-639","description":"An order is returned to any signed-in customer who knows its number.","steps_to_reproduce":["Sign in as one customer","Request an order of another customer"],"business_impact":"Order data of other customers is exposed.","remediation":"Check the owner of the order on every request.","tags":["idor"]}' >/dev/null
 SYSWF=$(api GET "/api/v1/scan-workflows/?per_page=1" | jq -r '.data[0].id')
 api POST "/api/v1/scan-workflows/$SYSWF/clone" '{"name":"Subdomains of example.com (copy)"}' >/dev/null
@@ -153,11 +163,16 @@ SELECT id AS web FROM assets WHERE tenant_id = :'tid' AND name = 'e2e-web.exampl
 SELECT id AS app FROM assets WHERE tenant_id = :'tid' AND name = 'https://e2e-app.example.com' \gset
 
 WITH a AS (
-  INSERT INTO threat_alerts (tenant_id, vuln_id, title, severity, level, tier, ets, in_kev, epss,
+  -- The score is what its parts give (KEV 40, critical 20, internet-facing
+  -- 20, fresh 10, confirmed so confidence 1): the API sends no parts that
+  -- do not add up to ets.
+  INSERT INTO threat_alerts (tenant_id, vuln_id, title, severity, level, tier, ets, ets_breakdown, in_kev, epss,
                              confirmed_assets, possible_assets, internet_facing_assets, last_event_kind,
                              source_at, event_at)
   VALUES (:'tid', 'CVE-2099-0201', 'Remote code execution in the e2e request parser', 'critical', 'immediate',
-          'confirmed', 87, true, 0.97, 1, 1, 1, 'kev_added', now() - interval '6 hours', now() - interval '5 hours')
+          'confirmed', 90,
+          '{"exploitation":40,"exploitation_basis":"kev","severity":20,"exposure":20,"freshness":10,"confidence":1,"total":90}',
+          true, 0.97, 1, 1, 1, 'kev_added', now() - interval '6 hours', now() - interval '5 hours')
   RETURNING id)
 INSERT INTO threat_alert_assets (tenant_id, alert_id, asset_id, match_kind, confidence, internet_facing,
                                  criticality, product, version_seen, host_key)

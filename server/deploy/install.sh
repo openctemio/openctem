@@ -18,6 +18,11 @@
 #   7. the first platform administrator (bootstrap-admin, credentials shown once)
 #   8. the bundled sensor's enrollment, and a summary with the URLs
 #
+# docker-compose.override.yml: put your own Compose changes there. When that
+# file exists next to this script, it is added at the end of COMPOSE_FILE in
+# .env (new install and rerun), because Compose ignores it once COMPOSE_FILE
+# is set. A file that does not exist is never listed.
+#
 # Options (each also as an environment variable, for automation):
 #   --host NAME                  DNS name or IP address browsers and sensors
 #                                use (OPENCTEM_INSTALL_HOST)
@@ -317,9 +322,10 @@ fi
 [[ -z "$org_name$org_owner" || -n "$admin_email" ]] || die "--org-name and --org-owner-email need --admin-email"
 [[ -z "$org_name" || -n "$org_owner" ]] || die "--org-name needs --org-owner-email"
 [[ -z "$org_owner" ]] || valid_email "$org_owner" || die "'$org_owner' is not an e-mail address (--org-owner-email)"
+sensor_left_out=""
 if [[ -z "$sensor" ]]; then
 	sensor=yes
-	is_ipv4 "$host" && sensor=no
+	is_ipv4 "$host" && { sensor=no; sensor_left_out=1; }
 fi
 [[ "$sensor" == no ]] || ! is_ipv4 "$host" ||
 	warn "the bundled sensor reaches the platform by its host name; with an IP address it works only when port 443 of $host is reachable from containers"
@@ -341,9 +347,14 @@ if [[ -n "$admin_email" ]] && ! state_done bootstrap; then
 fi
 
 # The compose file set, recorded in .env (COMPOSE_FILE) so every later
-# `docker compose` command and upgrade uses the same files.
+# `docker compose` command and upgrade uses the same files. Compose reads
+# docker-compose.override.yml by itself only while COMPOSE_FILE is unset, so
+# when that file exists here it is listed last (never listed when absent:
+# Compose fails on a missing listed file).
+override_file="docker-compose.override.yml"
 compose_file="docker-compose.yml"
 [[ "$sensor" == yes ]] && compose_file="$compose_file:docker-compose.sensor.yml"
+override_added=""
 if [[ -n "$reuse" ]]; then
 	existing="$(env_get "$env_file" COMPOSE_FILE)"
 	if [[ -n "$existing" ]]; then
@@ -351,12 +362,16 @@ if [[ -n "$reuse" ]]; then
 		IFS=: read -r -a parts <<<"$existing"
 		compose_file="docker-compose.yml"
 		for f in "${parts[@]}"; do
-			[[ "$f" == docker-compose.yml || "$f" == docker-compose.sensor.yml ]] && continue
+			[[ "$f" == docker-compose.yml || "$f" == docker-compose.sensor.yml || "$f" == "$override_file" ]] && continue
 			compose_file="$compose_file:$f"
 		done
 		[[ "$sensor" == yes ]] && compose_file="$compose_file:docker-compose.sensor.yml"
+		[[ -f "$here/$override_file" && ":$existing:" != *":$override_file:"* ]] && override_added=1
+	elif [[ -f "$here/$override_file" ]]; then
+		override_added=1
 	fi
 fi
+[[ ! -f "$here/$override_file" ]] || compose_file="$compose_file:$override_file"
 valid_compose_file "$compose_file" || die "COMPOSE_FILE: $oc_reason"
 
 https_port="$(setting GATEWAY_HTTPS_PORT 443)"
@@ -494,6 +509,8 @@ else
 	info "reusing $env_file (never overwritten), release $version"
 	# Older .env files have no COMPOSE_FILE: add it (backed up, printed).
 	env_set "$env_file" COMPOSE_FILE "$compose_file"
+	[[ -z "$override_added" ]] ||
+		info "$override_file is now listed in COMPOSE_FILE (Compose ignores it otherwise, because COMPOSE_FILE is set)"
 	if [[ "$sensor" == yes && ! -e "$here/sensor/sensor-policy.yaml" ]]; then
 		install -m 0644 "$here/sensor/sensor-policy.example.yaml" "$here/sensor/sensor-policy.yaml"
 	fi
@@ -677,6 +694,33 @@ if [[ "$sensor" == yes ]]; then
 	say "Bundled sensor: $sensor_state. It takes jobs once a super administrator turns on shared"
 	say "  sensors (Console > System > Platform scanning).$([[ "$sensor_state" == enrolled ]] || printf ' Logs: cd %s && docker compose logs sensor' "$here")"
 fi
+# The vulnerability feed: how the platform gets its signed releases decides
+# which outbound connections this install needs.
+feed_hosts="github.com, release-assets.githubusercontent.com and objects.githubusercontent.com"
+if [[ -n "$(env_get "$env_file" VULNFEED_BUNDLE_DIR)" ]]; then
+	say "Vulnerability feed: offline folder (VULNFEED_BUNDLE_DIR in .env). Copy a newer verified release into"
+	say "  it regularly: a release older than 7 days is refused."
+else
+	if [[ "$sensor" == yes ]]; then
+		feed_needs="the bundled sensor relays the feed. The sensor's host needs outbound HTTPS (443) to $feed_hosts."
+	else
+		feed_needs="direct. The api container needs outbound HTTPS (443) to $feed_hosts, or set OPENCTEM_HTTPSEC_FEED_PROXY or a mirror in .env, or designate a relay sensor in Console > System > Threat intelligence > Feed delivery."
+	fi
+	if [[ -n "$reuse" ]]; then
+		say "Vulnerability feed: the mode is set in the database; see Console > System > Threat intelligence > Feed delivery."
+		if [[ "$sensor" == yes ]]; then
+			say "  With the bundled sensor: relay mode needs outbound HTTPS (443) from the sensor's host to $feed_hosts."
+		else
+			say "  Without the bundled sensor: direct mode needs outbound HTTPS (443) from the api container to $feed_hosts, or a proxy or mirror in .env, or a relay sensor."
+		fi
+	else
+		say "Vulnerability feed: $feed_needs"
+	fi
+	if [[ -n "$sensor_left_out" && -z "$reuse" ]]; then
+		say "  The bundled sensor was left out because the host is an IP address. To add it: ./install.sh --sensor"
+	fi
+fi
+say "  Setup guide: docs.openctem.io/operations/vulnerability-feed-setup/"
 say "Settings and secrets: $env_file (mode 0600). Back up APP_ENCRYPTION_KEY from it now:"
 say "  without it the stored credentials cannot be decrypted."
 say "Day 2 (in $here):"

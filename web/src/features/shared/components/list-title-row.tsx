@@ -1,6 +1,8 @@
 'use client'
 
 import * as React from 'react'
+import { ChevronDown } from 'lucide-react'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
@@ -127,21 +129,28 @@ export function ListModified({ title, className }: { title?: string; className?:
 
 /**
  * What a changed view offers, right after the count: the Modified lozenge,
- * then Save view and Reset. Nothing is drawn while the view is unchanged.
+ * then one "Save view" menu button with Save view (or Save changes and Save
+ * as new view on a view the viewer owns) and Reset. One button, not two: a
+ * narrow title row then keeps room for the view's name, and the row's end
+ * never moves when the view changes (1024 px vi cut "Đang hoạt động" to
+ * "Đan…" beside two buttons, 2026-11-26). Nothing is drawn while the view
+ * is unchanged.
  *
- * - `onSave`: opens the list's save-view dialog; `save` replaces that button
- *   (a menu with "Save changes" and "Save as new view" on a view the viewer
- *   owns). Leave both out for someone who may not save views.
- * - `onReset`: back to the exact base view.
- * - `actionsClassName`: where the row is too narrow for the two buttons, the
- *   page hides them here and offers them in the row's More instead; the
- *   lozenge stays.
+ * - `onSave`: opens the list's save-view dialog ("Save as new view…" when
+ *   `onSaveChanges` is given too). Leave it out for someone who may not save
+ *   views.
+ * - `onSaveChanges`: updates the open saved view (its owner only).
+ * - `onReset`: back to the exact base view. Alone (a list without saved
+ *   views) it is a plain Reset button.
+ * - `actionsClassName`: where the row is too narrow even for the one button,
+ *   the page hides it here and offers its items in the row's More instead;
+ *   the lozenge stays.
  */
 export function ListViewChanged({
   changed,
   summary,
   onSave,
-  save,
+  onSaveChanges,
   onReset,
   actionsClassName,
 }: {
@@ -149,29 +158,61 @@ export function ListViewChanged({
   /** What differs ("2 filters added, sort changed"): the lozenge's tooltip. */
   summary?: string
   onSave?: () => void
-  save?: React.ReactNode
+  onSaveChanges?: () => void
   onReset?: () => void
   actionsClassName?: string
 }) {
   const { t } = useTranslation()
   if (!changed) return null
+  const saveLabel = t('common.listView.save', 'Save view')
+  const resetLabel = t('common.listView.reset', 'Reset')
+  const items: ActionMenuEntry[] = [
+    ...(onSaveChanges
+      ? [
+          {
+            id: 'view-save-changes',
+            label: t('confirm.savedView.saveChanges', 'Save changes'),
+            onSelect: onSaveChanges,
+          },
+        ]
+      : []),
+    ...(onSave
+      ? [
+          {
+            id: 'view-save',
+            label: onSaveChanges
+              ? t('confirm.savedView.saveAsNew', 'Save as new view…')
+              : saveLabel,
+            onSelect: onSave,
+          },
+        ]
+      : []),
+    ...(onReset ? [{ id: 'view-reset', label: resetLabel, onSelect: onReset }] : []),
+  ]
+  const canSave = !!(onSave || onSaveChanges)
   return (
     <>
       <ListModified title={summary} />
-      {(save || onSave || onReset) && (
+      {(canSave || onReset) && (
         <div
           data-slot="list-view-actions"
           className={cn('flex shrink-0 items-center gap-2', actionsClassName)}
         >
-          {save ??
-            (onSave && (
-              <Button data-slot="list-view-save" variant="outline" size="sm" onClick={onSave}>
-                {t('common.listView.save', 'Save view')}
-              </Button>
-            ))}
-          {onReset && (
+          {canSave ? (
+            <ActionMenu
+              title={saveLabel}
+              label={saveLabel}
+              items={items}
+              trigger={
+                <Button data-slot="list-view-save" variant="outline" size="sm">
+                  {saveLabel}
+                  <ChevronDown aria-hidden="true" />
+                </Button>
+              }
+            />
+          ) : (
             <Button data-slot="list-view-reset" variant="ghost" size="sm" onClick={onReset}>
-              {t('common.listView.reset', 'Reset')}
+              {resetLabel}
             </Button>
           )}
         </div>

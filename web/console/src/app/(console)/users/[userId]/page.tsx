@@ -58,7 +58,11 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
     <Main>
       <PageStack>
         {error ? (
-          <ErrorState title="the account" error={error} onRetry={refresh} />
+          <ErrorState
+            title={t('admin.users.theAccount', 'the account')}
+            error={error}
+            onRetry={refresh}
+          />
         ) : isLoading || !user ? (
           <div className="space-y-3">
             <Skeleton className="h-10 w-1/3" />

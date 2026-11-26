@@ -55,6 +55,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/sensorgrant"
 	"github.com/openctemio/openctem/server/internal/app/sensorpairing"
 	"github.com/openctemio/openctem/server/internal/app/ticketbridge"
+	"github.com/openctemio/openctem/server/internal/app/vulnfeedsources"
 
 	sensorapp "github.com/openctemio/openctem/server/internal/app/sensor"
 	sourceretireapp "github.com/openctemio/openctem/server/internal/app/sourceretire"
@@ -991,6 +992,9 @@ type Services struct {
 	AIKnowledge *aiknowledge.Service
 	// AIExecutor runs single-shot AI kinds in the API process.
 	AIExecutor *aianalysis.BuiltinExecutor
+	// AIWorker sends AI agents' runs to the organization's AI workers and
+	// applies their results (nil when AI or the command queue is off).
+	AIWorker *aianalysis.WorkerExecutor
 
 	// WebSocket
 	WebSocketHub *websocket.Hub
@@ -1081,7 +1085,10 @@ type Services struct {
 	LeakedSecretPolicy *leakedsecretpolicy.Service
 	// PrivateDestinations: the console's private ranges for outbound requests.
 	PrivateDestinations *privatedestinations.Service
-	PlatformMFA         *platformmfa.Service
+	// VulnFeedSources is where the vulnerability feed is fetched from (the
+	// console setting over the environment); nil without the settings store.
+	VulnFeedSources *vulnfeedsources.Service
+	PlatformMFA     *platformmfa.Service
 	// TenantAI is the organizations' AI settings (consent, source, own provider).
 	TenantAI *tenantai.Service
 	// AIMasking is the organization's AI masking policy and its preview.
@@ -1246,6 +1253,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Every replica applies the console ranges now and keeps them current.
 		s.PrivateDestinations.Start(context.Background())
 	}
+	s.initVulnFeedSources(cfg, repos, log)
 	s.IdleWorkspaces = lifecycleapp.NewService(repos.IdleLifecycle, s.Audit, repos.AdminAuditLog, repos.Admin, nil, log)
 	// Suspended organizations: one access gate every credential path asks,
 	// in front of a shared Redis cache so a change reaches every replica on
@@ -2185,6 +2193,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// Per-use-case settings: off refuses, suggest never applies, the data
 		// class ceiling and minimum confidence (docs/architecture/ai-use-cases.md).
 		s.AIExecutor.SetUseCases(s.TenantAI)
+		// The organization's switch and limits on changes without a person
+		// (docs/architecture/ai-autonomy.md).
+		s.AIExecutor.SetAutonomy(s.TenantAI)
 		s.AITriage.SetUseCases(s.TenantAI)
 		if s.PlatformAI != nil {
 			s.AIExecutor.SetOwnProviderPolicy(s.PlatformAI.OrgProviderAllowed)
@@ -3489,8 +3500,11 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		// queue (docs/architecture/ai-analysis.md).
 		if s.Command != nil {
 			jobs := analysisJobQueue{cmds: s.Command}
-			aianalysis.NewWorkerExecutor(s.AIExecutor, jobs, s.Audit, log)
+			s.AIWorker = aianalysis.NewWorkerExecutor(s.AIExecutor, jobs, s.Audit, log)
 			s.AIAnalysis.SetJobCanceler(jobs)
+			// A result left untaken (its request ended first) is taken by
+			// the run sweep before it ends runs for lack of a result.
+			s.AIAnalysis.SetResultApplier(s.AIWorker)
 		}
 	}
 

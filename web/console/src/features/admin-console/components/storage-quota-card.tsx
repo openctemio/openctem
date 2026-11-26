@@ -84,13 +84,12 @@ export function StorageQuotaCard({ canEdit }: { canEdit: boolean }) {
           {data.source === 'console'
             ? t(
                 'admin.quota.sourceConsole',
-                'Set in this console. The server default ({env}) is {mb} MiB.',
-                { env: data.env_var, mb: data.environment_mb }
+                'Set in this console. The server default is {mb} MiB.',
+                { mb: data.environment_mb }
               )
             : t(
                 'admin.quota.sourceEnv',
-                'From the server default ({env}) until you save a value here.',
-                { env: data.env_var }
+                'From the server default until you save a value here.'
               )}{' '}
           <SettingChangedLine change={data} />
         </>

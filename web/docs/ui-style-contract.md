@@ -455,6 +455,12 @@ reference.
 - A share of capacity (job slots in use, quota spent) is the shared `<Meter>`
   (`role="meter"`, a label saying what it measures), in a metric's `detail`,
   a `DetailStat` or a row. Not a hand-made bar.
+- A mix of outcomes over one whole (checklist results: passed, failed, N/A,
+  untested) is the shared `<StatusMix>`: a thin segmented bar under a caption
+  that says what it measures ("12 of 38 tested", never a bare percentage, so
+  a whole of one quiet part never reads as done) and one line of counts whose
+  dots are coloured only above zero. A group header's mini bar is
+  `ProgressCell`. Never a heavy solid bar.
 - Every number on a dashboard opens the list it counts, with the same filter
   (not the unfiltered page).
 - A number that cannot be computed shows "Not enough data" and what is
@@ -987,6 +993,23 @@ Every settings page is built from the same parts (`@/features/shared`):
   never colour alone.
 - Every chart has a text alternative: its one-sentence summary as the figure's
   accessible name, and its table one menu item away.
+- **A widget is as tall as its content.** The dashboard grid sets no row
+  floor: a widget's stored height (`h`) only places it, spanning that many
+  rows beside its neighbours. Widgets in one row share its height, and a
+  visualization fills its frame (the CTEM loop's tiles stretch to it). A
+  marker on one item of a set (the loop's "Act here") sits in a slot every
+  item has, never on a row of its own, so the items keep one height and their
+  status chips one baseline.
+- **The editor (Customize) lays widgets out as the dashboard does.** Its grid
+  has no row floor either, and a preview spans the rows it will span on the
+  dashboard (one row for the key figures strip and for a full-width widget
+  with no figure), so a preview is as tall as the widget will be. Its height
+  control places a widget: "Span one more row" / "Span one row fewer"
+  (Shift+Down / Shift+Up) set how many rows it spans beside its neighbours.
+- **A shorter widget stretched by its row fills its card.** A chart's plot
+  grows with the card (at least 180 px, 220 px from 640 px), and a state
+  message or empty state centres in it; no blank band is left under the
+  content.
 
 ## 5. Typography
 
@@ -1520,6 +1543,16 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   `data-cut-tooltip` and sits in a tooltip trigger (or carries the full text in
   its `title`). The layout matrix's `cutMeaning` detector fails every other
   cut, with the visible and the full text.
+- A card is as tall as its content. A framed card (rounded, bordered, with a
+  background) whose last visible content ends more than max(64 px, 30% of its
+  height) above its inner bottom edge fails the layout matrix's `hollowCard`
+  detector. A card stretched by a row neighbour that fills the row passes
+  (neighbours in a row share one height by design); its own content should
+  still fill sensibly (a chart or list grows, an empty state centres). The
+  only fill areas, whose whole box counts as content, are a chart's plot box
+  (`.recharts-responsive-container`), a zoomable canvas (`.react-flow`,
+  `[data-layout-canvas]`) and the shared empty state
+  (`[data-slot="empty-state"]`, which centres itself in the room it is given).
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a
   fixed column count without breakpoints.
 - `e2e/specs/75a-layout-breaks-lists.spec.ts` (and 75b settings, 75c shell, 75d detail) check the lists and their overlays at

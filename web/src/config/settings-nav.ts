@@ -533,19 +533,29 @@ const coreSettingsNav: SettingsNavGroup[] = [
         ],
         anchors: [
           {
-            id: 'approval-tiers',
-            title: 'Approval tiers and approvers',
-            keywords: ['four-eyes', 'approvers', 'decision lasts'],
+            id: 'false-positives',
+            title: 'False positives',
+            keywords: ['four-eyes', 'false positive', 'second look', 'tier'],
+          },
+          {
+            id: 'accepted-risks',
+            title: 'Accepted risks',
+            keywords: ['risk acceptance', 'longest acceptance', 'tier'],
+          },
+          {
+            id: 'suppression-rules',
+            title: 'Suppression rules',
+            keywords: ['suppression', 'rule', 'tier'],
           },
           {
             id: 'security-pool',
-            title: 'Security pool and exclusions',
+            title: 'Approvers',
             keywords: ['security pool', 'assignee', 're-authentication'],
           },
           {
             id: 'approval-limits',
-            title: 'Limits and deadlines',
-            keywords: ['longest acceptance', 'decision deadline', 'epss'],
+            title: 'Deadline and high risk',
+            keywords: ['decision deadline', 'epss'],
           },
         ],
       },

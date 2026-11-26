@@ -24,6 +24,18 @@
   .truncate wbr:not([data-phone-card] wbr) {
     display: none;
   }
+  /* An e-mail address wraps only before its "@" (BreakText): the person's
+     part and the domain each move as one piece, so the hyphens and dots
+     inside them ("openctem-" / "test.local") are no break; a part wider than
+     its box still wraps inside. On a one-line text that ends in an ellipsis
+     they stay inline, so the ellipsis still cuts them. */
+  [data-email-part] {
+    display: inline-block;
+    max-width: 100%;
+  }
+  .truncate [data-email-part]:not([data-phone-card] [data-email-part]) {
+    display: inline;
+  }
   * {
     @apply border-border outline-ring/50;
     scrollbar-width: thin;

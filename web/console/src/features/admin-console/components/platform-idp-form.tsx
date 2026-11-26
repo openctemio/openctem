@@ -142,7 +142,8 @@ export function PlatformIdPForm({
       setError(
         adminErrorMessage(
           e,
-          t('admin.platformIdpForm.saveFailed', 'Could not save the identity provider')
+          t('admin.platformIdpForm.saveFailed', 'Could not save the identity provider'),
+          t('admin.login.tooMany', 'Too many attempts. Wait a minute and try again.')
         )
       )
     } finally {
@@ -180,7 +181,8 @@ export function PlatformIdPForm({
       toast.error(
         adminErrorMessage(
           e,
-          t('admin.platformIdpForm.removeFailed', 'Could not remove the identity provider')
+          t('admin.platformIdpForm.removeFailed', 'Could not remove the identity provider'),
+          t('admin.login.tooMany', 'Too many attempts. Wait a minute and try again.')
         )
       )
     } finally {

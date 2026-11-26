@@ -20,13 +20,6 @@ import { TrendingUp } from 'lucide-react'
  */
 type EpssBand = 'veryHigh' | 'high' | 'moderate' | 'low'
 
-const BAND_TEXT: Record<EpssBand, { label: string; hint: string }> = {
-  veryHigh: { label: 'Very high likelihood', hint: 'Above 70%. Prioritise immediately.' },
-  high: { label: 'High likelihood', hint: '40% to 70%. Address soon.' },
-  moderate: { label: 'Moderate likelihood', hint: '10% to 40%.' },
-  low: { label: 'Lower likelihood', hint: 'Up to 10%.' },
-}
-
 function getEPSSBand(score: number): EpssBand {
   if (score > 0.7) return 'veryHigh'
   if (score > 0.4) return 'high'
@@ -37,10 +30,25 @@ function getEPSSBand(score: number): EpssBand {
 function useBandText(score: number) {
   const { t } = useTranslation()
   const band = getEPSSBand(score)
-  return {
-    label: t(`findings.epss.band.${band}`, BAND_TEXT[band].label),
-    hint: t(`findings.epss.bandHint.${band}`, BAND_TEXT[band].hint),
-  }
+  const text = {
+    veryHigh: {
+      label: t('findings.epss.band.veryHigh', 'Very high likelihood'),
+      hint: t('findings.epss.bandHint.veryHigh', 'Above 70%. Prioritise immediately.'),
+    },
+    high: {
+      label: t('findings.epss.band.high', 'High likelihood'),
+      hint: t('findings.epss.bandHint.high', '40% to 70%. Address soon.'),
+    },
+    moderate: {
+      label: t('findings.epss.band.moderate', 'Moderate likelihood'),
+      hint: t('findings.epss.bandHint.moderate', '10% to 40%.'),
+    },
+    low: {
+      label: t('findings.epss.band.low', 'Lower likelihood'),
+      hint: t('findings.epss.bandHint.low', 'Up to 10%.'),
+    },
+  } satisfies Record<EpssBand, { label: string; hint: string }>
+  return text[band]
 }
 
 interface EPSSScoreBadgeProps {

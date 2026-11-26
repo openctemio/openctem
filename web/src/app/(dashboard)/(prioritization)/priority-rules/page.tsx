@@ -91,20 +91,20 @@ interface ListResponse {
 
 const FIELD_CONFIG: Record<
   FieldKey,
-  { label: string; type: FieldType; options?: string[]; optionKeyPrefix?: string }
+  { fallback: string; type: FieldType; options?: string[]; optionKeyPrefix?: string }
 > = {
-  is_in_kev: { label: 'Is in KEV catalog', type: 'bool' },
-  is_reachable: { label: 'Is reachable', type: 'bool' },
-  asset_is_crown_jewel: { label: 'Asset is crown jewel', type: 'bool' },
-  epss_score: { label: 'EPSS score', type: 'float' },
+  is_in_kev: { fallback: 'Is in KEV catalog', type: 'bool' },
+  is_reachable: { fallback: 'Is reachable', type: 'bool' },
+  asset_is_crown_jewel: { fallback: 'Asset is crown jewel', type: 'bool' },
+  epss_score: { fallback: 'EPSS score', type: 'float' },
   severity: {
-    label: 'Severity',
+    fallback: 'Severity',
     type: 'string',
     options: [...SEVERITY_LEVELS],
     optionKeyPrefix: 'severity',
   },
   asset_criticality: {
-    label: 'Asset criticality',
+    fallback: 'Asset criticality',
     type: 'string',
     options: [...ASSET_CRITICALITY_LEVELS],
     optionKeyPrefix: 'criticality',
@@ -569,7 +569,7 @@ export default function PriorityRulesPage() {
         <Input
           value={arr}
           onChange={(e) => updateCondition(idx, { value: e.target.value })}
-          placeholder="critical, high"
+          placeholder={t('prioritization.rules.valuePlaceholder', 'critical, high')}
           aria-label={valueAria}
         />
       )
@@ -860,7 +860,7 @@ export default function PriorityRulesPage() {
                             <SelectContent>
                               {(Object.keys(FIELD_CONFIG) as FieldKey[]).map((k) => (
                                 <SelectItem key={k} value={k}>
-                                  {t(`prioritization.rules.field.${k}`, FIELD_CONFIG[k].label)}
+                                  {t(`prioritization.rules.field.${k}`, FIELD_CONFIG[k].fallback)}
                                 </SelectItem>
                               ))}
                             </SelectContent>

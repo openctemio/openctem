@@ -30,12 +30,23 @@ import { isPendingChange, useUpdateDomainJIT } from '../api/use-verified-domains
 import type { DomainJITRole, VerifiedDomain } from '../types/verified-domain.types'
 
 const ROLE_LABEL: Record<DomainJITRole, string> = { viewer: 'Viewer', member: 'Member' }
+
+type Translate = (key: string, fallback: string, vars?: Record<string, string | number>) => string
+const english: Translate = (_key, fallback, vars) =>
+  vars ? fallback.replace(/\{(\w+)\}/g, (m, k) => String(vars[k] ?? m)) : fallback
 const DEFAULT_ROLE = 'default'
 
 /** How SSO treats newcomers on a verified domain, in words. */
-export function jitLabel(d: Pick<VerifiedDomain, 'jit_enabled' | 'jit_role'>): string {
-  if (d.jit_enabled === false) return 'Not admitted'
-  return d.jit_role ? `Join as ${ROLE_LABEL[d.jit_role]}` : 'Join with the IdP default'
+export function jitLabel(
+  d: Pick<VerifiedDomain, 'jit_enabled' | 'jit_role'>,
+  t: Translate = english
+): string {
+  if (d.jit_enabled === false) return t('admin.domainJitDialog.notAdmitted', 'Not admitted')
+  return d.jit_role
+    ? t('admin.domainJitDialog.joinAs', 'Join as {role}', {
+        role: t(`admin.domainJitDialog.${d.jit_role}`, ROLE_LABEL[d.jit_role]),
+      })
+    : t('admin.domainJitDialog.joinDefault', 'Join with the IdP default')
 }
 
 /**

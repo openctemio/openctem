@@ -115,6 +115,25 @@ export function isProse(raw: string): boolean {
   return real.length > 0
 }
 
+/**
+ * True for `label: 'English'` next to a sibling `labelKey: 'a.b'` (or inside a
+ * table named ..._LABELS / ..._FALLBACK): the English is the t() fallback and
+ * the component renders it through the key.
+ */
+function isKeyedFallback(node: ts.PropertyAssignment, sf: ts.SourceFile): boolean {
+  const name = node.name.getText(sf).replace(/^['"]|['"]$/g, '')
+  const obj = node.parent
+  if (ts.isObjectLiteralExpression(obj)) {
+    const names = new Set(obj.properties.map((p) => (p.name ? p.name.getText(sf) : '')))
+    if (names.has(name + 'Key')) return true
+  }
+  for (let p: ts.Node | undefined = node.parent; p; p = p.parent) {
+    if (ts.isVariableDeclaration(p) && /(_LABELS|_FALLBACKS?|_WORDS)$/.test(p.name.getText(sf)))
+      return true
+  }
+  return false
+}
+
 export interface Hit {
   file: string
   line: number
@@ -157,11 +176,21 @@ export function findHardcodedText(source: string, file: string): Hit[] {
       add(node, node.text)
     } else if (ts.isJsxAttribute(node) && TEXT_PROPS.has(node.name.getText(sf))) {
       const init = node.initializer
-      if (init && ts.isStringLiteral(init)) add(init, init.text)
+      // An example name typed as a slug (nuclei-core) is data, not prose.
+      const slug =
+        node.name.getText(sf) === 'placeholder' &&
+        init &&
+        ts.isStringLiteral(init) &&
+        /^[a-z0-9]+(-[a-z0-9]+)+$/.test(init.text)
+      if (slug) {
+        // not text
+      } else if (init && ts.isStringLiteral(init)) add(init, init.text)
       else if (init && ts.isJsxExpression(init) && init.expression)
         for (const [n, s] of stringsOf(init.expression)) add(n, s)
     } else if (ts.isJsxExpression(node) && node.expression && !ts.isJsxAttribute(node.parent)) {
       for (const [n, s] of stringsOf(node.expression)) add(n, s)
+    } else if (ts.isPropertyAssignment(node) && isKeyedFallback(node, sf)) {
+      // { label: 'English', labelKey: 'a.b' }: the component reads t(labelKey, label).
     } else if (
       ts.isPropertyAssignment(node) &&
       (TEXT_KEYS.has(node.name.getText(sf).replace(/^['"]|['"]$/g, '')) ||
@@ -179,6 +208,20 @@ export function findHardcodedText(source: string, file: string): Hit[] {
       node.arguments[1]
     ) {
       for (const [n, s] of stringsOf(node.arguments[1])) add(n, s)
+    } else if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      (node.expression.text === 'adminErrorMessage' || node.expression.text === 'setError')
+    ) {
+      // adminErrorMessage(err, fallback, tooMany) and setError('...'): shown to the person.
+      for (const arg of node.arguments.slice(node.expression.text === 'setError' ? 0 : 1))
+        for (const [n, s] of stringsOf(arg)) add(n, s)
+    } else if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      /(Reason|Problem|Error|Message|Label|Title)$/.test(node.left.getText(sf))
+    ) {
+      for (const [n, s] of stringsOf(node.right)) add(n, s)
     } else if (
       ts.isVariableDeclaration(node) &&
       node.initializer &&

@@ -39,6 +39,8 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
+import { useTranslation } from '@/context/i18n-provider'
+import { getCategoryOptions, getIconOptions } from './capability-options'
 import { useCreateCapability } from '@/lib/api/capability-hooks'
 
 const createCapabilitySchema = z.object({
@@ -62,34 +64,10 @@ const createCapabilitySchema = z.object({
 
 type CreateCapabilityFormData = z.infer<typeof createCapabilitySchema>
 
-const ICON_OPTIONS = [
-  { value: 'zap', label: 'Zap' },
-  { value: 'code', label: 'Code' },
-  { value: 'package', label: 'Package' },
-  { value: 'globe', label: 'Globe' },
-  { value: 'key', label: 'Key' },
-  { value: 'server', label: 'Server' },
-  { value: 'box', label: 'Box' },
-  { value: 'search', label: 'Search' },
-  { value: 'layers', label: 'Layers' },
-  { value: 'shield', label: 'Shield' },
-  { value: 'lock', label: 'Lock' },
-  { value: 'eye', label: 'Eye' },
-  { value: 'file-text', label: 'File Text' },
-  { value: 'terminal', label: 'Terminal' },
-  { value: 'cpu', label: 'CPU' },
-]
-
 const COLOR_OPTIONS = CAPABILITY_COLOR_CHOICES.map((value) => ({
   value,
   label: value.charAt(0).toUpperCase() + value.slice(1),
 }))
-
-const CATEGORY_OPTIONS = [
-  { value: 'security', label: 'Security' },
-  { value: 'recon', label: 'Reconnaissance' },
-  { value: 'analysis', label: 'Analysis' },
-]
 
 interface CreateCapabilityDialogProps {
   open: boolean
@@ -102,6 +80,9 @@ export function CreateCapabilityDialog({
   onOpenChange,
   onSuccess,
 }: CreateCapabilityDialogProps) {
+  const { t } = useTranslation()
+  const ICON_OPTIONS = getIconOptions(t)
+  const CATEGORY_OPTIONS = getCategoryOptions(t)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { trigger: createCapability } = useCreateCapability()
 
@@ -121,7 +102,11 @@ export function CreateCapabilityDialog({
     setIsSubmitting(true)
     try {
       await createCapability(data)
-      toast.success(`Capability "${data.display_name}" created`)
+      toast.success(
+        t('scans.capabilities.toast.created', 'Capability "{name}" created', {
+          name: data.display_name,
+        })
+      )
       form.reset()
       onOpenChange(false)
       onSuccess?.()
@@ -161,9 +146,14 @@ export function CreateCapabilityDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create Custom Capability</DialogTitle>
+          <DialogTitle>
+            {t('scans.capabilities.dialog.createTitle', 'Create custom capability')}
+          </DialogTitle>
           <DialogDescription>
-            Add a new capability to categorize what your tools can do.
+            {t(
+              'scans.capabilities.dialog.createDescription',
+              'Add a new capability to categorize what your tools can do.'
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -175,10 +165,15 @@ export function CreateCapabilityDialog({
                   name="display_name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Display Name</FormLabel>
+                      <FormLabel>
+                        {t('scans.capabilities.dialog.displayName', 'Display name')}
+                      </FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="e.g., Web Application Security"
+                          placeholder={t(
+                            'scans.capabilities.dialog.displayNamePlaceholder',
+                            'e.g., Web application security'
+                          )}
                           {...field}
                           onChange={(e) => handleDisplayNameChange(e.target.value)}
                         />
@@ -193,12 +188,15 @@ export function CreateCapabilityDialog({
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Code Name</FormLabel>
+                      <FormLabel>{t('scans.capabilities.dialog.codeName', 'Code name')}</FormLabel>
                       <FormControl>
                         <Input placeholder="e.g., web_security" {...field} />
                       </FormControl>
                       <FormDescription>
-                        Unique identifier (lowercase, underscores allowed)
+                        {t(
+                          'scans.capabilities.dialog.codeNameHint',
+                          'Unique identifier (lowercase, underscores allowed)'
+                        )}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -210,10 +208,15 @@ export function CreateCapabilityDialog({
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Description</FormLabel>
+                      <FormLabel>
+                        {t('scans.capabilities.dialog.description', 'Description')}
+                      </FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="Describe what this capability represents..."
+                          placeholder={t(
+                            'scans.capabilities.dialog.descriptionPlaceholder',
+                            'Describe what this capability represents...'
+                          )}
                           rows={3}
                           {...field}
                         />
@@ -230,11 +233,13 @@ export function CreateCapabilityDialog({
                     name="category"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Category</FormLabel>
+                        <FormLabel>{t('scans.capabilities.dialog.category', 'Category')}</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select" />
+                              <SelectValue
+                                placeholder={t('scans.capabilities.dialog.select', 'Select')}
+                              />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -255,11 +260,13 @@ export function CreateCapabilityDialog({
                     name="icon"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Icon</FormLabel>
+                        <FormLabel>{t('scans.capabilities.dialog.icon', 'Icon')}</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select" />
+                              <SelectValue
+                                placeholder={t('scans.capabilities.dialog.select', 'Select')}
+                              />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -280,11 +287,13 @@ export function CreateCapabilityDialog({
                     name="color"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Color</FormLabel>
+                        <FormLabel>{t('scans.capabilities.dialog.color', 'Color')}</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select" />
+                              <SelectValue
+                                placeholder={t('scans.capabilities.dialog.select', 'Select')}
+                              />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -318,7 +327,7 @@ export function CreateCapabilityDialog({
             disabled={isSubmitting}
             className="w-full sm:w-auto"
           >
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button
             type="submit"
@@ -327,7 +336,7 @@ export function CreateCapabilityDialog({
             className="w-full sm:w-auto"
           >
             {isSubmitting && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-            Create Capability
+            {t('scans.capabilities.dialog.createSubmit', 'Create capability')}
           </Button>
         </DialogFooter>
       </DialogContent>

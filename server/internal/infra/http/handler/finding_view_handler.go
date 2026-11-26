@@ -31,6 +31,9 @@ func FindingViewParts(id string) []string {
 	return []string{
 		"/api/v1/findings/ai-triage/config",
 		f + "/ai-triage",
+		// The AI review: the finding's AI agent runs (findings:read and
+		// ai_triage:read, the finding in the caller's scope).
+		f + "/ai/runs",
 		f + "/participants",
 		f + "/ticket-links",
 		f + "/ticket-holds",

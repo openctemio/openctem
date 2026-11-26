@@ -1000,7 +1000,9 @@ export default function UsersPage() {
               setSelectedMember(row.original)
             }}
           >
-            {row.original.name || row.original.email}
+            {/* No name: the address, wrapping on a phone card only before
+                its "@" (each part whole). */}
+            {row.original.name || <BreakText>{row.original.email}</BreakText>}
           </button>
           {isDeactivated(row.original.status) && (
             <span className="shrink-0 text-cap text-muted-foreground">
