@@ -327,7 +327,18 @@ set, token classes only):
 - `RunReceiptSection`: the scan run's receipt in the run sheet; nothing when
   the API returns none (a member without the organization view);
 - `FindingLastSeenIn`: the newest receipt that acted on the finding, linked
-  to the run page for a scan run.
+  to the run page for a scan run;
+- `ReceiptHistory` (Findings > Imports, `/findings/imports`): one row per
+  receipt that says in words what it changed ("12 new, 3 resolved, 1
+  reopened"; "No change, 40 still detected"; "No findings"). A status shows
+  only when it needs a look: failed, queued, processing, or "Partly stored"
+  (a completed receipt with failed findings or problems). The runs of one
+  tool and source kind on the page that received and changed no finding
+  (asset discovery such as subfinder) fold into one row ("15 runs, no
+  findings, 40 assets found") whose sheet lists every run, each opening its
+  own receipt, and links to the asset changes over those runs. The seven
+  counts stay in the sheet, in the totals under the list and under Display >
+  Columns (`web/src/features/findings/lib/import-rows.ts`).
 
 Data comes from `web/src/features/findings/api/receipts-api.ts` (SWR, keyed
 only inside an organization). Text is in the `findings.receipts.*` keys (en
