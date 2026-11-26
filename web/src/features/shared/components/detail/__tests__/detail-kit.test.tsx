@@ -203,6 +203,23 @@ describe('PropertyList', () => {
     expect(text.className).toContain('max-md:py-1.5')
   })
 
+  it('puts a value that does not fit beside its label under it, never cut', () => {
+    const { container } = render(
+      <PropertyList label="Properties">
+        <PropertyGroup>
+          <PropertyRow label="Assignee">e2e-owner-1795641209@openctem-test.local</PropertyRow>
+        </PropertyGroup>
+      </PropertyList>
+    )
+    const row = container.querySelector<HTMLElement>('[data-slot=property-row]')!
+    // From 768 px: a wrapping row, the label a fixed column, the value the
+    // rest of the line at its own width (it wraps to a line of its own).
+    expect(row.className).toContain('md:flex-wrap')
+    expect(row.querySelector('dt')!.className).toContain('md:w-[6.75rem]')
+    expect(row.querySelector('dd')!.className).toContain('md:flex-[1_1_auto]')
+    expect(row.querySelector('dd')!.className).not.toContain('truncate')
+  })
+
   it('renders no row for an empty value', () => {
     render(
       <PropertyList label="Properties">

@@ -59,6 +59,10 @@ import { ErrorState } from '@/features/shared/components/error-state'
 import { PageStack } from '@/features/shared/components/page-stack'
 import { MetaItem, MetaLine } from '@/features/shared/components/text-layout'
 import {
+  DETAIL_GRID,
+  DETAIL_MAIN,
+  DETAIL_RAIL,
+  DETAIL_STRIP,
   DetailPageHeader,
   PropertyGroup,
   PropertyList,
@@ -110,10 +114,6 @@ type TaskTab = (typeof TASK_TABS)[number]
 // The finding page's grid (web/src/app/(dashboard)/findings/[id]/page.tsx):
 // from 1280 px the details are a sticky rail beside the tab's panel; below,
 // the bands come first, then the details, then the tabs and the panel.
-const GRID = 'grid min-w-0 xl:grid-cols-[minmax(0,1fr)_19rem]'
-const RAIL = 'min-w-0 max-xl:order-2 xl:sticky xl:top-4 xl:col-start-2 xl:row-start-2 xl:self-start'
-const STRIP = 'min-w-0 max-xl:order-3 xl:col-span-2 xl:row-start-1'
-const MAIN = 'flex min-w-0 flex-col gap-page max-xl:contents xl:col-start-1 xl:row-start-2'
 // Two lines: the title and the target under it (FindingTitleCell).
 const ROW_HEIGHT = 52
 // A phone: two title lines and the target, then the severity and status
@@ -447,8 +447,8 @@ export function TaskDetail({ taskId }: { taskId: string }) {
       />
 
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-        <Tabs value={tab} onValueChange={(v) => setTab(v as TaskTab)} className={GRID}>
-          <aside aria-label={t('remediationHub.detail.details')} className={RAIL}>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as TaskTab)} className={DETAIL_GRID}>
+          <aside aria-label={t('remediationHub.detail.details')} className={DETAIL_RAIL}>
             <div className="max-md:rounded-lg max-md:border max-md:bg-card max-md:px-3">
               <PropertyList label={t('remediationHub.detail.details')}>
                 <PropertyGroup>
@@ -505,7 +505,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
             )}
           </aside>
 
-          <div className={STRIP}>
+          <div className={DETAIL_STRIP}>
             <TabsList>
               <TabsTrigger value="findings">
                 <ListChecks aria-hidden />
@@ -523,7 +523,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
             </TabsList>
           </div>
 
-          <div className={MAIN}>
+          <div className={DETAIL_MAIN}>
             <div
               data-slot="task-bands"
               className="flex min-w-0 flex-col gap-3 empty:hidden max-xl:order-1"

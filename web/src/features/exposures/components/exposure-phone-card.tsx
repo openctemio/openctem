@@ -8,6 +8,7 @@ import { RelativeTime } from '@/features/shared/components/relative-time'
 import { MetaLine } from '@/features/shared/components/text-layout'
 import { SEVERITY_LABELS } from '@/lib/severity'
 import type { ExposureEvent } from '@/lib/api/exposure-types'
+import { exposureSourceLabel } from '../lib/source'
 import { exposureSummaryText } from '../lib/summary'
 import { EXPOSURE_EVENT_TYPE_LABELS } from './exposure-table'
 
@@ -85,7 +86,9 @@ export function ExposurePhoneCard({
             <span key="sev">
               {t(`severity.${exposure.severity}`, SEVERITY_LABELS[exposure.severity])}
             </span>,
-            exposure.source ? <span key="src">{exposure.source}</span> : null,
+            exposure.source ? (
+              <span key="src">{exposureSourceLabel(t, exposure.source)}</span>
+            ) : null,
             <RelativeTime key="seen" date={exposure.first_seen_at} />,
           ]}
         />

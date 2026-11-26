@@ -73,8 +73,10 @@ import { flowPanelEligible } from '../lib/flow-panel'
 import { metricNameKey } from '../metrics'
 import {
   DashboardDataNotice,
+  DashboardFirstBuild,
   DashboardFreshness,
   hasDataNotice,
+  isFirstBuild,
   RefreshButton,
   scheduleSubmenu,
 } from './dashboard-freshness'
@@ -225,6 +227,8 @@ export function DashboardHome() {
   const data = useDashboardData(active?.kind ?? 'personal', active?.id ?? null, {
     revalidateIfStale: !(home.status === 'ready' && home.dataKey === activeDataKey),
   })
+  // The figures are being counted for the first time: one notice.
+  const firstBuild = isFirstBuild(data.data)
 
   const choose = useCallback((ref: DashboardRef) => {
     setChosen(ref)
@@ -565,13 +569,13 @@ export function DashboardHome() {
             {/* A building or stale notice is a line of its own only when no
                 other note shows here; otherwise it opens that note's line,
                 so the widgets never sit under two rows of notes. */}
-            {!seededName && !layoutHint && <DashboardDataNotice data={data.data} />}
+            {!seededName && !layoutHint && !firstBuild && <DashboardDataNotice data={data.data} />}
             {seededName && (
               <p
                 className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
                 role="status"
               >
-                {hasDataNotice(data.data) && (
+                {hasDataNotice(data.data) && !firstBuild && (
                   <>
                     <DashboardDataNotice data={data.data} inline />{' '}
                   </>
@@ -600,7 +604,7 @@ export function DashboardHome() {
                 data-testid="layout-hint"
               >
                 <span className="min-w-0 flex-1 basis-60 text-muted-foreground">
-                  {hasDataNotice(data.data) && (
+                  {hasDataNotice(data.data) && !firstBuild && (
                     <>
                       <DashboardDataNotice data={data.data} inline />{' '}
                     </>
@@ -651,13 +655,19 @@ export function DashboardHome() {
                 </Button>
               </div>
             )}
-            <DashboardView
-              dashboard={dashboard}
-              data={data.data}
-              loading={data.isLoading}
-              failed={!!data.error && !data.data}
-              onRetry={() => data.mutate()}
-            />
+            {/* The first count of the figures: one notice, not a box per
+                widget that each says "No data yet". */}
+            {firstBuild ? (
+              <DashboardFirstBuild />
+            ) : (
+              <DashboardView
+                dashboard={dashboard}
+                data={data.data}
+                loading={data.isLoading}
+                failed={!!data.error && !data.data}
+                onRetry={() => data.mutate()}
+              />
+            )}
           </>
         )}
       </PageStack>

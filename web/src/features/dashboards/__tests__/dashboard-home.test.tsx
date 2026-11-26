@@ -335,6 +335,30 @@ describe('DashboardHome', () => {
     expect(screen.getByTestId('dashboard-freshness')).not.toHaveTextContent('being built')
   })
 
+  it('the first count shows one notice instead of a "No data yet" box per widget', async () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    const snap = snapshot('personal', 5)
+    data.byKey['personal:p1'] = {
+      ...snap,
+      facts_built_at: null,
+      widgets: snap.widgets.map((w) => ({
+        ...w,
+        state: 'building' as const,
+        reason: 'facts_building',
+        scalar: undefined,
+      })),
+    }
+    renderHome()
+    const notice = await screen.findByTestId('dashboard-first-build')
+    expect(notice).toHaveAttribute('role', 'status')
+    expect(notice).toHaveTextContent('Your figures are being prepared')
+    expect(notice).toHaveTextContent('usually takes a few minutes')
+    expect(notice.querySelectorAll('[data-slot="empty-state"]')).toHaveLength(1)
+    // The line notice would say the same: not shown beside it.
+    expect(screen.queryByTestId('dashboard-data-notice')).toBeNull()
+    expect(screen.queryByText('No data yet')).toBeNull()
+  })
+
   it('a stale notice names a failed refresh; current figures show no notice', async () => {
     api.mine = [dash('p1', 'Mine', { is_default: true })]
     data.byKey['personal:p1'] = {
