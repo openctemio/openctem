@@ -184,6 +184,27 @@ test.describe('layout matrix detector: wasted row', { tag: ['@shell'] }, () => {
     expect(found.wastedRow).toEqual([])
   })
 
+  test("is quiet for a grouped phone list's group headers", async ({ page }) => {
+    // A DataTable with row groups below 768 px: each group's header (its name,
+    // a count and a mini bar) sits above its cards inside the cards' frame.
+    const group = (name: string) => `<div role="group" class="g">
+        <div data-slot="row-group-header"><button aria-label="Collapse ${name}">v</button>
+          <span>${name}</span><div><span>1 failed</span><span>5/5</span></div></div>
+        <div><div data-phone-card style="height:56px">IDOR testing</div>
+          <div data-phone-card style="height:56px">Force browsing</div></div>
+      </div>`
+    const found = await at(
+      page,
+      390,
+      `<main style="width:360px">
+        <div role="tablist"><button role="tab">Checklist</button></div>
+        <div style="display:flex;gap:8px"><input style="width:250px"><button>More</button></div>
+        <div style="border:1px solid">${group('A01 Access control')}${group('A02 Cryptography')}</div>
+      </main>`
+    )
+    expect(found.wastedRow).toEqual([])
+  })
+
   test('is quiet for the labels of a form in a dialog', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 900 })
     await page.setContent(
