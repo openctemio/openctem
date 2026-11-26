@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	"github.com/openctemio/openctem/server/internal/app/accesscontrol"
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	"github.com/openctemio/openctem/server/internal/metrics"
@@ -1072,9 +1074,9 @@ func (s *AuthService) enforceSSOPolicy(ctx context.Context, sess *sessiondom.Ses
 var ErrSSOBreakGlassNeedsMFA = fmt.Errorf("%w: owner break-glass needs the owner's second factor", ErrSSORequired)
 
 // BreakGlassNotifier tells an organization's administrators about an owner
-// break-glass sign-in (TenantService.NotifyAdmins).
+// break-glass sign-in (TenantService.NotifyAdminsMsg).
 type BreakGlassNotifier interface {
-	NotifyAdmins(ctx context.Context, tenantID shared.ID, title, body, severity string)
+	NotifyAdminsMsg(ctx context.Context, tenantID shared.ID, msg *notificationdom.Message, title, body, severity string)
 }
 
 // SetBreakGlassNotifier wires the notice sent when an owner uses break-glass.
@@ -1120,7 +1122,7 @@ func (s *AuthService) recordBreakGlass(ctx context.Context, sess *sessiondom.Ses
 		}
 	}
 	if s.breakGlass != nil {
-		s.breakGlass.NotifyAdmins(ctx, t.ID(), "Owner break-glass sign-in",
+		s.breakGlass.NotifyAdminsMsg(ctx, t.ID(), notificationdom.Msg("sso.break_glass_used"), "Owner break-glass sign-in",
 			"An owner signed in with a password and second factor although this organization requires SSO. If this was not expected, review the audit log and the owners' credentials.",
 			"high")
 	}

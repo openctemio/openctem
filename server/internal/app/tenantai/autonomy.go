@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"strings"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	aidom "github.com/openctemio/openctem/server/pkg/domain/aianalysis"
 	"github.com/openctemio/openctem/server/pkg/domain/audit"
@@ -153,8 +155,9 @@ func (s *Service) SaveAutonomy(ctx context.Context, tenantID string, in Autonomy
 			WithMessage("Limits on changes by AI agents without a person changed").WithSeverity(sev))
 	}
 	if len(loosened) > 0 && s.notifier != nil {
-		s.notifier.NotifyPolicyLoosened(ctx, tenantID, actx, "AI agents may change more without a person",
-			strings.Join(autonomyLoosenedText(loosened, next), "; "), "/settings/ai?tab=autonomy")
+		s.notifier.NotifyPolicyLoosenedWith(ctx, tenantID, actx, "settings.ai_autonomy_widened", "AI agents may change more without a person",
+			strings.Join(autonomyLoosenedText(loosened, next), "; "), "/settings/ai?tab=autonomy",
+			"changes", autonomyLoosenedMessage(loosened, next))
 	}
 	return AutonomyView{Autonomy: next, Loosened: loosened}, nil
 }
@@ -175,6 +178,29 @@ func limitText(v *int) any {
 
 func autonomyAuditMap(a aidom.Autonomy) map[string]any {
 	return map[string]any{"paused": a.Paused, "per_hour": limitText(a.PerHour), "per_day": limitText(a.PerDay)}
+}
+
+// autonomyLoosenedMessage is the language-neutral form of autonomyLoosenedText:
+// one coded line per change; an unset limit is the nested "unlimited" message.
+func autonomyLoosenedMessage(reasons []string, next aidom.Autonomy) *notificationdom.Message {
+	items := make([]*notificationdom.Message, 0, len(reasons))
+	for _, r := range reasons {
+		switch r {
+		case aidom.LoosenResumed:
+			items = append(items, notificationdom.Msg("settings.ai_autonomy.resumed"))
+		case aidom.LoosenLimitRaised, aidom.LoosenLimitRemoved:
+			items = append(items, notificationdom.Msg("settings.ai_autonomy.limit_raised",
+				"per_hour", limitParam(next.PerHour), "per_day", limitParam(next.PerDay)))
+		}
+	}
+	return notificationdom.Lines("settings.ai_autonomy.changes", items)
+}
+
+func limitParam(v *int) any {
+	if v == nil {
+		return notificationdom.Msg("settings.ai_autonomy.unlimited")
+	}
+	return *v
 }
 
 func autonomyLoosenedText(reasons []string, next aidom.Autonomy) []string {

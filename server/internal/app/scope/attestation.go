@@ -210,7 +210,9 @@ func (s *Service) requestAttestation(ctx context.Context, t *scopedom.Target, no
 	title := "Keep T2 for " + t.Pattern() + "?"
 	body := fmt.Sprintf("The scope entry %s %s allows intrusive (T2) probes. Confirm by %s that it still should, or it falls back to non-intrusive (T1). Reason on record: %s",
 		t.TargetType(), t.Pattern(), deadline, t.Reason())
-	s.NotifyAdmins(ctx, t.TenantID(), title, body)
+	s.NotifyAdminsMsg(ctx, t.TenantID(), title, body, notificationdom.Msg("scope.attestation_requested",
+		"pattern", t.Pattern(), "target_type", targetTypeMessage(t.TargetType()),
+		"deadline_at", now.Add(scopedom.AttestationGrace).UTC().Format(time.RFC3339), "reason", t.Reason()))
 	s.enqueueChannel(ctx, t, string(integration.EventTypeApprovalRequested), title, body, notificationdom.SeverityMedium)
 	s.mailApprovers(ctx, t, "[Scope] "+title, s.attestationMailBody(t, deadline))
 	s.auditSystem(ctx, t, auditdom.ActionScopeTargetAttestationRequested, auditdom.SeverityLow,
@@ -222,7 +224,9 @@ func (s *Service) afterDowngrade(ctx context.Context, t *scopedom.Target) {
 	title := "Scope entry fell back to T1: " + t.Pattern()
 	body := fmt.Sprintf("Nobody confirmed within %d days that %s %s should keep intrusive (T2) probes, so it now allows non-intrusive (T1) probes only. The entry was not removed; raising it to T2 again needs an approval.",
 		int(scopedom.AttestationGrace.Hours()/24), t.TargetType(), t.Pattern())
-	s.NotifyAdmins(ctx, t.TenantID(), title, body)
+	s.NotifyAdminsMsg(ctx, t.TenantID(), title, body, notificationdom.Msg("scope.t2_downgraded",
+		"pattern", t.Pattern(), "target_type", targetTypeMessage(t.TargetType()),
+		"days", int(scopedom.AttestationGrace.Hours()/24)))
 	s.enqueueChannel(ctx, t, string(integration.EventTypeSecurityAlert), title, body, notificationdom.SeverityHigh)
 	s.auditSystem(ctx, t, auditdom.ActionScopeTargetT2Downgraded, auditdom.SeverityHigh,
 		"Intrusive (t2) scope entry downgraded to t1: attestation not confirmed",

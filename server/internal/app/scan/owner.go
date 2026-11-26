@@ -130,8 +130,10 @@ func (s *Service) notifyOwnerlessPause(ctx context.Context, sc *scan.Scan, state
 		return
 	}
 	why := "has no owner (the account that created it no longer exists)"
+	code := "scan.paused_no_owner"
 	if state == OwnerStateInactive {
 		why = "belongs to someone who is no longer an active member"
+		code = "scan.paused_owner_inactive"
 	}
 	body := fmt.Sprintf("Scheduled scan '%s' %s, so its scheduled runs are refused and it was paused. An administrator can take ownership on the scan's page and resume it.", sc.Name, why)
 	scanID := sc.ID
@@ -139,7 +141,7 @@ func (s *Service) notifyOwnerlessPause(ctx context.Context, sc *scan.Scan, state
 		uid := id
 		if err := s.ownerNotifier.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: sc.TenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-			NotificationType: notificationdom.TypeScanFailed, Title: "Scan paused: no active owner", Body: body,
+			NotificationType: notificationdom.TypeScanFailed, Title: "Scan paused: no active owner", Body: body, Message: notificationdom.Msg(code, "scan", sc.Name),
 			Severity: "high", ResourceType: "scan", ResourceID: &scanID, URL: "/scans/" + sc.ID.String(),
 		}); err != nil {
 			s.logger.Warn("notify admin of an ownerless scan", "error", err)

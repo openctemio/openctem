@@ -159,21 +159,25 @@ func (s *VulnerabilityService) sendTenantDigests(ctx context.Context, store appr
 			continue
 		}
 		soon, names := 0, make([]string, 0, maxDigestTitles)
+		items := make([]*notificationdom.Message, 0, maxDigestTitles)
 		for _, a := range mine {
 			if a.DecideBy != nil && a.DecideBy.Sub(now) < 48*time.Hour {
 				soon++
 			}
 			if t := oneLineTitle(titles[a.FindingID]); t != "" && len(names) < maxDigestTitles {
 				names = append(names, statusLabel(a.RequestedStatus)+": "+t)
+				items = append(items, digestItem(a.RequestedStatus, t))
 			}
 		}
+		aloneItems := make([]*notificationdom.Message, 0, maxDigestTitles)
 		aloneNames := make([]string, 0, maxDigestTitles)
 		for _, a := range others {
 			if t := oneLineTitle(titles[a.FindingID]); t != "" && len(aloneNames) < maxDigestTitles {
 				aloneNames = append(aloneNames, statusLabel(a.RequestedStatus)+": "+t)
+				aloneItems = append(aloneItems, digestItem(a.RequestedStatus, t))
 			}
 		}
-		s.deliverDigest(ctx, tid, uid, ap.Email, digestCounts{pending: len(mine), soon: soon, alone: len(others)}, names, aloneNames)
+		s.deliverDigest(ctx, tid, uid, ap.Email, digestCounts{pending: len(mine), soon: soon, alone: len(others)}, names, aloneNames, digestMessage(digestCounts{pending: len(mine), soon: soon, alone: len(others)}, items, aloneItems))
 		sent++
 	}
 	return sent, nil
@@ -219,7 +223,25 @@ type digestCounts struct {
 	pending, soon, alone int
 }
 
-func (s *VulnerabilityService) deliverDigest(ctx context.Context, tid, uid shared.ID, email string, n digestCounts, names, aloneNames []string) {
+// digestItem is the coded line of one request in a digest.
+func digestItem(status, title string) *notificationdom.Message {
+	return notificationdom.Msg("finding.approval.digest_item", "status", approvalSubject(statusLabel(status)), "finding", title)
+}
+
+// digestMessage is the language-neutral form of a digest: finding.approval.digest
+// when requests wait (lines = those requests, alone = a nested message whose lines are the
+// decisions made by one person), finding.approval.digest_alone when only such decisions are
+// reported (lines = those decisions).
+func digestMessage(n digestCounts, items, aloneItems []*notificationdom.Message) *notificationdom.Message {
+	if n.pending == 0 {
+		return notificationdom.Lines("finding.approval.digest_alone", aloneItems, "count", n.alone)
+	}
+	m := notificationdom.Lines("finding.approval.digest", items, "count", n.pending, "soon", n.soon, "alone_count", n.alone)
+	m.Params["alone"] = notificationdom.Lines("finding.approval.digest_alone_part", aloneItems)
+	return m
+}
+
+func (s *VulnerabilityService) deliverDigest(ctx context.Context, tid, uid shared.ID, email string, n digestCounts, names, aloneNames []string, msg *notificationdom.Message) {
 	total, soon := n.pending, n.soon
 	title := fmt.Sprintf("%d finding request(s) wait for your decision", total)
 	if total == 0 {
@@ -241,7 +263,7 @@ func (s *VulnerabilityService) deliverDigest(ctx context.Context, tid, uid share
 	if s.approvalInApp != nil {
 		if err := s.approvalInApp.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: tid, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-			NotificationType: notificationdom.TypeFindingApprovalDigest, Title: title, Body: body,
+			NotificationType: notificationdom.TypeFindingApprovalDigest, Title: title, Body: body, Message: msg,
 			Severity: notificationdom.SeverityLow, ResourceType: "finding", URL: approvalInboxURL,
 		}); err != nil {
 			s.logger.Warn("approval digest: in-app", "error", logger.SanitizeError(err))

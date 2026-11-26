@@ -19,6 +19,7 @@ import (
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	"github.com/openctemio/openctem/server/internal/app/scope"
 	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	"github.com/openctemio/openctem/server/pkg/domain/scangov"
 	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
@@ -33,7 +34,7 @@ type TouchedAssets interface {
 
 // AdminNotifier tells the organization's administrators (*scope.Service).
 type AdminNotifier interface {
-	NotifyAdmins(ctx context.Context, tenantID shared.ID, title, body string)
+	NotifyAdminsMsg(ctx context.Context, tenantID shared.ID, title, body string, msg *notificationdom.Message)
 }
 
 // maxConnectorScopeAssets bounds the assets one sync is read for.
@@ -67,9 +68,10 @@ func (c *ConnectorScope) NotifyConnectorScope(ctx context.Context, tenantID shar
 	if !c.ready() {
 		return
 	}
-	c.notify.NotifyAdmins(ctx, tenantID,
+	c.notify.NotifyAdminsMsg(ctx, tenantID,
 		fmt.Sprintf("Assets from %s will be added to scope", connector),
-		fmt.Sprintf("From its next sync, the public names and addresses the connector %s syncs get their exact scope entries, so scans may reach them. Turn this off in the connector's settings (Assets are in scope).", connector))
+		fmt.Sprintf("From its next sync, the public names and addresses the connector %s syncs get their exact scope entries, so scans may reach them. Turn this off in the connector's settings (Assets are in scope).", connector),
+		notificationdom.Msg("connector.scope_planned", "connector", connector))
 }
 
 // AddConnectorAssets adds the exact entries of the public names and addresses
@@ -144,10 +146,12 @@ func (c *ConnectorScope) AddConnectorAssets(ctx context.Context, tenantID shared
 		return 0, nil
 	}
 	c.auditAdded(ctx, tenantID, connector, added)
-	c.notify.NotifyAdmins(ctx, tenantID,
+	sample := samplePatterns(added)
+	c.notify.NotifyAdminsMsg(ctx, tenantID,
 		fmt.Sprintf("%d scope entries added from %s", len(added), connector),
 		fmt.Sprintf("The connector %s synced public names and addresses that were not in scope; each now has its exact scope entry (%s). Turn this off in the connector's settings.",
-			connector, samplePatterns(added)))
+			connector, sample),
+		notificationdom.Msg("connector.scope_added", "count", len(added), "connector", connector, "entries", sample))
 	return len(added), nil
 }
 

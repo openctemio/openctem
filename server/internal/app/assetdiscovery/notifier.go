@@ -471,6 +471,7 @@ func (n *Notifier) send(tenantID shared.ID, b batch) {
 			Severity:         notification.SeverityMedium,
 			Title:            title,
 			Body:             body,
+			Message:          describeMessage(listed, count, exposed, b.shared, b.edge),
 			ResourceType:     "asset",
 			URL:              link,
 		}
@@ -575,4 +576,56 @@ func metadata(listed []assetRef, b batch) map[string]any {
 		md["shared_provider"] = b.edge
 	}
 	return md
+}
+
+// describeMessage is describe as a message code for the web: the same cases,
+// each with its own code and the values the sentence names.
+func describeMessage(listed []assetRef, count, exposed, sharedCount int, edge string) *notification.Message {
+	names := make([]string, 0, len(listed))
+	for _, a := range listed {
+		names = append(names, a.name)
+	}
+	sort.Strings(names)
+	list := strings.Join(names, ", ")
+	more := count - len(listed)
+	if more < 0 {
+		more = 0
+	}
+	if sharedCount > 0 && sharedCount >= count {
+		return notification.Msg("asset.discovered_shared_edge", "count", count, "edge", edge, "names", list, "more", more)
+	}
+	if count == 1 {
+		a := listed[0]
+		code := "asset.discovered_one"
+		if a.becameExposed {
+			code = "asset.exposed_one"
+		}
+		return notification.Msg(code, "asset", a.name,
+			"asset_type", notification.Msg("asset.type."+safeTypeSegment(a.typ)),
+			"exposure", notification.Msg("asset.exposure."+safeTypeSegment(a.exposure)))
+	}
+	code := "asset.discovered_many"
+	switch exposed {
+	case 0:
+	case count:
+		code = "asset.exposed_many"
+	default:
+		code = "asset.exposed_mixed"
+	}
+	return notification.Msg(code, "count", count, "new_count", count-exposed, "existing_count", exposed,
+		"names", list, "more", more, "shared_count", sharedCount, "edge", edge)
+}
+
+// safeTypeSegment keeps a value usable as one code segment (lower-case
+// letters, digits, underscores); anything else becomes "other".
+func safeTypeSegment(v string) string {
+	if v == "" {
+		return "other"
+	}
+	for _, r := range v {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+			return "other"
+		}
+	}
+	return v
 }

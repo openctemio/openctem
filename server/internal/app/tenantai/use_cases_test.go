@@ -92,10 +92,16 @@ func (g *stepUpGate) RequireRecentAuth(context.Context, string) error {
 	return g.err
 }
 
-type notifier struct{ n int }
+type notifier struct {
+	n     int
+	codes []string
+	kv    [][]any
+}
 
-func (n *notifier) NotifyPolicyLoosened(context.Context, string, auditapp.AuditContext, string, string, string) {
+func (n *notifier) NotifyPolicyLoosenedWith(_ context.Context, _ string, _ auditapp.AuditContext, code, _, _, _ string, kv ...any) {
 	n.n++
+	n.codes = append(n.codes, code)
+	n.kv = append(n.kv, kv)
 }
 
 var errStepUp = errors.New("step-up required")
@@ -162,6 +168,8 @@ func TestSaveUseCase_LooseningNeedsStepUp(t *testing.T) {
 	require.NotNil(t, v.AutoApplySince)
 	require.Equal(t, actx.ActorID, v.UpdatedBy)
 	require.Equal(t, 1, note.n)
+	require.Equal(t, []string{"settings.ai_use_case_widened"}, note.codes)
+	require.Equal(t, "use_case", note.kv[0][0])
 
 	// Tightening: no step-up asked even when the gate refuses.
 	gate.err, gate.calls = errStepUp, 0

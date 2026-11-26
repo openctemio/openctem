@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
@@ -18,9 +20,9 @@ import (
 var ErrSSOAwaitingApproval = errors.New("access to this organization awaits an administrator's approval")
 
 // JITApprovalNotifier tells an organization's administrators that someone
-// waits for their approval (TenantService.NotifyAdmins).
+// waits for their approval (TenantService.NotifyAdminsMsg).
 type JITApprovalNotifier interface {
-	NotifyAdmins(ctx context.Context, tenantID shared.ID, title, body, severity string)
+	NotifyAdminsMsg(ctx context.Context, tenantID shared.ID, msg *notificationdom.Message, title, body, severity string)
 }
 
 // SetJITApprovalNotifier wires the administrators' notification.
@@ -42,7 +44,7 @@ func (s *SSOService) notifyAwaitingApproval(ctx context.Context, t *tenantdom.Te
 	if s.jitApprovals == nil {
 		return
 	}
-	s.jitApprovals.NotifyAdmins(ctx, t.ID(), "Someone waits for your approval",
+	s.jitApprovals.NotifyAdminsMsg(ctx, t.ID(), notificationdom.Msg("sso.awaiting_approval", "email", email), "Someone waits for your approval",
 		fmt.Sprintf("%s signed in through your SSO for the first time. They have no access until an administrator approves them in Members.", email),
 		"medium")
 }

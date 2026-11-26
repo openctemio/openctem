@@ -226,6 +226,10 @@ func TestPastedKeysUnknownKidRefusedAndNoticed(t *testing.T) {
 	if f.alerts.tenants[0] != f.tenant || f.alerts.alerts[0].AggregateID == nil || *f.alerts.alerts[0].AggregateID != f.cfg.ID {
 		t.Fatalf("alert = %+v", f.alerts.alerts[0])
 	}
+	if m := f.alerts.alerts[0].Message; m == nil || m.Code != "ci.signing_keys_out_of_date" || m.Params["trust"] != "self-managed" ||
+		m.Params["key"] != "new-key" || m.Params["keys"] != "old-key" {
+		t.Fatalf("message = %+v", f.alerts.alerts[0].Message)
+	}
 
 	// A burst of the same refusal writes nothing more within the hour.
 	for range 5 {

@@ -12,6 +12,7 @@ import (
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/logger"
 	"github.com/openctemio/openctem/server/pkg/weblink"
@@ -426,7 +427,8 @@ func (s *Service) firstRunBaseline(ctx context.Context, run *cirun.Run) (*cirun.
 			WithMetadata("findings", b.FindingsCount))
 	aid := run.RepositoryAssetID
 	s.alertAdmins(ctx, run.TenantID, breakGlassAlert(AdminAlert{
-		Title: "CI gate baseline established: " + run.Repository,
+		Message: notificationdom.Msg("ci.baseline_established", "repository", run.Repository, "count", b.FindingsCount),
+		Title:   "CI gate baseline established: " + run.Repository,
 		Body: fmt.Sprintf("The first default-branch run of %s recorded its %d open findings as the CI gate baseline: they no longer fail default-branch runs.",
 			run.Repository, b.FindingsCount),
 		URL: RunPath(run.ID), Aggregate: "ci_gate_baseline", AggregateID: &aid,
@@ -545,6 +547,8 @@ func (s *Service) auditVerdict(ctx context.Context, run *cirun.Run, in EvaluateI
 			oid = &id
 		}
 		s.alertAdmins(ctx, run.TenantID, breakGlassAlert(AdminAlert{
+			Message: notificationdom.Msg("ci.break_glass_used", "repository", run.Repository,
+				"commit", shortSHA(run.CommitSHA), "blocking", v.Summary.Blocking),
 			Title: "CI break-glass used: " + run.Repository,
 			Body: fmt.Sprintf("Break-glass let %s at %s pass the CI gate with %d blocking finding(s).",
 				run.Repository, shortSHA(run.CommitSHA), v.Summary.Blocking),

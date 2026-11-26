@@ -279,8 +279,18 @@ func TestService_OverrideAuditedNotifiedAndBounded(t *testing.T) {
 	if len(f.inbox.got) != 2 || f.inbox.got[0].NotificationType != notificationdom.TypeScanWindowOverride || len(f.channel.got) != 1 {
 		t.Fatalf("notified %d admins, %d channel events", len(f.inbox.got), len(f.channel.got))
 	}
+	if m := f.inbox.got[0].Message; m == nil || m.Code != "scan_window.overridden" ||
+		m.Params["until_at"] != o.EndsAt.UTC().Format(time.RFC3339) || m.Params["reason"] != "incident 4711 rescan now" {
+		t.Fatalf("override message: %+v", m)
+	} else if sc, ok := m.Params["scope"].(*notificationdom.Message); !ok || sc.Code != "scan_window.scope.policy" || sc.Params["policy"] != "business hours" {
+		t.Fatalf("override scope: %+v", m.Params["scope"])
+	}
+	n := len(f.inbox.got)
 	if err := f.svc.RevokeOverride(context.Background(), f.tenant, o.ID.String(), f.user.String(), f.actx()); err != nil {
 		t.Fatal(err)
+	}
+	if m := f.inbox.got[n].Message; m == nil || m.Code != "scan_window.override_ended" {
+		t.Fatalf("revoke message: %+v", f.inbox.got[n].Message)
 	}
 	if f.audit.actions[len(f.audit.actions)-1] != auditdom.ActionScanWindowOverrideRevoked {
 		t.Fatalf("revoke audit = %v", f.audit.actions)

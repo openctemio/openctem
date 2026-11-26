@@ -542,8 +542,10 @@ func (s *Service) CreateOverride(ctx context.Context, in OverrideInput, actx aud
 	}
 	o.PolicyName = policyName
 	scope := "every scan window policy"
+	scopeMsg := notificationdom.Msg("scan_window.scope.all")
 	if policyID != nil {
 		scope = fmt.Sprintf("scan window policy '%s'", policyName)
+		scopeMsg = notificationdom.Msg("scan_window.scope.policy", "policy", policyName)
 	}
 	until := o.EndsAt.UTC().Format(time.RFC3339)
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionScanWindowOverrideStarted, auditdom.ResourceTypeScanWindowOverride, o.ID.String()).
@@ -556,7 +558,8 @@ func (s *Service) CreateOverride(ctx context.Context, in OverrideInput, actx aud
 		WithMetadata("second_factor", "totp"))
 	s.notify(ctx, in.TenantID, o.ID,
 		"Scan windows overridden",
-		fmt.Sprintf("%s is suspended until %s. Reason: %s. Bug-bounty program windows still apply.", scope, until, o.Reason))
+		fmt.Sprintf("%s is suspended until %s. Reason: %s. Bug-bounty program windows still apply.", scope, until, o.Reason),
+		notificationdom.Msg("scan_window.overridden", "scope", scopeMsg, "until_at", until, "reason", o.Reason))
 	s.release(ctx, in.TenantID)
 	return o, nil
 }
@@ -581,14 +584,15 @@ func (s *Service) RevokeOverride(ctx context.Context, tenantID shared.ID, id, us
 	s.logAudit(ctx, actx, auditapp.NewSuccessEvent(auditdom.ActionScanWindowOverrideRevoked, auditdom.ResourceTypeScanWindowOverride, o.ID.String()).
 		WithMessage("Scan window override ended early").
 		WithMetadata("policy_id", idOrEmpty(o.PolicyID)))
-	s.notify(ctx, tenantID, o.ID, "Scan window override ended", "A scan window override was ended early; the windows apply again.")
+	s.notify(ctx, tenantID, o.ID, "Scan window override ended", "A scan window override was ended early; the windows apply again.",
+		notificationdom.Msg("scan_window.override_ended"))
 	s.release(ctx, tenantID)
 	return nil
 }
 
 // notify tells every active owner and administrator in the app and puts the
 // event on the security-alert channel (best effort: the change is audited).
-func (s *Service) notify(ctx context.Context, tenantID, overrideID shared.ID, title, body string) {
+func (s *Service) notify(ctx context.Context, tenantID, overrideID shared.ID, title, body string, msg *notificationdom.Message) {
 	const url = "/settings/scanning/scan-windows"
 	if s.admins != nil && s.inApp != nil {
 		ids, err := s.admins.ActiveAdminIDs(ctx, tenantID)
@@ -599,7 +603,7 @@ func (s *Service) notify(ctx context.Context, tenantID, overrideID shared.ID, ti
 			uid := id
 			if err := s.inApp.Notify(ctx, notificationdom.NotificationParams{
 				TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-				NotificationType: notificationdom.TypeScanWindowOverride, Title: title, Body: body, Severity: "high",
+				NotificationType: notificationdom.TypeScanWindowOverride, Title: title, Body: body, Message: msg, Severity: "high",
 				ResourceType: "scan_window_override", URL: url,
 			}); err != nil {
 				s.logger.Warn("override notice: in-app notification", "error", logger.SanitizeError(err))

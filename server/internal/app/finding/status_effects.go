@@ -152,6 +152,7 @@ func (s *VulnerabilityService) afterStatusChange(ctx context.Context, tenantID s
 				typ:     notification.TypeFindingStatusChange,
 				title:   fmt.Sprintf("Finding status changed: %s → %s", c.old, newStatus),
 				body:    c.f.Message(),
+				message: notification.Msg("finding.status_changed", "old_finding_status", c.old.String(), "finding_status", newStatus.String(), "message", c.f.Message()),
 				// The feed hides status changes from pentest clients (they may
 				// not see the old status the title names), so the notice does too.
 				teamOnly:     isPentest(c.f),
@@ -285,6 +286,7 @@ func (s *VulnerabilityService) notifyStatusBatch(ctx context.Context, actorID st
 		d := digests[uid]
 		uid := uid
 		title, url := statusDigestText(d)
+		msg := statusDigestMessage(d)
 		if err := s.userNotificationService.Notify(ctx, notification.NotificationParams{
 			TenantID:         d.findings[0].TenantID(),
 			Audience:         notification.AudienceUser,
@@ -293,6 +295,7 @@ func (s *VulnerabilityService) notifyStatusBatch(ctx context.Context, actorID st
 			Severity:         highestSeverity(d.findings).String(),
 			Title:            title,
 			Body:             d.findings[0].Title(),
+			Message:          msg,
 			ResourceType:     "finding",
 			URL:              url,
 			ActorID:          actor,
@@ -301,6 +304,19 @@ func (s *VulnerabilityService) notifyStatusBatch(ctx context.Context, actorID st
 			s.logger.Warn("status batch: notify", "error", logger.SanitizeError(err))
 		}
 	}
+}
+
+// statusDigestMessage is the language-neutral form of statusDigestText:
+// finding.status_digest_moved (every move reached one status) or
+// finding.status_digest_changed.
+func statusDigestMessage(d *statusDigest) *notification.Message {
+	n, first := len(d.findings), d.findings[0].Title()
+	if len(d.statuses) == 1 {
+		for st := range d.statuses {
+			return notification.Msg("finding.status_digest_moved", "count", n, "finding_status", st.String(), "finding", first)
+		}
+	}
+	return notification.Msg("finding.status_digest_changed", "count", n, "finding", first)
 }
 
 // statusDigestText words the summary and picks the list it links to: the
