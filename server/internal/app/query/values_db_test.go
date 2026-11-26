@@ -86,3 +86,37 @@ func TestValues_FullDataRoleMember_DB(t *testing.T) {
 		t.Errorf("full-data role member counts = %v, want the tenant's findings", got)
 	}
 }
+
+// A scope change shows on the very next value completion: no answer is kept
+// between requests, so a member who loses an asset grant or a campaign stops
+// seeing its values and counts at once (0-second revocation).
+func TestValues_ScopeRevocationAppliesOnNextCall_DB(t *testing.T) {
+	e := newQEnv(t)
+	ctx := context.Background()
+	severities := func() map[string]int64 {
+		t.Helper()
+		res, err := e.svc.Values(ctx, e.caller(e.tester, false), query.ValuesInput{Entity: "findings", Field: "severity"})
+		if err != nil {
+			t.Fatalf("values: %v", err)
+		}
+		out := map[string]int64{}
+		for _, v := range res.Values {
+			if v.Count != nil {
+				out[fmt.Sprint(v.Value)] = *v.Count
+			}
+		}
+		return out
+	}
+	// tester's scope is A1 plus the campaign's finding.
+	before := severities()
+	if len(before) == 0 {
+		t.Fatal("tester sees nothing before the revocation")
+	}
+	// The same request again, right after the grant and the campaign
+	// membership are taken away.
+	e.exec(`DELETE FROM user_accessible_assets WHERE user_id = $1 AND tenant_id = $2`, e.tester.String(), e.tenantA.String())
+	e.exec(`DELETE FROM pentest_campaign_members WHERE user_id = $1 AND tenant_id = $2`, e.tester.String(), e.tenantA.String())
+	if got := severities(); len(got) != 0 {
+		t.Fatalf("after revocation = %v, want nothing (before: %v)", got, before)
+	}
+}
