@@ -84,6 +84,17 @@ func TestNotification_MessageRoundTrip(t *testing.T) {
 		t.Fatalf("other organization read %d rows, err %v", len(res.Data), err)
 	}
 
+	// A value with a NUL character (a finding title, for one) is stored
+	// without it instead of failing the insert and losing the notice.
+	nul := notification.NewNotification(notification.NotificationParams{
+		TenantID: tenant, Audience: notification.AudienceUser, AudienceID: &uid,
+		NotificationType: notification.TypeSystemAlert, Title: "NUL",
+		Message: notification.Msg("finding.assigned", "finding", "SQL\x00 injection"),
+	})
+	if err := repo.Create(ctx, nul); err != nil {
+		t.Fatalf("a NUL in a value failed the notice: %v", err)
+	}
+
 	// The table refuses a malformed code even if a caller skipped Validate.
 	if _, err := sqlDB.ExecContext(ctx, `INSERT INTO notifications (tenant_id, audience, notification_type, title, message_code)
 		VALUES ($1, 'all', 'system_alert', 'x', 'Bad Code')`, tenant.String()); err == nil {
