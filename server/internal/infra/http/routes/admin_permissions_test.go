@@ -159,7 +159,9 @@ var legacyMinimumTier = map[string]admin.AdminRole{
 	"PUT /api/v1/admin/tenants/{tenantId}/sso/identity-providers/{id}":       admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/tenants/{tenantId}/sso/saml":                          admin.AdminRoleSuperAdmin,
 	"POST /api/v1/admin/tenants/{tenantId}/sso/saml/idp-metadata":            admin.AdminRoleSuperAdmin,
-	"PUT /api/v1/admin/version-check/enabled":                                admin.AdminRoleSuperAdmin,
+	// Added with connection-keyed SAML addresses: an SSO write like its siblings.
+	"POST /api/v1/admin/tenants/{tenantId}/sso/saml/address": admin.AdminRoleSuperAdmin,
+	"PUT /api/v1/admin/version-check/enabled":                admin.AdminRoleSuperAdmin,
 }
 
 type fixedPlatformRoles []platformauthz.RoleKey

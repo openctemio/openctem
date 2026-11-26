@@ -1,0 +1,6 @@
+### Security: creating a SAML address is an audited write
+
+- Reading an organization's SAML SP metadata in the admin console (`GET /api/v1/admin/tenants/{tenantId}/sso/saml/sp-metadata`) no longer reserves a connection id: it only reads, and answers `has_address: false` while the organization has neither a configuration nor an address. The address is created with the new console write `POST /api/v1/admin/tenants/{tenantId}/sso/saml/address` (SSO step-up, audited as `organization.saml_address_create`); the console shows a "Create the SAML address" button. Saving or validating a configuration never reserves one either.
+- Deleting a SAML configuration removes it and its address in one transaction.
+- **Upgrade note:** before upgrading, check whether an organization that uses SAML gave up its slug and another organization took it since the identity provider was configured. Such an identity provider still posts to the old slug address, which the upgrade freezes to the organization that holds that slug when the migration runs. Fix such a case by recreating the affected SAML configuration and registering its new address at the identity provider.
+- Docs: server/docs/architecture/saml-sso.md

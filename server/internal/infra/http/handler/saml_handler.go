@@ -527,6 +527,10 @@ type samlSPMetadataView struct {
 	XML      string `json:"xml"`
 	// BaseURL is the public origin the SP URLs are built on (APP_URL).
 	BaseURL string `json:"base_url"`
+	// HasAddress is false while the organization has neither a SAML
+	// configuration nor a created address (POST .../sso/saml/address); the
+	// other fields are then empty.
+	HasAddress bool `json:"has_address"`
 	// ConnectionKey is the key in every address: the connection id, or the
 	// frozen legacy key of an older connection.
 	ConnectionKey string `json:"connection_key"`
@@ -551,6 +555,27 @@ type samlSPMetadataView struct {
 // @Security BearerAuth
 // @Router /admin/tenants/{tenantId}/sso/saml/sp-metadata [get]
 func (h *SAMLHandler) SPMetadata(w http.ResponseWriter, r *http.Request) {
+	h.writeSPMetadata(w, r, false)
+}
+
+// ReserveAddress handles POST /api/v1/admin/tenants/{tenantId}/sso/saml/address.
+// It creates the SAML address of an organization that has no configuration
+// yet (the connection id its first configuration takes), so the
+// administrator can register it at the IdP before saving; an organization
+// that already has one gets it back unchanged. Console write: step-up and
+// audit at the route.
+// @Summary Create an organization's SAML address
+// @Description Platform admin console: reserves the SAML connection id and returns the SP metadata and addresses built on APP_URL. 409 SAML_PUBLIC_URL_UNSET when APP_URL is not set.
+// @Tags Admin Organization SSO
+// @Produce json
+// @Param tenantId path string true "Organization ID"
+// @Security BearerAuth
+// @Router /admin/tenants/{tenantId}/sso/saml/address [post]
+func (h *SAMLHandler) ReserveAddress(w http.ResponseWriter, r *http.Request) {
+	h.writeSPMetadata(w, r, true)
+}
+
+func (h *SAMLHandler) writeSPMetadata(w http.ResponseWriter, r *http.Request, reserve bool) {
 	tenantID, err := shared.IDFromString(middleware.MustGetTenantID(r.Context()))
 	if err != nil {
 		apierror.Unauthorized("invalid tenant context").WriteJSON(w)
@@ -561,16 +586,26 @@ func (h *SAMLHandler) SPMetadata(w http.ResponseWriter, r *http.Request) {
 		apierror.FromCode(apierror.CodeSAMLPublicURLUnset).WriteJSON(w)
 		return
 	}
-	doc, addr, err := h.svc.SPMetadataForTenant(r.Context(), tenantID, base)
+	read := h.svc.SPMetadataForTenant
+	if reserve {
+		read = h.svc.ReserveAddress
+	}
+	doc, addr, err := read(r.Context(), tenantID, base)
+	w.Header().Set("Cache-Control", "no-store")
+	if errors.Is(err, auth.ErrSAMLNoAddress) {
+		// No configuration and no address yet: nothing to register.
+		writeJSON(w, http.StatusOK, samlSPMetadataView{BaseURL: base})
+		return
+	}
 	if err != nil {
 		apierror.NotFound("organization").WriteJSON(w)
 		return
 	}
-	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, samlSPMetadataView{
 		Filename:      "openctem-saml-" + addr.Key + "-sp-metadata.xml",
 		XML:           doc,
 		BaseURL:       base,
+		HasAddress:    true,
 		ConnectionKey: addr.Key,
 		EntityID:      addr.EntityID,
 		ACSURL:        addr.ACSURL,

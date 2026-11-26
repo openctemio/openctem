@@ -45,6 +45,12 @@ func (f *fakeSAMLRepo) GetByLegacyPathKey(_ context.Context, key string) (*samld
 	}
 	return nil, samldom.ErrNotFound
 }
+func (f *fakeSAMLRepo) GetReservedConnectionID(_ context.Context, tenantID shared.ID) (shared.ID, error) {
+	if id, ok := f.reserved[tenantID]; ok {
+		return id, nil
+	}
+	return shared.ID{}, samldom.ErrNotFound
+}
 func (f *fakeSAMLRepo) ReserveConnectionID(_ context.Context, tenantID shared.ID) (shared.ID, error) {
 	if id, ok := f.reserved[tenantID]; ok {
 		return id, nil
