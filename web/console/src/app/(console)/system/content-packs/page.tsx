@@ -234,7 +234,11 @@ export default function ContentPacksPage() {
         </PageHeader>
 
         {packs.error ? (
-          <ErrorState title="content packs" error={packs.error} onRetry={refresh} />
+          <ErrorState
+            title={t('admin.cp.contentPacks', 'content packs')}
+            error={packs.error}
+            onRetry={refresh}
+          />
         ) : (
           <DataTable
             columns={columns}

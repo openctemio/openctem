@@ -106,7 +106,11 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
       })
       onCreated()
     } catch (err) {
-      setError(err instanceof AdminApiError ? err.message : 'Could not create the administrator')
+      setError(
+        err instanceof AdminApiError
+          ? err.message
+          : t('admin.createAdminDialog.createFailed', 'Could not create the administrator')
+      )
     } finally {
       setBusy(false)
     }

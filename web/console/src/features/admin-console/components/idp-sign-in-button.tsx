@@ -35,7 +35,13 @@ export function IdPSignInButton({
       rememberNext(next)
       window.location.assign(url)
     } catch (e) {
-      toast.error(adminErrorMessage(e, 'Single sign-on is unavailable. Try again.'))
+      toast.error(
+        adminErrorMessage(
+          e,
+          t('admin.idpSignInButton.failed', 'Single sign-on is unavailable. Try again.'),
+          t('admin.login.tooMany', 'Too many attempts. Wait a minute and try again.')
+        )
+      )
       setBusy(false)
     }
   }
