@@ -74,6 +74,24 @@ describe('ConfirmView', () => {
     expect(document.querySelector('b')).toBeNull()
   })
 
+  it('shows the English summary when the server sends no summary code (older server)', async () => {
+    // A server without summary_code / summary_params (before the develop
+    // change reaches this branch) gets the page it had: the English summary
+    // as one text block, and no separate visibility field.
+    const english = {
+      ...pending,
+      summary:
+        'Add an internal comment to the finding "SQLi":\n\nnote\n\nVisible to the campaign\'s client: no (campaign team only)',
+    }
+    fetchFn.mockImplementationOnce(
+      async () => new Response(JSON.stringify(english), { status: 200 })
+    )
+    render(<ConfirmView id={ID} />)
+    expect(await screen.findByText(/Visible to the campaign's client: no/)).toBeInTheDocument()
+    expect(document.querySelector('[data-slot="mcp-confirm-summary"]')).toBeNull()
+    expect(document.querySelector('[data-slot="mcp-confirm-visibility"]')).toBeNull()
+  })
+
   it('shows the English summary for an unknown code or values', async () => {
     const odd = { ...pending, summary_code: 'mcp.future_tool', summary_params: { x: 1 } }
     fetchFn.mockImplementationOnce(async () => new Response(JSON.stringify(odd), { status: 200 }))
