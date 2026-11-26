@@ -532,6 +532,10 @@ Response (201):
 The user opens `<UI>/set-password#token=<setup_token>` and chooses a password
 (`POST /api/v1/auth/reset-password`). The link is single-use and expires after
 24 hours; an administrator can issue a new one while the account is unused.
+When the person signs in through the organization's SSO first, the link is
+voided and the account gets no password by forgot-password either (unless it
+owns that organization): see
+[sso-authentication.md](sso-authentication.md#no-password-for-accounts-the-organizations-sso-manages).
 Errors: 409 when the email already has an account (invite instead), 400 when
 the domain is not allowed, 403 when granting roles the caller does not hold.
 
@@ -562,7 +566,7 @@ has an account or an organization exists:
 |---|---|
 | `POST /auth/login` | 401 "invalid credentials" for an unknown email, a wrong password, a federated account and a locked one (the state is told only to the password holder); a dummy bcrypt runs on every refusal. With Turnstile keys, after 3 failed sign-ins from one client address in 15 minutes the next attempt from it answers 403 `CAPTCHA_REQUIRED` until a passing `captcha_token` is sent (counted per address, never per account, in Redis across replicas; the count only decays with its window, a success does not clear it, and an unreadable counter asks for the CAPTCHA) |
 | `POST /auth/register` | 201 with the same body for a new and an existing email: no account id, the verification rule a new account would get, one message; the password policy is checked first for both; the verification email is sent after the response |
-| `POST /auth/forgot-password` | 200 "if the email exists…"; the lookup, the token write and the email all run after the response |
+| `POST /auth/forgot-password` | 200 "if the email exists…"; the lookup, the token write and the email all run after the response; an SSO-managed account gets the same answer and no link |
 | `GET /auth/sso/providers?org=` | 200 `{"providers":[]}` for an unknown organization, like one without SSO; the same provider query runs either way |
 | `GET /auth/sso/{provider}/authorize?org=` | 404 "SSO provider not configured" for an unknown organization and a missing provider alike |
 | `GET /auth/saml/{connection}/metadata` | SP metadata for any well-formed connection key, a UUID or a legacy key (it is built from the key and the deployment URL only) |

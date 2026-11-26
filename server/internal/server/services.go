@@ -3743,6 +3743,10 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	s.Auth.SetSignInHook(s.AccountDeletion.CancelOnSignIn)
 	// Break-glass accounts sign in on the admin console only.
 	s.Auth.SetBreakGlassGate(breakGlassChecker{admins: repos.Admin})
+	// An account whose sign-in an organization's SSO manages gets no password
+	// by forgot-password or a set-password link; owners and platform
+	// administrators keep theirs (break-glass).
+	s.Auth.SetManagedSignIn(repos.User, breakGlassChecker{admins: repos.Admin})
 	// Stamp the current permission version onto issued access tokens so the
 	// permission-sync middleware can reject stale tokens after a role change
 	// (AUTHZ-3). Without this the JWT carries pv=0 and the stale check is inert.
@@ -3815,6 +3819,9 @@ func (s *Services) InitAuthServices(cfg *config.Config, repos *Repositories, log
 	)
 	s.SSO.SetTenantMemberRepo(repos.Tenant)
 	s.SSO.SetIdentityRepo(repos.UserIdentity)
+	// Every organization sign-on records itself on the account and voids an
+	// outstanding password link of a password-less account.
+	s.SSO.SetOrganizationSignInStore(repos.User)
 	s.SSO.SetAuditService(s.Audit)
 	s.SSO.SetBreakGlassGate(breakGlassChecker{admins: repos.Admin})
 	if s.AccountDeletion != nil {
