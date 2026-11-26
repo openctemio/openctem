@@ -12,9 +12,30 @@ import useSWR from 'swr'
 import useSWRMutation from 'swr/mutation'
 import { adminFetch, AdminApiError } from '@console/lib/admin-api/client'
 import type { SamlConfig } from '../types/saml.types'
+import type { SpMetadata } from '../lib/saml-metadata'
 import type { SSOChange } from '@/features/sso-approvals/api/use-sso-changes'
 
 const path = (tenantId: string) => `/tenants/${tenantId}/sso/saml`
+
+/**
+ * The SP addresses and metadata of the organization's SAML connection, from
+ * the API (it reserves the connection id before the first save). null when
+ * the API's public address (APP_URL) is not set.
+ */
+export function useSpMetadata(tenantId: string | null) {
+  return useSWR<SpMetadata | null>(
+    tenantId ? `${path(tenantId)}/sp-metadata` : null,
+    async (p: string) => {
+      try {
+        return await adminFetch<SpMetadata>(p)
+      } catch (e) {
+        if (e instanceof AdminApiError && e.status === 409) return null
+        throw e
+      }
+    },
+    { shouldRetryOnError: false, revalidateOnFocus: false }
+  )
+}
 
 export function useSamlConfig(tenantId: string | null) {
   return useSWR<SamlConfig | null>(

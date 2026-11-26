@@ -230,6 +230,7 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 - `POST /api/v1/api-keys`, `DELETE /api/v1/api-keys/{id}`
 - `POST /api/v1/scim-tokens`, `POST /api/v1/scim-tokens/{id}/rotate`
 - `POST /api/v1/roles`, `PUT`/`DELETE /api/v1/roles/{roleId}`, `POST .../{roleId}/template/apply`, `POST .../{roleId}/members/bulk`, `POST`/`PUT /api/v1/users/{userId}/roles`
+- `POST /api/v1/groups/{groupId}/roles`, `PUT /api/v1/groups/{groupId}/access`, `POST .../access/upgrade`, `POST /api/v1/tenants/{tenant}/invitations`, `POST /api/v1/tenants/{tenant}/users`, `PATCH /api/v1/tenants/{tenant}/members/{userId}`
 - `PATCH /api/v1/tenants/{tenant}/settings/security` (MFA, IP allowlist, allowed domains)
 - `PATCH /api/v1/tenants/{tenant}/settings/modules`, `POST .../settings/modules/reset`, `POST .../settings/modules/presets/{presetId}/apply`
 - `POST /api/v1/secret-store`, `PUT`/`DELETE /api/v1/secret-store/{id}`, `POST .../{id}/rotate`
@@ -438,6 +439,29 @@ and SBOM import write it.
 > (`exposure_events.peak_severity`, only raised), so re-ingesting the same
 > exposure with a lower severity does not turn it into a one-step decision. See
 > [finding-status-lifecycle.md](finding-status-lifecycle.md#four-eyes-on-exposure-dispositions).
+
+#### Attack paths (`/api/v1/attack-surface`, `/api/v1/threat-models`)
+
+The computed attack routes have their own read permission, so a role can hold
+the inventory (`assets:read`: assets, their relationships and the
+neighbourhood) without the ranked route to compromise it. Owner, admin and
+member hold it; viewer does not; custom roles that held `assets:read` were given
+it by migration `20261126022931_attack_paths_read_permission`. API keys and MCP
+grants must name it.
+
+| Endpoint | Permission Required |
+|----------|---------------------|
+| `GET /api/v1/attack-surface/stats` | `assets:read` |
+| `GET /api/v1/attack-surface/attack-paths` · `/attack-paths/{id}` · `/exposure-chains`, MCP `get_exposure_chains` | `attack_surface:paths:read` |
+| `GET /api/v1/threat-models` · `/{id}` · `/{id}/coverage` | `attack_surface:paths:read` |
+| `POST /api/v1/threat-models/generate` | `assets:write` and `attack_surface:paths:read` |
+| Dashboard widget `attack_paths.to_crown_jewels` (personal and organization dashboards) | `attack_surface:paths:read`; without it the widget reads `unsupported` / `forbidden` with no rows |
+
+Derived yes/no signals stay under their own permissions: `on_attack_path` on
+an exposure (`exposures:read`) and the attack-path reason in a finding's
+priority explanation (`findings:read`). They say that an asset sits on some
+route, never which route, so they are not the attack recipe this permission
+guards.
 
 #### Scope exclusions (`/api/v1/scope/exclusions`)
 
@@ -1261,7 +1285,7 @@ federation is system-level configuration, so it lives only under the admin realm
 tenant-context routes `/api/v1/settings/{saml,identity-providers,verified-domains}`
 and the `PLATFORM_ADMIN_EMAILS` flag that guarded them were removed; no tenant
 role, however high, can reach SSO setup. The SSO **login** flow
-(`/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*`) is public and unchanged.
+(`/api/v1/auth/sso/*`, `/api/v1/auth/saml/{connection}/*`) is public and unchanged.
 
 ### Platform administrator identity (RFC-022, RFC-134)
 
