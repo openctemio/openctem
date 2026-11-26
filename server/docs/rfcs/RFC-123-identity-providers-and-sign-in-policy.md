@@ -124,3 +124,4 @@ seams.
 | Requiring SSO needs one administrator SSO sign-in and an owner with two-factor; owner break-glass needs password and second factor, audited and announced; sign-in state single use and browser bound | this change | in review |
 | id_token algorithm allow-list; Google sign-in requires a verified id_token | #2794 | in review |
 | Plan features for SSO, SCIM and group links | #2797 | in review |
+| Password reset off for SSO-managed accounts (D11): forgot-password and set-password links refused for a password-less account the organization's SSO signs in, links voided at its first SSO sign-in; owners and platform administrators keep forgot-password | this change | in review |

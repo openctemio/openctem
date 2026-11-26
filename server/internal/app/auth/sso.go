@@ -1611,6 +1611,7 @@ func (s *SSOService) returningFederatedUser(ctx context.Context, t *tenantdom.Te
 	}
 	syncFederatedProfile(u, userInfo.Name)
 	u.UpdateLastLogin()
+	s.voidPasswordLink(u)
 	acc.saveLogin(ctx, u, prev, changed)
 	acc.markUsed(ctx, ident)
 	return u
@@ -1719,10 +1720,20 @@ func (s *SSOService) adoptExistingUser(ctx context.Context, t *tenantdom.Tenant,
 
 	syncFederatedProfile(existingUser, userInfo.Name)
 	existingUser.UpdateLastLogin()
+	s.voidPasswordLink(existingUser)
 	if updateErr := s.userRepo.Update(ctx, existingUser); updateErr != nil {
 		s.logger.Warn("failed to update last login", "error", updateErr)
 	}
 	return existingUser, nil
+}
+
+// voidPasswordLink clears an outstanding set-password or reset link of a
+// password-less account that this organization's SSO signs in
+// (managed_sign_in.go); the caller saves the account.
+func (s *SSOService) voidPasswordLink(u *userdom.User) {
+	if voidPasswordLinkOnSSO(u) {
+		s.logger.Info("outstanding password link voided by single sign-on", "user_id", u.ID().String())
+	}
 }
 
 // syncFederatedProfile re-syncs, on each SSO login, the only attribute that is
@@ -2004,6 +2015,7 @@ func (s *SSOService) completeFederatedLogin(ctx context.Context, t *tenantdom.Te
 			})
 			syncFederatedProfile(found, name)
 			found.UpdateLastLogin()
+			s.voidPasswordLink(found)
 			acc.saveLogin(ctx, found, prev, changed)
 			acc.markUsed(ctx, ident)
 			return s.federatedSessionResult(ctx, found, t, fed)
@@ -2123,6 +2135,7 @@ func (s *SSOService) admitExistingSAMLAccount(ctx context.Context, u *userdom.Us
 	}
 	syncFederatedProfile(u, name)
 	u.UpdateLastLogin()
+	s.voidPasswordLink(u)
 	if uerr := s.userRepo.Update(ctx, u); uerr != nil {
 		s.logger.Warn("federated login: update last login", "error", uerr)
 	}
