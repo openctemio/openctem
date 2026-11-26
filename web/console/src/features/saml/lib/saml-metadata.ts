@@ -12,11 +12,23 @@ import { adminFetch } from '@console/lib/admin-api/client'
 /** Largest metadata file the form sends (the API refuses more than 1 MiB). */
 export const MAX_IDP_METADATA_FILE_BYTES = 1024 * 1024
 
-/** The organization's SP metadata, built by the API on its public address. */
+/**
+ * The organization's SP metadata and its connection's addresses, built by the
+ * API on its public address. The addresses are keyed by the connection, not
+ * by the organization's name, so they never change on a rename.
+ */
 export interface SpMetadata {
   filename: string
   xml: string
   base_url: string
+  /** False until the organization has a configuration or a created address. */
+  has_address: boolean
+  connection_key: string
+  entity_id: string
+  acs_url: string
+  login_url: string
+  /** The connection still uses its address from before connection ids. */
+  legacy: boolean
 }
 
 /**
@@ -46,6 +58,15 @@ export interface IdPMetadata {
 }
 
 export type IdPMetadataSource = { metadata_url: string } | { metadata_xml: string }
+
+/**
+ * Creates the organization's SAML address (the connection id its first
+ * configuration takes) so it can be registered at the IdP before saving.
+ * An audited console write with step-up.
+ */
+export function createSamlAddress(tenantId: string) {
+  return adminFetch<SpMetadata>(`/tenants/${tenantId}/sso/saml/address`, { method: 'POST' })
+}
 
 /** Reads the IdP metadata through the API. Nothing is saved. */
 export function importIdPMetadata(tenantId: string, source: IdPMetadataSource) {

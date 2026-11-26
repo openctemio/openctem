@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/url"
 	"strings"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/openctemio/openctem/server/pkg/domain/threatintel"
 	"github.com/openctemio/openctem/server/pkg/feedsign"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // Sources.
@@ -36,16 +38,72 @@ const (
 	IntervalVulnfeed = 20 * time.Minute
 )
 
-// Data older than this is stale: the console shows the feed as stale, the
-// administrators are alerted and every user sees the freshness banner
-// (internal/app/feedwatch). The bundle feed is published hourly, so 12 hours
-// is many missed releases (to be lowered to 6 hours once the publisher's own
-// scheduler has proven itself); KEV is read hourly; EPSS is published daily.
+// Data older than its limit is stale: the console shows the feed as stale,
+// the administrators are alerted and every user sees the freshness banner
+// (internal/app/feedwatch).
+//
+// KEV and EPSS arrive only inside the signed vulnerability release, so their
+// limits follow the release's: releases are published every 2 to 6 hours,
+// and a fixed KEV limit below the release limit made the banner come and go
+// between two releases. KEV is judged, like the bundle, by the date the
+// release carries (when the collector read it) against the bundle limit;
+// EPSS scores are dated by day, so their limit is the bundle limit plus a
+// day, never under 36 hours and never over the 7 days a release is valid.
+// The default KEV limit moved from 6 to 12 hours with this.
+//
+// The limits also decide whether a release's KEV and EPSS side data counts
+// as current (threat.IntelService.sourceStale): raising them loosens that
+// acceptance, not only the banner.
+//
+// A platform administrator may raise the bundle limit for a site that
+// copies releases by hand (Limits, console setting feed_freshness.limits);
+// a release older than 7 days is still refused, whatever the limit.
 const (
-	StaleAfterEPSS     = 36 * time.Hour
-	StaleAfterKEV      = 6 * time.Hour
+	// StaleAfterVulnfeed is the default limit of the bundle and KEV.
 	StaleAfterVulnfeed = 12 * time.Hour
+	// MinStaleAfterVulnfeed and MaxStaleAfterVulnfeed bound the setting:
+	// under 6 hours the banner would come and go between releases; above
+	// 7 days a release is refused as expired anyway.
+	MinStaleAfterVulnfeed = 6 * time.Hour
+	MaxStaleAfterVulnfeed = MaxBundleValidity
+	// MaxBundleValidity is how long a release is accepted at all: an older
+	// one is refused as expired. No derived limit goes beyond it.
+	MaxBundleValidity = 7 * 24 * time.Hour
+	// StaleAfterEPSS is the floor of the EPSS limit (scores are published
+	// daily).
+	StaleAfterEPSS = 36 * time.Hour
+	// epssDayLag: EPSS scores are dated by day.
+	epssDayLag = 24 * time.Hour
 )
+
+// Limits are the stale limits in force. The zero value is the default.
+type Limits struct {
+	// Vulnfeed is the limit of the bundle (and of KEV, which rides it);
+	// 0 means StaleAfterVulnfeed.
+	Vulnfeed time.Duration
+}
+
+// DefaultLimits are the limits without a console setting.
+func DefaultLimits() Limits { return Limits{Vulnfeed: StaleAfterVulnfeed} }
+
+// Bundle is the bundle limit in force, within its bounds.
+func (l Limits) Bundle() time.Duration {
+	if l.Vulnfeed <= 0 {
+		return StaleAfterVulnfeed
+	}
+	return min(max(l.Vulnfeed, MinStaleAfterVulnfeed), MaxStaleAfterVulnfeed)
+}
+
+// StaleAfter is how old the data of a source may be (0: unknown source).
+func (l Limits) StaleAfter(source string) time.Duration {
+	switch source {
+	case SourceVulnfeed, SourceKEV:
+		return l.Bundle()
+	case SourceEPSS:
+		return min(max(StaleAfterEPSS, l.Bundle()+epssDayLag), MaxBundleValidity)
+	}
+	return 0
+}
 
 // runningTimeout: a row that has said "running" for longer than this was
 // interrupted (the longest controller run is 45 minutes).
@@ -68,18 +126,9 @@ func Interval(source string) time.Duration {
 	return 0
 }
 
-// StaleAfter is how old the data of a source may be.
-func StaleAfter(source string) time.Duration {
-	switch source {
-	case SourceEPSS:
-		return StaleAfterEPSS
-	case SourceKEV:
-		return StaleAfterKEV
-	case SourceVulnfeed:
-		return StaleAfterVulnfeed
-	}
-	return 0
-}
+// StaleAfter is how old the data of a source may be under the default
+// limits.
+func StaleAfter(source string) time.Duration { return DefaultLimits().StaleAfter(source) }
 
 // State is the one word the console shows for a feed.
 type State string
@@ -115,6 +164,18 @@ const (
 	// CodeSourceStale: a signed release carried a feed (KEV, EPSS) the
 	// collector last read longer ago than the feed's stale limit.
 	CodeSourceStale = "source_stale"
+	// CodeBlockedAddress: the feed host (or a mirror) resolves to an address
+	// the outbound guard blocks, usually a private range that is not allowed.
+	CodeBlockedAddress = "blocked_address"
+	// CodeProxyRefused: the feed proxy answered with a refusal (param
+	// status: 403 a rule, 407 a sign-in it wants).
+	CodeProxyRefused = "proxy_refused"
+	// CodeProxyUnreachable: the feed proxy itself cannot be reached.
+	CodeProxyUnreachable = "proxy_unreachable"
+	// CodeConfigInvalid: the server setting of the feed address is refused
+	// at start-up, so the import is off until it is fixed and the API
+	// restarted.
+	CodeConfigInvalid = "config_invalid"
 )
 
 // refused codes: a feed that verified and then refused what it was offered.
@@ -233,9 +294,26 @@ func Classify(err error) Classified {
 	case errors.Is(err, ErrNotConfigured):
 		return Classified{Code: CodeNotConfigured}
 	}
-	var ne net.Error
+	var host map[string]string
 	var ue *url.Error
 	if errors.As(err, &ue) {
+		host = hostParam(ue.URL)
+	}
+	var refused *httpsec.ProxyRefusedError
+	switch {
+	case errors.As(err, &refused):
+		p := map[string]string{"status": fmt.Sprint(refused.Status)}
+		maps.Copy(p, host)
+		return Classified{Code: CodeProxyRefused, Params: p}
+	case errors.Is(err, httpsec.ErrBlockedDestination):
+		return Classified{Code: CodeBlockedAddress, Params: host}
+	}
+	var unreachable *httpsec.ProxyUnreachableError
+	if errors.As(err, &unreachable) {
+		return Classified{Code: CodeProxyUnreachable, Params: host}
+	}
+	var ne net.Error
+	if ue != nil {
 		return Classified{Code: CodeUnreachable, Params: hostParam(ue.URL)}
 	}
 	if errors.As(err, &ne) || errors.Is(err, context.DeadlineExceeded) {
@@ -266,6 +344,8 @@ type Input struct {
 	ErrorCode      string
 	DataAsOf       *time.Time
 	HasAppliedData bool // vulnfeed: a bundle was applied
+	// Limits are the stale limits in force (zero: the defaults).
+	Limits Limits
 }
 
 // Compute is the one state of a feed.
@@ -286,7 +366,7 @@ func Compute(in Input, now time.Time) State {
 		}
 		switch {
 		case code == CodePublisherEmpty && !in.HasAppliedData:
-			if in.FailingSince != nil && now.Sub(*in.FailingSince) > StaleAfterVulnfeed {
+			if in.FailingSince != nil && now.Sub(*in.FailingSince) > in.Limits.Bundle() {
 				return StateStale
 			}
 			return StateWaitingForPublisher
@@ -309,13 +389,19 @@ func Compute(in Input, now time.Time) State {
 }
 
 // isStale: the data a feed holds is older than its threshold. The bundle
-// feed is judged by the age of the newest bundle, the others by the last
-// successful check.
+// feed is judged by the age of the newest bundle, KEV by the date the
+// release carries (falling back to the last successful check), EPSS by the
+// last successful check.
 func (in Input) isStale(now time.Time) bool {
-	limit := StaleAfter(in.Source)
+	limit := in.Limits.StaleAfter(in.Source)
 	ref := in.LastSuccessAt
-	if in.Source == SourceVulnfeed {
+	switch in.Source {
+	case SourceVulnfeed:
 		ref = in.DataAsOf
+	case SourceKEV:
+		if in.DataAsOf != nil {
+			ref = in.DataAsOf
+		}
 	}
 	if ref == nil || limit == 0 {
 		return ref == nil

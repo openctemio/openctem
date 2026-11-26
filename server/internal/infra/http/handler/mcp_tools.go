@@ -225,7 +225,7 @@ func (h *MCPHandler) buildTools() []mcpTool {
 				"exposed directly (it is its own entry point); summary.multi_hop_chains counts the others, " +
 				"and relationship_note says when no asset relationships exist to build longer paths." + mcpUntrustedHint,
 			InputSchema:  json.RawMessage(`{"type":"object","properties":{}}`),
-			RequiredPerm: string(permission.AssetsRead),
+			RequiredPerm: string(permission.AttackPathsRead),
 			Module:       moduledom.ModuleAttackSurface,
 			call:         h.toolExposureChains,
 		},

@@ -45,7 +45,7 @@ var validationWork = []Permission{
 	PentestCampaignsRead, PentestCampaignsWrite, PentestFindingsRead, PentestFindingsWrite,
 	PentestRetestsRead, PentestRetestsWrite, PentestTemplatesRead, PentestTemplatesWrite, PentestReportsWrite,
 	FindingsWrite, FindingsComment, FindingsSeverity, FindingsVerify, FindingsRetestChecksWrite,
-	ScansRead, ScansWrite, ScansExecute, ScanProfilesRead, ScopeRead,
+	ScansRead, ScansWrite, ScansExecute, ScanProfilesRead, ScopeRead, AttackPathsRead,
 	AttackerProfilesRead, CompensatingControlsRead, VerificationChecklistsRead, ThreatIntelRead,
 }
 
@@ -67,7 +67,7 @@ func join(parts ...[]Permission) []Permission {
 var roleTemplates = []RoleTemplate{
 	{
 		ID:      "program-lead",
-		Version: 3,
+		Version: 4,
 		Name:    "CTEM program lead",
 		Description: "Runs the program: scopes cycles, sets priority rules and SLAs, approves risk acceptance " +
 			"and suppressions, approves scope changes and scan runs that need approval, and reports to " +
@@ -84,7 +84,7 @@ var roleTemplates = []RoleTemplate{
 			// Accepting the risk of an exposure, or dismissing it, needs the
 			// approver permission and exposure triage together.
 			ExposuresTriage, FindingsViewsShare,
-			ScopeRead, ScopeApprove, ScopeExclusionsApprove,
+			ScopeRead, ScopeApprove, ScopeExclusionsApprove, AttackPathsRead,
 			CredentialsRead, ThreatIntelRead, ScansRead, ScansApprove,
 			PentestCampaignsRead, PentestFindingsRead, ComplianceFrameworksRead, ComplianceAssessmentsRead,
 			ReportsRead, ReportsWrite, FindingsExport,
@@ -92,7 +92,7 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "security-analyst",
-		Version: 4,
+		Version: 5,
 		Name:    "Security analyst",
 		Description: "Triages findings and exposures in their scope: severity, status, duplicates, assignment, " +
 			"comments and evidence; verifies fixes and requests retests. May request risk acceptance but " +
@@ -106,12 +106,12 @@ var roleTemplates = []RoleTemplate{
 			ScansRead, ScanProfilesRead,
 			ThreatIntelRead, AITriageRead, AITriageTrigger,
 			CTEMCyclesRead, BusinessServicesRead, CompensatingControlsRead, VerificationChecklistsRead,
-			VerificationChecklistsWrite, SLARead, ScopeRead, ReportsRead,
+			VerificationChecklistsWrite, SLARead, ScopeRead, AttackPathsRead, ReportsRead,
 		}),
 	},
 	{
 		ID:      "vulnerability-manager",
-		Version: 4,
+		Version: 5,
 		Name:    "Vulnerability manager",
 		Description: "Owns the remediation backlog: routes work to owners with assignment rules, runs " +
 			"remediation campaigns, schedules scans and reports on SLA performance. Does not approve " +
@@ -128,7 +128,7 @@ var roleTemplates = []RoleTemplate{
 			ScannerTemplatesRead, ToolsRead,
 			SLARead, PriorityRulesRead, CTEMCyclesRead, BusinessServicesRead, CompensatingControlsRead,
 			VerificationChecklistsRead, VerificationChecklistsWrite,
-			ThreatIntelRead, ScopeRead, ReportsRead, ReportsWrite,
+			ThreatIntelRead, ScopeRead, AttackPathsRead, ReportsRead, ReportsWrite,
 		}),
 	},
 	{
@@ -233,7 +233,7 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "validation-engineer",
-		Version: 3,
+		Version: 4,
 		Name:    "Validation engineer",
 		Description: "Proves exploitability: runs pentest campaigns, attack simulations, control " +
 			"tests and targeted scans, records validated findings and retests fixes. Cannot approve risk " +
@@ -243,7 +243,7 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "validation-lead",
-		Version: 1,
+		Version: 2,
 		Name:    "Validation lead",
 		Description: "Leads the validation program on top of a validation engineer's work: maintains " +
 			"methodology checklists and the attacker profiles exercises emulate. Never changes scope or " +
@@ -259,7 +259,7 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "detection-engineer",
-		Version: 1,
+		Version: 2,
 		Name:    "Detection engineer",
 		Description: "Turns validation results into defenses: reads simulations, control tests and the " +
 			"campaigns they observe, and records compensating controls and their test results. Does not " +
@@ -268,7 +268,7 @@ var roleTemplates = []RoleTemplate{
 		Permissions: join(readCore, []Permission{
 			PentestRead, PentestCampaignsRead, PentestFindingsRead,
 			CompensatingControlsRead, CompensatingControlsWrite,
-			AttackerProfilesRead, ThreatIntelRead, FindingsComment,
+			AttackerProfilesRead, ThreatIntelRead, FindingsComment, AttackPathsRead,
 			CTEMCyclesRead, VerificationChecklistsRead, ReportsRead,
 		}),
 	},
@@ -319,7 +319,7 @@ var roleTemplates = []RoleTemplate{
 	},
 	{
 		ID:      "threat-intel-analyst",
-		Version: 1,
+		Version: 2,
 		Name:    "Threat intelligence analyst",
 		Description: "Maintains attacker profiles, threat actors and indicators, and records external " +
 			"exposures such as leaked credentials and lookalike domains.",
@@ -327,7 +327,7 @@ var roleTemplates = []RoleTemplate{
 		Permissions: join(readCore, []Permission{
 			ThreatIntelRead, ThreatIntelWrite, AttackerProfilesRead, AttackerProfilesWrite,
 			ExposuresWrite, ExposuresTriage, CredentialsRead, CredentialsWrite,
-			FindingsWrite, FindingsComment, FindingsSeverity, FindingsTriage, ScopeRead, ReportsRead,
+			FindingsWrite, FindingsComment, FindingsSeverity, FindingsTriage, ScopeRead, AttackPathsRead, ReportsRead,
 		}),
 	},
 	{

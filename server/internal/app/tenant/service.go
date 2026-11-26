@@ -612,9 +612,12 @@ type UpdateTenantInput struct {
 // ErrSlugChangeOwnerOnly: only the organization owner may rename the slug.
 var ErrSlugChangeOwnerOnly = fmt.Errorf("%w: only the organization owner can change the slug", shared.ErrForbidden)
 
-// ErrSlugChangeWithSSO: SAML/SSO sign-in URLs are keyed by the slug, so it is
-// frozen while an identity provider is configured.
-var ErrSlugChangeWithSSO = fmt.Errorf("%w: the slug cannot change while single sign-on is configured; the SSO sign-in URLs registered at your identity provider use it", shared.ErrValidation)
+// ErrSlugChangeWithSSO: the slug is frozen while an OIDC identity provider is
+// configured (HasUsableSSOPath counts OIDC connections only): sign-in links
+// such as /login?org=<slug> name the organization by it. SAML addresses are
+// keyed by connection id (or a frozen legacy key), never by the current
+// slug, so a SAML-only organization may rename itself.
+var ErrSlugChangeWithSSO = fmt.Errorf("%w: the slug cannot change while single sign-on is configured; sign-in links that name the organization use it", shared.ErrValidation)
 
 // UpdateTenant updates a tenant's information.
 func (s *TenantService) UpdateTenant(ctx context.Context, tenantID string, input UpdateTenantInput, actx auditapp.AuditContext) (*tenantdom.Tenant, error) {

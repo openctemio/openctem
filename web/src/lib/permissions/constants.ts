@@ -334,6 +334,9 @@ export const Permission = {
   // Bug-bounty programs (RFC-065): view; import, re-import, pause, resume, end and attest.
   ProgramsRead: 'attack_surface:programs:read',
   ProgramsWrite: 'attack_surface:programs:write',
+  // Computed attack routes: attack-path scores and detail, exposure chains
+  // and threat models. assets:read alone shows inventory, not the routes.
+  AttackPathsRead: 'attack_surface:paths:read',
 
   // ===========================================
   // VALIDATION MODULE (CTEM)

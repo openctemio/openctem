@@ -121,3 +121,30 @@ func TestRules(t *testing.T) {
 		}
 	}
 }
+
+// The organization parameter is pinned to {tenant}: more console routes
+// named {tenantId} than user routes named {tenant} never flip R3 onto every
+// user route; the {tenantId} routes are the ones R3 names.
+func TestR3_TenantNameIsPinned(t *testing.T) {
+	const admin = "AdminAuthMiddleware"
+	routes := []routestyle.Route{
+		{Method: "GET", Path: "/api/v1/tenants/{tenant}", Chain: tenantChain},
+		{Method: "GET", Path: "/api/v1/admin/tenants/{tenantId}", Chain: admin},
+		{Method: "PUT", Path: "/api/v1/admin/tenants/{tenantId}", Chain: admin},
+		{Method: "DELETE", Path: "/api/v1/admin/tenants/{tenantId}", Chain: admin},
+	}
+	r3 := map[string]bool{}
+	for _, v := range routestyle.Check(routes) {
+		if v.Rule == "R3" {
+			r3[v.Key()] = true
+		}
+	}
+	if r3["R3 GET /api/v1/tenants/{tenant}"] {
+		t.Error("the {tenant} route was flagged: the majority flipped the preferred name")
+	}
+	for _, k := range []string{"R3 GET /api/v1/admin/tenants/{tenantId}", "R3 PUT /api/v1/admin/tenants/{tenantId}", "R3 DELETE /api/v1/admin/tenants/{tenantId}"} {
+		if !r3[k] {
+			t.Errorf("%s not flagged", k)
+		}
+	}
+}

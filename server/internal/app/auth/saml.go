@@ -119,13 +119,27 @@ func (s *SAMLService) BuildConfig(ctx context.Context, tenantID shared.ID, in SA
 		return nil, samlValidationErr("default_role must be member or viewer")
 	}
 
-	// Preserve the existing id when updating so it's a true upsert.
-	id := shared.NewID()
+	// Preserve the existing id when updating so it's a true upsert. A new
+	// configuration takes the connection id reserved for the tenant, if the
+	// administrator reserved one (its addresses may already be registered at
+	// the IdP), else a new one. Building never writes.
+	var id shared.ID
 	if existing, err := s.repo.GetByTenant(ctx, tenantID); err == nil && existing != nil {
 		id = existing.ID()
-	} else if err := s.sso.requireRoomForConnection(ctx, tenantID); err != nil {
+	} else {
 		// Only the first SAML configuration adds a connection.
-		return nil, err
+		if err := s.sso.requireRoomForConnection(ctx, tenantID); err != nil {
+			return nil, err
+		}
+		reserved, rerr := s.repo.GetReservedConnectionID(ctx, tenantID)
+		switch {
+		case rerr == nil:
+			id = reserved
+		case errors.Is(rerr, samldom.ErrNotFound):
+			id = shared.NewID()
+		default:
+			return nil, rerr
+		}
 	}
 	return samldom.Reconstruct(id, tenantID, in.IDPEntityID, in.IDPSSOURL, in.IDPCertificate,
 		in.AllowedDomains, role, in.AutoProvision, in.Enabled, time.Now().UTC(), time.Now().UTC()), nil
@@ -136,17 +150,18 @@ func (s *SAMLService) DeleteConfig(ctx context.Context, tenantID shared.ID) erro
 	return s.repo.Delete(ctx, tenantID)
 }
 
-// Metadata returns the SP metadata XML for a tenant (org slug), which the admin
+// Metadata returns the SP metadata XML of the connection addressed by key (its
+// id, or the frozen legacy key of an older configuration), which the admin
 // registers with their IdP. baseURL is the deployment origin (scheme://host).
 //
-// The metadata is built from the slug and the deployment URL only, so it is
-// served for any well-formed slug, known or not: answering 404 for an unknown
-// organization would tell an unauthenticated caller which organizations exist.
-func (s *SAMLService) Metadata(_ context.Context, orgSlug, baseURL string) (string, error) {
-	if !tenantdom.IsValidSlug(orgSlug) {
+// The metadata is built from the key and the deployment URL only, so it is
+// served for any well-formed key, known or not: answering 404 for an unknown
+// one would tell an unauthenticated caller which connections exist.
+func (s *SAMLService) Metadata(_ context.Context, key, baseURL string) (string, error) {
+	if !isSAMLPathKey(key) {
 		return "", ErrSAMLTenantNotFound
 	}
-	sp := s.baseServiceProvider(orgSlug, baseURL)
+	sp := s.baseServiceProvider(key, baseURL)
 	md := sp.Metadata()
 	out, err := xml.MarshalIndent(md, "", "  ")
 	if err != nil {
@@ -155,14 +170,42 @@ func (s *SAMLService) Metadata(_ context.Context, orgSlug, baseURL string) (stri
 	return xml.Header + string(out), nil
 }
 
+// isSAMLPathKey reports whether key can address a connection: a connection
+// id (UUID) or a legacy key (slug syntax, the only form a migrated
+// configuration's frozen key has).
+func isSAMLPathKey(key string) bool {
+	if _, err := shared.IDFromString(key); err == nil {
+		return true
+	}
+	return tenantdom.IsValidSlug(key)
+}
+
+// SAMLAddresses are a connection's public addresses, built on the configured
+// public origin: what the administrator registers at the IdP.
+type SAMLAddresses struct {
+	// Key is the address key: the connection id, or the frozen legacy key.
+	Key      string
+	EntityID string
+	ACSURL   string
+	LoginURL string
+	// Legacy: the connection keeps the address it had before connection ids
+	// (deprecated; a new connection never gets one).
+	Legacy bool
+}
+
+func samlAddresses(key, baseURL string, legacy bool) SAMLAddresses {
+	base := strings.TrimSuffix(baseURL, "/") + "/api/v1/auth/saml/" + key
+	return SAMLAddresses{Key: key, EntityID: base + "/metadata", ACSURL: base + "/acs", LoginURL: base + "/login", Legacy: legacy}
+}
+
 // baseServiceProvider builds the SP with the deployment-derived URLs. The IdP
 // metadata (certificate, SSO endpoint) is layered on for the login/ACS flow (9e).
-func (s *SAMLService) baseServiceProvider(orgSlug, baseURL string) *saml.ServiceProvider {
-	base := strings.TrimSuffix(baseURL, "/")
-	acs, _ := url.Parse(base + "/api/v1/auth/saml/" + orgSlug + "/acs")
-	meta, _ := url.Parse(base + "/api/v1/auth/saml/" + orgSlug + "/metadata")
+func (s *SAMLService) baseServiceProvider(key, baseURL string) *saml.ServiceProvider {
+	a := samlAddresses(key, baseURL, false)
+	acs, _ := url.Parse(a.ACSURL)
+	meta, _ := url.Parse(a.EntityID)
 	return &saml.ServiceProvider{
-		EntityID:          base + "/api/v1/auth/saml/" + orgSlug + "/metadata",
+		EntityID:          a.EntityID,
 		AcsURL:            *acs,
 		MetadataURL:       *meta,
 		AuthnNameIDFormat: saml.EmailAddressNameIDFormat,
@@ -256,8 +299,8 @@ func expiryCertificate(certs []*x509.Certificate, now time.Time) *x509.Certifica
 // forceAuthn asks the IdP to authenticate the user again (step-up
 // re-authentication); the ACS then refuses an assertion whose AuthnInstant
 // is not fresh.
-func (s *SAMLService) Login(ctx context.Context, orgSlug, baseURL string, forceAuthn bool) (redirectURL, requestID string, err error) {
-	sp, _, err := s.resolveServiceProvider(ctx, orgSlug, baseURL)
+func (s *SAMLService) Login(ctx context.Context, key, baseURL string, forceAuthn bool) (redirectURL, requestID string, err error) {
+	sp, _, err := s.resolveServiceProvider(ctx, key, baseURL)
 	if err != nil {
 		return "", "", err
 	}
@@ -269,7 +312,9 @@ func (s *SAMLService) Login(ctx context.Context, orgSlug, baseURL string, forceA
 		force := true
 		authnReq.ForceAuthn = &force
 	}
-	u, err := authnReq.Redirect(orgSlug, sp)
+	// No RelayState: nothing is read back from it, and the address key it
+	// used to carry has no business in the IdP's logs.
+	u, err := authnReq.Redirect("", sp)
 	if err != nil {
 		return "", "", fmt.Errorf("build redirect: %w", err)
 	}
@@ -282,9 +327,9 @@ func (s *SAMLService) Login(ctx context.Context, orgSlug, baseURL string, forceA
 //
 // forcedAuthn says the request asked for ForceAuthn: an assertion whose
 // AuthnInstant is older than a few minutes is then refused.
-func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.Request, possibleRequestIDs []string,
+func (s *SAMLService) ACS(ctx context.Context, key, baseURL string, r *http.Request, possibleRequestIDs []string,
 	forcedAuthn bool) (*SSOCallbackResult, error) {
-	sp, tenantAndCfg, err := s.resolveServiceProvider(ctx, orgSlug, baseURL)
+	sp, tenantAndCfg, err := s.resolveServiceProvider(ctx, key, baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +344,7 @@ func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.
 	assertion, perr := s.parseStrictResponse(ctx, sp, tenantAndCfg, r, possibleRequestIDs)
 	if perr != nil {
 		// Never leak the specific crypto/condition failure to the caller.
-		s.logger.Warn("saml assertion validation failed", "org", logger.SanitizeValue(orgSlug), "error", perr)
+		s.logger.Warn("saml assertion validation failed", "connection", tenantAndCfg.cfg.ID().String(), "error", perr)
 		return nil, ErrSAMLResponseInvalid
 	}
 
@@ -316,18 +361,18 @@ func (s *SAMLService) ACS(ctx context.Context, orgSlug, baseURL string, r *http.
 	authAt := assertionAuthnInstant(assertion)
 	if forcedAuthn {
 		if age := time.Since(authAt); authAt.IsZero() || age > freshAuthMaxAge || age < -time.Minute {
-			s.logger.Warn("saml login refused: the IdP did not authenticate the user again", "org", logger.SanitizeValue(orgSlug))
+			s.logger.Warn("saml login refused: the IdP did not authenticate the user again", "connection", tenantAndCfg.cfg.ID().String())
 			return nil, ErrSAMLResponseInvalid
 		}
 	}
 	if samlEntraClaimsMismatch(assertion) {
-		s.logger.Warn("saml login refused: Entra issuer and tenantid claim disagree", "org", logger.SanitizeValue(orgSlug))
+		s.logger.Warn("saml login refused: Entra issuer and tenantid claim disagree", "connection", tenantAndCfg.cfg.ID().String())
 		return nil, ErrSAMLResponseInvalid
 	}
-	key, legacySubject := samlIdentity(assertion, tenantAndCfg.tenant.ID())
+	identity, legacySubject := samlIdentity(assertion, tenantAndCfg.tenant.ID())
 	return s.sso.completeFederatedLogin(ctx, tenantAndCfg.tenant, email, name, cfg.DefaultRole(), cfg.AutoProvision(),
 		federatedBinding{authTime: authAt, mfa: samlMFAEvidence(assertion)},
-		key, legacySubject)
+		identity, legacySubject)
 }
 
 // parseStrictResponse validates the posted response: the hardening checks
@@ -493,25 +538,52 @@ type resolvedSAML struct {
 	cfg    *samldom.SAMLProvider
 }
 
-// resolveServiceProvider loads the tenant + enabled SAML config and builds a
-// crewjam ServiceProvider with the IdP metadata (cert + SSO endpoint) attached.
-func (s *SAMLService) resolveServiceProvider(ctx context.Context, orgSlug, baseURL string) (*saml.ServiceProvider, resolvedSAML, error) {
-	t, err := s.tenantRepo.GetBySlug(ctx, orgSlug)
-	if err != nil {
-		return nil, resolvedSAML{}, ErrSAMLTenantNotFound
+// findConnection resolves an address key to its configuration: a connection
+// id first, then a frozen legacy key. The organization's current slug is
+// never read, so a slug given up by a rename and taken by another
+// organization addresses nothing. A legacy address keeps working for the
+// configuration that held it when connection ids were introduced; each use is
+// logged as deprecated.
+func (s *SAMLService) findConnection(ctx context.Context, key string) (*samldom.SAMLProvider, error) {
+	if !isSAMLPathKey(key) {
+		return nil, ErrSAMLNotConfigured
 	}
-	p, err := s.repo.GetByTenant(ctx, t.ID())
+	if id, err := shared.IDFromString(key); err == nil {
+		if p, err := s.repo.GetByIDUnscoped(ctx, id); err == nil {
+			return p, nil
+		}
+	}
+	p, err := s.repo.GetByLegacyPathKey(ctx, key)
 	if err != nil {
-		return nil, resolvedSAML{}, ErrSAMLNotConfigured
+		return nil, ErrSAMLNotConfigured
+	}
+	s.logger.Warn("saml sign-in through a legacy address (deprecated): register the connection's new address at the identity provider",
+		"connection", p.ID().String())
+	return p, nil
+}
+
+// resolveServiceProvider loads the addressed connection, its tenant and
+// enabled SAML config, and builds a crewjam ServiceProvider on the
+// connection's own address with the IdP metadata (cert + SSO endpoint)
+// attached. The certificate and audience come from the path's connection
+// only, never from the message.
+func (s *SAMLService) resolveServiceProvider(ctx context.Context, key, baseURL string) (*saml.ServiceProvider, resolvedSAML, error) {
+	p, err := s.findConnection(ctx, key)
+	if err != nil {
+		return nil, resolvedSAML{}, err
 	}
 	if !p.Enabled() {
 		return nil, resolvedSAML{}, ErrSAMLDisabled
+	}
+	t, err := s.tenantRepo.GetByID(ctx, p.TenantID())
+	if err != nil {
+		return nil, resolvedSAML{}, ErrSAMLTenantNotFound
 	}
 	md, err := buildIDPMetadata(p)
 	if err != nil {
 		return nil, resolvedSAML{}, err
 	}
-	sp := s.baseServiceProvider(orgSlug, baseURL)
+	sp := s.baseServiceProvider(p.PathKey(), baseURL)
 	sp.IDPMetadata = md
 	return sp, resolvedSAML{tenant: t, cfg: p}, nil
 }
@@ -593,18 +665,64 @@ func matchesAny(s string, subs []string) bool {
 	return false
 }
 
-// SPMetadataForTenant returns the SP metadata XML of an organization (by id)
-// and its slug, built on the configured public origin. It is the platform
-// admin console's download of the file to upload in the IdP's SAML
-// application; the public metadata URL serves the same document.
-func (s *SAMLService) SPMetadataForTenant(ctx context.Context, tenantID shared.ID, baseURL string) (xmlDoc, slug string, err error) {
-	t, err := s.tenantRepo.GetByID(ctx, tenantID)
-	if err != nil {
-		return "", "", ErrSAMLTenantNotFound
+// ErrSAMLNoAddress is an organization with neither a SAML configuration nor
+// a reserved address: there is no SP metadata to show until the
+// administrator creates the address (ReserveAddress).
+var ErrSAMLNoAddress = fmt.Errorf("%w: no SAML address yet", shared.ErrNotFound)
+
+// SPMetadataForTenant returns the SP metadata XML and the public addresses of
+// an organization's SAML connection (by organization id), built on the
+// configured public origin. It is the platform admin console's download of
+// the file to upload in the IdP's SAML application; the public metadata URL
+// serves the same document. It only reads: before a configuration exists it
+// answers the reserved address, or ErrSAMLNoAddress when none was reserved.
+func (s *SAMLService) SPMetadataForTenant(ctx context.Context, tenantID shared.ID, baseURL string) (string, SAMLAddresses, error) {
+	if _, err := s.tenantRepo.GetByID(ctx, tenantID); err != nil {
+		return "", SAMLAddresses{}, ErrSAMLTenantNotFound
 	}
-	doc, err := s.Metadata(ctx, t.Slug(), baseURL)
-	if err != nil {
-		return "", "", err
+	var addr SAMLAddresses
+	if p, err := s.repo.GetByTenant(ctx, tenantID); err == nil {
+		addr = samlAddresses(p.PathKey(), baseURL, p.LegacyPathKey() != "")
+	} else if errors.Is(err, samldom.ErrNotFound) {
+		id, rerr := s.repo.GetReservedConnectionID(ctx, tenantID)
+		if errors.Is(rerr, samldom.ErrNotFound) {
+			return "", SAMLAddresses{}, ErrSAMLNoAddress
+		}
+		if rerr != nil {
+			return "", SAMLAddresses{}, rerr
+		}
+		addr = samlAddresses(id.String(), baseURL, false)
+	} else {
+		return "", SAMLAddresses{}, err
 	}
-	return doc, t.Slug(), nil
+	return s.spMetadata(ctx, addr, baseURL)
+}
+
+// ReserveAddress creates the SAML address of an organization that has no
+// configuration yet (the connection id its first configuration takes) and
+// returns its SP metadata; an organization with a configuration or a
+// reservation gets the address it already has. It is the one write of the
+// address before a configuration exists: an audited console write.
+func (s *SAMLService) ReserveAddress(ctx context.Context, tenantID shared.ID, baseURL string) (string, SAMLAddresses, error) {
+	if _, err := s.tenantRepo.GetByID(ctx, tenantID); err != nil {
+		return "", SAMLAddresses{}, ErrSAMLTenantNotFound
+	}
+	if p, err := s.repo.GetByTenant(ctx, tenantID); err == nil {
+		return s.spMetadata(ctx, samlAddresses(p.PathKey(), baseURL, p.LegacyPathKey() != ""), baseURL)
+	} else if !errors.Is(err, samldom.ErrNotFound) {
+		return "", SAMLAddresses{}, err
+	}
+	id, err := s.repo.ReserveConnectionID(ctx, tenantID)
+	if err != nil {
+		return "", SAMLAddresses{}, err
+	}
+	return s.spMetadata(ctx, samlAddresses(id.String(), baseURL, false), baseURL)
+}
+
+func (s *SAMLService) spMetadata(ctx context.Context, addr SAMLAddresses, baseURL string) (string, SAMLAddresses, error) {
+	doc, err := s.Metadata(ctx, addr.Key, baseURL)
+	if err != nil {
+		return "", SAMLAddresses{}, err
+	}
+	return doc, addr, nil
 }

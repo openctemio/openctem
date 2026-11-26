@@ -227,14 +227,14 @@ func registerAuthRoutes(router Router, h Handlers, cfg *config.Config, authCfg A
 		// login starts SP-initiated auth; ACS receives the IdP's signed response.
 		if h.SAML != nil {
 			samlMetadata := ChainFunc(h.SAML.Metadata, loginRL)
-			r.GET("/saml/{org}/metadata", samlMetadata.ServeHTTP)
+			r.GET("/saml/{connection}/metadata", samlMetadata.ServeHTTP)
 			samlLogin := ChainFunc(h.SAML.Login, loginRL)
-			r.GET("/saml/{org}/login", samlLogin.ServeHTTP)
+			r.GET("/saml/{connection}/login", samlLogin.ServeHTTP)
 			// ACS is a cross-site top-level POST from the IdP — it carries the
 			// signed SAML assertion (validated server-side), not a CSRF-token
 			// form, so it must not sit behind the CSRF middleware.
 			samlACS := ChainFunc(h.SAML.ACS, loginRL)
-			r.POST("/saml/{org}/acs", samlACS.ServeHTTP)
+			r.POST("/saml/{connection}/acs", samlACS.ServeHTTP)
 		}
 	})
 }

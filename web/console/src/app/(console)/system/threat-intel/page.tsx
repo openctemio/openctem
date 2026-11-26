@@ -14,6 +14,7 @@ import {
   syncThreatIntel,
   useThreatIntelFeeds,
 } from '@console/features/admin-console/api/use-system'
+import { FeedFreshnessLimitsCard } from '@console/features/admin-console/components/feed-freshness-limits-card'
 import { FeedRelayCard } from '@console/features/admin-console/components/feed-relay-card'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { adminHas } from '@console/features/admin-console/types'
@@ -187,6 +188,7 @@ export default function ThreatIntelFeedsPage() {
           </div>
         )}
         <FeedRelayCard canEdit={adminHas(admin, 'platform.settings.general.write')} />
+        <FeedFreshnessLimitsCard canEdit={adminHas(admin, 'platform.settings.general.write')} />
       </PageStack>
     </Main>
   )

@@ -23,10 +23,41 @@ import (
 
 type fakeSAMLRepo struct {
 	byTenant map[shared.ID]*samldom.SAMLProvider
+	reserved map[shared.ID]shared.ID
 }
 
 func newFakeSAMLRepo() *fakeSAMLRepo {
-	return &fakeSAMLRepo{byTenant: map[shared.ID]*samldom.SAMLProvider{}}
+	return &fakeSAMLRepo{byTenant: map[shared.ID]*samldom.SAMLProvider{}, reserved: map[shared.ID]shared.ID{}}
+}
+func (f *fakeSAMLRepo) GetByIDUnscoped(_ context.Context, id shared.ID) (*samldom.SAMLProvider, error) {
+	for _, p := range f.byTenant {
+		if p.ID() == id {
+			return p, nil
+		}
+	}
+	return nil, samldom.ErrNotFound
+}
+func (f *fakeSAMLRepo) GetByLegacyPathKey(_ context.Context, key string) (*samldom.SAMLProvider, error) {
+	for _, p := range f.byTenant {
+		if key != "" && p.LegacyPathKey() == key {
+			return p, nil
+		}
+	}
+	return nil, samldom.ErrNotFound
+}
+func (f *fakeSAMLRepo) GetReservedConnectionID(_ context.Context, tenantID shared.ID) (shared.ID, error) {
+	if id, ok := f.reserved[tenantID]; ok {
+		return id, nil
+	}
+	return shared.ID{}, samldom.ErrNotFound
+}
+func (f *fakeSAMLRepo) ReserveConnectionID(_ context.Context, tenantID shared.ID) (shared.ID, error) {
+	if id, ok := f.reserved[tenantID]; ok {
+		return id, nil
+	}
+	id := shared.NewID()
+	f.reserved[tenantID] = id
+	return id, nil
 }
 func (f *fakeSAMLRepo) GetByTenant(_ context.Context, tenantID shared.ID) (*samldom.SAMLProvider, error) {
 	if p, ok := f.byTenant[tenantID]; ok {
@@ -40,6 +71,7 @@ func (f *fakeSAMLRepo) Upsert(_ context.Context, p *samldom.SAMLProvider) error 
 }
 func (f *fakeSAMLRepo) Delete(_ context.Context, tenantID shared.ID) error {
 	delete(f.byTenant, tenantID)
+	delete(f.reserved, tenantID)
 	return nil
 }
 
