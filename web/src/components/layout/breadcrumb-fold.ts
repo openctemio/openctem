@@ -66,3 +66,52 @@ export function visibleAt<T>(plan: CrumbPlan<T>, widthPx: number): T[] {
     from === 'always' || (from === 'lg' && widthPx >= 1024) || (from === 'xl' && widthPx >= 1280)
   return plan.crumbs.filter((c) => shown(c.showFrom)).map((c) => c.item)
 }
+
+/**
+ * The trail's sizes, measured in the page: the room the trail has, the
+ * home link, one separator with the gaps around it, the "…" menu button,
+ * each ancestor's label at full width and the current page's (at most its
+ * 32 characters).
+ */
+export interface CrumbSizes {
+  available: number
+  home: number
+  /** A separator and the two gaps beside it. */
+  step: number
+  menu: number
+  levels: number[]
+  current: number
+}
+
+/**
+ * Which ancestors fold into the "…" menu so the trail fits its room, by
+ * measured width rather than by breakpoint. The middle levels fold first
+ * (outermost first), then the first level, and last the parent, so the
+ * current page keeps its name; nothing folds while the whole trail fits.
+ * Returns the indexes of the folded ancestors, outermost first. When even
+ * the current page alone does not fit, it truncates (CSS) with its full
+ * name as a tooltip.
+ */
+export function fitCrumbs(sizes: CrumbSizes): number[] {
+  const { available, home, step, menu, levels, current } = sizes
+  const n = levels.length
+  const order = [
+    ...Array.from({ length: Math.max(0, n - 2) }, (_, i) => i + 1),
+    ...(n >= 2 ? [0] : []),
+    ...(n >= 1 ? [n - 1] : []),
+  ]
+  const width = (folded: ReadonlySet<number>) =>
+    home +
+    step +
+    current +
+    levels.reduce((sum, w, i) => (folded.has(i) ? sum : sum + step + w), 0) +
+    (folded.size > 0 ? step + menu : 0)
+  const folded = new Set<number>()
+  // Half a pixel of rounding per level never folds a trail that fits.
+  const room = available + 0.5 * (n + 1)
+  for (const i of order) {
+    if (width(folded) <= room) break
+    folded.add(i)
+  }
+  return [...folded].sort((a, b) => a - b)
+}

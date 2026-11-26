@@ -164,6 +164,8 @@
   "dashboards.editor.width": "{name}: {span} of {cols, plural, one {# column} other {# columns}} wide",
   "dashboards.empty.import": "Import results",
   "dashboards.empty.scan": "Set up a scan",
+  "dashboards.firstBuild.description": "The first count of your data usually takes a few minutes. The figures appear here by themselves when they are ready.",
+  "dashboards.firstBuild.title": "Your figures are being prepared",
   "dashboards.flow.fixed": "Fixed",
   "dashboards.flow.opened": "New",
   "dashboards.flowPanel.added": "Exposure flow added at the top",

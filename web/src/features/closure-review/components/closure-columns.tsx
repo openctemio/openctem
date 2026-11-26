@@ -44,10 +44,12 @@ const meta = (m: DataTableColumnMeta) => m
 export function ClosureMethod({ method, evidence }: { method: string; evidence: Evidence }) {
   const { t } = useTranslation()
   return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      <span className="truncate">
+    <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
+      {/* A sentence, not a name: it wraps in a narrow column rather than
+          end in an ellipsis ("Đã báo sửa, lượt quét xác nhậ…"). */}
+      <CellText>
         {t(`findings.closureReview.method.${method}`, METHOD_LABEL[method] ?? method)}
-      </span>
+      </CellText>
       {evidence.held === true && (
         <TonePill
           tone="warning"

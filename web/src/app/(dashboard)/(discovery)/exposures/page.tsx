@@ -106,6 +106,7 @@ import {
   exposureEventTypeLabel,
 } from '@/features/exposures/components'
 import { runPool, summarizeBulk } from '@/features/exposures/lib/bulk'
+import { exposureSourceLabel } from '@/features/exposures/lib/source'
 import {
   EXPOSURE_DISPLAY_CATEGORIES,
   isExposureDisplayCategory,
@@ -1014,8 +1015,8 @@ function ExposureDetailSheet({
           }
           meta={[
             t('exposures.detail.meta', '{type} from {source}', {
-              type: exposure.event_type.replace(/_/g, ' '),
-              source: exposure.source,
+              type: exposureEventTypeLabel(t, exposure.event_type),
+              source: exposureSourceLabel(t, exposure.source),
             }),
           ]}
           actions={

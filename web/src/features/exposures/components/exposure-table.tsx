@@ -31,6 +31,7 @@ import {
 } from 'lucide-react'
 import { EVENT_TYPE_CONFIG } from '@/lib/api/exposure-types'
 import type { ExposureEvent, ExposureEventType } from '@/lib/api/exposure-types'
+import { exposureSourceLabel } from '../lib/source'
 
 // Icon mapping for event types
 const eventTypeIcons: Record<string, typeof Network> = {
@@ -253,7 +254,9 @@ export function getExposureColumns(
       },
       enableSorting: false,
       cell: ({ row }) => (
-        <CellText className="text-muted-foreground">{row.original.source}</CellText>
+        <CellText className="text-muted-foreground">
+          {exposureSourceLabel(t, row.original.source)}
+        </CellText>
       ),
     },
     {

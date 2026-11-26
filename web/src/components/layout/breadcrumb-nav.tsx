@@ -11,7 +11,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb'
-import { Fragment } from 'react'
+import { Fragment, useEffect, useRef, useState, type RefObject } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,7 +31,7 @@ import {
 import { breadcrumbHasPage, isIdSegment } from './breadcrumb-routes'
 import { NavPendingHint } from './sidebar-link'
 import { useBreadcrumbTitles } from './breadcrumb-title'
-import { planCrumbs } from './breadcrumb-fold'
+import { fitCrumbs, planCrumbs } from './breadcrumb-fold'
 
 /**
  * A breadcrumb given by its shell instead of built from the URL (the platform
@@ -160,24 +160,28 @@ export function BreadcrumbNav({
         },
         record: (parent) => t(recordLabelKey(parent), recordLabel(parent)),
       })
+  const navRef = useRef<HTMLElement>(null)
+  const folded = useMeasuredFold(navRef, breadcrumbItems)
   if (breadcrumbItems.length === 0) return null
   const homeLabel = trail ? trail.homeLabel : t('nav.item.dashboard', 'Dashboard')
 
-  // Fold by the design's breakpoints (breadcrumb-fold.ts): middle levels
-  // into the "…" menu below 1280px, the first level too below 1024px; the
-  // parent and the current page always stay. Ancestors truncate before the
-  // current page, which stops at 32 characters with its full name as a tooltip.
+  // Fold by measured width (breadcrumb-fold.ts `fitCrumbs`): the middle
+  // levels go into the "…" menu first, then the first level, then the
+  // parent, only as far as the trail needs to fit its room, so the names
+  // that show are whole. Until the trail is measured (the server render, a
+  // browser without layout), it folds by the design's breakpoints
+  // (`planCrumbs`). The current page stops at 32 characters with its full
+  // name as a tooltip.
   const current = breadcrumbItems[breadcrumbItems.length - 1]
-  const plan = planCrumbs(breadcrumbItems.slice(0, -1), current)
-  const SHOW_FROM = { always: '', lg: 'hidden lg:inline-flex', xl: 'hidden xl:inline-flex' }
-  const SEP_FROM = { always: '', lg: 'hidden lg:flex', xl: 'hidden xl:flex' }
-  const FOLDED_BELOW = { lg: 'lg:hidden', xl: 'xl:hidden' }
-  // The menu sits where the folded levels were: after the first level (which
-  // itself folds below 1024px, so there the menu follows home).
-  const foldMenu = plan.menuBelow && (
+  const ancestors = breadcrumbItems.slice(0, -1)
+  const view = folded
+    ? measuredView(ancestors, current, folded)
+    : breakpointView(planCrumbs(ancestors, current))
+
+  const foldMenu = view.menu && (
     <>
-      <BreadcrumbSeparator className={FOLDED_BELOW[plan.menuBelow]} />
-      <BreadcrumbItem className={cn('shrink-0', FOLDED_BELOW[plan.menuBelow])}>
+      <BreadcrumbSeparator className={view.menu.className} />
+      <BreadcrumbItem className={cn('shrink-0', view.menu.className)}>
         <DropdownMenu>
           <DropdownMenuTrigger
             className="hover:text-foreground flex size-control-xs items-center justify-center rounded-sm"
@@ -187,12 +191,12 @@ export function BreadcrumbNav({
             <MoreHorizontal className="size-4" aria-hidden />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
-            {plan.folded.map(({ item, foldedBelow }) => (
+            {view.menu.items.map(({ item, className: itemClass }) => (
               <DropdownMenuItem
                 key={item.path}
                 asChild={item.hasPage}
                 disabled={!item.hasPage}
-                className={FOLDED_BELOW[foldedBelow]}
+                className={itemClass}
               >
                 {item.hasPage ? <Link href={item.path}>{item.label}</Link> : item.label}
               </DropdownMenuItem>
@@ -204,9 +208,9 @@ export function BreadcrumbNav({
   )
 
   return (
-    <Breadcrumb className={cn('min-w-0 flex-[1_1_auto] overflow-hidden', className)}>
+    <Breadcrumb ref={navRef} className={cn('min-w-0 flex-[1_1_auto] overflow-hidden', className)}>
       <BreadcrumbList className="flex-nowrap overflow-hidden">
-        <BreadcrumbItem className="shrink-0">
+        <BreadcrumbItem className="shrink-0" data-crumb="home">
           <BreadcrumbLink asChild>
             <Link href="/" className="flex items-center gap-1">
               <Home className="h-4 w-4" />
@@ -216,16 +220,17 @@ export function BreadcrumbNav({
           </BreadcrumbLink>
         </BreadcrumbItem>
 
-        {plan.crumbs.map(({ item, role, showFrom }) => (
+        {view.menu?.after === -1 && foldMenu}
+        {view.crumbs.map(({ item, index, current: isCurrent, show, sep }) => (
           <Fragment key={item.path}>
-            <BreadcrumbSeparator className={SEP_FROM[showFrom]} />
+            <BreadcrumbSeparator className={sep} />
             <BreadcrumbItem
               className={cn(
-                role === 'current'
+                isCurrent
                   ? 'min-w-0 shrink max-w-[32ch]'
                   : // an ancestor shrinks first, but keeps a few letters and its ellipsis
                     'min-w-8 shrink-[100]',
-                SHOW_FROM[showFrom]
+                show
               )}
             >
               {item.isLast ? (
@@ -246,10 +251,152 @@ export function BreadcrumbNav({
                 </BreadcrumbLink>
               )}
             </BreadcrumbItem>
-            {role === 'first' && foldMenu}
+            {view.menu?.after === index && foldMenu}
           </Fragment>
         ))}
       </BreadcrumbList>
     </Breadcrumb>
   )
+}
+
+/** One crumb as drawn: its classes per width and its place among the ancestors. */
+interface CrumbView {
+  item: CrumbItem
+  /** Its index among the ancestors; the current page has none. */
+  index: number
+  current: boolean
+  /** The crumb's own visibility classes (empty: always shown). */
+  show: string
+  /** The separator before it. */
+  sep: string
+}
+
+interface TrailView {
+  crumbs: CrumbView[]
+  /** The "…" menu: after which ancestor it sits (-1: right after home). */
+  menu: { after: number; className: string; items: { item: CrumbItem; className: string }[] } | null
+}
+
+/** The fold by the design's breakpoints, before the trail is measured. */
+function breakpointView(plan: ReturnType<typeof planCrumbs<CrumbItem>>): TrailView {
+  const SHOW_FROM = { always: '', lg: 'hidden lg:inline-flex', xl: 'hidden xl:inline-flex' }
+  const SEP_FROM = { always: '', lg: 'hidden lg:flex', xl: 'hidden xl:flex' }
+  const FOLDED_BELOW = { lg: 'lg:hidden', xl: 'xl:hidden' }
+  return {
+    crumbs: plan.crumbs.map(({ item, role, showFrom }, index) => ({
+      item,
+      index: role === 'current' ? -2 : index,
+      current: role === 'current',
+      show: SHOW_FROM[showFrom],
+      sep: SEP_FROM[showFrom],
+    })),
+    // The menu sits where the folded levels were: after the first level
+    // (which itself folds below 1024px, so there the menu follows home).
+    menu: plan.menuBelow
+      ? {
+          after: 0,
+          className: FOLDED_BELOW[plan.menuBelow],
+          items: plan.folded.map(({ item, foldedBelow }) => ({
+            item,
+            className: FOLDED_BELOW[foldedBelow],
+          })),
+        }
+      : null,
+  }
+}
+
+/** The fold the measured width asks for: the folded ancestors are in the menu only. */
+function measuredView(ancestors: CrumbItem[], current: CrumbItem, folded: number[]): TrailView {
+  const isFolded = new Set(folded)
+  return {
+    crumbs: [
+      ...ancestors.flatMap((item, index) =>
+        isFolded.has(index) ? [] : [{ item, index, current: false, show: '', sep: '' }]
+      ),
+      { item: current, index: -2, current: true, show: '', sep: '' },
+    ],
+    // Folded levels are one run (fitCrumbs folds the middle, then the
+    // first, then the parent): the menu sits where that run was.
+    menu:
+      folded.length > 0
+        ? {
+            after: folded[0] - 1,
+            className: '',
+            items: folded.map((i) => ({ item: ancestors[i], className: '' })),
+          }
+        : null,
+  }
+}
+
+/** The width of a separator icon (size-3.5) and of the "…" button (size-control-xs). */
+const SEPARATOR_PX = 14
+const MENU_PX = 24
+
+let measureCanvas: HTMLCanvasElement | null = null
+
+/**
+ * Which ancestors fold so the trail fits the nav's width, measured with the
+ * trail's own font; null until measured (no layout, no canvas). Re-measured
+ * when the nav's width or the labels change, and once the web font loads.
+ */
+function useMeasuredFold(
+  navRef: RefObject<HTMLElement | null>,
+  items: CrumbItem[]
+): number[] | null {
+  const [folded, setFolded] = useState<number[] | null>(null)
+  const labels = items.map((i) => i.label)
+  const key = labels.join('\u0000')
+  useEffect(() => {
+    const nav = navRef.current
+    if (!nav || labels.length === 0) return
+    const measure = () => {
+      const list = nav.querySelector<HTMLElement>('[data-slot="breadcrumb-list"]')
+      const home = nav.querySelector<HTMLElement>('[data-crumb="home"]')
+      const available = nav.clientWidth
+      // No layout (a test DOM, a hidden header): the breakpoint fold.
+      if (!list || !home || !available) {
+        setFolded(null)
+        return
+      }
+      measureCanvas ??= document.createElement('canvas')
+      let ctx: CanvasRenderingContext2D | null = null
+      try {
+        ctx = measureCanvas.getContext('2d')
+      } catch {
+        ctx = null
+      }
+      if (!ctx) {
+        setFolded(null)
+        return
+      }
+      const pen = ctx
+      const style = getComputedStyle(list)
+      pen.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+      const text = (s: string) => Math.ceil(pen.measureText(s).width)
+      const gap = parseFloat(style.columnGap) || 0
+      const next = fitCrumbs({
+        available,
+        home: home.getBoundingClientRect().width,
+        step: SEPARATOR_PX + 2 * gap,
+        menu: MENU_PX,
+        levels: labels.slice(0, -1).map(text),
+        current: Math.min(text(labels[labels.length - 1]), text('0') * 32),
+      })
+      setFolded((prev) =>
+        prev && prev.length === next.length && prev.every((v, i) => v === next[i]) ? prev : next
+      )
+    }
+    measure()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    observer?.observe(nav)
+    let live = true
+    void document.fonts?.ready.then(() => live && measure())
+    return () => {
+      live = false
+      observer?.disconnect()
+    }
+    // The labels are compared by their joined key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navRef, key])
+  return folded
 }
