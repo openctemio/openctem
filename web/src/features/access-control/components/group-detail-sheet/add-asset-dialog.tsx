@@ -12,12 +12,7 @@ import {
   DialogTitle,
   DialogBody,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { type AssetOwnershipType, type GroupAsset } from '@/features/access-control'
 import { useAssets } from '@/features/assets/hooks/use-assets'
 import { useState, useEffect } from 'react'

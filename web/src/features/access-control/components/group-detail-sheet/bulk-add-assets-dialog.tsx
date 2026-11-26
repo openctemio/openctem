@@ -15,12 +15,7 @@ import {
   DialogTitle,
   DialogBody,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toast } from 'sonner'
 import { Loader2, Search, Box, Check, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
