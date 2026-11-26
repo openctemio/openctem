@@ -336,8 +336,9 @@ export function EditRoleSheet({ role, open, onOpenChange, onSuccess }: EditRoleS
                       onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Slug: <code className="bg-muted px-1 rounded">{role.slug}</code> (cannot be
-                      changed)
+                      {t('org.roleSheet.slugLabel', 'Slug:')}{' '}
+                      <code className="bg-muted px-1 rounded">{role.slug}</code>{' '}
+                      {t('org.roleSheet.slugLocked', '(cannot be changed)')}
                     </p>
                   </div>
 

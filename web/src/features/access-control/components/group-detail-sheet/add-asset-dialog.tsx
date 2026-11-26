@@ -23,6 +23,8 @@ import { type AssetOwnershipType, type GroupAsset } from '@/features/access-cont
 import { useAssets } from '@/features/assets/hooks/use-assets'
 import { useState, useEffect } from 'react'
 import { useSearchQuery } from '@/hooks/use-search-query'
+import { OwnershipSelectItems } from './ownership-select-items'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface AddAssetDialogProps {
   open: boolean
@@ -39,6 +41,7 @@ export function AddAssetDialog({
   onAssign,
   existingAssets,
 }: AddAssetDialogProps) {
+  const { t } = useTranslation()
   const [search, setSearch] = useState('')
   const debouncedSearch = useSearchQuery(search).term
 
@@ -75,9 +78,12 @@ export function AddAssetDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="sm">
         <DialogHeader>
-          <DialogTitle>Assign Asset</DialogTitle>
+          <DialogTitle>{t('org.assignAsset.title', 'Assign asset')}</DialogTitle>
           <DialogDescription>
-            Assign an asset to this team to grant access or ownership.
+            {t(
+              'org.assignAsset.description',
+              'Assign an asset to this team to grant access or ownership.'
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -85,11 +91,11 @@ export function AddAssetDialog({
           <div className="space-y-4 py-4">
             {/* Asset Selection */}
             <div className="space-y-2">
-              <Label>Select Asset</Label>
+              <Label>{t('org.assignAsset.select', 'Select asset')}</Label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search for assets..."
+                  placeholder={t('org.assignAsset.search', 'Search for assets...')}
                   className="ps-9 mb-2"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -100,11 +106,11 @@ export function AddAssetDialog({
                 {isLoading ? (
                   <div className="p-4 text-center text-muted-foreground text-sm">
                     <Loader2 className="h-4 w-4 animate-spin mx-auto mb-1" />
-                    Loading assets...
+                    {t('org.assignAsset.loading', 'Loading assets...')}
                   </div>
                 ) : assets.length === 0 ? (
                   <div className="p-4 text-center text-muted-foreground text-sm">
-                    No assets found
+                    {t('org.assignAsset.empty', 'No assets found')}
                   </div>
                 ) : (
                   assets.map((asset) => {
@@ -132,7 +138,7 @@ export function AddAssetDialog({
                         </div>
                         {assigned && (
                           <Badge variant="secondary" className="text-[10px] h-5">
-                            Assigned
+                            {t('org.assignAsset.assigned', 'Assigned')}
                           </Badge>
                         )}
                       </div>
@@ -141,13 +147,15 @@ export function AddAssetDialog({
                 )}
               </div>
               {selectedAssetId && (
-                <p className="text-xs text-muted-foreground text-end">1 asset selected</p>
+                <p className="text-xs text-muted-foreground text-end">
+                  {t('org.assignAsset.oneSelected', '1 asset selected')}
+                </p>
               )}
             </div>
 
             {/* Ownership Type */}
             <div className="space-y-2">
-              <Label>Ownership Type</Label>
+              <Label>{t('org.ownership.type', 'Ownership type')}</Label>
               <Select
                 value={ownershipType}
                 onValueChange={(value: AssetOwnershipType) => setOwnershipType(value)}
@@ -156,38 +164,7 @@ export function AddAssetDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="primary">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Primary</span>
-                      <span className="text-xs text-muted-foreground">
-                        Main owner with full access and responsibility
-                      </span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="secondary">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Secondary</span>
-                      <span className="text-xs text-muted-foreground">
-                        Co-owner with full access and shared responsibility
-                      </span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="stakeholder">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Stakeholder</span>
-                      <span className="text-xs text-muted-foreground">
-                        View access, receives critical notifications
-                      </span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="informed">
-                    <div className="flex flex-col">
-                      <span className="font-medium">Informed</span>
-                      <span className="text-xs text-muted-foreground">
-                        No direct access, receives summary notifications
-                      </span>
-                    </div>
-                  </SelectItem>
+                  <OwnershipSelectItems />
                 </SelectContent>
               </Select>
             </div>
@@ -196,7 +173,7 @@ export function AddAssetDialog({
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button onClick={handleAssign} disabled={isAssigning || !selectedAssetId}>
             {isAssigning ? (
@@ -204,7 +181,7 @@ export function AddAssetDialog({
             ) : (
               <Plus className="me-2 h-4 w-4" />
             )}
-            Assign
+            {t('org.assignAsset.submit', 'Assign')}
           </Button>
         </DialogFooter>
       </DialogContent>
