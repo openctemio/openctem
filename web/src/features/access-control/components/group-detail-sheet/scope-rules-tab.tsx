@@ -80,9 +80,15 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
       ) {
         lastToastRef.current = now
         const parts: string[] = []
-        if (event.assets_added > 0) parts.push(`${event.assets_added} added`)
-        if (event.assets_removed > 0) parts.push(`${event.assets_removed} removed`)
-        toast.info(`Scope updated: ${parts.join(', ')}`)
+        if (event.assets_added > 0)
+          parts.push(t('org.scopeRules.liveAdded', '{count} added', { count: event.assets_added }))
+        if (event.assets_removed > 0)
+          parts.push(
+            t('org.scopeRules.liveRemoved', '{count} removed', { count: event.assets_removed })
+          )
+        toast.info(
+          t('org.scopeRules.liveUpdated', 'Scope updated: {changes}', { changes: parts.join(', ') })
+        )
       }
     },
   })
@@ -203,7 +209,9 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h4 className="text-sm font-medium">Scope Rules ({scopeRules.length})</h4>
+        <h4 className="text-sm font-medium">
+          {t('org.scopeRules.title', 'Scope rules ({count})', { count: scopeRules.length })}
+        </h4>
         <div className="flex items-center gap-2">
           <Can route="POST /api/v1/groups/{groupId}/scope-rules/reconcile" mode="disable">
             <Button
@@ -223,7 +231,7 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
           <Can route="POST /api/v1/groups/{groupId}/scope-rules" mode="disable">
             <Button size="sm" onClick={() => setDialogOpen(true)} disabled={isCreating || !groupId}>
               <Plus className="me-2 h-4 w-4" />
-              Add Rule
+              {t('org.scopeRules.add', 'Add rule')}
             </Button>
           </Can>
         </div>
@@ -247,22 +255,33 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
       ) : isError ? (
         <div className="text-center py-8 text-muted-foreground">
           <AlertCircle className="h-8 w-8 mx-auto mb-2 text-destructive opacity-70" />
-          <p className="text-sm text-destructive">Failed to load scope rules</p>
-          <p className="text-xs mt-1">{error?.message || 'An unexpected error occurred'}</p>
+          <p className="text-sm text-destructive">
+            {t('org.scopeRules.loadFailed', 'Failed to load scope rules')}
+          </p>
+          <p className="text-xs mt-1">
+            {error?.message || t('org.scopeRules.unexpectedError', 'An unexpected error occurred')}
+          </p>
           <Button variant="outline" size="sm" className="mt-3" onClick={() => mutate()}>
-            Try Again
+            {t('org.scopeRules.tryAgain', 'Try again')}
           </Button>
         </div>
       ) : scopeRules.length === 0 ? (
         <EmptyState
           icon={Zap}
-          title="No scope rules configured"
-          description="Add rules to automatically assign assets based on tags or asset group membership."
+          title={t('org.scopeRules.emptyTitle', 'No scope rules configured')}
+          description={t(
+            'org.scopeRules.emptyDescription',
+            'Add rules to automatically assign assets based on tags or asset group membership.'
+          )}
           card={false}
         />
       ) : filteredRules.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          <p>No rules found matching &quot;{searchQuery}&quot;</p>
+          <p>
+            {t('org.scopeRules.noMatch', 'No rules found matching "{query}"', {
+              query: searchQuery,
+            })}
+          </p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -284,7 +303,7 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
                     <p className="font-medium text-sm truncate">{rule.name}</p>
                     {!rule.is_active && (
                       <Badge variant="secondary" className="text-[10px]">
-                        Inactive
+                        {t('org.scopeRules.inactive', 'Inactive')}
                       </Badge>
                     )}
                   </div>
@@ -400,9 +419,16 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
       >
         <DialogContent size="sm">
           <DialogHeader>
-            <DialogTitle>Preview: {previewingRule?.name}</DialogTitle>
+            <DialogTitle>
+              {t('org.scopeRules.previewTitle', 'Preview: {name}', {
+                name: previewingRule?.name ?? '',
+              })}
+            </DialogTitle>
             <DialogDescription>
-              Shows how many assets would be affected by this scope rule.
+              {t(
+                'org.scopeRules.previewDescription',
+                'Shows how many assets would be affected by this scope rule.'
+              )}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
@@ -415,17 +441,23 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
                 <div className="grid grid-cols-3 gap-4 text-center">
                   <div className="p-3 rounded-lg bg-muted">
                     <p className="text-figure tabular-nums">{previewResult.matching_assets}</p>
-                    <p className="text-xs text-muted-foreground">Matching Assets</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('org.scopeRules.previewMatching', 'Matching assets')}
+                    </p>
                   </div>
                   <div className="p-3 rounded-lg bg-muted">
                     <p className="text-figure tabular-nums">{previewResult.already_assigned}</p>
-                    <p className="text-xs text-muted-foreground">Already Assigned</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('org.scopeRules.previewAssigned', 'Already assigned')}
+                    </p>
                   </div>
                   <div className="p-3 rounded-lg bg-success/10">
                     <p className="text-figure tabular-nums text-success">
                       {previewResult.would_add}
                     </p>
-                    <p className="text-xs text-muted-foreground">Would Add</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t('org.scopeRules.previewWouldAdd', 'Would add')}
+                    </p>
                   </div>
                 </div>
               )}
@@ -439,7 +471,7 @@ export function ScopeRulesTab({ groupId }: ScopeRulesTabProps) {
                 setPreviewResult(null)
               }}
             >
-              Close
+              {t('common.close', 'Close')}
             </Button>
           </DialogFooter>
         </DialogContent>
