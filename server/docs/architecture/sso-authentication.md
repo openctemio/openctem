@@ -496,6 +496,41 @@ The identity store is required: a login that carries an identity is refused
 when it is not wired. Erasing a member's personal data deletes their
 identities, so a later sign-in never finds the anonymised account.
 
+## No password for accounts the organization's SSO manages
+
+An account that an organization's SSO signs in and that has no password of
+its own gets no password through a self-service path
+(`internal/app/auth/managed_sign_in.go`, research 539). Such an account is
+**SSO-managed** when it is a local account with no password and either holds
+an identity an organization's SSO asserted (`user_identities.source = 'sso'`)
+or has signed in although it has no password and no bound identity at all (an
+SSO sign-in whose IdP sends no stable identifier, such as a SAML assertion
+with an email NameID, binds nothing).
+
+- **Forgot-password** stores no token and sends nothing for it. The HTTP
+  answer is the one every address gets (the lookup runs after the response),
+  and the service result is the one an unknown address gets. A failed lookup
+  refuses the same way (fail closed).
+- **Set-password and reset links.** The first SSO sign-in of a password-less
+  account (and every later one) clears any outstanding set-password or reset
+  link, so an administrator's 24-hour setup link stops working once the person
+  signs in through the IdP. A link that still reaches an SSO-managed account
+  (one issued by any path) sets no password: `POST /auth/reset-password`
+  answers "invalid or expired", as for a used link.
+- **Password accounts are unaffected**, including one that linked the
+  organization's SSO itself: its password and its own reset stay its own.
+- **Break-glass.** An active **owner** of any organization and a **platform
+  administrator** keep forgot-password even when their account is
+  SSO-managed. Owners are the organization's way in when its IdP fails (an
+  SSO-enforced organization admits an owner with password plus second factor,
+  below), and an administrator needs a password of its own for the admin
+  console. Their link from before the first SSO sign-in is still voided; they
+  request a new one. The sealed console break-glass accounts never sign in
+  through an organization's SSO, so they never become SSO-managed.
+- The platform console's "send password reset" for such an account answers
+  that no link can be sent; its copied reset link (installations without
+  email) does not set a password either.
+
 ## Linking an existing account
 
 A federated sign-in never adopts a password account because the identity
