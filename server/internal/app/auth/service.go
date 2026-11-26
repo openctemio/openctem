@@ -25,7 +25,6 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/signupevent"
 	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 	userdom "github.com/openctemio/openctem/server/pkg/domain/user"
-	"github.com/openctemio/openctem/server/pkg/domain/useridentity"
 	"github.com/openctemio/openctem/server/pkg/emaildomain"
 	"github.com/openctemio/openctem/server/pkg/jwt"
 	"github.com/openctemio/openctem/server/pkg/logger"
@@ -183,9 +182,9 @@ type AuthService struct {
 	// lapsedDomains refuses email-only password resets on a domain whose
 	// verified owner lost it (RFC-058).
 	lapsedDomains LapsedDomainChecker
-	// identities and platformAdmins decide whether an account's sign-in is
+	// orgSignIns and platformAdmins decide whether an account's sign-in is
 	// managed by an organization's SSO (managed_sign_in.go).
-	identities     useridentity.Repository
+	orgSignIns     OrganizationSignInStore
 	platformAdmins PlatformAdminLookup
 }
 

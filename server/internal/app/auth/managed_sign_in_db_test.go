@@ -39,9 +39,13 @@ func (anyDomainVerified) IsVerifiedDomain(context.Context, string, string) (bool
 	return true, nil
 }
 
-// An account claimed by an organization's SSO, without a password, gets no
+func uniqueSuffix() string { return strings.ReplaceAll(shared.NewID().String(), "-", "") }
+
+// An account an organization's SSO signed in, without a password, gets no
 // password from forgot-password or from a set-password link issued before
-// the claim; password accounts and break-glass holders are unaffected.
+// the sign-in. Password accounts are unaffected; only an active owner of the
+// managing organization (and an active platform administrator) keeps
+// forgot-password.
 func TestManagedSignIn_DB(t *testing.T) {
 	dbURL := testdb.URL()
 	if dbURL == "" {
@@ -69,18 +73,19 @@ func TestManagedSignIn_DB(t *testing.T) {
 
 	newAuth := func(admins PlatformAdminLookup) *AuthService {
 		a := NewAuthService(users, sessions, refresh, tenants, nil, cfg, logger.NewNop())
-		a.SetManagedSignIn(identities, admins)
+		a.SetManagedSignIn(users, admins)
 		return a
 	}
 	sso := NewSSOService(nil, tenants, users, sessions, refresh, nil, cfg, logger.NewNop())
 	sso.SetIdentityRepo(identities)
 	sso.SetDomainVerifier(anyDomainVerified{})
+	sso.SetOrganizationSignInStore(users)
 
 	// newUser creates an account: password-less (an administrator's create)
 	// when hash is "", else a password account.
 	newUser := func(t *testing.T, hash string) *userdom.User {
 		t.Helper()
-		email := "msi-" + strings.ReplaceAll(shared.NewID().String(), "-", "") + "@msi.example"
+		email := "msi-" + uniqueSuffix() + "@msi.example"
 		var (
 			u   *userdom.User
 			err error
@@ -99,6 +104,7 @@ func TestManagedSignIn_DB(t *testing.T) {
 		}
 		t.Cleanup(func() {
 			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM user_identities WHERE user_id = $1`, u.ID().String())
+			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM refresh_tokens WHERE user_id = $1`, u.ID().String())
 			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = $1`, u.ID().String())
 			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM tenant_members WHERE user_id = $1`, u.ID().String())
 			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, u.ID().String())
@@ -108,7 +114,7 @@ func TestManagedSignIn_DB(t *testing.T) {
 	// newOrg creates an organization owned by owner.
 	newOrg := func(t *testing.T, owner *userdom.User) *tenantdom.Tenant {
 		t.Helper()
-		org, err := tenantdom.NewTenant("Managed sign-in", "msi-"+strings.ReplaceAll(shared.NewID().String(), "-", "")[20:], owner.ID().String())
+		org, err := tenantdom.NewTenant("Managed sign-in", "msi-"+uniqueSuffix()[20:], owner.ID().String())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -120,12 +126,16 @@ func TestManagedSignIn_DB(t *testing.T) {
 			t.Fatalf("create org: %v", err)
 		}
 		t.Cleanup(func() {
+			_, _ = sqlDB.ExecContext(ctx, `UPDATE users SET sso_tenant_id = NULL WHERE sso_tenant_id = $1`, org.ID().String())
+			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM user_identities WHERE scope_tenant_id = $1`, org.ID().String())
+			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM refresh_tokens WHERE tenant_id = $1`, org.ID().String())
+			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM sessions WHERE tenant_id = $1`, org.ID().String())
 			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM tenant_members WHERE tenant_id = $1`, org.ID().String())
 			_, _ = sqlDB.ExecContext(ctx, `DELETE FROM tenants WHERE id = $1`, org.ID().String())
 		})
 		return org
 	}
-	// The organization whose SSO signs the test accounts in.
+	// The organization whose SSO signs most test accounts in.
 	org := newOrg(t, newUser(t, ""))
 
 	// issueLink stores a set-password link on u, as an administrator's
@@ -142,14 +152,28 @@ func TestManagedSignIn_DB(t *testing.T) {
 		}
 		return raw
 	}
-	// claimByOIDC is a first SSO sign-in that claims the account by its
-	// verified-domain email and binds the IdP identity.
-	claimByOIDC := func(t *testing.T, u *userdom.User) {
+	// signInByOIDC is a first OIDC sign-in through in's SSO: it claims the
+	// account by its verified-domain email, binds the identity and records
+	// the organization sign-on, in the callback's order.
+	signInByOIDC := func(t *testing.T, u *userdom.User, in *tenantdom.Tenant) {
 		t.Helper()
 		info := &SSOUserInfo{Email: u.Email(), Name: u.Name(), EmailVerified: true,
-			Issuer: "https://idp.example/" + shared.NewID().String(), Subject: shared.NewID().String()}
-		if _, err := sso.adoptExistingUser(ctx, org, u, info, identityproviderdom.ProviderOkta); err != nil {
+			Issuer: "https://idp.example/" + uniqueSuffix(), Subject: uniqueSuffix()}
+		got, err := sso.adoptExistingUser(ctx, in, u, info, identityproviderdom.ProviderOkta)
+		if err != nil {
 			t.Fatalf("SSO claim: %v", err)
+		}
+		if err := sso.recordOrganizationSignIn(ctx, got, in); err != nil {
+			t.Fatalf("record organization sign-in: %v", err)
+		}
+	}
+	// signInBySAMLEmailNameID is a SAML sign-in whose IdP sends only an
+	// email NameID: no identity is bound, the sign-on is still recorded.
+	signInBySAMLEmailNameID := func(t *testing.T, u *userdom.User) {
+		t.Helper()
+		if _, err := sso.completeFederatedLogin(ctx, org, u.Email(), u.Name(), "member", false,
+			federatedBinding{}, useridentity.Key{}, ""); err != nil {
+			t.Fatalf("SAML sign-in: %v", err)
 		}
 	}
 	storedLink := func(t *testing.T, u *userdom.User) bool {
@@ -171,15 +195,13 @@ func TestManagedSignIn_DB(t *testing.T) {
 	const newPassword = "Managed-sign-in-pw-1"
 
 	authSvc := newAuth(stubPlatformAdmins{})
-	unknown, err := authSvc.ForgotPassword(ctx, ForgotPasswordInput{Email: "nobody-" + strings.ReplaceAll(shared.NewID().String(), "-", "") + "@msi.example"})
+	unknown, err := authSvc.ForgotPassword(ctx, ForgotPasswordInput{Email: "nobody-" + uniqueSuffix() + "@msi.example"})
 	if err != nil {
 		t.Fatalf("unknown address: %v", err)
 	}
-
-	t.Run("SSO-claimed account without a password cannot reset", func(t *testing.T) {
-		u := newUser(t, "")
-		claimByOIDC(t, u)
-		res, err := authSvc.ForgotPassword(ctx, ForgotPasswordInput{Email: u.Email()})
+	refused := func(t *testing.T, a *AuthService, u *userdom.User) {
+		t.Helper()
+		res, err := a.ForgotPassword(ctx, ForgotPasswordInput{Email: u.Email()})
 		if err != nil {
 			t.Fatalf("forgot-password must answer as for any address, got %v", err)
 		}
@@ -192,45 +214,72 @@ func TestManagedSignIn_DB(t *testing.T) {
 		if storedLink(t, u) {
 			t.Fatal("a reset token was stored for an SSO-managed account")
 		}
+	}
+	recovers := func(t *testing.T, a *AuthService, u *userdom.User) {
+		t.Helper()
+		res, err := a.ForgotPassword(ctx, ForgotPasswordInput{Email: u.Email()})
+		if err != nil || res.Token == "" {
+			t.Fatalf("res=%+v err=%v, want a reset link", res, err)
+		}
+		if err := a.ResetPassword(ctx, ResetPasswordInput{Token: res.Token, NewPassword: newPassword}); err != nil {
+			t.Fatalf("reset: %v", err)
+		}
+		if !hasPassword(t, u) {
+			t.Fatal("no password after the reset")
+		}
+	}
+
+	t.Run("SSO-claimed account without a password cannot reset", func(t *testing.T) {
+		u := newUser(t, "")
+		signInByOIDC(t, u, org)
+		refused(t, authSvc, u)
 	})
 
 	t.Run("set-password link is void after the first SSO sign-in", func(t *testing.T) {
 		u := newUser(t, "")
 		raw := issueLink(t, u)
-		claimByOIDC(t, u)
+		signInByOIDC(t, u, org)
 		if storedLink(t, u) {
-			t.Fatal("the SSO claim left the set-password link stored")
+			t.Fatal("the SSO sign-in left the set-password link stored")
 		}
 		err := authSvc.ResetPassword(ctx, ResetPasswordInput{Token: raw, NewPassword: newPassword})
 		if !errors.Is(err, ErrInvalidResetToken) {
-			t.Fatalf("set-password link after the SSO claim: got %v, want ErrInvalidResetToken", err)
+			t.Fatalf("set-password link after the SSO sign-in: got %v, want ErrInvalidResetToken", err)
 		}
 		if hasPassword(t, u) {
 			t.Fatal("the account got a password")
 		}
 	})
 
-	t.Run("SAML sign-in without a stable identifier also voids and refuses", func(t *testing.T) {
+	t.Run("SAML sign-in with an email NameID voids and refuses", func(t *testing.T) {
 		u := newUser(t, "")
 		raw := issueLink(t, u)
-		if err := sso.admitExistingSAMLAccount(ctx, u, org, u.Email(), u.Name(), useridentity.Key{}); err != nil {
-			t.Fatalf("SAML admit: %v", err)
-		}
+		signInBySAMLEmailNameID(t, u)
 		if storedLink(t, u) {
 			t.Fatal("the SAML sign-in left the set-password link stored")
 		}
 		if err := authSvc.ResetPassword(ctx, ResetPasswordInput{Token: raw, NewPassword: newPassword}); !errors.Is(err, ErrInvalidResetToken) {
 			t.Fatalf("got %v, want ErrInvalidResetToken", err)
 		}
-		res, err := authSvc.ForgotPassword(ctx, ForgotPasswordInput{Email: u.Email()})
-		if err != nil || res.Token != "" || !reflect.DeepEqual(res, unknown) {
-			t.Fatalf("forgot-password: res=%+v err=%v, want the unknown-address answer", res, err)
+		refused(t, authSvc, u)
+	})
+
+	t.Run("an account with a social identity, signed in by SAML email NameID, cannot reset", func(t *testing.T) {
+		u := newUser(t, "")
+		ident, err := useridentity.New(u.ID(), useridentity.Key{Issuer: "https://accounts.google.com", Subject: uniqueSuffix()})
+		if err != nil {
+			t.Fatal(err)
 		}
+		if err := identities.Create(ctx, ident); err != nil {
+			t.Fatal(err)
+		}
+		signInBySAMLEmailNameID(t, u)
+		refused(t, authSvc, u)
 	})
 
 	t.Run("a link stored on a managed account by any path sets no password", func(t *testing.T) {
 		u := newUser(t, "")
-		claimByOIDC(t, u)
+		signInByOIDC(t, u, org)
 		raw := issueLink(t, u)
 		if err := authSvc.ResetPassword(ctx, ResetPasswordInput{Token: raw, NewPassword: newPassword}); !errors.Is(err, ErrInvalidResetToken) {
 			t.Fatalf("got %v, want ErrInvalidResetToken", err)
@@ -246,54 +295,55 @@ func TestManagedSignIn_DB(t *testing.T) {
 			t.Fatal(err)
 		}
 		u := newUser(t, hash)
-		// It linked the organization's SSO itself.
-		ident, err := useridentity.New(u.ID(), useridentity.Key{Issuer: "https://idp.example/pw", Subject: shared.NewID().String()})
-		if err != nil {
-			t.Fatal(err)
-		}
-		ident.Source = useridentity.SourceSSO
-		if err := identities.Create(ctx, ident); err != nil {
-			t.Fatal(err)
-		}
 		issueLink(t, u)
-		sso.voidPasswordLink(u)
-		if u.PasswordResetToken() == nil {
+		// It linked the organization's SSO itself and signs in with it.
+		if err := sso.recordOrganizationSignIn(ctx, u, org); err != nil {
+			t.Fatal(err)
+		}
+		if !storedLink(t, u) {
 			t.Fatal("an SSO sign-in voided a password account's link")
 		}
-		res, err := authSvc.ForgotPassword(ctx, ForgotPasswordInput{Email: u.Email()})
-		if err != nil || res.Token == "" {
-			t.Fatalf("password account: res=%+v err=%v, want a reset link", res, err)
-		}
-		if err := authSvc.ResetPassword(ctx, ResetPasswordInput{Token: res.Token, NewPassword: newPassword}); err != nil {
-			t.Fatalf("password account reset: %v", err)
-		}
+		recovers(t, authSvc, u)
 	})
 
-	t.Run("break-glass: an SSO-claimed owner keeps forgot-password", func(t *testing.T) {
+	t.Run("owning a self-created organization does not exempt", func(t *testing.T) {
 		u := newUser(t, "")
-		newOrg(t, u)
+		signInByOIDC(t, u, org)
+		newOrg(t, u) // the account creates an organization and owns it
+		refused(t, authSvc, u)
+	})
+
+	t.Run("break-glass: an owner of the managing organization keeps recovery", func(t *testing.T) {
+		u := newUser(t, "")
+		owned := newOrg(t, u) // e.g. the first owner the console created
 		raw := issueLink(t, u)
-		claimByOIDC(t, u)
-		// The link from before the claim is void for an owner too ...
+		signInByOIDC(t, u, owned)
+		// The link from before the sign-in is void for an owner too ...
 		if err := authSvc.ResetPassword(ctx, ResetPasswordInput{Token: raw, NewPassword: newPassword}); !errors.Is(err, ErrInvalidResetToken) {
-			t.Fatalf("pre-claim link: got %v, want ErrInvalidResetToken", err)
+			t.Fatalf("pre-sign-in link: got %v, want ErrInvalidResetToken", err)
 		}
 		// ... but the owner can ask for a new one and set a password.
-		res, err := authSvc.ForgotPassword(ctx, ForgotPasswordInput{Email: u.Email()})
-		if err != nil || res.Token == "" {
-			t.Fatalf("owner: res=%+v err=%v, want a reset link", res, err)
-		}
-		if err := authSvc.ResetPassword(ctx, ResetPasswordInput{Token: res.Token, NewPassword: newPassword}); err != nil {
-			t.Fatalf("owner reset: %v", err)
-		}
-		if !hasPassword(t, u) {
-			t.Fatal("the owner has no password after the reset")
+		recovers(t, authSvc, u)
+	})
+
+	t.Run("an owner of a suspended or deleting managing organization is not exempt", func(t *testing.T) {
+		for _, stmt := range []string{
+			`UPDATE tenants SET status = 'suspended' WHERE id = $1`,
+			`UPDATE tenants SET status = 'pending_deletion', deletion_due_at = now() + interval '7 days' WHERE id = $1`,
+		} {
+			u := newUser(t, "")
+			owned := newOrg(t, u)
+			signInByOIDC(t, u, owned)
+			if _, err := sqlDB.ExecContext(ctx, stmt, owned.ID().String()); err != nil {
+				t.Fatal(err)
+			}
+			refused(t, authSvc, u)
 		}
 	})
 
-	t.Run("break-glass: a platform administrator keeps forgot-password", func(t *testing.T) {
+	t.Run("break-glass: an active platform administrator keeps forgot-password", func(t *testing.T) {
 		u := newUser(t, "")
-		claimByOIDC(t, u)
+		signInByOIDC(t, u, org)
 		res, err := newAuth(stubPlatformAdmins{admin: true}).ForgotPassword(ctx, ForgotPasswordInput{Email: u.Email()})
 		if err != nil || res.Token == "" {
 			t.Fatalf("platform administrator: res=%+v err=%v, want a reset link", res, err)
@@ -302,10 +352,20 @@ func TestManagedSignIn_DB(t *testing.T) {
 
 	t.Run("a failed break-glass lookup refuses with the same answer", func(t *testing.T) {
 		u := newUser(t, "")
-		claimByOIDC(t, u)
-		res, err := newAuth(stubPlatformAdmins{err: errors.New("db down")}).ForgotPassword(ctx, ForgotPasswordInput{Email: u.Email()})
-		if err != nil || !reflect.DeepEqual(res, unknown) {
-			t.Fatalf("res=%+v err=%v, want the unknown-address answer", res, err)
+		signInByOIDC(t, u, org)
+		refused(t, newAuth(stubPlatformAdmins{err: errors.New("db down")}), u)
+	})
+
+	t.Run("without the sign-in store a signed-in password-less account is refused", func(t *testing.T) {
+		bare := NewAuthService(users, sessions, refresh, tenants, nil, cfg, logger.NewNop())
+		u := newUser(t, "")
+		signInByOIDC(t, u, org)
+		refused(t, bare, u)
+		// An account awaiting setup never signed in: its link still works.
+		pending := newUser(t, "")
+		raw := issueLink(t, pending)
+		if err := bare.ResetPassword(ctx, ResetPasswordInput{Token: raw, NewPassword: newPassword}); err != nil {
+			t.Fatalf("setup link: %v", err)
 		}
 	})
 
