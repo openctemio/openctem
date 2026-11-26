@@ -131,15 +131,21 @@ cannot receive that organization's sign-in posts. The certificate, the
 audience (entity ID), the ACS URL and the replay scope all come from the
 connection the path names, never from the message.
 
-- **Before the first save.** The console reads
-  `GET /api/v1/admin/tenants/{tenantId}/sso/saml/sp-metadata`, which returns the
-  metadata and the addresses (`entity_id`, `acs_url`, `login_url`,
-  `connection_key`, `legacy`). For an organization without a configuration it
-  reserves the connection id (`saml_connection_ids`), and the first saved
-  configuration takes that id, so the addresses registered at the IdP stay
-  valid. The console shows these addresses; it never builds them itself.
-- **Deleting the configuration retires its address**: the reservation goes
-  with it, and a new configuration gets a new id.
+- **Before the first save.** `GET /api/v1/admin/tenants/{tenantId}/sso/saml/sp-metadata`
+  only reads: it returns the metadata and the addresses (`entity_id`,
+  `acs_url`, `login_url`, `connection_key`, `legacy`, `has_address`) of the
+  configuration or of a created address, and `has_address: false` when
+  neither exists. The administrator creates the address with
+  `POST /api/v1/admin/tenants/{tenantId}/sso/saml/address` (a console write:
+  SSO step-up and the console audit, action `organization.saml_address_create`),
+  which reserves the connection id (`saml_connection_ids`); the first saved
+  configuration takes it, so the addresses registered at the IdP stay valid.
+  Building or validating a configuration never writes: without a reservation
+  the first save gets a new id. The console shows these addresses; it never
+  builds them itself.
+- **Deleting the configuration retires its address**: the configuration and
+  the reservation are deleted in one transaction, and a new configuration
+  gets a new id.
 - **Configurations that existed before connection ids** keep the address they
   had (deprecated). Migration `20261126024604_saml_connection_addresses` copied
   each one's slug at that moment into `saml_providers.legacy_path_key`; the

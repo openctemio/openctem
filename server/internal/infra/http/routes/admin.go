@@ -679,6 +679,9 @@ func registerAdminRoutes(
 			if h.SAML != nil {
 				r.GET("/{tenantId}/sso/saml", h.SAML.GetConfig, read...)
 				r.GET("/{tenantId}/sso/saml/sp-metadata", h.SAML.SPMetadata, read...)
+				// Creates the address (connection id) before the first save, so it
+				// can be registered at the IdP; the read above never writes.
+				r.POST("/{tenantId}/sso/saml/address", h.SAML.ReserveAddress, write("organization.saml_address_create")...)
 				r.PUT("/{tenantId}/sso/saml", h.SAML.SetConfig, write("organization.saml_update")...)
 				r.DELETE("/{tenantId}/sso/saml", h.SAML.DeleteConfig, write("organization.saml_delete")...)
 				// Reads the IdP's metadata for the form (fetches the URL under
