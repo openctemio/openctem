@@ -286,9 +286,13 @@ func TestConfirmationSummaryTitleIsSingleCleanLine(t *testing.T) {
 	h := newTestMCPWithPentest(&fakeFindingReader{finding: f}, &fakePentestReader{})
 	h.SetWriteTools(&fakeConfirmer{approved: map[string]string{}}, &fakeCommenter{})
 	args, _ := json.Marshal(map[string]string{"finding_id": wtFinding, "content": "triage note"})
-	summary, err := h.prepareAddFindingComment(context.WithValue(context.Background(), middleware.UserIDKey, wtUser), wtTenant, args)
+	summary, msg, err := h.prepareAddFindingComment(context.WithValue(context.Background(), middleware.UserIDKey, wtUser), wtTenant, args)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// The coded summary carries the same cleaned, single-line title.
+	if title, _ := msg.Params["finding"].(string); hasInvisible(title) || title != "Real title second line" && !strings.HasPrefix(title, "Real title second line") {
+		t.Fatalf("message title not cleaned: %q", title)
 	}
 	if hasInvisible(summary) || strings.Contains(strings.SplitN(summary, "\n\n", 2)[0], "\n") ||
 		!strings.Contains(summary, "Real title second line") {
