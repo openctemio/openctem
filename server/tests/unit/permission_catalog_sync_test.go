@@ -53,6 +53,7 @@ var permSeedMigrations = []string{
 	"vulnerability_list_actions",              // findings:views:share
 	"ai_knowledge",                            // ai_knowledge:read, ai_knowledge:manage (RFC-139)
 	"source_retirements",                      // findings:sources:retire
+	"attack_paths_read_permission",            // attack_surface:paths:read
 }
 
 // permRenameMigrations rename permission ids in place (old id → new id) with

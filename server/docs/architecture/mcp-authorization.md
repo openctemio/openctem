@@ -82,6 +82,7 @@ and is neither the public origin nor one of `CORS_ALLOWED_ORIGINS`
 |---|---|
 | `mcp:findings.read` | `findings:read` |
 | `mcp:assets.read` | `assets:read` |
+| `mcp:paths.read` | `attack_surface:paths:read` (the exposure chains tool); a grant made before this scope existed does not include it |
 | `mcp:compliance.read` | `compliance:frameworks:read` |
 | `mcp:pentest.read` | `pentest:campaigns:read`, `pentest:findings:read`, `pentest:retests:read`, `pentest:templates:read` |
 | `mcp:scope.read` | `attack_surface:scope:read` |

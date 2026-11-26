@@ -1,0 +1,6 @@
+### Security: attack paths need their own read permission
+
+- Attack-path scores and detail, exposure chains, threat models and the MCP `get_exposure_chains` tool now need the new permission `attack_surface:paths:read` (generating a threat model needs it with `assets:write`). Before, `assets:read` was enough, so any role that could list assets also got the computed routes to compromise them. Asset lists, relationships and the neighbourhood still need only `assets:read`.
+- Migration `20261126022931_attack_paths_read_permission` adds the permission and gives it to the owner, administrator and member roles and to every custom role that holds `assets:read`, so nobody who reads attack paths today loses them. The viewer role does not get it. API keys and MCP grants are not widened: an API key that should read attack paths must add the new scope, and an MCP application asks for the new read scope `mcp:paths.read` (the exposure chains tool), which `mcp:assets.read` no longer covers. Role templates that work with attack paths include it (new template versions).
+- Creating, editing and approving asset relationships is now audited (`asset_relationship.created`, `asset_relationship.updated`, `asset_relationship.approved`), like deleting one.
+- Docs: server/docs/architecture/authorization-matrix.md
