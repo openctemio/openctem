@@ -15,6 +15,7 @@ import (
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	appcompliance "github.com/openctemio/openctem/server/internal/app/compliance"
 	"github.com/openctemio/openctem/server/internal/app/finding"
+	mcpoauthapp "github.com/openctemio/openctem/server/internal/app/mcpoauth"
 	"github.com/openctemio/openctem/server/internal/app/scopeauth"
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/pkg/apierror"
@@ -148,7 +149,7 @@ type mcpTool struct {
 	// confirmed the exact action (mcp_write_tools.go).
 	Write bool
 	// prepare checks a write action and describes it for the person.
-	prepare func(ctx context.Context, tenantID string, args json.RawMessage) (string, error)
+	prepare func(ctx context.Context, tenantID string, args json.RawMessage) (string, *mcpoauthapp.SummaryMessage, error)
 	// Propose marks a tool whose result is a pending request another person
 	// decides (mcp_propose_tools.go): it runs only for a connection a person
 	// made, never for an oct_ key.

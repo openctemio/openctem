@@ -30,7 +30,7 @@ import (
 // mcpConfirmer stores and consumes write-action confirmations
 // (*mcpoauthapp.Service).
 type mcpConfirmer interface {
-	RequestConfirmation(ctx context.Context, p *mcpoauthapp.Principal, tool, digest, summary string, actor mcpoauthapp.Actor) (*mcpoauthapp.PendingConfirmation, error)
+	RequestConfirmationWith(ctx context.Context, p *mcpoauthapp.Principal, tool, digest, summary string, msg *mcpoauthapp.SummaryMessage, actor mcpoauthapp.Actor) (*mcpoauthapp.PendingConfirmation, error)
 	UseConfirmation(ctx context.Context, p *mcpoauthapp.Principal, id, tool, digest string) error
 }
 
@@ -58,6 +58,15 @@ func (h *MCPHandler) writeToolsUsable(ctx context.Context) bool {
 }
 
 const maxMCPCommentLen = 4000
+
+// summaryParamContent names the AI-written text in a confirmation summary's values.
+const summaryParamContent = "content"
+
+// summaryParamFinding names the finding title in a confirmation summary's values.
+const summaryParamFinding = "finding"
+
+// summaryParamSeverity names the finding severity in a confirmation summary's values.
+const summaryParamSeverity = "severity"
 
 func (h *MCPHandler) buildWriteTools() []mcpTool {
 	return []mcpTool{{
@@ -119,34 +128,42 @@ func parseAddCommentArgs(raw json.RawMessage) (addCommentArgs, error) {
 // comment. The visibility is one of the confirmed arguments (the digest
 // covers every argument), so a confirmation for a team comment cannot be
 // replayed as a client one.
-func (h *MCPHandler) prepareAddFindingComment(ctx context.Context, tenantID string, raw json.RawMessage) (string, error) {
+func (h *MCPHandler) prepareAddFindingComment(ctx context.Context, tenantID string, raw json.RawMessage) (string, *mcpoauthapp.SummaryMessage, error) {
 	a, err := parseAddCommentArgs(raw)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	f, err := h.findings.GetFindingWithScope(ctx, tenantID, a.FindingID, actingUser(ctx), false)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if err := h.checkFindingAI(ctx, tenantID, f); err != nil {
-		return "", err
+		return "", nil, err
 	}
 	pentestFinding, vis, err := h.comments.CommentVisibilityFor(ctx, tenantID, a.FindingID, actingUser(ctx), false, a.Visibility)
 	if err != nil {
 		if errors.Is(err, shared.ErrForbidden) || errors.Is(err, shared.ErrValidation) {
-			return "", toolInputError{commentVisibilityRefusal(err)}
+			return "", nil, toolInputError{commentVisibilityRefusal(err)}
 		}
-		return "", err
+		return "", nil, err
 	}
-	summary := fmt.Sprintf("Add an internal comment to the finding %q (%s severity):\n\n%s", safetext.SingleLine(f.Title(), safetext.MaxTitleRunes), f.Severity(), a.Content)
+	title := safetext.SingleLine(f.Title(), safetext.MaxTitleRunes)
+	summary := fmt.Sprintf("Add an internal comment to the finding %q (%s severity):\n\n%s", title, f.Severity(), a.Content)
+	// The same action as a code and values: the web shows the AI-written
+	// content and the client visibility as separate fields, so a comment that
+	// imitates the visibility line cannot pass for it.
+	msg := &mcpoauthapp.SummaryMessage{Code: "mcp.add_finding_comment", Params: map[string]any{
+		summaryParamFinding: title, summaryParamSeverity: f.Severity().String(), summaryParamContent: a.Content,
+	}}
 	if pentestFinding {
+		msg.Params["client_visible"] = vis == vulnerability.CommentVisibilityClient
 		visibleToClient := "no (campaign team only)"
 		if vis == vulnerability.CommentVisibilityClient {
 			visibleToClient = "yes"
 		}
 		summary += "\n\nVisible to the campaign's client: " + visibleToClient
 	}
-	return summary, nil
+	return summary, msg, nil
 }
 
 // commentVisibilityRefusal is the reason an AI client reads when the
@@ -214,12 +231,12 @@ func (h *MCPHandler) runWriteTool(r *http.Request, tool *mcpTool, tenantID strin
 		}
 		return nil, false
 	}
-	summary, err := tool.prepare(ctx, tenantID, raw)
+	summary, msg, err := tool.prepare(ctx, tenantID, raw)
 	if err != nil {
 		h.logger.Warn("mcp write tool prepare failed", "tool", tool.Name, "error", err.Error())
 		return toolErrorResult(classifyMCPError(err)), true
 	}
-	pending, err := h.confirmer.RequestConfirmation(ctx, p, tool.Name, digest, summary, mcpoauthapp.Actor{
+	pending, err := h.confirmer.RequestConfirmationWith(ctx, p, tool.Name, digest, summary, msg, mcpoauthapp.Actor{
 		IP: auditClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	})
 	if err != nil {
