@@ -21,6 +21,10 @@ vi.mock('@/features/findings/api/use-findings-api', () => ({
   useFindingApprovalSettings: () => ({ ...state, mutate: vi.fn() }),
   updateFindingApprovalSettings: vi.fn(),
 }))
+const scanMode: { data?: { mode: string } } = {}
+vi.mock('@/lib/api/scan-approval-hooks', () => ({
+  useScanGovernance: () => scanMode,
+}))
 vi.mock('@/features/access-control/api/use-groups', () => ({
   useGroups: () => ({ groups: [], isLoading: false }),
 }))
@@ -57,27 +61,35 @@ describe('Settings > Approvals page', () => {
     asked.length = 0
   })
 
-  it('links to scan approval only for whoever may open it (scans:read and the scans module)', () => {
+  it('shows scan approval only to whoever may open it (scans:read and the scans module)', () => {
     const { unmount } = render(<ApprovalsSettingsPage />)
-    expect(screen.queryByRole('link', { name: 'Open scan approval' })).toBeNull()
+    expect(document.getElementById('scans')).toBeNull()
     expect(asked).toContainEqual({
       permission: 'scans:read',
       module: 'scans',
     })
     unmount()
     canOpen = true
+    scanMode.data = { mode: 'on' }
     render(<ApprovalsSettingsPage />)
+    // The row says the mode in force and links to its own page.
+    expect(document.getElementById('scans')).toHaveTextContent(
+      'Scans your rules catch need approval before they run.'
+    )
     expect(screen.getByRole('link', { name: 'Open scan approval' })).toHaveAttribute(
       'href',
       '/settings/scanning/scan-approval'
     )
+    scanMode.data = undefined
   })
 
   it('is view only without settings:write', () => {
     perms = new Set()
     render(<ApprovalsSettingsPage />)
     expect(screen.getByText(/view only/i)).toBeInTheDocument()
-    for (const r of screen.getAllByRole('radio')) expect(r).toBeDisabled()
+    // Every setting stays reachable: each row opens its editor to view.
+    expect(screen.getByRole('button', { name: 'View False positives' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Change/ })).toBeNull()
   })
 
   it('shows the load failure with Retry, never default values', () => {
@@ -86,6 +98,6 @@ describe('Settings > Approvals page', () => {
     render(<ApprovalsSettingsPage />)
     expect(screen.getByText("Couldn't load Approvals")).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
-    expect(screen.queryByRole('radio')).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Change/ })).toBeNull()
   })
 })

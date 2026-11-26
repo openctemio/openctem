@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2, Link2, CheckCircle, XCircle, Eye, EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
+import { useTranslation } from '@/context/i18n-provider'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -62,6 +63,7 @@ interface TestResult {
 }
 
 export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnectionDialogProps) {
+  const { t } = useTranslation()
   const [testStatus, setTestStatus] = useState<TestStatus>('idle')
   const [testError, setTestError] = useState<string>('')
   const [testResult, setTestResult] = useState<TestResult | null>(null)
@@ -135,7 +137,7 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.message || 'Test failed')
+        throw new Error(data.message || t('scmConnections.add.testFailed', 'Test failed'))
       }
 
       if (data.success) {
@@ -147,11 +149,21 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
         })
       } else {
         setTestStatus('error')
-        setTestError(codeText(data.code, data.message, 'Connection test failed'))
+        setTestError(
+          codeText(
+            data.code,
+            data.message,
+            t('scmConnections.add.connectionTestFailed', 'Connection test failed')
+          )
+        )
       }
     } catch (error) {
       setTestStatus('error')
-      setTestError(error instanceof Error ? error.message : 'Failed to test connection')
+      setTestError(
+        error instanceof Error
+          ? error.message
+          : t('scmConnections.add.testError', 'Failed to test connection')
+      )
     }
   }
 
@@ -168,7 +180,11 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
         scm_organization: data.scmOrganization,
       })
 
-      toast.success(`Connection "${data.name}" created successfully`)
+      toast.success(
+        t('scmConnections.add.created', 'Connection "{name}" created.', {
+          name: data.name,
+        })
+      )
       await invalidateSCMIntegrationsCache()
       form.reset()
       setTestStatus('idle')
@@ -177,7 +193,11 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
       onOpenChange(false)
       onSuccess?.()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to create connection')
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t('scmConnections.add.createFailed', 'Failed to create connection')
+      )
     }
   }
 
@@ -195,10 +215,13 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Link2 className="h-5 w-5" />
-            Add SCM Connection
+            {t('scmConnections.add.title', 'Add source control connection')}
           </DialogTitle>
           <DialogDescription>
-            Connect your source code management platform to import repositories
+            {t(
+              'scmConnections.add.description',
+              'Connect your source code management platform to import repositories'
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -211,11 +234,16 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
                 name="provider"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Provider</FormLabel>
+                    <FormLabel>{t('scmConnections.field.provider', 'Provider')}</FormLabel>
                     <Select onValueChange={handleProviderChange} defaultValue={field.value}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select a provider" />
+                          <SelectValue
+                            placeholder={t(
+                              'scmConnections.field.providerPlaceholder',
+                              'Select a provider'
+                            )}
+                          />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -243,11 +271,22 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Connection Name</FormLabel>
+                    <FormLabel>{t('scmConnections.field.name', 'Connection name')}</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., My GitHub Enterprise" {...field} />
+                      <Input
+                        placeholder={t(
+                          'scmConnections.field.namePlaceholder',
+                          'e.g., My GitHub Enterprise'
+                        )}
+                        {...field}
+                      />
                     </FormControl>
-                    <FormDescription>A friendly name to identify this connection</FormDescription>
+                    <FormDescription>
+                      {t(
+                        'scmConnections.field.nameHelp',
+                        'A friendly name to identify this connection'
+                      )}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -259,12 +298,15 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
                 name="baseUrl"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Base URL</FormLabel>
+                    <FormLabel>{t('scmConnections.field.baseUrl', 'Base URL')}</FormLabel>
                     <FormControl>
                       <Input placeholder={DEFAULT_BASE_URLS[selectedProvider]} {...field} />
                     </FormControl>
                     <FormDescription>
-                      Leave default for cloud services, or enter your self-hosted URL
+                      {t(
+                        'scmConnections.field.baseUrlHelp',
+                        'Leave default for cloud services, or enter your self-hosted URL'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -277,12 +319,23 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
                 name="scmOrganization"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Organization / Group (Optional)</FormLabel>
+                    <FormLabel>
+                      {t('scmConnections.field.organization', 'Organization or group (optional)')}
+                    </FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., my-org" {...field} />
+                      <Input
+                        placeholder={t(
+                          'scmConnections.field.organizationPlaceholder',
+                          'e.g., my-org'
+                        )}
+                        {...field}
+                      />
                     </FormControl>
                     <FormDescription>
-                      Limit repositories to a specific organization or group
+                      {t(
+                        'scmConnections.field.organizationHelp',
+                        'Limit repositories to a specific organization or group'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -295,12 +348,17 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
                 name="accessToken"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Personal Access Token</FormLabel>
+                    <FormLabel>
+                      {t('scmConnections.field.token', 'Personal access token')}
+                    </FormLabel>
                     <FormControl>
                       <div className="relative">
                         <Input
                           type={showToken ? 'text' : 'password'}
-                          placeholder="Enter your access token"
+                          placeholder={t(
+                            'scmConnections.add.tokenPlaceholder',
+                            'Enter your access token'
+                          )}
                           className="pe-10"
                           {...field}
                           onChange={(e) => {
@@ -328,7 +386,12 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
                         </Button>
                       </div>
                     </FormControl>
-                    <FormDescription>Token requires read access to repositories</FormDescription>
+                    <FormDescription>
+                      {t(
+                        'scmConnections.add.tokenHelp',
+                        'Token requires read access to repositories'
+                      )}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -348,22 +411,44 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
                     {testStatus === 'testing' && (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin text-info" />
-                        <span className="text-sm text-info">Testing connection...</span>
+                        <span className="text-sm text-info">
+                          {t('scmConnections.add.testing', 'Testing connection...')}
+                        </span>
                       </>
                     )}
                     {testStatus === 'success' && (
                       <div className="flex flex-col gap-1">
                         <div className="flex items-center gap-2">
                           <CheckCircle className="h-4 w-4 text-success" />
-                          <span className="text-sm text-success">Connection successful!</span>
+                          <span className="text-sm text-success">
+                            {t('scmConnections.add.testOk', 'Connection successful')}
+                          </span>
                         </div>
                         {testResult && (
                           <div className="text-xs text-muted-foreground ms-6">
-                            {testResult.username && <span>User: {testResult.username}</span>}
-                            {testResult.organization && (
-                              <span> | Org: {testResult.organization}</span>
+                            {testResult.username && (
+                              <span>
+                                {t('scmConnections.add.testUser', 'User: {name}', {
+                                  name: testResult.username,
+                                })}
+                              </span>
                             )}
-                            <span> | {testResult.repositoryCount} repositories found</span>
+                            {testResult.organization && (
+                              <span>
+                                {' | '}
+                                {t('scmConnections.add.testOrganization', 'Organization: {name}', {
+                                  name: testResult.organization,
+                                })}
+                              </span>
+                            )}
+                            <span>
+                              {' | '}
+                              {t(
+                                'scmConnections.add.testRepositories',
+                                '{count, plural, one {# repository} other {# repositories}} found',
+                                { count: testResult.repositoryCount }
+                              )}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -372,7 +457,7 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
                       <>
                         <XCircle className="h-4 w-4 text-destructive" />
                         <span className="text-sm text-destructive">
-                          {testError || 'Connection failed'}
+                          {testError || t('scmConnections.add.testFail', 'Connection failed')}
                         </span>
                       </>
                     )}
@@ -391,11 +476,11 @@ export function AddConnectionDialog({ open, onOpenChange, onSuccess }: AddConnec
                 {testStatus === 'testing' ? (
                   <Loader2 className="me-2 h-4 w-4 animate-spin" />
                 ) : null}
-                Test Connection
+                {t('scmIntegration.actions.test', 'Test connection')}
               </Button>
               <Button type="submit" disabled={isMutating || testStatus === 'testing'}>
                 {isMutating ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : null}
-                Add Connection
+                {t('scmIntegration.page.addConnection', 'Add connection')}
               </Button>
             </DialogFooter>
           </DialogForm>

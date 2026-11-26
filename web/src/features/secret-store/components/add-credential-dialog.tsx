@@ -371,7 +371,10 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                             <div className="relative">
                               <Input
                                 type={showSecrets.bearer_token ? 'text' : 'password'}
-                                placeholder="ghp_xxxxxxxxxxxx or glpat-xxxxxxxxxxxx"
+                                placeholder={t(
+                                  'scans.credentials.placeholder.token',
+                                  'ghp_xxxxxxxxxxxx or glpat-xxxxxxxxxxxx'
+                                )}
                                 {...field}
                               />
                               <Button
@@ -419,6 +422,7 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                           </FormLabel>
                           <FormControl>
                             <Textarea
+                              // i18n-ok: PEM format sample
                               placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
                               className="font-mono text-xs"
                               rows={6}
