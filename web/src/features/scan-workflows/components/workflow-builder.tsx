@@ -109,6 +109,13 @@ const END_NODE_ID = '__end__'
 const NODE_WIDTH = 200
 const NODE_HEIGHT = 80
 const HORIZONTAL_GAP = 80
+/**
+ * How the canvas fits its steps: a small margin (the tool list already takes
+ * a side of the frame, so a wide margin left the steps unreadably small at
+ * 1024 px) and never larger than life (a single step is not blown up).
+ */
+const FIT_OPTIONS = { padding: 0.1, maxZoom: 1 }
+
 const VERTICAL_GAP = 40
 const START_X = 50
 const START_Y = 100
@@ -499,10 +506,16 @@ function WorkflowBuilderInner({
     t,
   ])
 
+  // Set once the person pans or zooms: from then on the view is theirs.
+  const viewMoved = useRef(false)
+
   // Step cards are taller than the layout assumes (tool, timeout and
   // capability rows): once they are measured, move overlapping cards down so
-  // none is drawn over another. Once per set of steps; a drag after that is
-  // the person's choice.
+  // none is drawn over another, then fit the view to them. Once per set of
+  // steps; a drag after that is the person's choice. The fit runs even when
+  // nothing moved: steps that load after the canvas first drew were never
+  // measured by its first fit, which then zoomed in on the start node and
+  // left the steps past the edge (1440 px, 2026-11-26).
   useEffect(() => {
     if (!nodesInitialized) return
     const key = steps
@@ -523,20 +536,20 @@ function WorkflowBuilderInner({
         })),
       VERTICAL_GAP
     )
-    if (!moved.size) return
-    setNodes((current) =>
-      current.map((n) =>
-        moved.has(n.id) ? { ...n, position: { x: n.position.x, y: moved.get(n.id)! } } : n
+    if (moved.size) {
+      setNodes((current) =>
+        current.map((n) =>
+          moved.has(n.id) ? { ...n, position: { x: n.position.x, y: moved.get(n.id)! } } : n
+        )
       )
-    )
-    requestAnimationFrame(() => void fitView({ padding: 0.3 }))
+    }
+    if (!viewMoved.current) requestAnimationFrame(() => void fitView(FIT_OPTIONS))
   }, [nodesInitialized, steps, getNodes, setNodes, fitView])
 
   // The canvas fits its steps whenever its frame changes size (the tool
   // list loads beside it, the window or the sidebar changes) until the
   // person pans or zooms: fitting once on load left steps past the edge
   // when the frame narrowed afterwards.
-  const viewMoved = useRef(false)
   useEffect(() => {
     const el = reactFlowWrapper.current
     if (!el || typeof ResizeObserver === 'undefined') return
@@ -544,7 +557,7 @@ function WorkflowBuilderInner({
     const ro = new ResizeObserver(() => {
       if (viewMoved.current) return
       cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => void fitView({ padding: 0.3 }))
+      frame = requestAnimationFrame(() => void fitView(FIT_OPTIONS))
     })
     ro.observe(el)
     return () => {
@@ -875,7 +888,7 @@ function WorkflowBuilderInner({
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
-        fitViewOptions={{ padding: 0.3 }}
+        fitViewOptions={FIT_OPTIONS}
         onMoveStart={onMoveStart}
         minZoom={0.1}
         maxZoom={2}
@@ -895,8 +908,9 @@ function WorkflowBuilderInner({
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#d1d5db" />
         <Controls showInteractive={!readOnly} />
-        {/* On a phone the minimap would cover the steps it maps. */}
-        <MiniMap nodeColor={nodeColor} zoomable pannable className="max-md:hidden" />
+        {/* Below 1536 px the canvas beside its tool list is too narrow: the
+            minimap covered the steps it maps (1440 px, 2026-11-26). */}
+        <MiniMap nodeColor={nodeColor} zoomable pannable className="max-2xl:hidden" />
       </ReactFlow>
     </div>
   )

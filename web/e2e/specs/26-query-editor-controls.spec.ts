@@ -302,8 +302,9 @@ test.describe('Query editor controls', { tag: ['@findings'] }, () => {
       await expect(title).toContainText(name)
       await expect(modified).toBeVisible()
 
-      // Reset: back to the view as saved.
-      await page.locator('main [data-slot="list-view-reset"]').click()
+      // Reset (in the one Save view menu): back to the view as saved.
+      await page.locator('main [data-slot="list-view-save"]').click()
+      await page.getByRole('menuitem', { name: /^reset$/i }).click()
       await expect(page).toHaveURL(new RegExp(`[?&]view=${made.id}`))
       await expect(box).toHaveValue('severity=critical')
       await expect(modified).toHaveCount(0)
@@ -313,7 +314,7 @@ test.describe('Query editor controls', { tag: ['@findings'] }, () => {
       // Ctrl+Enter runs the text whatever the suggestions show.
       await box.press('Control+Enter')
       await expect(modified).toBeVisible()
-      await page.locator('main [data-slot="list-view-actions"] button').first().click()
+      await page.locator('main [data-slot="list-view-save"]').click()
       await page.getByRole('menuitem', { name: /^save changes$/i }).click()
       await expect(page).toHaveURL(new RegExp(`[?&]view=${made.id}`))
       await expect(page).not.toHaveURL(/from_view=/)
@@ -386,6 +387,7 @@ test.describe('Query editor controls', { tag: ['@findings'] }, () => {
       await expect(save).toBeVisible()
       await save.click()
       await expect(page.getByRole('menuitem', { name: /^save changes$/i })).toHaveCount(0)
+      await page.getByRole('menuitem', { name: /^save view$/i }).click()
       await expect(page.getByRole('dialog')).toBeVisible()
       await page.keyboard.press('Escape')
     } finally {
