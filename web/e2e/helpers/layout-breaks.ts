@@ -509,7 +509,63 @@ function taskPage(scen: Scenario) {
   return { data, total: data.length, page: 1, per_page: 25 }
 }
 
+/**
+ * Finding approval settings with every lowering waiting (levels, second look,
+ * a relaxed policy with a security pool), the floors and defaults of the
+ * platform (server/pkg/domain/approvalpolicy/tier.go).
+ */
+function approvalsWaiting() {
+  const at = new Date(Date.now() + 20 * 3600_000).toISOString()
+  const tiers: Record<string, string> = {}
+  const floors: Record<string, string> = {}
+  const defaults: Record<string, string> = {}
+  for (const cls of ['standard', 'high', 'critical']) {
+    floors[`false_positive.${cls}`] = 'single'
+    defaults[`false_positive.${cls}`] = 'peer'
+    floors[`rule_false_positive.${cls}`] = 'peer'
+    defaults[`rule_false_positive.${cls}`] = cls === 'standard' ? 'peer' : 'security'
+    for (const kind of ['accepted', 'rule_accepted']) {
+      floors[`${kind}.${cls}`] = cls === 'standard' ? 'peer' : 'security'
+      defaults[`${kind}.${cls}`] =
+        cls === 'standard' ? 'peer' : cls === 'high' ? 'security' : 'dual'
+    }
+  }
+  tiers['false_positive.critical'] = 'dual'
+  const policy = {
+    tiers,
+    security_pool_strict: false,
+    exclude_assignee: true,
+    step_up_all_tiers: false,
+    max_acceptance_days: { critical: 30 },
+    decide_within_days: 7,
+    epss_threshold: 0.2,
+    on_material_change_accepted: 'end_on_tier_rise',
+    on_material_change_single_person_fp: 'flag',
+  }
+  return {
+    backup_contact_email: 'advisor@example.com',
+    fp_approval: 'all',
+    pending_fp_approval: 'off',
+    pending_fp_approval_at: at,
+    accept_approval: 'all',
+    pending_accept_approval: 'high_and_above',
+    pending_accept_approval_at: at,
+    second_look_percent: 5,
+    pending_second_look_percent: 2,
+    pending_second_look_at: at,
+    policy,
+    pending_policy: { ...policy, tiers: {}, exclude_assignee: false },
+    pending_policy_at: at,
+    floors,
+    defaults,
+  }
+}
+
 const ROUTE_DATA: Record<string, { url: string; body: (scen: Scenario) => unknown }[]> = {
+  // Lowered protections waiting their 24 hours: the notice with its cancel.
+  '/settings/approvals@waiting': [
+    { url: '**/api/v1/organization/settings/finding-approvals', body: approvalsWaiting },
+  ],
   '/settings/risk-scoring': [
     { url: '**/api/v1/tenants/*/settings/risk-scoring/presets', body: riskPresets },
     { url: '**/api/v1/tenants/*/settings/risk-scoring', body: riskSettings },
@@ -1502,6 +1558,21 @@ export function layoutMatrix({ session = 'tenant', data, ...options }: MatrixOpt
               await settle(page)
             }
             let scope = 'main'
+            // A state whose act opened an overlay (an editor dialog) is
+            // measured in it; the matrix overlays are not opened over it.
+            const stateLayer = ROUTE_STATES[route]?.layer
+            if (stateLayer) {
+              const opened = await page
+                .locator(`${stateLayer}:visible`)
+                .first()
+                .isVisible()
+                .catch(() => false)
+              if (!opened || v.overlay) {
+                report[v.tag] = 'no such overlay'
+                continue
+              }
+              scope = stateLayer
+            }
             if (v.overlay) {
               const layer = await openOverlay(page, v.overlay)
               if (!layer) {
@@ -1524,16 +1595,17 @@ export function layoutMatrix({ session = 'tenant', data, ...options }: MatrixOpt
             // document. Any other
             // scroller (a boxed list inside the page) keeps its box: growing
             // the window by its height left a screen of empty page under it.
-            const tall = v.overlay
-              ? 0
-              : await page.evaluate(() =>
-                  Math.max(
-                    0,
-                    ...[document.querySelector('#content'), document.scrollingElement].map((e) =>
-                      e ? e.scrollHeight - e.clientHeight : 0
+            const tall =
+              v.overlay || stateLayer
+                ? 0
+                : await page.evaluate(() =>
+                    Math.max(
+                      0,
+                      ...[document.querySelector('#content'), document.scrollingElement].map((e) =>
+                        e ? e.scrollHeight - e.clientHeight : 0
+                      )
                     )
                   )
-                )
             if (tall > 0)
               await page.setViewportSize({
                 width: v.width,
@@ -1549,10 +1621,10 @@ export function layoutMatrix({ session = 'tenant', data, ...options }: MatrixOpt
             await keep(
               testInfo,
               `${dir}/${v.tag}.png`,
-              await page.screenshot({ fullPage: !v.overlay, timeout: 30_000 })
+              await page.screenshot({ fullPage: !v.overlay && !stateLayer, timeout: 30_000 })
             )
             if (tall > 0) await page.setViewportSize({ width: v.width, height: v.height })
-            if (v.overlay) await page.keyboard.press('Escape').catch(() => {})
+            if (v.overlay || stateLayer) await page.keyboard.press('Escape').catch(() => {})
           }
           await keep(testInfo, `${dir}/w${size.width}.json`, JSON.stringify(report, null, 1))
           await ctx?.close()
