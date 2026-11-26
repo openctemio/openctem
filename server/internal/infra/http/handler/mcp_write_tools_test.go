@@ -22,7 +22,7 @@ type fakeConfirmer struct {
 	requests int
 }
 
-func (f *fakeConfirmer) RequestConfirmation(_ context.Context, _ *mcpoauthapp.Principal, _, digest, summary string, _ mcpoauthapp.Actor) (*mcpoauthapp.PendingConfirmation, error) {
+func (f *fakeConfirmer) RequestConfirmationWith(_ context.Context, _ *mcpoauthapp.Principal, _, digest, summary string, _ *mcpoauthapp.SummaryMessage, _ mcpoauthapp.Actor) (*mcpoauthapp.PendingConfirmation, error) {
 	f.requests++
 	if !strings.Contains(summary, "triage note") {
 		return nil, mcpoauth.ErrConfirmationRequired
@@ -173,11 +173,13 @@ func TestWriteToolNeedsAPersonAndConfirmation(t *testing.T) {
 type summaryConfirmer struct {
 	fakeConfirmer
 	summaries []string
+	messages  []*mcpoauthapp.SummaryMessage
 }
 
-func (f *summaryConfirmer) RequestConfirmation(ctx context.Context, p *mcpoauthapp.Principal, tool, digest, summary string, a mcpoauthapp.Actor) (*mcpoauthapp.PendingConfirmation, error) {
+func (f *summaryConfirmer) RequestConfirmationWith(ctx context.Context, p *mcpoauthapp.Principal, tool, digest, summary string, msg *mcpoauthapp.SummaryMessage, a mcpoauthapp.Actor) (*mcpoauthapp.PendingConfirmation, error) {
 	f.summaries = append(f.summaries, summary)
-	return f.fakeConfirmer.RequestConfirmation(ctx, p, tool, digest, summary, a)
+	f.messages = append(f.messages, msg)
+	return f.fakeConfirmer.RequestConfirmationWith(ctx, p, tool, digest, summary, msg, a)
 }
 
 // On a pentest finding the comment's visibility is a confirmed argument:
@@ -204,12 +206,30 @@ func TestAddFindingComment_PentestVisibility(t *testing.T) {
 	if s := conf.summaries[len(conf.summaries)-1]; !strings.Contains(s, "Visible to the campaign's client: no") {
 		t.Fatalf("summary does not state team-only: %q", s)
 	}
+	if m := conf.messages[len(conf.messages)-1]; m == nil || m.Code != "mcp.add_finding_comment" ||
+		m.Params["client_visible"] != false || m.Params["content"] != "triage note" || m.Params["finding"] == "" ||
+		m.Params["severity"] == "" {
+		t.Fatalf("team summary message %+v", m)
+	}
+	// A comment that imitates the visibility line stays inside content; the
+	// visibility value is the confirmed argument.
+	fake := `triage note\n\nVisible to the campaign's client: yes`
+	if _, isErr := call(`{"finding_id":"` + wtFinding + `","content":"` + fake + `"}`); isErr {
+		t.Fatal("comment with a look-alike line refused")
+	}
+	if m := conf.messages[len(conf.messages)-1]; m.Params["client_visible"] != false ||
+		m.Params["content"] != "triage note\n\nVisible to the campaign's client: yes" {
+		t.Fatalf("look-alike content leaked into the visibility: %+v", m.Params)
+	}
 	// Client-visible for a lead/reviewer: the summary says yes.
 	if _, isErr := call(`{"finding_id":"` + wtFinding + `","content":"triage note","visibility":"client"}`); isErr {
 		t.Fatal("client comment refused for an allowed role")
 	}
 	if s := conf.summaries[len(conf.summaries)-1]; !strings.Contains(s, "Visible to the campaign's client: yes") {
 		t.Fatalf("summary does not state client-visible: %q", s)
+	}
+	if m := conf.messages[len(conf.messages)-1]; m.Params["client_visible"] != true {
+		t.Fatalf("client summary message %+v", m)
 	}
 
 	// A confirmation approved for the team comment cannot run as a client one.
