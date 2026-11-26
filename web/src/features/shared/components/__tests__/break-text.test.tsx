@@ -22,10 +22,18 @@ describe('BreakText', () => {
     expect(el.innerHTML).toBe('payments-<wbr>api.<wbr>example.<wbr>com')
   })
 
-  it('breaks an e-mail address before the @, never inside a word', () => {
-    const el = html('thong.tin@example.com')
-    expect(el.textContent).toBe('thong.tin@example.com')
-    expect(el.innerHTML).toBe('thong.<wbr>tin<wbr>@example.<wbr>com')
+  it('breaks an e-mail address only before the @: each part stays whole', () => {
+    const el = html('thong.tin@example.com.vn')
+    expect(el.textContent).toBe('thong.tin@example.com.vn')
+    expect(el.innerHTML).toBe(
+      '<span data-email-part="">thong.tin</span><wbr><span data-email-part="">@example.com.vn</span>'
+    )
+  })
+
+  it('treats a text with an @ but no address shape as a name', () => {
+    const el = html('team@ops/eu')
+    expect(el.textContent).toBe('team@ops/eu')
+    expect(el.innerHTML).toBe('team<wbr>@ops/<wbr>eu')
   })
 
   it('leaves plain words alone', () => {

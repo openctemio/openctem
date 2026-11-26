@@ -359,7 +359,7 @@ export const ROUTE_STATES: Record<string, RouteState> = {
   ]),
   '/settings/approvals@waiting': { path: '/settings/approvals' },
   // A text of its own applied on top of the view (the view then reads as
-  // changed: Modified, Save view and Reset join the title row), then the
+  // changed: Modified and the Save view menu join the title row), then the
   // editor expanded: the state a filter edit is left in.
   '/findings@query-applied': {
     path: '/findings?mode=query',

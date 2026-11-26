@@ -22,7 +22,6 @@ import { Label } from '@/components/ui/label'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
-import { useIsWide } from '@/hooks/use-mobile'
 import { LazyScanAssetsDialog } from '@/features/scans/components/lazy-dialogs'
 import type { ScanCandidate } from '@/features/scans/components/scan-assets-dialog'
 import { createRemediationTask, setAlertState, useRevalidateEmergingThreats } from '../api'
@@ -225,7 +224,6 @@ export function AlertActionButton({
  */
 export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
   const { t } = useTranslation()
-  const compact = !useIsWide()
   const { primary, rest, dialogs } = useAlertActions(alert)
   const menuItems: ActionMenuEntry[] = rest.map((a) => ({
     id: a.id,
@@ -235,16 +233,13 @@ export function AlertActions({ alert }: { alert: EmergingThreatDetail }) {
     disabledReason: a.disabledReason,
     section: a.id === 'task' || a.id === 'scan' ? a.id : 'state',
   }))
+  // One main action and More at every width: from 1280 px the other moves
+  // stood beside it as four equal buttons, so none of them read as the next
+  // step. An action that cannot run waits in the menu with its reason.
   return (
     <div className="flex flex-wrap items-center gap-2">
       {primary && <AlertActionButton action={primary} />}
-      {/* An action that cannot run is not drawn as a greyed button: it waits in
-          the menu below xl with its reason, and is left out from xl. */}
-      {!compact &&
-        rest
-          .filter((a) => !a.disabledReason)
-          .map((a) => <AlertActionButton key={a.id} action={a} variant="outline" />)}
-      {compact && menuItems.length > 0 && (
+      {menuItems.length > 0 && (
         <ActionMenu
           title={alert.vuln_id}
           label={t('emergingThreats.actions.menu', undefined, { vulnId: alert.vuln_id })}
