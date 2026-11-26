@@ -229,6 +229,7 @@ check and answers `403 STEP_UP_REQUIRED` (outside the window) or
 
 - `POST /api/v1/api-keys`, `DELETE /api/v1/api-keys/{id}`
 - `POST /api/v1/scim-tokens`, `POST /api/v1/scim-tokens/{id}/rotate`
+- `POST /api/v1/roles`, `PUT`/`DELETE /api/v1/roles/{roleId}`, `POST .../{roleId}/template/apply`, `POST .../{roleId}/members/bulk`, `POST`/`PUT /api/v1/users/{userId}/roles`
 - `PATCH /api/v1/tenants/{tenant}/settings/security` (MFA, IP allowlist, allowed domains)
 - `PATCH /api/v1/tenants/{tenant}/settings/modules`, `POST .../settings/modules/reset`, `POST .../settings/modules/presets/{presetId}/apply`
 - `POST /api/v1/secret-store`, `PUT`/`DELETE /api/v1/secret-store/{id}`, `POST .../{id}/rotate`
