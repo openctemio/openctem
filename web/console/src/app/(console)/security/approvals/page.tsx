@@ -163,7 +163,8 @@ export default function AdminApprovalsPage() {
                     toast.error(
                       adminErrorMessage(
                         err,
-                        t('admin.confirm.failed', 'The action failed. Try again.')
+                        t('admin.confirm.failed', 'The action failed. Try again.'),
+                        t('admin.login.tooMany', 'Too many attempts. Wait a minute and try again.')
                       )
                     )
                   }
