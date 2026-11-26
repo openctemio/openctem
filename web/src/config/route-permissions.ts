@@ -69,11 +69,11 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     module: Module.AttackSurface,
   },
   '/exposure-chains': {
-    permission: Permission.AssetsRead,
+    permission: Permission.AttackPathsRead,
     module: Module.AttackSurface,
   },
   '/attack-paths': {
-    permission: Permission.AssetsRead,
+    permission: Permission.AttackPathsRead,
     module: Module.AttackSurface,
   },
   '/attack-surface/external': {
@@ -189,7 +189,7 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
     module: Module.AttackerProfiles,
   },
   '/threat-model': {
-    permission: Permission.AssetsRead,
+    permission: Permission.AttackPathsRead,
     module: Module.ThreatModel,
   },
 
