@@ -103,6 +103,8 @@ describe('automatic phone card: plain values and labels are not cut', () => {
       />
     )
     expect(field(container, 'seen')?.className).not.toContain('col-span-2')
-    expect(container.querySelector('[data-slot="mobile-card"] dl')?.className).toContain('h-5')
+    expect(field(container, 'owner')?.className).not.toContain('col-span-2')
+    // Shown fields have no fixed line height: a longer value would wrap.
+    expect(container.querySelector('[data-slot="mobile-card"] dl')?.className).not.toContain('h-5')
   })
 })

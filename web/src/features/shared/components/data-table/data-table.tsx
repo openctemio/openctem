@@ -566,9 +566,10 @@ function valueSays(el: Element | null | undefined, titleText: string): boolean {
  * ellipsis cannot reach text inside a flex row ("Manuale2e-owne" cut at the
  * card's edge on a scan's runs).
  */
-// A value that wraps to two lines in the table (`CellText`) is one line here,
-// ending in an ellipsis with its whole text as its title, not cut at the
-// card's edge ("Không có cảm biến nào đang trực tuyến gi").
+// On these one-line parts (the measuring pass, a status beside the title), a
+// value that wraps to two lines in the table (`CellText`) is one line, ending
+// in an ellipsis with its whole text as its title, never cut at the card's
+// edge. Shown fields wrap instead (CARD_WRAP_VALUE_CLASS).
 const CARD_LINE_CLASS =
   'min-w-0 overflow-hidden whitespace-nowrap [&_[data-slot=cell-text]]:block [&_[data-slot=cell-text]]:truncate [&_*]:whitespace-nowrap [&_.flex]:flex-nowrap [&_.flex-col]:flex-row [&_.flex-col]:gap-x-1.5 [&_.flex-col>*:not(:last-child)]:shrink-0 [&_.flex-col>*:last-child]:min-w-0 [&_.flex-col>*:last-child]:truncate'
 
