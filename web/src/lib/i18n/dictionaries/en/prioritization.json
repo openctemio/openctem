@@ -287,5 +287,6 @@
   "prioritization.rules.tune": "Tune risk scoring",
   "prioritization.rules.value.false": "False",
   "prioritization.rules.value.select": "Select",
-  "prioritization.rules.value.true": "True"
+  "prioritization.rules.value.true": "True",
+  "prioritization.rules.valuePlaceholder": "critical, high"
 }

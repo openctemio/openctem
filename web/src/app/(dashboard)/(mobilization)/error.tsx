@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { reportRouteError } from '@/lib/error-reporting'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface ErrorProps {
   error: Error & { digest?: string }
@@ -20,6 +21,7 @@ interface ErrorProps {
 }
 
 export default function MobilizationError({ error, reset }: ErrorProps) {
+  const { t } = useTranslation()
   useEffect(() => {
     reportRouteError(error, '/mobilization', { section: 'mobilization' })
   }, [error])
@@ -33,21 +35,26 @@ export default function MobilizationError({ error, reset }: ErrorProps) {
           </div>
           <CardTitle className="flex items-center justify-center gap-2">
             <Rocket className="h-5 w-5" />
-            Mobilization Error
+            {t('errors.boundary.mobilization.title', 'Mobilization error')}
           </CardTitle>
           <CardDescription>
-            Failed to load mobilization data. Remediation workflows may be temporarily unavailable.
+            {t(
+              'errors.boundary.mobilization.description',
+              'Failed to load mobilization data. Remediation workflows may be temporarily unavailable.'
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="text-center">
           {error.digest && (
-            <p className="text-muted-foreground text-sm">Error ID: {error.digest}</p>
+            <p className="text-muted-foreground text-sm">
+              {t('errors.boundary.errorId', 'Error ID: {id}', { id: error.digest })}
+            </p>
           )}
         </CardContent>
         <CardFooter className="flex flex-wrap justify-center gap-2">
-          <Button onClick={reset}>Retry</Button>
+          <Button onClick={reset}>{t('common.retry', 'Retry')}</Button>
           <Button variant="outline" onClick={() => window.history.back()}>
-            Go back
+            {t('common.goBack', 'Go back')}
           </Button>
           <ReportProblem error={error} />
         </CardFooter>

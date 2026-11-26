@@ -509,6 +509,7 @@ export default function WorkflowsPage() {
             node_key: 'trigger_1',
             node_type: 'trigger',
             name: 'Manual Trigger',
+            // i18n-ok: stored workflow data sent to the API, not rendered text
             description: 'Manually triggered workflow',
             ui_position: { x: 250, y: 50 },
             config: {

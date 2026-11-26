@@ -33,6 +33,7 @@ import type {
   CreateScopeRuleInput,
   UpdateScopeRuleInput,
 } from '@/features/access-control/types'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface ScopeRuleDialogProps {
   open: boolean
@@ -49,6 +50,7 @@ export function ScopeRuleDialog({
   isSubmitting,
   onSubmit,
 }: ScopeRuleDialogProps) {
+  const { t } = useTranslation()
   const isEditing = !!rule
 
   const [name, setName] = useState('')
@@ -133,11 +135,18 @@ export function ScopeRuleDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isEditing ? 'Edit Scope Rule' : 'Create Scope Rule'}</DialogTitle>
+          <DialogTitle>
+            {isEditing
+              ? t('org.scopeRuleDialog.editTitle', 'Edit scope rule')
+              : t('org.scopeRuleDialog.createTitle', 'Create scope rule')}
+          </DialogTitle>
           <DialogDescription>
             {isEditing
-              ? 'Update the scope rule configuration.'
-              : 'Define a rule to automatically assign assets to this team.'}
+              ? t('org.scopeRuleDialog.editDescription', 'Update the scope rule configuration.')
+              : t(
+                  'org.scopeRuleDialog.createDescription',
+                  'Define a rule to automatically assign assets to this team.'
+                )}
           </DialogDescription>
         </DialogHeader>
 
@@ -145,10 +154,10 @@ export function ScopeRuleDialog({
           <div className="space-y-4 py-4">
             {/* Name */}
             <div className="space-y-2">
-              <Label htmlFor="rule-name">Name</Label>
+              <Label htmlFor="rule-name">{t('org.scopeRuleDialog.name', 'Name')}</Label>
               <Input
                 id="rule-name"
-                placeholder="e.g., Production Assets"
+                placeholder={t('org.scopeRuleDialog.namePlaceholder', 'e.g., Production Assets')}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 maxLength={200}
@@ -157,10 +166,15 @@ export function ScopeRuleDialog({
 
             {/* Description */}
             <div className="space-y-2">
-              <Label htmlFor="rule-description">Description</Label>
+              <Label htmlFor="rule-description">
+                {t('org.scopeRuleDialog.description', 'Description')}
+              </Label>
               <Textarea
                 id="rule-description"
-                placeholder="Optional description..."
+                placeholder={t(
+                  'org.scopeRuleDialog.descriptionPlaceholder',
+                  'Optional description...'
+                )}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={2}
@@ -170,7 +184,7 @@ export function ScopeRuleDialog({
             {/* Rule Type (only when creating) */}
             {!isEditing && (
               <div className="space-y-2">
-                <Label>Rule Type</Label>
+                <Label>{t('org.scopeRuleDialog.ruleType', 'Rule type')}</Label>
                 <Select value={ruleType} onValueChange={(v: ScopeRuleType) => setRuleType(v)}>
                   <SelectTrigger>
                     <SelectValue />
@@ -178,17 +192,24 @@ export function ScopeRuleDialog({
                   <SelectContent>
                     <SelectItem value="tag_match">
                       <div className="flex flex-col">
-                        <span className="font-medium">Tag Match</span>
+                        <span className="font-medium">
+                          {t('org.scopeRuleDialog.tagMatch', 'Tag match')}
+                        </span>
                         <span className="text-xs text-muted-foreground">
-                          Match assets by their tags
+                          {t('org.scopeRuleDialog.tagMatchHint', 'Match assets by their tags')}
                         </span>
                       </div>
                     </SelectItem>
                     <SelectItem value="asset_group_match">
                       <div className="flex flex-col">
-                        <span className="font-medium">Asset Group Match</span>
+                        <span className="font-medium">
+                          {t('org.scopeRuleDialog.groupMatch', 'Asset group match')}
+                        </span>
                         <span className="text-xs text-muted-foreground">
-                          Match assets by asset group membership
+                          {t(
+                            'org.scopeRuleDialog.groupMatchHint',
+                            'Match assets by asset group membership'
+                          )}
                         </span>
                       </div>
                     </SelectItem>
@@ -201,18 +222,21 @@ export function ScopeRuleDialog({
             {ruleType === 'tag_match' && (
               <>
                 <div className="space-y-2">
-                  <Label>Match Tags (max 10)</Label>
+                  <Label>{t('org.scopeRuleDialog.matchTags', 'Match tags (max 10)')}</Label>
                   <TagInput
                     value={matchTags}
                     onChange={setMatchTags}
                     suggestions={tagSuggestions}
-                    placeholder="Type a tag and press Enter..."
+                    placeholder={t(
+                      'org.scopeRuleDialog.tagPlaceholder',
+                      'Type a tag and press Enter...'
+                    )}
                     maxTags={10}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Match Logic</Label>
+                  <Label>{t('org.scopeRuleDialog.matchLogic', 'Match logic')}</Label>
                   <Select value={matchLogic} onValueChange={(v: MatchLogic) => setMatchLogic(v)}>
                     <SelectTrigger>
                       <SelectValue />
@@ -220,17 +244,24 @@ export function ScopeRuleDialog({
                     <SelectContent>
                       <SelectItem value="any">
                         <div className="flex flex-col">
-                          <span className="font-medium">Any (OR)</span>
+                          <span className="font-medium">
+                            {t('org.scopeRuleDialog.any', 'Any (OR)')}
+                          </span>
                           <span className="text-xs text-muted-foreground">
-                            Asset matches if it has ANY of the tags
+                            {t(
+                              'org.scopeRuleDialog.anyHint',
+                              'Asset matches if it has ANY of the tags'
+                            )}
                           </span>
                         </div>
                       </SelectItem>
                       <SelectItem value="all">
                         <div className="flex flex-col">
-                          <span className="font-medium">All (AND)</span>
+                          <span className="font-medium">
+                            {t('org.scopeRuleDialog.all', 'All (AND)')}
+                          </span>
                           <span className="text-xs text-muted-foreground">
-                            Asset must have ALL of the tags
+                            {t('org.scopeRuleDialog.allHint', 'Asset must have ALL of the tags')}
                           </span>
                         </div>
                       </SelectItem>
@@ -243,11 +274,13 @@ export function ScopeRuleDialog({
             {/* Asset Group Match Configuration */}
             {ruleType === 'asset_group_match' && (
               <div className="space-y-2">
-                <Label>Select Asset Groups (max 5)</Label>
+                <Label>
+                  {t('org.scopeRuleDialog.selectGroups', 'Select asset groups (max 5)')}
+                </Label>
                 <div className="border rounded-md max-h-[200px] overflow-y-auto p-1 space-y-1">
                   {assetGroups.length === 0 ? (
                     <div className="p-4 text-center text-muted-foreground text-sm">
-                      No asset groups found
+                      {t('org.scopeRuleDialog.noGroups', 'No asset groups found')}
                     </div>
                   ) : (
                     assetGroups.map((group) => {
@@ -279,8 +312,11 @@ export function ScopeRuleDialog({
                 </div>
                 {matchAssetGroupIds.length > 0 && (
                   <p className="text-xs text-muted-foreground text-end">
-                    {matchAssetGroupIds.length} group{matchAssetGroupIds.length !== 1 ? 's' : ''}{' '}
-                    selected
+                    {t(
+                      'org.scopeRuleDialog.groupsSelected',
+                      '{count, plural, one {# group selected} other {# groups selected}}',
+                      { count: matchAssetGroupIds.length }
+                    )}
                   </p>
                 )}
               </div>
@@ -288,7 +324,7 @@ export function ScopeRuleDialog({
 
             {/* Ownership Type */}
             <div className="space-y-2">
-              <Label>Ownership Type</Label>
+              <Label>{t('org.ownership.type', 'Ownership type')}</Label>
               <Select
                 value={ownershipType}
                 onValueChange={(v: OwnershipType) => setOwnershipType(v)}
@@ -297,17 +333,25 @@ export function ScopeRuleDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="primary">Primary</SelectItem>
-                  <SelectItem value="secondary">Secondary</SelectItem>
-                  <SelectItem value="stakeholder">Stakeholder</SelectItem>
-                  <SelectItem value="informed">Informed</SelectItem>
+                  <SelectItem value="primary">
+                    {t('assets.ownershipType.primary', 'Primary')}
+                  </SelectItem>
+                  <SelectItem value="secondary">
+                    {t('assets.ownershipType.secondary', 'Secondary')}
+                  </SelectItem>
+                  <SelectItem value="stakeholder">
+                    {t('assets.ownershipType.stakeholder', 'Stakeholder')}
+                  </SelectItem>
+                  <SelectItem value="informed">
+                    {t('assets.ownershipType.informed', 'Informed')}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             {/* Priority */}
             <div className="space-y-2">
-              <Label htmlFor="rule-priority">Priority</Label>
+              <Label htmlFor="rule-priority">{t('org.scopeRuleDialog.priority', 'Priority')}</Label>
               <Input
                 id="rule-priority"
                 type="number"
@@ -317,7 +361,10 @@ export function ScopeRuleDialog({
                 onChange={(e) => setPriority(Number(e.target.value))}
               />
               <p className="text-xs text-muted-foreground">
-                Higher priority rules are evaluated first (0-100)
+                {t(
+                  'org.scopeRuleDialog.priorityHint',
+                  'Higher priority rules are evaluated first (0-100)'
+                )}
               </p>
             </div>
           </div>
@@ -325,7 +372,7 @@ export function ScopeRuleDialog({
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={isSubmitting || !isValid}>
             {isSubmitting ? (
@@ -335,7 +382,9 @@ export function ScopeRuleDialog({
             ) : (
               <Plus className="me-2 h-4 w-4" />
             )}
-            {isEditing ? 'Save Changes' : 'Create Rule'}
+            {isEditing
+              ? t('org.scopeRuleDialog.saveChanges', 'Save changes')
+              : t('org.scopeRuleDialog.createRule', 'Create rule')}
           </Button>
         </DialogFooter>
       </DialogContent>
