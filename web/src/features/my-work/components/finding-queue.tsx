@@ -17,6 +17,8 @@ import { SlaDueChip } from '@/features/sla/components/sla-due-chip'
 import { useTranslation } from '@/context/i18n-provider'
 import { FindingTitleCell } from '@/features/findings/components/cells/finding-title-cell'
 import { findingLocation } from '@/features/findings/lib/finding-location'
+import { maskSensitiveText } from '@/lib/mask-sensitive'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { QUEUE_SIZE, type FindingQueueTab } from '../lib/queues'
 
 function findingName(f: ApiFinding): string | undefined {
@@ -159,18 +161,18 @@ export function FindingQueue({
   const mobileRow = (f: ApiFinding) => {
     const location = findingLocation(f).full
     const href = `/findings/${encodeURIComponent(f.id)}`
+    // Masked and escaped as the table row's FindingTitleCell does: a secret in
+    // a scanner title never shows in clear on a phone either.
+    const raw = findingName(f)
+    const name = raw ? toDisplayText(maskSensitiveText(raw), 500) : ''
     return (
       <QueueCard
         data-testid="my-work-finding-card"
         href={href}
         title={
           <Link href={href} className="block min-w-0 text-sm font-medium hover:underline">
-            <span
-              data-cut-tooltip
-              title={findingName(f) || undefined}
-              className="line-clamp-2 break-words"
-            >
-              {findingName(f) || t('myWork.untitled')}
+            <span data-cut-tooltip title={name || undefined} className="line-clamp-2 break-words">
+              {name || t('myWork.untitled')}
             </span>
           </Link>
         }

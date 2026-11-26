@@ -458,7 +458,7 @@ export function EditGroupDialog({
                           type="email"
                           placeholder={t(
                             'assetGroups.basic.ownerEmailPlaceholder',
-                            'e.g., a.nguyen@company.vn'
+                            'e.g., a.nguyen@example.com.vn'
                           )}
                           value={formData.ownerEmail}
                           onChange={(e) =>
