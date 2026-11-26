@@ -455,6 +455,12 @@ reference.
 - A share of capacity (job slots in use, quota spent) is the shared `<Meter>`
   (`role="meter"`, a label saying what it measures), in a metric's `detail`,
   a `DetailStat` or a row. Not a hand-made bar.
+- A mix of outcomes over one whole (checklist results: passed, failed, N/A,
+  untested) is the shared `<StatusMix>`: a thin segmented bar under a caption
+  that says what it measures ("12 of 38 tested", never a bare percentage, so
+  a whole of one quiet part never reads as done) and one line of counts whose
+  dots are coloured only above zero. A group header's mini bar is
+  `ProgressCell`. Never a heavy solid bar.
 - Every number on a dashboard opens the list it counts, with the same filter
   (not the unfiltered page).
 - A number that cannot be computed shows "Not enough data" and what is

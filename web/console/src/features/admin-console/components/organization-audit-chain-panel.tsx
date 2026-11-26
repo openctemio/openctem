@@ -189,10 +189,21 @@ export function OrganizationAuditChainPanel({
   const canRun = canRebaseline && !!data?.rebaseline_allowed && breaks > 0 && !!data?.fingerprint
 
   let disabledReason: string | null = null
-  if (!canRebaseline) disabledReason = 'Rebaselining requires a super admin.'
-  else if (data && blocking > 0) disabledReason = 'Refused while any break is unexplained.'
+  if (!canRebaseline)
+    disabledReason = t(
+      'admin.auditChain.rebaselineSuperOnly',
+      'Rebaselining requires a super admin.'
+    )
+  else if (data && blocking > 0)
+    disabledReason = t(
+      'admin.auditChain.rebaselineRefused',
+      'Refused while any break is unexplained.'
+    )
   else if (data && breaks === 0)
-    disabledReason = 'Every entry verifies: there is nothing to rebaseline.'
+    disabledReason = t(
+      'admin.auditChain.rebaselineNothing',
+      'Every entry verifies: there is nothing to rebaseline.'
+    )
 
   return (
     <PageStack>

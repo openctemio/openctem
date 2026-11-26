@@ -35,24 +35,40 @@ const VERSION_RE = /^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/
 const KIND_RE = /^([a-z][a-z0-9-]{1,40}|x-[a-z0-9-]{1,32}\/[a-z][a-z0-9-]{1,40})$/
 export const DIGEST_RE = /^sha256:[0-9a-f]{64}$/
 
+/** The i18n translate function, or the English fallback itself when none is given. */
+type Translate = (key: string, fallback: string, vars?: Record<string, string | number>) => string
+const english: Translate = (_key, fallback, vars) =>
+  vars ? fallback.replace(/\{(\w+)\}/g, (m, k) => String(vars[k] ?? m)) : fallback
+
 /** The form's problems, the API's own rules (null when it can be sent). */
-export function contentPackFormProblem(f: {
-  mode: 'upload' | 'import'
-  name: string
-  version: string
-  kind: string
-  file?: File | null
-  url?: string
-  digest?: string
-}): string | null {
-  if (!NAME_RE.test(f.name)) return 'Name: lowercase letters, digits, dot, dash or underscore.'
-  if (!VERSION_RE.test(f.version)) return 'Version: letters, digits and . _ + -'
-  if (!KIND_RE.test(f.kind)) return 'Kind: a known kind or x-<namespace>/<kind>.'
-  if (f.mode === 'upload' && !f.file) return 'Choose a tar or tar.gz archive.'
+export function contentPackFormProblem(
+  f: {
+    mode: 'upload' | 'import'
+    name: string
+    version: string
+    kind: string
+    file?: File | null
+    url?: string
+    digest?: string
+  },
+  t: Translate = english
+): string | null {
+  if (!NAME_RE.test(f.name))
+    return t('admin.cp.problem.name', 'Name: lowercase letters, digits, dot, dash or underscore.')
+  if (!VERSION_RE.test(f.version))
+    return t('admin.cp.problem.version', 'Version: letters, digits and . _ + -')
+  if (!KIND_RE.test(f.kind))
+    return t('admin.cp.problem.kind', 'Kind: a known kind or x-<namespace>/<kind>.')
+  if (f.mode === 'upload' && !f.file)
+    return t('admin.cp.problem.archive', 'Choose a tar or tar.gz archive.')
   if (f.mode === 'import') {
-    if (!/^https:\/\/\S+$/.test(f.url ?? '')) return 'The URL must start with https://'
+    if (!/^https:\/\/\S+$/.test(f.url ?? ''))
+      return t('admin.cp.problem.url', 'The URL must start with https://')
     if (!DIGEST_RE.test(f.digest ?? ''))
-      return 'Digest: sha256: followed by 64 lowercase hex characters.'
+      return t(
+        'admin.cp.problem.digest',
+        'Digest: sha256: followed by 64 lowercase hex characters.'
+      )
   }
   return null
 }
@@ -94,7 +110,7 @@ export function AddContentPackDialog({ onAdded }: { onAdded: () => void }) {
   const proofOk =
     reason.trim().length >= REASON_MIN && reason.trim().length <= REASON_MAX && rc.codeOk
 
-  const problem = contentPackFormProblem({ mode, name, version, kind, file, url, digest })
+  const problem = contentPackFormProblem({ mode, name, version, kind, file, url, digest }, t)
   const blockedBySecrets = secretsFound && !ack
 
   const reset = () => {
