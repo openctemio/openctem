@@ -52,11 +52,11 @@ func TestManagedSignIn_DB(t *testing.T) {
 		t.Fatalf("open db: %v", err)
 	}
 	defer sqlDB.Close()
-	if err := sqlDB.Ping(); err != nil {
+	ctx := context.Background()
+	if err := sqlDB.PingContext(ctx); err != nil {
 		t.Skipf("cannot reach test DB: %v", err)
 	}
 	db := &postgres.DB{DB: sqlDB}
-	ctx := context.Background()
 
 	users := postgres.NewUserRepository(db)
 	identities := postgres.NewUserIdentityRepository(db)
