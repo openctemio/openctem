@@ -21,8 +21,10 @@ import type {
 } from '../types'
 import {
   ReasonConfirmDialog,
+  ServerVariable,
   SettingChangedLine,
   handleSaveConflict,
+  withPlaceholder,
 } from './console-setting-parts'
 import { RoleRequiredNotice } from './role-required-notice'
 
@@ -399,34 +401,15 @@ export function PrivateDestinationsPanel({
           <>
             {settings.server_ranges.length === 0 &&
               `${t('admin.privateNetworks.serverNone', 'None.')} `}
-            {/* The variable name may wrap only at its underscores. */}
-            {t(
-              'admin.privateNetworks.serverHint',
-              'Changed only in the server’s environment ({name}) and a restart.',
-              { name: '\u0000' }
-            )
-              .split('\u0000')
-              .map((part, i) =>
-                i === 0 ? (
-                  part
-                ) : (
-                  <span key={i}>
-                    <code className="font-mono">
-                      {SERVER_CIDRS_VAR.split('_').map((w, j) => (
-                        <span key={j}>
-                          {j > 0 && (
-                            <>
-                              _<wbr />
-                            </>
-                          )}
-                          {w}
-                        </span>
-                      ))}
-                    </code>
-                    {part}
-                  </span>
-                )
-              )}
+            {/* The variable is typed on the server: drawn as code. */}
+            {withPlaceholder(
+              t(
+                'admin.privateNetworks.serverHint',
+                'Changed only in the server’s environment ({name}) and a restart.',
+                { name: '\u0000' }
+              ),
+              <ServerVariable name={SERVER_CIDRS_VAR} />
+            )}
           </>
         }
       >

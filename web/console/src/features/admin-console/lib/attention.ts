@@ -5,6 +5,7 @@ import {
   type AdminRole,
   type AdminSystem,
 } from '../types'
+import type { NamedVar } from './named-vars'
 import { daysLeft, formatBytes, hoursAgo } from './system'
 import { PLATFORM_SENSORS_URL } from './installation-health'
 
@@ -21,6 +22,8 @@ export interface AttentionItem {
   detail: string
   /** Values substituted into title and detail ({count}, {name}, ...). */
   vars?: Record<string, string | number>
+  /** Values of `vars` that are identifiers, read in words. */
+  named?: NamedVar[]
   /** Where the one-click action goes; none when no console page handles it yet. */
   href?: string
   actionKey?: string
@@ -314,6 +317,7 @@ export function buildSystemAttention(sys: AdminSystem): AttentionItem[] {
         free: formatBytes(vol.free_bytes),
         percent: Math.round(vol.free_ratio * 100),
       },
+      named: [{ var: 'name', keyPrefix: 'admin.system.volume.', values: vols.map((v) => v.name) }],
       href: '/health',
       actionKey: 'admin.attention.inspect',
       action: 'Inspect',
@@ -373,6 +377,7 @@ export function buildSystemAttention(sys: AdminSystem): AttentionItem[] {
         detailKey: 'admin.attention.certificate.detail',
         detail: '{name} expires in {days} days.',
         vars: { name: cert.name, days: days ?? '?' },
+        named: [{ var: 'name', keyPrefix: 'admin.system.cert.', values: [cert.name] }],
         href: '/health',
         actionKey: 'admin.attention.inspect',
         action: 'Inspect',
