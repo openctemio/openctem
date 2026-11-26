@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState } from '@/features/shared'
+import { BreakText } from '@/features/shared/components/break-text'
 import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { TonePill } from '@/features/shared/components/tone-pill'
 import { AdminApiError } from '@console/lib/admin-api/client'
@@ -294,7 +295,7 @@ function SourcesForm({
                 ? t('admin.feedSources.rootOfficial', 'Official root')
                 : t('admin.feedSources.rootCustom', 'Custom root (set on the server)')}
               {settings.root_key_id && (
-                <span className="block break-all text-code text-muted-foreground">
+                <span className="block break-all font-mono text-code text-muted-foreground">
                   {settings.root_key_id}
                 </span>
               )}
@@ -362,7 +363,9 @@ function SourcesForm({
                             : t('admin.feedSources.probe.failed', 'Failed')
                         }
                       />
-                      <span className="min-w-0 break-all text-code">{r.origin}</span>
+                      <span className="min-w-0 break-words text-code">
+                        <BreakText>{r.origin}</BreakText>
+                      </span>
                     </div>
                     <p className="text-muted-foreground">
                       {r.ok
