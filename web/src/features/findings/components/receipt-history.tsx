@@ -657,7 +657,11 @@ export function ReceiptHistory() {
                     {formatRelativeTime(r.started_at, locale)}
                   </span>
                 </div>
-                <div data-slot="receipt-change" className="flex min-w-0 items-center gap-2">
+                <div
+                  data-slot="receipt-change"
+                  // A long summary wraps under the chip, at the card's whole width.
+                  className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"
+                >
                   {issueChip(r, 'shrink-0')}
                   <p
                     className={cn('min-w-0 text-sm tabular-nums', quiet && 'text-muted-foreground')}

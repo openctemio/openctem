@@ -1665,7 +1665,7 @@
   "findings.receiptHistory.assetChanges": "Xem thay đổi tài sản",
   "findings.receiptHistory.backToRuns": "Quay lại các lần chạy không có phát hiện",
   "findings.receiptHistory.caption": "Các lần nhập và lần chạy, mới nhất trước",
-  "findings.receiptHistory.change.assets": "Tìm thấy {count} tài sản",
+  "findings.receiptHistory.change.assets": "{count} tài sản được tìm thấy",
   "findings.receiptHistory.change.new": "{count} mới",
   "findings.receiptHistory.change.noFindings": "Không có phát hiện",
   "findings.receiptHistory.change.none": "Không thay đổi",
