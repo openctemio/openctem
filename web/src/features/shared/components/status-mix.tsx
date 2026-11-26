@@ -2,13 +2,15 @@
 
 /**
  * A mix of outcomes over one whole (checklist results, verified and open
- * items): a thin segmented bar with a caption above it (`ProgressCell`), and
- * one line of counts under it, each with a dot that takes its colour only
- * when the count is above zero. The caption says what the bar measures
- * ("12 of 38 tested"), so a whole made of one quiet part never reads as
- * done. No percentage: the counts are the facts.
+ * items), as one line of facts: what the bar measures ("12 of 38 tested")
+ * over a thin segmented bar (`ProgressCell`), then each part's name and
+ * count, with a dot that takes its colour only when the count is above zero.
+ * The caption says what is measured, so a whole made of one quiet part never
+ * reads as done. No percentage: the counts are the facts. `extra` adds facts
+ * of the same whole at the end of the line (a standard, a version).
  */
 
+import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { formatNumber } from '@/lib/app-locale'
 import { ProgressCell, type ProgressTone } from './progress-cell'
@@ -23,7 +25,7 @@ const DOT: Record<ProgressTone, string> = {
 
 export interface StatusMixPart {
   key: string
-  /** The words after the count ("passed"), already translated. */
+  /** The part's name ("Passed"), already translated. */
   label: string
   count: number
   /** Its colour in the bar and on its dot; omit for the part the bar leaves empty (not done yet). */
@@ -35,23 +37,35 @@ export interface StatusMixProps {
   parts: StatusMixPart[]
   /** What the bar measures, above it ("12 of 38 tested"). */
   caption: string
+  /** The caption's term, for a screen reader ("Progress"). */
+  captionLabel: string
+  /** More facts of the same whole at the end of the line. */
+  extra?: { key: string; label: string; value: ReactNode }[]
   className?: string
 }
 
-export function StatusMix({ parts, caption, className }: StatusMixProps) {
+export function StatusMix({ parts, caption, captionLabel, extra, className }: StatusMixProps) {
   const total = parts.reduce((n, p) => n + p.count, 0)
-  const summary = parts.map((p) => `${formatNumber(p.count)} ${p.label}`).join(', ')
+  const summary = parts.map((p) => `${p.label} ${formatNumber(p.count)}`).join(', ')
   return (
-    <div data-slot="status-mix" className={cn('min-w-0 space-y-1.5', className)}>
-      <ProgressCell
-        max={total}
-        caption={<span className="text-foreground font-medium">{caption}</span>}
-        label={`${caption}: ${summary}`}
-        parts={parts.filter((p) => p.tone).map((p) => ({ value: p.count, tone: p.tone! }))}
-      />
-      <ul className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        {parts.map((p) => (
-          <li key={p.key} className="flex items-center gap-1.5 whitespace-nowrap">
+    <dl
+      data-slot="status-mix"
+      className={cn('flex min-w-0 flex-wrap items-center gap-x-5 gap-y-2 text-xs', className)}
+    >
+      <div className="w-48 max-w-full">
+        <dt className="sr-only">{captionLabel}</dt>
+        <dd>
+          <ProgressCell
+            max={total}
+            caption={<span className="text-foreground font-medium">{caption}</span>}
+            label={`${caption}: ${summary}`}
+            parts={parts.filter((p) => p.tone).map((p) => ({ value: p.count, tone: p.tone! }))}
+          />
+        </dd>
+      </div>
+      {parts.map((p) => (
+        <div key={p.key} className="flex items-center gap-1.5 whitespace-nowrap">
+          <dt className="text-muted-foreground flex items-center gap-1.5">
             <span
               aria-hidden
               className={cn(
@@ -59,13 +73,24 @@ export function StatusMix({ parts, caption, className }: StatusMixProps) {
                 p.count > 0 && p.tone ? DOT[p.tone] : 'bg-border'
               )}
             />
-            <span className={cn('tabular-nums', p.count > 0 && 'text-foreground')}>
-              {formatNumber(p.count)}
-            </span>
             {p.label}
-          </li>
-        ))}
-      </ul>
-    </div>
+          </dt>
+          <dd
+            className={cn(
+              'tabular-nums',
+              p.count > 0 ? 'text-foreground font-medium' : 'text-muted-foreground'
+            )}
+          >
+            {formatNumber(p.count)}
+          </dd>
+        </div>
+      ))}
+      {extra?.map((f) => (
+        <div key={f.key} className="flex min-w-0 items-center gap-1.5">
+          <dt className="text-muted-foreground">{f.label}</dt>
+          <dd className="text-foreground min-w-0 break-words">{f.value}</dd>
+        </div>
+      ))}
+    </dl>
   )
 }
