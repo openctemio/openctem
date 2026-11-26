@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openctemio/openctem/server/internal/app/feedlimits"
 	"github.com/openctemio/openctem/server/internal/app/feedrelay"
 	"github.com/openctemio/openctem/server/internal/app/feedwatch"
 
@@ -1067,6 +1068,9 @@ type Services struct {
 	PlatformSocialLogin *platformsociallogin.Service
 	DeploymentRegion    *deploymentregion.Service
 	StorageQuota        *storagequota.Service
+	// FeedLimits is how old the vulnerability data may be before it is out
+	// of date (console setting); nil without the settings store.
+	FeedLimits *feedlimits.Service
 	// FeedRelay receives every feed through a platform relay sensor in relay
 	// mode (RFC-142); nil without a database or platform settings.
 	FeedRelay *feedrelay.Service
@@ -1243,6 +1247,7 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 	}
 	if repos.PlatformSetting != nil {
 		s.StorageQuota = storagequota.NewService(repos.PlatformSetting, s.Entitlement, s.SettingRecorder, cfg.Storage.TenantQuotaMB)
+		s.FeedLimits = feedlimits.NewService(repos.PlatformSetting, s.SettingRecorder, log)
 	}
 	if repos.PlatformSetting != nil {
 		s.PlatformMFA = platformmfa.NewService(repos.PlatformSetting, s.SettingRecorder, cfg.App.ManagedService, cfg.Auth.MFAFloor)
@@ -1594,6 +1599,9 @@ func NewServices(deps *ServiceDeps) (*Services, error) {
 		postgres.NewExposureDispositionRepository(&postgres.DB{DB: deps.DB}), s.Audit, log)
 	s.Exposure.SetDispositionGate(exposureDispositions)
 	s.ThreatIntel = threat.NewIntelService(repos.ThreatIntel, log)
+	if s.FeedLimits != nil {
+		s.ThreatIntel.SetLimits(s.FeedLimits.Limits)
+	}
 	if repos.PlatformSetting != nil {
 		// The platform layer of the scan identification markers.
 		s.ScanIdentity = scanidentity.NewService(repos.PlatformSetting, s.SettingRecorder)
