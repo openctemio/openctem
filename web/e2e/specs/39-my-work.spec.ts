@@ -132,16 +132,19 @@ test(
   async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/my-work')
-    // A finding with no pending request: ask for a false positive on it.
+    // A finding with no pending request: ask for a false positive on it. Not one
+    // of the "E2E triage" findings, which the triage spec (36) decides: a pending
+    // request on one makes its own request answer 409.
     const free = await page.evaluate(async () => {
       const res = await fetch(
-        '/api/v1/findings?status=new,confirmed&pending_approval=false&per_page=1',
+        '/api/v1/findings?status=new,confirmed&pending_approval=false&per_page=50',
         {
           credentials: 'same-origin',
         }
       )
       const body = await res.json()
-      return body.data?.[0]?.id as string | undefined
+      const rows = (body.data ?? []) as Array<{ id: string; title?: string }>
+      return rows.find((f) => !f.title?.startsWith('E2E triage'))?.id
     })
     test.skip(!free, 'no open finding without a pending request')
     const note = `E2E My Work: withdrawn by the spec (${Date.now()}).`
