@@ -75,6 +75,12 @@ func registerAISettingsRoutes(router Router, h *handler.AISettingsHandler, maski
 		// a recent sign-in, asked by the service; tightening is one click.
 		r.GET("/use-cases", h.ListUseCases, middleware.Require(permission.SettingsRead))
 		r.PUT("/use-cases/{use_case}", h.UpdateUseCase, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
+		// Changes AI agents make without a person (docs/architecture/ai-autonomy.md):
+		// pause and limits. Anyone with settings:read reads; pausing or lowering
+		// a limit is one click; resuming, raising or removing a limit needs a
+		// recent sign-in, asked by the service.
+		r.GET("/autonomy", h.GetAutonomy, middleware.Require(permission.SettingsRead))
+		r.PUT("/autonomy", h.UpdateAutonomy, middleware.RequireAdmin(), middleware.Require(permission.SettingsWrite))
 
 		// Masking of AI context (docs/architecture/ai-context-masking.md):
 		// what is replaced by placeholders before finding data reaches a

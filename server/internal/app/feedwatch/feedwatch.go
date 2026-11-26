@@ -101,6 +101,16 @@ type Condition struct {
 	// Detail is a plain sentence for the administrators (never shown to
 	// organization users).
 	Detail string `json:"detail"`
+	// LimitSeconds is the age limit a data_stale or newest_record_old
+	// condition was judged by.
+	LimitSeconds int64 `json:"limit_seconds,omitempty"`
+	// ErrorCode and ErrorParams are the feed's error code (feedstatus.Code*)
+	// for an import_failing or import_refused condition, so the console can
+	// say why in the reader's language.
+	ErrorCode   string            `json:"error_code,omitempty"`
+	ErrorParams map[string]string `json:"error_params,omitempty"`
+	// FailingSince is when the imports started failing.
+	FailingSince *time.Time `json:"failing_since,omitempty"`
 }
 
 // State is what the watch stores.
@@ -272,23 +282,24 @@ func Evaluate(views []feedstatus.View, stats *CorpusStats, first, now time.Time)
 		switch {
 		case ref == nil && now.Sub(first) >= NeverLoadedGrace:
 			out = append(out, Condition{Key: CodeDataStale + ":" + v.Source, Code: CodeDataStale, Source: v.Source,
-				Banner: true, Since: now,
+				Banner: true, Since: now, LimitSeconds: int64(limit / time.Second),
 				Detail: fmt.Sprintf("%s: no data has been loaded yet (limit %s).", feedName(v.Source), hours(limit))})
 		case ref != nil && now.Sub(*ref) > limit:
 			at := *ref
 			out = append(out, Condition{Key: CodeDataStale + ":" + v.Source, Code: CodeDataStale, Source: v.Source,
-				Banner: true, AsOf: &at, Since: now,
+				Banner: true, AsOf: &at, Since: now, LimitSeconds: int64(limit / time.Second),
 				Detail: fmt.Sprintf("%s: the data is %s old (limit %s).", feedName(v.Source), hours(now.Sub(at)), hours(limit))})
 		}
 		switch {
 		case v.State == feedstatus.StateRefused:
 			out = append(out, Condition{Key: CodeImportRefused + ":" + v.Source, Code: CodeImportRefused, Source: v.Source,
-				Since: now, Detail: fmt.Sprintf("%s: the last import was refused (%s). Nothing was applied; the platform keeps the data it has.",
+				Since: now, ErrorCode: codeOr(v.ErrorCode), ErrorParams: v.ErrorParams, Detail: fmt.Sprintf("%s: the last import was refused (%s). Nothing was applied; the platform keeps the data it has.",
 					feedName(v.Source), codeOr(v.ErrorCode))})
 		case v.State == feedstatus.StateFailing || v.State == feedstatus.StateStale && v.LastSyncStatus == threatintel.SyncStateFailed.String():
 			if v.FailingSince != nil && now.Sub(*v.FailingSince) >= failingAfter(v) {
+				fs := *v.FailingSince
 				out = append(out, Condition{Key: CodeImportFailing + ":" + v.Source, Code: CodeImportFailing, Source: v.Source,
-					Since: now, Detail: fmt.Sprintf("%s: imports have failed since %s (%s).",
+					Since: now, ErrorCode: codeOr(v.ErrorCode), ErrorParams: v.ErrorParams, FailingSince: &fs, Detail: fmt.Sprintf("%s: imports have failed since %s (%s).",
 						feedName(v.Source), v.FailingSince.UTC().Format(time.RFC3339), codeOr(v.ErrorCode))})
 			}
 		}
@@ -298,7 +309,8 @@ func Evaluate(views []feedstatus.View, stats *CorpusStats, first, now time.Time)
 	}
 	if stats.NewestPublished != nil && now.Sub(*stats.NewestPublished) > NewestRecordStaleAfter {
 		at := *stats.NewestPublished
-		out = append(out, Condition{Key: CodeNewestRecordOld, Code: CodeNewestRecordOld, Banner: true, AsOf: &at, Since: now,
+		out = append(out, Condition{Key: CodeNewestRecordOld, Code: CodeNewestRecordOld, Source: feedstatus.SourceVulnfeed,
+			Banner: true, AsOf: &at, Since: now, LimitSeconds: int64(NewestRecordStaleAfter / time.Second),
 			Detail: fmt.Sprintf("The newest CVE record in the corpus was published %s ago (limit %s): new vulnerabilities are not arriving.",
 				hours(now.Sub(at)), hours(NewestRecordStaleAfter))})
 	}
@@ -311,8 +323,12 @@ func Evaluate(views []feedstatus.View, stats *CorpusStats, first, now time.Time)
 	return out
 }
 
-// failingAfter: two runs of the feed, at least minFailingAfter.
+// failingAfter: two runs of the feed, at least minFailingAfter. A server
+// setting refused at start-up alerts at once: no later run can fix it.
 func failingAfter(v feedstatus.View) time.Duration {
+	if v.ErrorCode == feedstatus.CodeConfigInvalid || v.ErrorParams["setting"] != "" {
+		return 0
+	}
 	return max(2*v.Interval, minFailingAfter)
 }
 
@@ -339,6 +355,9 @@ type Banner struct {
 	Stale bool
 	// Codes are the banner conditions that hold (stable codes, sorted).
 	Codes []string
+	// Sources are the feeds behind the banner conditions (feedstatus
+	// Source* names, sorted): which data is missing or out of date.
+	Sources []string
 	// StaleSince is the oldest data date among the banner conditions (nil:
 	// never loaded, or unknown).
 	StaleSince *time.Time
@@ -361,12 +380,15 @@ func (s *Service) Banner(ctx context.Context) (Banner, error) {
 	}
 	checked := st.CheckedAt
 	b := Banner{DataAsOf: st.DataAsOf, CheckedAt: &checked}
-	codes := map[string]bool{}
+	codes, sources := map[string]bool{}, map[string]bool{}
 	for _, c := range st.Open {
 		if !c.Banner {
 			continue
 		}
 		codes[c.Code] = true
+		if c.Source != "" {
+			sources[c.Source] = true
+		}
 		if c.AsOf != nil && (b.StaleSince == nil || c.AsOf.Before(*b.StaleSince)) {
 			at := *c.AsOf
 			b.StaleSince = &at
@@ -379,6 +401,10 @@ func (s *Service) Banner(ctx context.Context) (Banner, error) {
 		b.Codes = append(b.Codes, c)
 	}
 	slices.Sort(b.Codes)
+	for src := range sources {
+		b.Sources = append(b.Sources, src)
+	}
+	slices.Sort(b.Sources)
 	b.Stale = len(b.Codes) > 0
 	return b, nil
 }

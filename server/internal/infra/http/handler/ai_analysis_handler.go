@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -80,8 +81,10 @@ type AIAgentListResponse struct {
 
 // AIRunResponse is one run with its provenance.
 type AIRunResponse struct {
-	ID          string `json:"id"`
-	AIAgentID   string `json:"ai_agent_id,omitempty"`
+	ID        string `json:"id"`
+	AIAgentID string `json:"ai_agent_id,omitempty"`
+	// AIAgentName is the AI agent's name now (empty once it is deleted).
+	AIAgentName string `json:"ai_agent_name,omitempty"`
 	UseCase     string `json:"use_case"`
 	Kind        string `json:"kind"`
 	SubjectType string `json:"subject_type"`
@@ -112,10 +115,28 @@ type AIRunResponse struct {
 	LegacyOutput         map[string]any    `json:"legacy_output,omitempty"`
 	CreatedAt            time.Time         `json:"created_at"`
 	CompletedAt          *time.Time        `json:"completed_at,omitempty"`
+	// ModelFamily is the model family an AI worker reported.
+	ModelFamily string `json:"model_family,omitempty"`
+	// ResultDigest is the sha256 of the result an AI worker returned.
+	ResultDigest string `json:"result_digest,omitempty"`
+	// Outcome is what the finished run did to its subject: applied,
+	// proposed, no_change or abstained.
+	Outcome string `json:"outcome,omitempty"`
+	// ActionLog is each suggestion and what became of it (codes only).
+	ActionLog []AIRunActionResponse `json:"action_log,omitempty"`
 	// RetrievalMode is how the run retrieved knowledge (none, lexical, ...);
 	// Knowledge the excerpts it saw (run detail only).
 	RetrievalMode string                   `json:"retrieval_mode,omitempty"`
 	Knowledge     []AIRunKnowledgeResponse `json:"knowledge,omitempty"`
+}
+
+// AIRunActionResponse is one suggestion of a run and what became of it:
+// kind (verdict, severity, summary, remediation_steps), outcome (applied,
+// requested, commented, skipped) and the reason code it was held or skipped.
+type AIRunActionResponse struct {
+	Kind    string `json:"kind"`
+	Outcome string `json:"outcome"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 // AIRunKnowledgeResponse is one knowledge excerpt a run saw. Names are
@@ -192,8 +213,42 @@ func toAIRun(run *aidom.Run) AIRunResponse {
 		TokensIn: run.TokensIn, TokensOut: run.TokensOut, CostMicroUSD: run.CostMicroUSD, DurationMS: run.DurationMS,
 		ErrorCode: run.ErrorCode, Trigger: string(run.Trigger), TriggeredBy: idStr(run.TriggeredBy),
 		Accountable: toAIOwners(run.Accountable), LegacyOutput: run.LegacyOutput, CreatedAt: run.CreatedAt,
-		CompletedAt: run.CompletedAt,
+		CompletedAt: run.CompletedAt, ModelFamily: run.ModelFamily, ResultDigest: run.ResultDigest,
+		Outcome: string(run.Outcome), ActionLog: toAIRunActions(run.ActionLog),
 	}
+}
+
+// nameAIAgents puts each run's AI agent name on it (read once per AI agent,
+// in the caller's tenant). An AI agent that cannot be read leaves the name
+// empty; the run still shows.
+func (h *AIAnalysisHandler) nameAIAgents(ctx context.Context, tenantID shared.ID, runs []*AIRunResponse) {
+	names := map[string]string{}
+	for _, run := range runs {
+		if run.AIAgentID == "" {
+			continue
+		}
+		name, ok := names[run.AIAgentID]
+		if !ok {
+			if id, err := shared.IDFromString(run.AIAgentID); err == nil {
+				if a, err := h.svc.Get(ctx, tenantID, id); err == nil {
+					name = a.Name
+				}
+			}
+			names[run.AIAgentID] = name
+		}
+		run.AIAgentName = name
+	}
+}
+
+func toAIRunActions(log []aidom.ActionLogEntry) []AIRunActionResponse {
+	if len(log) == 0 {
+		return nil
+	}
+	out := make([]AIRunActionResponse, 0, len(log))
+	for _, e := range log {
+		out = append(out, AIRunActionResponse{Kind: e.Kind, Outcome: e.Outcome, Reason: e.Reason})
+	}
+	return out
 }
 
 func (h *AIAnalysisHandler) actx(r *http.Request) auditapp.AuditContext {
@@ -579,6 +634,7 @@ func (h *AIAnalysisHandler) GetRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := toAIRun(run)
+	h.nameAIAgents(r.Context(), tenantID, []*AIRunResponse{&out})
 	if h.knowledge != nil {
 		// The run's subject is in the viewer's scope (checked above); team
 		// document names follow the viewer's own teams.
@@ -630,6 +686,11 @@ func (h *AIAnalysisHandler) ListFindingRuns(w http.ResponseWriter, r *http.Reque
 	for _, run := range runs {
 		out.Data = append(out.Data, toAIRun(run))
 	}
+	refs := make([]*AIRunResponse, 0, len(out.Data))
+	for i := range out.Data {
+		refs = append(refs, &out.Data[i])
+	}
+	h.nameAIAgents(r.Context(), tenantID, refs)
 	writeAIJSON(w, http.StatusOK, out)
 }
 

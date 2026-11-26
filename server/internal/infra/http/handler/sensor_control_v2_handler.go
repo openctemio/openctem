@@ -707,7 +707,7 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	in := command.TransitionInput{TenantID: tenantID, SensorID: s.ID.String(), CommandID: commandID,
-		LeaseEpoch: leaseEpochHeader(r)}
+		LeaseEpoch: leaseEpochHeader(r), KeyBound: s.KeyBound() && sensorIdentityFromContext(r.Context()).KeyBound()}
 	failCode := scanrundom.FailureCommandFailed
 	switch t {
 	case command.TransitionComplete:
@@ -780,6 +780,7 @@ func (h *SensorControlV2Handler) transition(w http.ResponseWriter, r *http.Reque
 			h.commands.triggerValidationEvidence(res.Command)
 			h.commands.triggerSimulationFinalize(res.Command)
 			h.commands.triggerCoverageAutoResolve(res.Command)
+			h.commands.applyAnalysisResult(r.Context(), res.Command)
 		case command.TransitionFail:
 			// A refused job re-queued to another sensor has not failed.
 			if res.Command.Status == commanddom.CommandStatusFailed {

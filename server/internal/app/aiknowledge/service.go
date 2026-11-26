@@ -498,6 +498,12 @@ func (s *Service) Record(ctx context.Context, tenantID, runID shared.ID, mode kd
 	return s.repo.RecordRun(ctx, tenantID, runID, mode, index, ex)
 }
 
+// RunExcerptOrdinals lists the ordinals of the excerpts a run's bundle
+// carried (kb:<n>), for resolving a worker's citations.
+func (s *Service) RunExcerptOrdinals(ctx context.Context, tenantID, runID shared.ID) ([]int, error) {
+	return s.repo.RunExcerptOrdinals(ctx, tenantID, runID)
+}
+
 // Citations lists a run's excerpts as the viewer may see them.
 func (s *Service) Citations(ctx context.Context, tenantID, runID, viewer shared.ID, viewerAll bool) ([]kdom.Citation, kdom.RetrievalMode, error) {
 	return s.repo.Citations(ctx, tenantID, runID, viewer, viewerAll)

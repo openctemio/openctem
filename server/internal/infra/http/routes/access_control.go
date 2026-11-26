@@ -164,29 +164,32 @@ func registerRoleRoutes(
 	// Build tenant middleware chain from JWT token
 	tenantMiddlewares := buildTokenTenantMiddlewares(authMiddleware, userSyncMiddleware)
 
-	// Role CRUD routes
+	// Role CRUD routes. Every write that changes what a role carries or
+	// who holds it needs step-up (critical tier), like the other
+	// organization-control writes. Taking a role away from a user only
+	// narrows access and stays without it.
 	router.Group("/api/v1/roles", func(r Router) {
 		// List and create roles
 		r.GET("/", h.ListRoles, middleware.Require(permission.RolesRead))
-		r.POST("/", h.CreateRole, middleware.Require(permission.RolesWrite))
+		r.POST("/", h.CreateRole, middleware.Require(permission.RolesWrite), requireStepUp())
 
 		// Custom-role templates (static catalog; creating one is POST /).
 		r.GET("/templates", h.ListRoleTemplates, middleware.Require(permission.RolesRead))
 
 		// Single role operations
 		r.GET("/{roleId}", h.GetRole, middleware.Require(permission.RolesRead))
-		r.PUT("/{roleId}", h.UpdateRole, middleware.Require(permission.RolesWrite))
-		r.DELETE("/{roleId}", h.DeleteRole, middleware.Require(permission.RolesDelete))
+		r.PUT("/{roleId}", h.UpdateRole, middleware.Require(permission.RolesWrite), requireStepUp())
+		r.DELETE("/{roleId}", h.DeleteRole, middleware.Require(permission.RolesDelete), requireStepUp())
 
 		// Apply a template update to a role created from a template (the
 		// status is the `template` field of GET /{roleId}).
-		r.POST("/{roleId}/template/apply", h.ApplyRoleTemplateUpdate, middleware.Require(permission.RolesWrite))
+		r.POST("/{roleId}/template/apply", h.ApplyRoleTemplateUpdate, middleware.Require(permission.RolesWrite), requireStepUp())
 
 		// Role members
 		r.GET("/{roleId}/members", h.ListRoleMembers, middleware.Require(permission.RolesRead))
 
 		// Bulk operations (must be before /{roleId} patterns to avoid conflicts)
-		r.POST("/{roleId}/members/bulk", h.BulkAssignRoleMembers, middleware.Require(permission.RolesAssign))
+		r.POST("/{roleId}/members/bulk", h.BulkAssignRoleMembers, middleware.Require(permission.RolesAssign), requireStepUp())
 	}, tenantMiddlewares...)
 
 	// User role assignments
@@ -195,10 +198,10 @@ func registerRoleRoutes(
 		r.GET("/", h.GetUserRoles, middleware.Require(permission.RolesRead))
 
 		// Assign role to user
-		r.POST("/", h.AssignRole, middleware.Require(permission.RolesAssign))
+		r.POST("/", h.AssignRole, middleware.Require(permission.RolesAssign), requireStepUp())
 
 		// Set all roles for user (replace)
-		r.PUT("/", h.SetUserRoles, middleware.Require(permission.RolesAssign))
+		r.PUT("/", h.SetUserRoles, middleware.Require(permission.RolesAssign), requireStepUp())
 
 		// Remove role from user
 		r.DELETE("/{roleId}", h.RemoveRole, middleware.Require(permission.RolesAssign))

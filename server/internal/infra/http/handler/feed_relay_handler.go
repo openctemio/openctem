@@ -196,10 +196,15 @@ type FeedRelayCandidate struct {
 	Name       string     `json:"name"`
 	Status     string     `json:"status"`
 	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
-	// Eligible: active and reporting feed.relay@1. Otherwise Reason is
-	// inactive or no_capability.
+	// Eligible: active and reporting feed.relay@1. Otherwise Reason says
+	// why: inactive, version_too_old (MinVersion names the first release
+	// with the relay), no_signing_key, relay_off (SENSOR_FEED_RELAY=0 on its
+	// host) or no_capability (the sensor reports too little to say).
 	Eligible bool   `json:"eligible"`
 	Reason   string `json:"reason,omitempty"`
+	// Version is the sensor release it reports.
+	Version    string `json:"version,omitempty"`
+	MinVersion string `json:"min_version,omitempty"`
 }
 
 // FeedRelayAlert is one open alert.
@@ -214,8 +219,11 @@ type FeedRelaySensorView struct {
 	Name       string     `json:"name,omitempty"`
 	Status     string     `json:"status,omitempty"`
 	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
-	// CanRelay: an active platform sensor reporting feed.relay@1.
-	CanRelay bool `json:"can_relay"`
+	// CanRelay: an active platform sensor reporting feed.relay@1. Reason
+	// says why not (the codes of FeedRelayCandidate.Reason).
+	CanRelay   bool   `json:"can_relay"`
+	Reason     string `json:"reason,omitempty"`
+	MinVersion string `json:"min_version,omitempty"`
 	// Online: can relay and seen in the last 10 minutes.
 	Online       bool       `json:"online"`
 	LastServedAt *time.Time `json:"last_served_at,omitempty"`
@@ -303,7 +311,8 @@ func (h *FeedRelayHandler) Status(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, c := range cands {
 		out.Candidates = append(out.Candidates, FeedRelayCandidate{ID: c.Sensor.ID.String(), Name: c.Sensor.Name,
-			Status: string(c.Sensor.Status), LastSeenAt: c.Sensor.LastSeenAt, Eligible: c.Reason == "", Reason: c.Reason})
+			Status: string(c.Sensor.Status), LastSeenAt: c.Sensor.LastSeenAt, Eligible: c.Reason == "", Reason: c.Reason,
+			Version: sensor.NormalizeVersion(c.Sensor.Version), MinVersion: relayMinVersion(c.Reason)})
 	}
 	alerts, err := h.svc.OpenAlerts(r.Context())
 	if err != nil {
@@ -316,7 +325,8 @@ func (h *FeedRelayHandler) Status(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Slice(out.Alerts, func(i, j int) bool { return out.Alerts[i].Key < out.Alerts[j].Key })
 	for _, rs := range st.Sensors {
-		v := FeedRelaySensorView{ID: rs.ID, CanRelay: rs.CanRelay, Online: rs.Online, LastServedAt: rs.LastServed, BytesToday: rs.BytesToday}
+		v := FeedRelaySensorView{ID: rs.ID, CanRelay: rs.CanRelay, Reason: rs.Reason, MinVersion: relayMinVersion(rs.Reason),
+			Online: rs.Online, LastServedAt: rs.LastServed, BytesToday: rs.BytesToday}
 		if sn := rs.Sensor; sn != nil {
 			v.Name, v.Status, v.LastSeenAt = sn.Name, string(sn.Status), sn.LastSeenAt
 		}
@@ -385,4 +395,13 @@ func (h *FeedRelayHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.Status(w, r)
+}
+
+// relayMinVersion names the first sensor release with the feed relay when
+// that is why a sensor cannot relay.
+func relayMinVersion(reason string) string {
+	if reason == feedrelay.CandidateVersionTooOld {
+		return feedrelay.MinRelaySensorVersion
+	}
+	return ""
 }

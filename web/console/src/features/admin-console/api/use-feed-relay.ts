@@ -14,10 +14,17 @@ export interface FeedRelaySensor {
   status?: string
   last_seen_at?: string
   can_relay: boolean
+  /** Why it cannot relay (the codes of FeedRelayCandidate.reason). */
+  reason?: FeedRelayIneligibleReason
+  min_version?: string
   online: boolean
   last_served_at?: string
   bytes_today: number
 }
+
+/** Why a platform sensor cannot relay. */
+export type FeedRelayIneligibleReason =
+  'inactive' | 'version_too_old' | 'no_signing_key' | 'relay_off' | 'no_capability'
 
 /** A platform sensor that may (eligible) or may not be designated. */
 export interface FeedRelayCandidate {
@@ -26,8 +33,12 @@ export interface FeedRelayCandidate {
   status: string
   last_seen_at?: string
   eligible: boolean
-  /** Why it may not relay: inactive or no_capability. */
-  reason?: 'inactive' | 'no_capability'
+  /** Why it may not relay. */
+  reason?: FeedRelayIneligibleReason
+  /** The sensor release it reports. */
+  version?: string
+  /** With version_too_old: the first release with the feed relay. */
+  min_version?: string
 }
 
 export interface FeedRelayRound {
