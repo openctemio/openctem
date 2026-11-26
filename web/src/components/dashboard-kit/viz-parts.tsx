@@ -294,7 +294,7 @@ export function ChartOrTable({
         </div>
       )}
       {view === 'chart' ? (
-        <div className="min-h-0 flex-1" role="figure" aria-label={summary}>
+        <div className="flex min-h-0 flex-1 flex-col" role="figure" aria-label={summary}>
           {summary && (
             <p className="sr-only" data-testid="chart-summary">
               {summary}
