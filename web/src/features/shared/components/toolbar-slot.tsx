@@ -60,7 +60,10 @@ export function ToolbarSlot({
           // one it sizes the slot too (whole, up to the slot's max).
           !reserveClassName && 'w-0 min-w-full'
         )}
-        title={title}
+        // A one-line control value: when its row has no room it ends in an
+        // ellipsis, its full text the title.
+        title={title ?? (typeof children === 'string' ? children : undefined)}
+        data-cut-tooltip=""
       >
         {children}
       </span>

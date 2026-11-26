@@ -566,9 +566,10 @@ function valueSays(el: Element | null | undefined, titleText: string): boolean {
  * ellipsis cannot reach text inside a flex row ("Manuale2e-owne" cut at the
  * card's edge on a scan's runs).
  */
-// A value that wraps to two lines in the table (`CellText`) is one line here,
-// ending in an ellipsis with its whole text as its title, not cut at the
-// card's edge ("Không có cảm biến nào đang trực tuyến gi").
+// On these one-line parts (the measuring pass, a status beside the title), a
+// value that wraps to two lines in the table (`CellText`) is one line, ending
+// in an ellipsis with its whole text as its title, never cut at the card's
+// edge. Shown fields wrap instead (CARD_WRAP_VALUE_CLASS).
 const CARD_LINE_CLASS =
   'min-w-0 overflow-hidden whitespace-nowrap [&_[data-slot=cell-text]]:block [&_[data-slot=cell-text]]:truncate [&_*]:whitespace-nowrap [&_.flex]:flex-nowrap [&_.flex-col]:flex-row [&_.flex-col]:gap-x-1.5 [&_.flex-col>*:not(:last-child)]:shrink-0 [&_.flex-col>*:last-child]:min-w-0 [&_.flex-col>*:last-child]:truncate'
 
@@ -641,7 +642,39 @@ const CARD_TITLE_CLASS =
 const CARD_HEAD_CONTROL_CLASS =
   '[&_button:not([role=switch])]:inline-flex [&_button:not([role=switch])]:h-9 [&_button:not([role=switch])]:items-center [&_[role=button]]:inline-flex [&_[role=button]]:h-9 [&_[role=button]]:items-center'
 
+/**
+ * A field value while the card measures which fields to show: one line, so a
+ * chip or a key figure that does not fit half the line is found (it then
+ * takes the whole line).
+ */
 const CARD_VALUE_CLASS = cn('h-5 truncate text-sm leading-5', CARD_LINE_CLASS)
+
+/**
+ * A shown field value: it wraps under its label instead of ending in an
+ * ellipsis ("khoảng 2 tháng tr…", "2001:db8:85a3:8d…"). A text the table cuts
+ * on one line (`.truncate`) takes up to three lines here, and a row of a chip
+ * and a text wraps the text under the chip rather than squeezing it beside
+ * the chip into a tall sliver (/scans/runs at 390 px, 2026-11-17). A value
+ * still longer than three lines ends in a clamp with its whole text as the
+ * field's title (`data-cut-tooltip`).
+ */
+const CARD_WRAP_VALUE_CLASS =
+  'min-w-0 max-w-full text-sm leading-5 [overflow-wrap:anywhere] [&_.flex]:flex-wrap [&_.truncate]:whitespace-normal [&_.truncate]:line-clamp-3'
+
+/**
+ * The card's shown subtitle: up to two lines (a reason or a sentence reads in
+ * full), then a clamp with its whole text as the title.
+ */
+const CARD_SUBTITLE_WRAP_CLASS =
+  'line-clamp-2 min-w-0 [overflow-wrap:anywhere] [&_.flex]:flex-wrap [&_.truncate]:whitespace-normal'
+
+/**
+ * A field label: while measuring, one line beside its value; once shown, it
+ * wraps between its words and is never cut ("Hoạt động gần n…").
+ */
+const CARD_LABEL_MEASURE_CLASS =
+  'max-w-[max(50%,25cqw)] shrink-0 truncate text-xs text-muted-foreground'
+const CARD_LABEL_CLASS = 'min-w-0 break-words text-xs text-muted-foreground'
 
 /**
  * A field that took the whole line for its chip. A chip there is never cut at
@@ -668,7 +701,16 @@ const CARD_CHIP_SELECTOR =
  * over a bare control. The switch keeps its own name and state for a screen
  * reader; the word is for the eye only.
  */
-function CardFieldValue({ children, wide }: { children: React.ReactNode; wide?: boolean }) {
+function CardFieldValue({
+  children,
+  wide,
+  measuring,
+}: {
+  children: React.ReactNode
+  wide?: boolean
+  /** True while the card measures its fields: one line, cut. */
+  measuring?: boolean
+}) {
   const { t } = useTranslation()
   const cellRef = React.useRef<HTMLSpanElement>(null)
   const [switchOn, setSwitchOn] = React.useState<boolean | null>(null)
@@ -697,8 +739,9 @@ function CardFieldValue({ children, wide }: { children: React.ReactNode; wide?: 
   return (
     <dd
       title={fullText || undefined}
+      data-cut-tooltip={measuring ? undefined : ''}
       className={cn(
-        CARD_VALUE_CLASS,
+        measuring ? CARD_VALUE_CLASS : CARD_WRAP_VALUE_CLASS,
         wide && CARD_WIDE_VALUE_CLASS,
         switchOn !== null && 'flex items-center gap-2'
       )}
@@ -737,9 +780,11 @@ const PHONE_CARD_FOCUS_CLASS =
  *   before the rest, shown in column order, chosen before paint. A chip
  *   or a key figure is never cut: a field whose chip or figure does not fit
  *   half the line takes the whole line and the other field goes on the line
- *   under it, on the whole line too; a lone field takes the whole line. A
- *   value is cut only at the card's edge, its whole text in its tooltip.
- * Every line but the title is one line high whatever its cell draws.
+ *   under it, on the whole line too; a lone field takes the whole line.
+ *   Chosen on one fixed line each; once shown, a label and its value wrap
+ *   (the value under the label when both do not fit), a value at most three
+ *   lines, then clamped with its whole text as its title.
+ * The subtitle and a status line of their own stay one line high.
  */
 function AutoMobileCard<TData>({
   row,
@@ -784,6 +829,9 @@ function AutoMobileCard<TData>({
   React.useLayoutEffect(() => {
     const el = titleRef.current
     if (el) syncCutTitle(el, isTextCut(el))
+    // The subtitle too, once shown on its two lines.
+    const sub = subtitleRef.current
+    if (sub) syncCutTitle(sub, isTextCut(sub))
   })
   const subtitleRef = React.useRef<HTMLDivElement>(null)
   const fieldsRef = React.useRef<HTMLDListElement>(null)
@@ -860,7 +908,16 @@ function AutoMobileCard<TData>({
       fields,
       wide,
       subtitle: valueSays(subtitleRef.current, titleText),
-      statusLine: !!statusEl && statusEl.scrollWidth > statusEl.clientWidth + 1,
+      // A status that overflows its place, or whose chip cuts its own label
+      // ("Không có sensor phù hợp đang trự…"), gets a line of its own.
+      statusLine:
+        !!statusEl &&
+        (statusEl.scrollWidth > statusEl.clientWidth + 1 ||
+          Array.from(statusEl.querySelectorAll('*')).some(
+            (el) =>
+              el.scrollWidth > el.clientWidth + 1 &&
+              getComputedStyle(el).textOverflow === 'ellipsis'
+          )),
       actionsLine:
         (actionsRef.current?.getBoundingClientRect().width ?? 0) > CARD_INLINE_ACTIONS_MAX,
     })
@@ -938,7 +995,14 @@ function AutoMobileCard<TData>({
       {status && pick?.statusLine && (
         <div
           data-slot="mobile-card-status"
-          className={cn('mt-1 flex h-5 items-center', CARD_LINE_CLASS, select && 'ps-7')}
+          // A line of its own: a long state (vi "Không có sensor phù hợp đang
+          // trực tuyến") wraps inside its chip instead of being cut. It sits
+          // at the line's end, where the title line keeps a state, so the
+          // card stays balanced.
+          className={cn(
+            'mt-1 flex min-h-5 min-w-0 items-center justify-end [&_.truncate]:whitespace-normal [&_[data-slot=badge]]:whitespace-normal',
+            select && 'ps-7'
+          )}
         >
           {flexRender(status.column.columnDef.cell, status.getContext())}
         </div>
@@ -948,9 +1012,13 @@ function AutoMobileCard<TData>({
           ref={subtitleRef}
           data-slot="mobile-card-subtitle"
           data-column-kind={kindOf(subtitle)}
+          // Shown, it takes up to two lines, then a clamp with its whole text
+          // as the title; while measuring, and when it says nothing (kept for
+          // the height), one line.
+          data-cut-tooltip={pick?.subtitle ? '' : undefined}
           className={cn(
-            'mt-1 h-5 truncate text-sm leading-5 text-muted-foreground',
-            CARD_LINE_CLASS,
+            'mt-1 text-sm leading-5 text-muted-foreground',
+            pick?.subtitle ? CARD_SUBTITLE_WRAP_CLASS : cn('h-5 truncate', CARD_LINE_CLASS),
             select && 'ps-7',
             pick && !pick.subtitle && 'invisible'
           )}
@@ -966,8 +1034,13 @@ function AutoMobileCard<TData>({
             // Two fields on one line: the first at its own width, at most half
             // the line; the second takes the rest, so its value ends at the
             // card's edge rather than at a fixed middle.
-            '@container mt-1 grid grid-cols-[fit-content(50%)_minmax(0,1fr)] gap-x-3 overflow-hidden',
-            pick?.wide.length ? 'auto-rows-[1.25rem] gap-y-1' : 'h-5',
+            // While measuring, every field sits on one fixed line; once
+            // shown, a field is as tall as its wrapped label and value.
+            '@container mt-1 grid grid-cols-[fit-content(50%)_minmax(0,1fr)] gap-x-3',
+            // A card with no field to show keeps the empty line, so the cards
+            // of a list line up.
+            (!pick || pick.fields.length === 0) && 'h-5 overflow-hidden',
+            pick && pick.fields.length > 0 && 'gap-y-1',
             select && 'ps-7'
           )}
         >
@@ -983,16 +1056,22 @@ function AutoMobileCard<TData>({
                   ? ''
                   : undefined
               }
-              className={cn('flex min-w-0 items-baseline gap-1.5', fullLine && 'col-span-2')}
+              className={cn(
+                'flex min-w-0 items-baseline gap-x-1.5',
+                // Shown: the value goes under its label when the two do not
+                // fit on one line, and then wraps across the field's width.
+                pick && 'flex-wrap',
+                fullLine && 'col-span-2'
+              )}
             >
-              {/* At most half its field, but never less than a quarter of the
-                  line (cqw: the field list is the size container): a short
-                  value no longer cuts its label ("As…" beside "12"), and a
-                  half-line field keeps the half of it its chip needs. */}
-              <dt className="max-w-[max(50%,25cqw)] shrink-0 truncate text-xs text-muted-foreground">
+              {/* While measuring, the label is at most half its field but
+                  never less than a quarter of the line (cqw: the field list
+                  is the size container), so a half-line field keeps the half
+                  of it its chip needs. Once shown, it wraps in full. */}
+              <dt className={pick ? CARD_LABEL_CLASS : CARD_LABEL_MEASURE_CLASS}>
                 {labels.get(cell.column.id)}
               </dt>
-              <CardFieldValue wide={pick?.wide.includes(cell.column.id)}>
+              <CardFieldValue wide={pick?.wide.includes(cell.column.id)} measuring={!pick}>
                 {flexRender(cell.column.columnDef.cell, cell.getContext())}
               </CardFieldValue>
             </div>
@@ -1672,6 +1751,9 @@ export function DataTable<TData, TValue>({
         // relative time ("khoảng 2 giờ trước") wraps between its words in a
         // narrow column rather than being cut.
         !head && layout.kind === 'date' && 'whitespace-nowrap',
+        // An owner (a person, a team, or "No owner" / "Chưa có chủ sở hữu")
+        // wraps between its words rather than being cut.
+        !head && layout.kind === 'owner' && 'whitespace-normal',
         // A column header is never cut: a long label wraps onto a second line.
         head &&
           layout.kind !== 'select' &&

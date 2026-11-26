@@ -238,7 +238,7 @@ export function AddTasksDialog({
                           htmlFor={boxId}
                           className="min-w-0 flex-1 cursor-pointer flex-col items-start gap-0.5 font-normal"
                         >
-                          <span className="block max-w-full truncate font-medium">
+                          <span className="block max-w-full font-medium break-words">
                             {task.title}
                           </span>
                           <span className="text-muted-foreground block max-w-full text-xs break-words">
