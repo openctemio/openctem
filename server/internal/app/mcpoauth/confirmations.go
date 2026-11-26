@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
 	"time"
 
@@ -57,6 +58,34 @@ type PendingConfirmation struct {
 // person (an OAuth principal) can ask: there is nobody to confirm for an
 // API key.
 func (s *Service) RequestConfirmation(ctx context.Context, p *Principal, tool, digest, summary string, actor Actor) (*PendingConfirmation, error) {
+	return s.RequestConfirmationWith(ctx, p, tool, digest, summary, nil, actor)
+}
+
+// SummaryMessage is a confirmation summary as a stable code and typed
+// values (see mcpoauth.Confirmation.SummaryCode).
+type SummaryMessage struct {
+	Code   string
+	Params map[string]any
+}
+
+// maxSummaryParamsBytes bounds the stored values (the table allows 16 KiB).
+const maxSummaryParamsBytes = 12 * 1024
+
+var summaryCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$`)
+
+// valid reports whether the message can be stored; one that cannot is
+// dropped and the English summary alone is kept.
+func (m *SummaryMessage) valid() bool {
+	if m == nil || len(m.Code) > 96 || !summaryCodePattern.MatchString(m.Code) {
+		return false
+	}
+	b, err := json.Marshal(m.Params)
+	return err == nil && len(b) <= maxSummaryParamsBytes
+}
+
+// RequestConfirmationWith is RequestConfirmation with the summary also as a
+// message code and values.
+func (s *Service) RequestConfirmationWith(ctx context.Context, p *Principal, tool, digest, summary string, msg *SummaryMessage, actor Actor) (*PendingConfirmation, error) {
 	if s.confirmations == nil {
 		return nil, ErrConfirmationsUnavailable
 	}
@@ -80,6 +109,11 @@ func (s *Service) RequestConfirmation(ctx context.Context, p *Principal, tool, d
 		Summary:    summary,
 		CreatedAt:  now,
 		ExpiresAt:  now.Add(mcpoauth.ConfirmationTTL),
+	}
+	if msg.valid() {
+		c.SummaryCode, c.SummaryParams = msg.Code, msg.Params
+	} else if msg != nil {
+		s.log.Warn("mcp confirmation summary message dropped, English summary kept", "tool", tool)
 	}
 	if err := s.confirmations.CreateConfirmation(ctx, c); err != nil {
 		return nil, err
@@ -117,6 +151,10 @@ type ConfirmationView struct {
 	Status     mcpoauth.ConfirmationStatus
 	Expired    bool
 	ExpiresAt  time.Time
+	// SummaryCode and SummaryParams: the summary as a code and values
+	// (empty on older rows).
+	SummaryCode   string
+	SummaryParams map[string]any
 }
 
 // GetConfirmation returns a confirmation of the signed-in user in the
@@ -134,6 +172,7 @@ func (s *Service) GetConfirmation(ctx context.Context, tenantID, userID, id shar
 		// write, and the client name (a registered metadata document), are
 		// shown to the person too.
 		ID: c.ID.String(), Tool: c.Tool, Summary: safetext.Clean(c.Summary), ClientName: safetext.SingleLine(c.ClientName, 200), Status: c.Status,
+		SummaryCode: c.SummaryCode, SummaryParams: c.SummaryParams,
 		Expired: !s.now().Before(c.ExpiresAt), ExpiresAt: c.ExpiresAt,
 	}, nil
 }

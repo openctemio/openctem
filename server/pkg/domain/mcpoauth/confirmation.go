@@ -31,9 +31,14 @@ type Confirmation struct {
 	Tool       string
 	ArgsDigest string
 	Summary    string
-	Status     ConfirmationStatus
-	CreatedAt  time.Time
-	ExpiresAt  time.Time
+	// SummaryCode and SummaryParams are the summary as a stable message code
+	// and typed values, which the web words in the reader's language and
+	// shows as separate fields; empty on older rows (Summary is shown).
+	SummaryCode   string
+	SummaryParams map[string]any
+	Status        ConfirmationStatus
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
 	// ClientName is the application that asked (read only).
 	ClientName string
 }

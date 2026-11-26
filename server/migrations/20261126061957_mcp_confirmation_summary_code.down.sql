@@ -1,0 +1,4 @@
+ALTER TABLE mcp_action_confirmations DROP CONSTRAINT IF EXISTS chk_mcp_action_confirmations_summary_params;
+ALTER TABLE mcp_action_confirmations DROP CONSTRAINT IF EXISTS chk_mcp_action_confirmations_summary_code;
+ALTER TABLE mcp_action_confirmations DROP COLUMN IF EXISTS summary_params;
+ALTER TABLE mcp_action_confirmations DROP COLUMN IF EXISTS summary_code;

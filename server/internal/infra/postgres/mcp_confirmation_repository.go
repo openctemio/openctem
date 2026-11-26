@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -15,10 +16,20 @@ var _ mcpoauth.ConfirmationRepository = (*MCPOAuthRepository)(nil)
 
 // CreateConfirmation implements mcpoauth.ConfirmationRepository.
 func (r *MCPOAuthRepository) CreateConfirmation(ctx context.Context, c *mcpoauth.Confirmation) error {
+	var params *string
+	if c.SummaryCode != "" && len(c.SummaryParams) > 0 {
+		b, err := json.Marshal(c.SummaryParams)
+		if err != nil {
+			return fmt.Errorf("mcp confirmation summary values: %w", err)
+		}
+		js := string(b)
+		params = &js
+	}
 	_, err := r.db.ExecContext(ctx, `
-		INSERT INTO mcp_action_confirmations (id, tenant_id, grant_id, user_id, tool, args_digest, summary, status, created_at, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9)`,
-		c.ID.String(), c.TenantID.String(), c.GrantID.String(), c.UserID.String(), c.Tool, c.ArgsDigest, c.Summary, c.CreatedAt, c.ExpiresAt)
+		INSERT INTO mcp_action_confirmations (id, tenant_id, grant_id, user_id, tool, args_digest, summary, status, created_at, expires_at, summary_code, summary_params)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, $9, NULLIF($10, ''), $11::jsonb)`,
+		c.ID.String(), c.TenantID.String(), c.GrantID.String(), c.UserID.String(), c.Tool, c.ArgsDigest, c.Summary, c.CreatedAt, c.ExpiresAt,
+		c.SummaryCode, params)
 	if err != nil {
 		return fmt.Errorf("create mcp confirmation: %w", err)
 	}
@@ -30,14 +41,17 @@ func (r *MCPOAuthRepository) GetConfirmation(ctx context.Context, tenantID, user
 	var (
 		c                      mcpoauth.Confirmation
 		cid, tid, gid, uid, st string
+		code                   string
+		params                 []byte
 	)
 	err := r.db.QueryRowContext(ctx, `
-		SELECT a.id, a.tenant_id, a.grant_id, a.user_id, a.tool, a.args_digest, a.summary, a.status, a.created_at, a.expires_at, cl.name
+		SELECT a.id, a.tenant_id, a.grant_id, a.user_id, a.tool, a.args_digest, a.summary, a.status, a.created_at, a.expires_at, cl.name,
+		       COALESCE(a.summary_code, ''), a.summary_params
 		  FROM mcp_action_confirmations a
 		  JOIN mcp_oauth_grants g ON g.id = a.grant_id
 		  JOIN mcp_oauth_clients cl ON cl.id = g.client_ref
 		 WHERE a.tenant_id = $1 AND a.user_id = $2 AND a.id = $3`, tenantID.String(), userID.String(), id.String()).
-		Scan(&cid, &tid, &gid, &uid, &c.Tool, &c.ArgsDigest, &c.Summary, &st, &c.CreatedAt, &c.ExpiresAt, &c.ClientName)
+		Scan(&cid, &tid, &gid, &uid, &c.Tool, &c.ArgsDigest, &c.Summary, &st, &c.CreatedAt, &c.ExpiresAt, &c.ClientName, &code, &params)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, mcpoauth.ErrNotFound
 	}
@@ -46,6 +60,12 @@ func (r *MCPOAuthRepository) GetConfirmation(ctx context.Context, tenantID, user
 	}
 	c.ID, c.TenantID, c.GrantID, c.UserID = shared.MustIDFromString(cid), shared.MustIDFromString(tid), shared.MustIDFromString(gid), shared.MustIDFromString(uid)
 	c.Status = mcpoauth.ConfirmationStatus(st)
+	if code != "" {
+		c.SummaryCode = code
+		if len(params) > 0 {
+			_ = json.Unmarshal(params, &c.SummaryParams) // values that do not decode leave the code with none
+		}
+	}
 	return &c, nil
 }
 

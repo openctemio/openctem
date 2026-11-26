@@ -23,6 +23,12 @@ type MCPConfirmation struct {
 	Status     string    `json:"status"`
 	Expired    bool      `json:"expired"`
 	ExpiresAt  time.Time `json:"expires_at"`
+	// SummaryCode is the summary as a stable code (mcp.add_finding_comment)
+	// that the web words in the reader's language, with SummaryParams as its
+	// values (finding, severity, content, client_visible). Absent on older
+	// confirmations: Summary is the text to show.
+	SummaryCode   string         `json:"summary_code,omitempty"`
+	SummaryParams map[string]any `json:"summary_params,omitempty"`
 }
 
 func (h *MCPConnectionsHandler) confirmationCaller(r *http.Request) (tenantID, userID, id shared.ID, ok bool) {
@@ -57,7 +63,7 @@ func (h *MCPConnectionsHandler) GetConfirmation(w http.ResponseWriter, r *http.R
 	}
 	noStoreJSON(w, http.StatusOK, MCPConfirmation{
 		ID: v.ID, Tool: v.Tool, Summary: v.Summary, ClientName: v.ClientName, Status: string(v.Status),
-		Expired: v.Expired, ExpiresAt: v.ExpiresAt,
+		Expired: v.Expired, ExpiresAt: v.ExpiresAt, SummaryCode: v.SummaryCode, SummaryParams: v.SummaryParams,
 	})
 }
 
