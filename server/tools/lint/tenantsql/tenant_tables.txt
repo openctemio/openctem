@@ -265,6 +265,7 @@ report_schedules
 risk_snapshots
 roles
 runtime_telemetry_events
+saml_connection_ids
 saml_providers
 saved_views
 scan_approval_requests
