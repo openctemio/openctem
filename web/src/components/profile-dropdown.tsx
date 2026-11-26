@@ -67,7 +67,10 @@ export function ProfileDropdown() {
       className={cn('relative rounded-full p-0', PHONE_TOUCH_SQUARE)}
       aria-label={triggerLabel}
     >
-      <Avatar className="size-full">
+      {/* The initials are a picture of the person, not the button's name:
+          hidden from assistive technology, so the name ("Open user menu for
+          …") does not have to contain them (label in name, WCAG 2.5.3). */}
+      <Avatar className="size-full" aria-hidden="true">
         <AvatarFallback className="bg-surface-sunken text-cap-m text-foreground">
           {initials}
         </AvatarFallback>

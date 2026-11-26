@@ -218,7 +218,7 @@ describe('VulnerabilitiesList', () => {
     )
   })
 
-  it('names the view, counts once, and offers Save view and Reset once the list is changed', async () => {
+  it('names the view, counts once, and offers one Save view menu once the list is changed', async () => {
     api.get.mockResolvedValue(page([item()]))
     renderList()
     expect(
@@ -232,8 +232,10 @@ describe('VulnerabilitiesList', () => {
     await waitFor(() =>
       expect(document.querySelector('[data-slot="list-modified"]')).not.toBeNull()
     )
-    expect(screen.getByRole('button', { name: 'Save view' })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Reset' }))
+    // One menu button: Save view and Reset are its items, not two buttons.
+    expect(screen.queryByRole('button', { name: 'Reset' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Save view' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Reset' }))
     await waitFor(() => expect(window.location.search).toBe(''))
     expect(document.querySelector('[data-slot="list-modified"]')).toBeNull()
   })

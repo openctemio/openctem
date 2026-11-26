@@ -147,7 +147,22 @@ export function getCapabilityDisplayName(
   capabilityName: string
 ): string {
   const capability = capabilities?.find((c) => c.name === capabilityName)
-  return capability?.display_name || capabilityName.toUpperCase()
+  return capability?.display_name || capabilityWords(capabilityName)
+}
+
+/**
+ * A capability the registry does not name, in words: a short key is an
+ * acronym ("sast" reads "SAST"), a dotted contract key a phrase
+ * ("discover.subdomains" reads "Discover subdomains", never
+ * "DISCOVER.SUBDOMAINS").
+ */
+export function capabilityWords(capabilityName: string): string {
+  if (!/[._-]/.test(capabilityName)) return capabilityName.toUpperCase()
+  const words = capabilityName
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .join(' ')
+  return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
 /**

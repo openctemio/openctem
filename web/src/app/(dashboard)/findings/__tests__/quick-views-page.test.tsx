@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, render, screen, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 globalThis.ResizeObserver ??= class {
   observe() {}
@@ -189,6 +190,11 @@ describe('Findings list with quick views', () => {
   const row = () => screen.getByTestId('findings-toolbar-primary')
   const title = () => screen.getByTestId('findings-view-title')
   const modified = () => row().querySelector('[data-slot="list-modified"]')
+  // Save view is one menu button: Save view (or Save changes) and Reset.
+  const resetView = async () => {
+    await userEvent.click(row().querySelector<HTMLElement>('[data-slot="list-view-save"]')!)
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Reset' }))
+  }
   const QUICK = [
     { key: 'active', count: 12, params: 'state=open' },
     { key: 'needs_triage', count: 3, params: 'status=new' },
@@ -205,33 +211,34 @@ describe('Findings list with quick views', () => {
     expect(row().querySelector('[data-slot="list-view-reset"]')).toBeNull()
   })
 
-  it('a view plus a filter keeps the view name and shows Modified, Save view, Reset', () => {
+  it('a view plus a filter keeps the view name and shows Modified, then one Save view menu', async () => {
     quickViewsState.views = QUICK
     openAt('?severity=high&practice=secrets')
     render(<FindingsPage />)
     expect(title()).toHaveTextContent('Active')
     expect(title()).not.toHaveTextContent(/custom view|saved view/i)
     expect(modified()).toHaveTextContent('Modified')
-    // Modified comes right after the count, then Save view, then Reset.
+    // Modified comes right after the count, then the one Save view menu
+    // (Reset is in it, not a second button).
     const start = row().querySelector('[data-slot="list-title-start"]')!
     const order = Array.from(
       start.querySelectorAll(
         '[data-slot="list-count"], [data-slot="list-modified"], [data-slot="list-view-save"], [data-slot="list-view-reset"]'
       )
     ).map((el) => el.getAttribute('data-slot'))
-    expect(order).toEqual(['list-count', 'list-modified', 'list-view-save', 'list-view-reset'])
+    expect(order).toEqual(['list-count', 'list-modified', 'list-view-save'])
     // Reset goes back to exactly the base view (the practice is its scope).
-    fireEvent.click(row().querySelector('[data-slot="list-view-reset"]')!)
+    await resetView()
     expect(params().toString()).toBe('state=open&practice=secrets')
   })
 
-  it('a URL no view holds is All findings, modified; Reset opens every state', () => {
+  it('a URL no view holds is All findings, modified; Reset opens every state', async () => {
     quickViewsState.views = QUICK
     openAt('?state=fixed&severity=high')
     render(<FindingsPage />)
     expect(title()).toHaveTextContent('All findings')
     expect(modified()).not.toBeNull()
-    fireEvent.click(row().querySelector('[data-slot="list-view-reset"]')!)
+    await resetView()
     expect(params().toString()).toBe('state=all')
   })
 
