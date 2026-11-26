@@ -316,7 +316,13 @@ export function ReceiptHistory() {
       {
         id: 'source',
         header: t('findings.receiptHistory.col.source', 'Source'),
-        meta: { kind: 'name', label: t('findings.receiptHistory.col.source', 'Source') },
+        meta: {
+          kind: 'name',
+          label: t('findings.receiptHistory.col.source', 'Source'),
+          // Its floor, so the change column cannot grow into the room of
+          // the tool name and push the last columns past the frame.
+          minWidth: 180,
+        },
         cell: ({ row }) => (
           <span className="block min-w-0">
             <span className="block truncate font-medium" dir="auto">
