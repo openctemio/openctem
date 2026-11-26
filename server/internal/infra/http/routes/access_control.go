@@ -59,7 +59,7 @@ func registerGroupRoutes(
 		// the grant ceiling, the scope cap and, for a privileged role, the
 		// owner-only rule with step-up.
 		r.GET("/{groupId}/roles", h.ListGroupRoles, middleware.RequireAll(permission.GroupsRead, permission.RolesRead))
-		r.POST("/{groupId}/roles", h.BindGroupRole, middleware.RequireAll(permission.RolesAssign, permission.GroupsWrite))
+		r.POST("/{groupId}/roles", h.BindGroupRole, middleware.RequireAll(permission.RolesAssign, permission.GroupsWrite), requireStepUp())
 		r.DELETE("/{groupId}/roles/{roleId}", h.UnbindGroupRole, middleware.RequireAll(permission.RolesAssign, permission.GroupsWrite))
 
 		// Team access presets (managed roles made from role templates, and the
@@ -67,8 +67,8 @@ func registerGroupRoutes(
 		// service also applies the owner-only rule with step-up for a team
 		// with elevated access.
 		r.GET("/{groupId}/access", h.GetTeamAccess, middleware.RequireAll(permission.GroupsRead, permission.RolesRead))
-		r.PUT("/{groupId}/access", h.SetTeamAccess, middleware.RequireAll(permission.RolesAssign, permission.GroupsWrite))
-		r.POST("/{groupId}/access/upgrade", h.UpgradeTeamPreset, middleware.RequireAll(permission.RolesAssign, permission.GroupsWrite))
+		r.PUT("/{groupId}/access", h.SetTeamAccess, middleware.RequireAll(permission.RolesAssign, permission.GroupsWrite), requireStepUp())
+		r.POST("/{groupId}/access/upgrade", h.UpgradeTeamPreset, middleware.RequireAll(permission.RolesAssign, permission.GroupsWrite), requireStepUp())
 
 		// Group asset ownership
 		r.GET("/{groupId}/assets", h.ListGroupAssets, middleware.Require(permission.GroupsRead))
