@@ -68,7 +68,8 @@ describe('AlertActions', () => {
   it('sends the chosen reason and note with the state change', async () => {
     api.post.mockResolvedValue(detail({ state: 'not_affected' }))
     wrap(<AlertActions alert={detail()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Mark not affected' }))
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Mark not affected' }))
     await userEvent.click(screen.getByLabelText('The match is the wrong product'))
     await userEvent.click(screen.getAllByRole('button', { name: 'Mark not affected' }).at(-1)!)
     await waitFor(() =>
@@ -79,7 +80,7 @@ describe('AlertActions', () => {
     )
   })
 
-  it('hides Mark not affected when the alert reaches outside the scope, and says why', () => {
+  it('hides Mark not affected when the alert reaches outside the scope, and says why', async () => {
     const alert = detail({ can_suppress: false })
     wrap(
       <>
@@ -88,13 +89,16 @@ describe('AlertActions', () => {
       </>
     )
     expect(screen.queryByRole('button', { name: 'Mark not affected' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(screen.queryByRole('menuitem', { name: 'Mark not affected' })).toBeNull()
     expect(screen.getByText(/outside your scope/)).toBeInTheDocument()
   })
 
   it('acknowledges', async () => {
     api.post.mockResolvedValue(detail({ state: 'acknowledged' }))
     wrap(<AlertActions alert={detail()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Acknowledge' }))
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Acknowledge' }))
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/api/v1/emerging-threats/a1/state', {
         state: 'acknowledged',
@@ -121,14 +125,23 @@ describe('AlertActions', () => {
     expect(pick('resolved', 'patch_now', acts('reopen'))).toBeNull()
   })
 
-  it('keeps one main action below xl: the state moves and the scan are in More actions', async () => {
-    mobile.phone = true
-    wrap(<AlertActions alert={detail()} />)
-    expect(screen.getByRole('button', { name: /Create remediation task/ })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Acknowledge' })).toBeNull()
-    expect(screen.queryByRole('button', { name: /Scan affected/ })).toBeNull()
-    expect(screen.getByRole('button', { name: 'More actions' })).toBeInTheDocument()
-  })
+  it.each([
+    ['a phone', true],
+    ['a wide screen', false],
+  ])(
+    'keeps one main action on %s: the state moves and the scan are in More actions',
+    async (_, phone) => {
+      mobile.phone = phone
+      wrap(<AlertActions alert={detail()} />)
+      expect(screen.getByRole('button', { name: /Create remediation task/ })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Acknowledge' })).toBeNull()
+      expect(screen.queryByRole('button', { name: /Scan affected/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Mark not affected' })).toBeNull()
+      await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+      expect(await screen.findByRole('menuitem', { name: 'Acknowledge' })).toBeInTheDocument()
+      expect(screen.getByRole('menuitem', { name: 'Mark not affected' })).toBeInTheDocument()
+    }
+  )
 })
 
 describe('create remediation task', () => {

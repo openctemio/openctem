@@ -2614,9 +2614,21 @@ function FindingsContent() {
   const taskFromFiltersButton = canQueryTask ? (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button variant="outline" size="sm" onClick={() => void openTaskFromFilters()}>
-          <SquareCode className="me-2 h-4 w-4" aria-hidden />
-          {t('remediationQuery.findings.fromFiltersShort')}
+        {/* Its icon alone on a row under 56rem (its name stays for assistive
+            technology and in the tooltip): beside a changed view's Modified
+            mark and Save view menu, the label cut the view's name to
+            "Đang hoạt …" at 1024 px vi. Decided by the row's width, so the
+            row's end never moves when the view changes. */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="aspect-square @4xl/actions:aspect-auto"
+          onClick={() => void openTaskFromFilters()}
+        >
+          <SquareCode className="h-4 w-4 @4xl/actions:me-2" aria-hidden />
+          <span className="sr-only @4xl/actions:not-sr-only">
+            {t('remediationQuery.findings.fromFiltersShort')}
+          </span>
         </Button>
       </TooltipTrigger>
       <TooltipContent>{t('remediationQuery.findings.fromFilters')}</TooltipContent>
@@ -2909,23 +2921,7 @@ function FindingsContent() {
             // On a row under 42rem the two buttons are in the row's More.
             actionsClassName="hidden @2xl/actions:flex"
             onSave={openSaveView}
-            save={
-              canUpdateView ? (
-                <ActionMenu
-                  title={viewTitle}
-                  label={t('common.actionMenu.label', 'Actions for {name}', { name: viewTitle })}
-                  items={[
-                    { id: 'view-save-changes', label: saveChangesLabel, onSelect: saveViewChanges },
-                    { id: 'view-save', label: saveAsNewLabel, onSelect: openSaveView },
-                  ]}
-                  trigger={
-                    <Button data-slot="list-view-save" variant="outline" size="sm">
-                      {saveViewLabel}
-                    </Button>
-                  }
-                />
-              ) : undefined
-            }
+            onSaveChanges={canUpdateView ? saveViewChanges : undefined}
             onReset={resetToBaseView}
           />
           {awaitingVerification > 0 && hasPermission(Permission.FindingsVerify) && (

@@ -639,13 +639,15 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                   {t('workflowStages.builder.discardDraft')}
                 </Button>
               )}
-              {!isReadOnly && (
+              {/* One main action, and none at rest: Save draft while there
+                  are changes, then Publish while a saved draft waits. A
+                  workflow with neither shows only its published version. */}
+              {!isReadOnly && hasChanges && (
                 <Button
                   size="sm"
-                  variant="outline"
                   iconOnlyBelow="sm"
                   onClick={handleSave}
-                  disabled={!hasChanges || isSaving}
+                  disabled={isSaving}
                   aria-label={t('workflowStages.builder.saveDraft')}
                 >
                   {isSaving ? <Loader2 className="animate-spin" /> : <Save />}
@@ -654,7 +656,7 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                   </span>
                 </Button>
               )}
-              {!isReadOnly && (
+              {!isReadOnly && hasDraft && !hasChanges && (
                 <Button
                   size="sm"
                   onClick={() => setAskPublish(true)}

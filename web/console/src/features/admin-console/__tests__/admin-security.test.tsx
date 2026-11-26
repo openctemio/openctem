@@ -6,6 +6,7 @@ import { dayBound } from '../lib/audit-range'
 import { endAdminSession, useAdminSessions } from '../api/use-admin-sessions'
 import type { AdminConsoleSession, AdminIdentity } from '../types'
 import SessionsPage from '@console/app/(console)/security/sessions/page'
+import { wholeText } from '@/test/utils'
 
 const mocks = vi.hoisted(() => ({ admin: { current: null as AdminIdentity | null } }))
 
@@ -126,7 +127,7 @@ describe('Sessions page', () => {
     const breakGlass = screen.getAllByText('Emergency access')[0]
     expect(breakGlass.closest('[data-slot="badge"]')).toBeNull()
     expect(breakGlass.parentElement!.textContent).toContain('Ops')
-    const address = within(breakGlass.parentElement!).getByText('ops@op.test')
+    const address = within(breakGlass.parentElement!).getByText(wholeText('ops@op.test'))
     expect(address).toHaveClass('min-w-0', 'shrink-[4]', 'truncate')
     // An open break-glass session is the page's main action: review what it did.
     expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute(
