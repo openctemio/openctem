@@ -1283,6 +1283,7 @@
   "scans.credentials.fieldRequired": "Cần nhập trường này",
   "scans.credentials.neverUsed": "Chưa dùng lần nào",
   "scans.credentials.noMatch": "Không có thông tin đăng nhập nào khớp với tìm kiếm",
+  "scans.credentials.placeholder.token": "ghp_xxxxxxxxxxxx hoặc glpat-xxxxxxxxxxxx",
   "scans.credentials.refreshed": "Đã làm mới danh sách thông tin đăng nhập",
   "scans.credentials.row.delete": "Xóa",
   "scans.credentials.row.edit": "Sửa",

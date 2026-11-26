@@ -65,11 +65,18 @@ export function SCMConnectionCard({
   const handleDelete = async () => {
     try {
       await deleteConnection()
-      toast.success(`Connection "${connection.name}" deleted`)
+      toast.success(
+        t('scmIntegration.toast.deleted', 'Connection "{name}" deleted', { name: connection.name })
+      )
       await invalidateSCMIntegrationsCache()
       setDeleteDialogOpen(false)
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete connection'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('scmIntegration.toast.deleteFailed', 'Failed to delete connection')
+        )
+      )
     }
   }
 
@@ -80,7 +87,11 @@ export function SCMConnectionCard({
 
       // Check if the test actually succeeded by looking at the returned status
       if (result && result.status === 'connected') {
-        toast.success(`Connection "${connection.name}" validated successfully`)
+        toast.success(
+          t('scmConnections.card.validated', 'Connection "{name}" validated.', {
+            name: connection.name,
+          })
+        )
       } else if (result && result.status === 'error') {
         toast.error(
           connectionProblem(
@@ -92,10 +103,17 @@ export function SCMConnectionCard({
           ).message
         )
       } else {
-        toast.warning(`Connection "${connection.name}" status: ${result?.status || 'unknown'}`)
+        toast.warning(
+          t('scmConnections.card.status', 'Connection "{name}" status: {status}', {
+            name: connection.name,
+            status: result?.status || t('scmConnections.card.statusUnknown', 'unknown'),
+          })
+        )
       }
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Validation failed'))
+      toast.error(
+        getErrorMessage(error, t('scmConnections.card.validationFailed', 'Validation failed'))
+      )
     }
   }
 
@@ -236,7 +254,9 @@ export function SCMConnectionCard({
                 </Tooltip>
               </TooltipProvider>
               <Badge variant="secondary" className="text-xs">
-                {repositoryCount} repos
+                {t('scmIntegration.repoCount', '{count, plural, one {# repo} other {# repos}}', {
+                  count: repositoryCount,
+                })}
               </Badge>
             </div>
             {connection.last_sync_at && (
@@ -249,7 +269,9 @@ export function SCMConnectionCard({
                     </span>
                   </TooltipTrigger>
                   <TooltipContent>
-                    Last validated: {formatDateTime(new Date(connection.last_sync_at))}
+                    {t('scmConnections.card.lastValidated', 'Last validated: {date}', {
+                      date: formatDateTime(new Date(connection.last_sync_at)),
+                    })}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

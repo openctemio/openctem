@@ -73,12 +73,16 @@ export function ExclusionTestingDialog({
   const current = effectiveTesting(exclusion)
   const rule = pathRuleLabel(exclusion)
   const n = days.trim() ? Number(days) : null
+  const modeLabel = (m: ExclusionTesting) => t(`scope.testing.label.${m}`, TESTING_LABEL[m])
+  const modeHint = (m: ExclusionTesting) => t(`scope.testing.hint.${m}`, TESTING_HINT[m])
 
   const next = () => {
-    const problem = testingProblem(mode, n)
+    const problem = testingProblem(mode, n, t)
     if (problem) return setError(problem)
     if (mode === current && n === null)
-      return setError('Choose a different mode or set an end date.')
+      return setError(
+        t('scope.testing.chooseDifferent', 'Choose a different mode or set an end date.')
+      )
     setError(null)
     setStep('review')
   }
@@ -91,12 +95,18 @@ export function ExclusionTestingDialog({
         ...(n !== null && mode !== 'blocked' ? { testing_until: daysFromNow(n) } : {}),
       })
       await invalidateScopeCache()
-      toast.success(`${rule}: ${TESTING_LABEL[mode].toLowerCase()}`, {
-        description: 'Every administrator was notified.',
+      toast.success(`${rule}: ${modeLabel(mode).toLowerCase()}`, {
+        description: t('scope.testing.notified', 'Every administrator was notified.'),
       })
       onOpenChange(false)
     } catch (err) {
-      setError(scopeErrorMessage(t, err, 'The testing mode was not changed.'))
+      setError(
+        scopeErrorMessage(
+          t,
+          err,
+          t('scope.testing.notChanged', 'The testing mode was not changed.')
+        )
+      )
       setStep('choose')
     } finally {
       setSaving(false)
@@ -107,10 +117,17 @@ export function ExclusionTestingDialog({
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{step === 'choose' ? 'Testing mode' : 'Review change'}</DialogTitle>
+          <DialogTitle>
+            {step === 'choose'
+              ? t('scope.testing.title', 'Testing mode')
+              : t('scope.testing.reviewTitle', 'Review change')}
+          </DialogTitle>
           <DialogDescription>
-            <code className="break-all">{rule}</code> stays out of scope; this decides what scans
-            may still send to it.
+            <code className="break-all">{rule}</code>{' '}
+            {t(
+              'scope.testing.description',
+              'stays out of scope; this decides what scans may still send to it.'
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -147,12 +164,10 @@ export function ExclusionTestingDialog({
                       <RadioGroupItem id={`${id}-${m}`} value={m} className="mt-0.5" />
                       <span className="min-w-0">
                         <span className="block text-sm font-medium">
-                          {TESTING_LABEL[m]}
-                          {m === current ? ' (now)' : ''}
+                          {modeLabel(m)}
+                          {m === current ? ` ${t('scope.testing.now', '(now)')}` : ''}
                         </span>
-                        <span className="block text-xs text-muted-foreground">
-                          {TESTING_HINT[m]}
-                        </span>
+                        <span className="block text-xs text-muted-foreground">{modeHint(m)}</span>
                       </span>
                     </label>
                   ))}
@@ -160,7 +175,9 @@ export function ExclusionTestingDialog({
                 {mode !== 'blocked' && (
                   <div className="space-y-2">
                     <Label htmlFor={`${id}-days`}>
-                      Back to blocked after (days{mode === 'allowed' ? '' : ', optional'})
+                      {mode === 'allowed'
+                        ? t('scope.testing.daysRequired', 'Back to blocked after (days)')
+                        : t('scope.testing.daysOptional', 'Back to blocked after (days, optional)')}
                     </Label>
                     <Input
                       id={`${id}-days`}
@@ -174,7 +191,13 @@ export function ExclusionTestingDialog({
                       }}
                       className="w-28"
                     />
-                    <p className="text-xs text-muted-foreground">1 to {MAX_TESTING_DAYS} days.</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t(
+                        'scope.testing.daysRange',
+                        '1 to {count, plural, one {# day} other {# days}}.',
+                        { count: MAX_TESTING_DAYS }
+                      )}
+                    </p>
                   </div>
                 )}
               </>
@@ -185,8 +208,22 @@ export function ExclusionTestingDialog({
                     key: 'testing',
                     mark: 'change',
                     pattern: rule,
-                    summary: `testing ${TESTING_LABEL[current].toLowerCase()} → ${TESTING_LABEL[mode].toLowerCase()}${n !== null && mode !== 'blocked' ? ` for ${n} ${n === 1 ? 'day' : 'days'}` : ''}`,
-                    message: testingImpact(current, mode, rule, exclusion.methods),
+                    summary:
+                      n !== null && mode !== 'blocked'
+                        ? t(
+                            'scope.testing.summaryFor',
+                            'testing {from} → {to} for {count, plural, one {# day} other {# days}}',
+                            {
+                              from: modeLabel(current).toLowerCase(),
+                              to: modeLabel(mode).toLowerCase(),
+                              count: n,
+                            }
+                          )
+                        : t('scope.testing.summary', 'testing {from} → {to}', {
+                            from: modeLabel(current).toLowerCase(),
+                            to: modeLabel(mode).toLowerCase(),
+                          }),
+                    message: testingImpact(current, mode, rule, exclusion.methods, t),
                   },
                 ]}
                 consequence={{ approvalsRequired: 0, stepUp: mode !== 'blocked' }}
@@ -194,8 +231,10 @@ export function ExclusionTestingDialog({
             )}
             {step === 'review' && (
               <p className="text-xs text-muted-foreground">
-                Audited; every administrator is notified. There is no switch that lifts every
-                exclusion at once.
+                {t(
+                  'scope.testing.auditNote',
+                  'Audited; every administrator is notified. There is no switch that lifts every exclusion at once.'
+                )}
               </p>
             )}
           </div>
@@ -206,19 +245,21 @@ export function ExclusionTestingDialog({
             <>
               <Button variant="ghost" onClick={() => setStep('choose')} disabled={saving}>
                 <ChevronLeft className="h-4 w-4" />
-                Back
+                {t('scope.testing.back', 'Back')}
               </Button>
               <Button onClick={() => void apply()} disabled={saving}>
                 {saving && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                {mode === 'blocked' ? 'Block testing' : 'Change testing mode'}
+                {mode === 'blocked'
+                  ? t('scope.testing.block', 'Block testing')
+                  : t('scope.testing.change', 'Change testing mode')}
               </Button>
             </>
           ) : (
             <>
               <Button variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </Button>
-              <Button onClick={next}>Review</Button>
+              <Button onClick={next}>{t('scope.testing.review', 'Review')}</Button>
             </>
           )}
         </DialogFooter>
