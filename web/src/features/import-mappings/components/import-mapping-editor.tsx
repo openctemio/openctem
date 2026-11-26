@@ -132,12 +132,16 @@ function TemplatePicker({ onPick }: { onPick: (doc: MappingDocument, name: strin
             onClick={() => onPick(tpl.mapping, tpl.key)}
           >
             <span className="flex w-full items-center justify-between gap-2">
-              <span className="font-medium">{tpl.name}</span>
+              <span className="font-medium">
+                {t(`importMappings.template.${tpl.key}.name`, tpl.name)}
+              </span>
               <Badge variant="outline">
                 {t(`importMappings.source.${tpl.source}`, tpl.source.toUpperCase())}
               </Badge>
             </span>
-            <span className="text-sm text-muted-foreground">{tpl.description}</span>
+            <span className="text-sm text-muted-foreground">
+              {t(`importMappings.template.${tpl.key}.notes`, tpl.description)}
+            </span>
           </button>
         ))}
         <button

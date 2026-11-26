@@ -40,6 +40,20 @@ type Rendered struct {
 	Notes []Issue `json:"notes,omitempty"`
 }
 
+// note is a non-blocking remark of one rendered row: a stable code, the
+// English text and the values the sentence names.
+type note struct {
+	Code    string
+	Message string
+	Params  map[string]any
+}
+
+var noNote note
+
+func (n note) issue(r Row) Issue {
+	return stable([]Issue{{Severity: IssueInfo, Code: n.Code, RowID: r.ID, FieldID: r.Target.FieldID, Message: n.Message, Params: n.Params}})[0]
+}
+
 // Text limits of the tracker.
 const (
 	maxSummaryRunes = 255
@@ -53,8 +67,8 @@ const (
 //nolint:cyclop,gocognit // one switch over field shapes
 func RenderOutbound(kind ObjectKind, s Spec, values Values, meta *ProjectMeta, opt RenderOptions) Rendered {
 	res := Rendered{Fields: map[string]any{}}
-	drop := func(r Row, code, msg string) {
-		res.Dropped = append(res.Dropped, Issue{Severity: IssueWarning, Code: code, RowID: r.ID, FieldID: r.Target.FieldID, Message: msg})
+	drop := func(r Row, code, msg string, params map[string]any) {
+		res.Dropped = append(res.Dropped, Issue{Severity: IssueWarning, Code: code, RowID: r.ID, FieldID: r.Target.FieldID, Message: msg, Params: params})
 	}
 	redact := opt.Redact
 	if redact == nil {
@@ -95,17 +109,17 @@ func RenderOutbound(kind ObjectKind, s Spec, values Values, meta *ProjectMeta, o
 		case SourceTemplate:
 			tpl, err := ParseTemplate(kind, r.Source.Template)
 			if err != nil {
-				drop(r, "template", err.Error())
+				drop(r, "template", err.Error(), map[string]any{"detail": err.Error()})
 				continue
 			}
 			withLinks, links := linkSentinels(kind, visible)
 			v = Text(tpl.Render(withLinks))
-			out, ok, note := shapeValue(r, v, schema, fm, opt, redact)
-			if note != "" {
-				res.Notes = append(res.Notes, Issue{Severity: IssueInfo, Code: "note", RowID: r.ID, FieldID: r.Target.FieldID, Message: note})
+			out, ok, nt := shapeValue(r, v, schema, fm, opt, redact)
+			if nt.Code != "" {
+				res.Notes = append(res.Notes, nt.issue(r))
 			}
 			if !ok {
-				drop(r, "empty", "no value")
+				drop(r, "empty", "no value", nil)
 				continue
 			}
 			if str, isStr := out.(string); isStr {
@@ -119,11 +133,11 @@ func RenderOutbound(kind ObjectKind, s Spec, values Values, meta *ProjectMeta, o
 		case SourceAttr:
 			a, ok := LookupAttr(kind, r.Source.Attr)
 			if !ok {
-				drop(r, "unknown_attr", "unknown attribute")
+				drop(r, "unknown_attr", "unknown attribute", nil)
 				continue
 			}
 			if !s.Minimization.Allows(a.Tier) {
-				drop(r, "minimized", "above the data level")
+				drop(r, "minimized", "above the data level", nil)
 				continue
 			}
 			v = visible[r.Source.Attr]
@@ -135,12 +149,12 @@ func RenderOutbound(kind ObjectKind, s Spec, values Values, meta *ProjectMeta, o
 			}
 		}
 
-		out, ok, note := shapeValue(r, v, schema, fm, opt, redact)
-		if note != "" {
-			res.Notes = append(res.Notes, Issue{Severity: IssueInfo, Code: "note", RowID: r.ID, FieldID: r.Target.FieldID, Message: note})
+		out, ok, nt := shapeValue(r, v, schema, fm, opt, redact)
+		if nt.Code != "" {
+			res.Notes = append(res.Notes, nt.issue(r))
 		}
 		if !ok {
-			drop(r, "empty", "no value")
+			drop(r, "empty", "no value", nil)
 			continue
 		}
 		res.Fields[r.Target.FieldID] = out
@@ -152,7 +166,7 @@ func RenderOutbound(kind ObjectKind, s Spec, values Values, meta *ProjectMeta, o
 // field. ok=false when there is nothing to send.
 //
 //nolint:cyclop,gocognit // one case per field shape
-func shapeValue(r Row, v Value, schema FieldSchema, fm *FieldMeta, opt RenderOptions, redact func(string) string) (any, bool, string) {
+func shapeValue(r Row, v Value, schema FieldSchema, fm *FieldMeta, opt RenderOptions, redact func(string) string) (any, bool, note) {
 	tr := r.Transform
 	mapped := func(s string) string {
 		if tr.Kind == TransformValueMap {
@@ -192,9 +206,9 @@ func shapeValue(r Row, v Value, schema FieldSchema, fm *FieldMeta, opt RenderOpt
 	case shapeText:
 		if v.Table != nil {
 			if opt.Table != nil {
-				return opt.Table(*v.Table), true, ""
+				return opt.Table(*v.Table), true, noNote
 			}
-			return text(v.String(), maxTextRunes, true), true, ""
+			return text(v.String(), maxTextRunes, true), true, noNote
 		}
 		var s string
 		if tr.Kind == TransformJoin {
@@ -207,46 +221,46 @@ func shapeValue(r Row, v Value, schema FieldSchema, fm *FieldMeta, opt RenderOpt
 			s = mapped(v.String())
 		}
 		if s == "" {
-			return nil, false, ""
+			return nil, false, noNote
 		}
 		if r.Target.FieldID == "summary" {
 			s = redact(strings.Join(strings.Fields(s), " "))
 			if opt.EncodeSummary != nil {
-				return opt.EncodeSummary(s, maxSummaryRunes), true, ""
+				return opt.EncodeSummary(s, maxSummaryRunes), true, noNote
 			}
-			return truncateRunes(s, maxSummaryRunes), true, ""
+			return truncateRunes(s, maxSummaryRunes), true, noNote
 		}
 		if r.Source.Kind == SourceTemplate || r.Source.Kind == SourceConst {
 			// Admin-written layout: keep the lines, encode each one so no
 			// value inside can add markup.
-			return truncateRunes(textLines(redact(s), opt), maxTextRunes), true, ""
+			return truncateRunes(textLines(redact(s), opt), maxTextRunes), true, noNote
 		}
 		block := r.Target.FieldID == "description" || r.Target.FieldID == "environment" || strings.Contains(s, "\n")
-		return text(s, maxTextRunes, block), true, ""
+		return text(s, maxTextRunes, block), true, noNote
 	case shapeNumber:
 		if v.Num == nil {
-			return nil, false, ""
+			return nil, false, noNote
 		}
 		n := *v.Num
 		if tr.Kind == TransformNumber {
 			p := math.Pow(10, float64(tr.Round))
 			n = math.Round(n*p) / p
 		}
-		return n, true, ""
+		return n, true, noNote
 	case shapeDate:
 		if v.Time == nil {
-			return nil, false, ""
+			return nil, false, noNote
 		}
 		if schema.Type == "datetime" {
-			return v.Time.UTC().Format("2006-01-02T15:04:05.000-0700"), true, ""
+			return v.Time.UTC().Format("2006-01-02T15:04:05.000-0700"), true, noNote
 		}
-		return v.Time.UTC().Format(time.DateOnly), true, ""
+		return v.Time.UTC().Format(time.DateOnly), true, noNote
 	case shapeUser:
 		if v.User == nil {
 			if tr.FallbackAccount != "" {
-				return map[string]string{"accountId": tr.FallbackAccount}, true, "no assignee: the fallback account is used"
+				return map[string]string{fieldAccountID: tr.FallbackAccount}, true, note{"note_no_assignee_fallback", "no assignee: the fallback account is used", nil}
 			}
-			return nil, false, ""
+			return nil, false, noNote
 		}
 		acct := ""
 		if opt.Account != nil {
@@ -254,20 +268,20 @@ func shapeValue(r Row, v Value, schema FieldSchema, fm *FieldMeta, opt RenderOpt
 		}
 		if acct == "" {
 			if tr.FallbackAccount != "" {
-				return map[string]string{"accountId": tr.FallbackAccount}, true, "the user has no tracker account: the fallback account is used"
+				return map[string]string{fieldAccountID: tr.FallbackAccount}, true, note{"note_no_account_fallback", "the user has no tracker account: the fallback account is used", nil}
 			}
-			return nil, false, "the user has no tracker account: left unassigned"
+			return nil, false, note{"note_no_account_unassigned", "the user has no tracker account: left unassigned", nil}
 		}
-		return map[string]string{"accountId": acct}, true, ""
+		return map[string]string{fieldAccountID: acct}, true, noNote
 	case shapeOption:
 		s := redact(mapped(v.String()))
 		if s == "" {
-			return nil, false, ""
+			return nil, false, noNote
 		}
 		if fm != nil && len(fm.AllowedValues) > 0 && !allowedHas(fm.AllowedValues, s) {
-			return nil, false, "value " + s + " is not allowed: field left out"
+			return nil, false, note{"note_value_not_allowed", "value " + s + " is not allowed: field left out", map[string]any{"value": s}}
 		}
-		return optionRef(s), true, ""
+		return optionRef(s), true, noNote
 	case shapeLabels:
 		items := v.Strings()
 		out := make([]string, 0, len(items))
@@ -284,10 +298,10 @@ func shapeValue(r Row, v Value, schema FieldSchema, fm *FieldMeta, opt RenderOpt
 			}
 		}
 		if len(out) == 0 {
-			return nil, false, ""
+			return nil, false, noNote
 		}
 		sort.Strings(out)
-		return out, true, ""
+		return out, true, noNote
 	case shapeOptions:
 		items := v.Strings()
 		out := make([]map[string]string, 0, len(items))
@@ -302,15 +316,15 @@ func shapeValue(r Row, v Value, schema FieldSchema, fm *FieldMeta, opt RenderOpt
 			out = append(out, optionRef(s))
 		}
 		if len(out) == 0 {
-			return nil, false, ""
+			return nil, false, noNote
 		}
-		return out, true, ""
+		return out, true, noNote
 	}
 	s := mapped(v.String())
 	if s == "" {
-		return nil, false, ""
+		return nil, false, noNote
 	}
-	return text(s, maxTextRunes, false), true, ""
+	return text(s, maxTextRunes, false), true, noNote
 }
 
 // textLines encodes text line by line (inline encoding keeps no markup).
@@ -422,3 +436,6 @@ func invert(m map[string]string, v string) string {
 	}
 	return v
 }
+
+// fieldAccountID is the tracker field that holds an assignee account.
+const fieldAccountID = "accountId"

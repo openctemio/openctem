@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select'
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { issueText } from '../lib/issue-text'
 import { mappingApi } from '../api/use-ticket-mapping-api'
 import type {
   FieldMeta,
@@ -51,7 +52,7 @@ function renderValue(v: unknown, field?: FieldMeta): string {
 /** Previews both ways: the exact issue fields for a finding or task, and
  *  what an existing Jira issue would change in OpenCTEM. */
 export function MappingPreview({ profileId, kind, fields, dirty }: Props) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const [objectId, setObjectId] = useState('')
   const [out, setOut] = useState<OutboundPreview | null>(null)
   const [outErr, setOutErr] = useState<string | null>(null)
@@ -156,14 +157,14 @@ export function MappingPreview({ profileId, kind, fields, dirty }: Props) {
               <p className="text-xs text-muted-foreground">
                 {t('ticketMapping.preview.dropped', 'Not sent: {list}', {
                   list: (out.dropped ?? [])
-                    .map((d) => `${fieldName(d.field_id ?? '')} (${d.message})`)
+                    .map((d) => `${fieldName(d.field_id ?? '')} (${issueText(t, locale, d)})`)
                     .join(', '),
                 })}
               </p>
             )}
             {(out.notes ?? []).map((n, i) => (
               <p key={i} className="text-xs text-muted-foreground">
-                {fieldName(n.field_id ?? '')}: {n.message}
+                {fieldName(n.field_id ?? '')}: {issueText(t, locale, n)}
               </p>
             ))}
             {out.status && (

@@ -423,6 +423,9 @@ type PreviewItem struct {
 type PreviewWarning struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// Params are the counts the message names, so a client can word it in the
+	// reader's language. The English Message stays the fallback.
+	Params map[string]any `json:"params,omitempty"`
 }
 
 // PreviewStats count what the preview mapped.
@@ -541,16 +544,17 @@ func runPreview(ctx context.Context, m *mapping.Mapping, name string, sample io.
 	}
 	if collided > 0 {
 		p.Warnings = append(p.Warnings, PreviewWarning{Code: WarnIdentityCollision, Message: fmt.Sprintf(
-			"%d of %d findings share an identity with another finding of the sample and would be imported as one; add identity members that tell them apart", collided, len(report.Findings))})
+			"%d of %d findings share an identity with another finding of the sample and would be imported as one; add identity members that tell them apart", collided, len(report.Findings)),
+			Params: map[string]any{paramCount: collided, "total": len(report.Findings)}})
 	}
 	if st.Records == 0 {
 		p.Warnings = append(p.Warnings, PreviewWarning{Code: WarnNoRecords, Message: "the sample has no record the mapping reads"})
 	}
 	if len(st.Unmapped) > 0 {
-		p.Warnings = append(p.Warnings, PreviewWarning{Code: WarnUnmapped, Message: fmt.Sprintf("%d fields of the sample are not mapped", len(st.Unmapped))})
+		p.Warnings = append(p.Warnings, PreviewWarning{Code: WarnUnmapped, Message: fmt.Sprintf("%d fields of the sample are not mapped", len(st.Unmapped)), Params: map[string]any{paramCount: len(st.Unmapped)}})
 	}
 	if st.Truncated {
-		p.Warnings = append(p.Warnings, PreviewWarning{Code: WarnTruncated, Message: fmt.Sprintf("the preview stopped after %d records", previewRecords)})
+		p.Warnings = append(p.Warnings, PreviewWarning{Code: WarnTruncated, Message: fmt.Sprintf("the preview stopped after %d records", previewRecords), Params: map[string]any{paramCount: previewRecords}})
 	}
 	return p, nil
 }
@@ -637,3 +641,6 @@ func truncate(s string, n int) string {
 	}
 	return strings.ToValidUTF8(s[:n], "")
 }
+
+// paramCount names the count a preview warning carries in Params.
+const paramCount = "count"
