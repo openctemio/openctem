@@ -40,7 +40,7 @@ import {
 } from '../api/use-scope-api'
 import type { ApiScopeExclusion } from '../api/scope-api.types'
 import { scopeExclusionKindLabel } from '../lib/exclusion-kind'
-import { scopeErrorMessage } from '../lib/scope-codes'
+import { scopeErrorMessage, type Translate } from '../lib/scope-codes'
 import { coversText, expiryText } from '../lib/scope-entry'
 import {
   effectiveTesting,
@@ -64,17 +64,49 @@ import { SCOPE_PAGE_SIZES, type ScopeListQuery } from './scope-entries-table'
 import { ScopeListFilters } from './scope-list-filters'
 import { ScopeRowCard } from './scope-row-card'
 
-/** Labels and hints are English fallbacks; the keys are scope.exclusion.status.<status>.label/hint. */
-const EXCLUSION_STATUS: Record<string, { label: string; tone: PillTone; hint: string }> = {
-  active: { label: 'Excluded', tone: 'success', hint: 'Scans skip it.' },
-  pending: {
-    label: 'Pending approval',
-    tone: 'warning',
-    hint: 'Scans still reach it until another approver approves the exclusion.',
-  },
-  inactive: { label: 'Lifted', tone: 'muted', hint: 'Not in effect: scans may reach it.' },
-  rejected: { label: 'Rejected', tone: 'destructive', hint: 'Declined: never took effect.' },
-  expired: { label: 'Ended', tone: 'muted', hint: 'Its end date passed: scans may reach it.' },
+const EXCLUSION_STATUS_TONE: Record<string, PillTone> = {
+  active: 'success',
+  pending: 'warning',
+  inactive: 'muted',
+  rejected: 'destructive',
+  expired: 'muted',
+}
+
+/** Label and hint of an exclusion status; an unknown status reads as lifted. */
+function exclusionStatusText(t: Translate, s: string): { label: string; hint: string } {
+  const key = `scope.exclusion.status.${s}`
+  switch (s) {
+    case 'active':
+      return { label: t(`${key}.label`, 'Excluded'), hint: t(`${key}.hint`, 'Scans skip it.') }
+    case 'pending':
+      return {
+        label: t(`${key}.label`, 'Pending approval'),
+        hint: t(
+          `${key}.hint`,
+          'Scans still reach it until another approver approves the exclusion.'
+        ),
+      }
+    case 'rejected':
+      return {
+        label: t(`${key}.label`, 'Rejected'),
+        hint: t(`${key}.hint`, 'Declined: never took effect.'),
+      }
+    case 'expired':
+      return {
+        label: t(`${key}.label`, 'Ended'),
+        hint: t(`${key}.hint`, 'Its end date passed: scans may reach it.'),
+      }
+    case 'inactive':
+      return {
+        label: t(`${key}.label`, 'Lifted'),
+        hint: t(`${key}.hint`, 'Not in effect: scans may reach it.'),
+      }
+    default:
+      return {
+        label: t(`${key}.label`, s),
+        hint: t(`${key}.hint`, 'Not in effect: scans may reach it.'),
+      }
+  }
 }
 
 /**
@@ -126,8 +158,7 @@ export function ScopeExclusionsTable({
   const [busy, setBusy] = useState(false)
   const [testing, setTesting] = useState<PathExclusion | null>(null)
 
-  const statusLabel = (s: string) =>
-    t(`scope.exclusion.status.${s}.label`, EXCLUSION_STATUS[s]?.label ?? s)
+  const statusLabel = (s: string) => exclusionStatusText(t, s).label
 
   const act = async (fn: () => Promise<unknown>, done: string) => {
     try {
@@ -301,14 +332,14 @@ export function ScopeExclusionsTable({
       header: t('scope.col.status', 'Status'),
       cell: ({ row }) => {
         const x = row.original as PathExclusion
-        const s = EXCLUSION_STATUS[x.status ?? ''] ?? EXCLUSION_STATUS.inactive
+        const tone = EXCLUSION_STATUS_TONE[x.status ?? ''] ?? EXCLUSION_STATUS_TONE.inactive
         const mode = effectiveTesting(x)
         return (
           <div className="flex flex-col items-start gap-1">
             <TonePill
-              tone={s.tone}
+              tone={tone}
               label={statusLabel(x.status ?? 'inactive')}
-              title={t(`scope.exclusion.status.${x.status ?? 'inactive'}.hint`, s.hint)}
+              title={exclusionStatusText(t, x.status ?? 'inactive').hint}
               detail={x.expires_at ? expiryText(x.expires_at, undefined, t) : undefined}
               state={x.status}
             />
@@ -396,14 +427,14 @@ export function ScopeExclusionsTable({
             />
           }
           mobileRow={(x, selection) => {
-            const st = EXCLUSION_STATUS[x.status ?? ''] ?? EXCLUSION_STATUS.inactive
+            const tone = EXCLUSION_STATUS_TONE[x.status ?? ''] ?? EXCLUSION_STATUS_TONE.inactive
             const path = isPathExclusion(x as PathExclusion)
             return (
               <ScopeRowCard
                 pattern={path ? pathRuleLabel(x as PathExclusion) : (x.pattern ?? '')}
                 status={
                   <TonePill
-                    tone={st.tone}
+                    tone={tone}
                     label={statusLabel(x.status ?? 'inactive')}
                     state={x.status}
                   />

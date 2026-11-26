@@ -18,6 +18,7 @@ import {
   Download,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useTranslation } from '@/context/i18n-provider'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -83,6 +84,7 @@ export function SyncRepositoriesDialog({
   connection,
   onSuccess,
 }: SyncRepositoriesDialogProps) {
+  const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
   const searchTerm = useSearchQuery(searchQuery).term
   const [selectedRepos, setSelectedRepos] = useState<Set<string>>(new Set())
@@ -214,7 +216,9 @@ export function SyncRepositoriesDialog({
 
   const handleImport = useCallback(async () => {
     if (selectedRepos.size === 0) {
-      toast.error('Please select at least one repository to import')
+      toast.error(
+        t('scmConnections.sync.selectOne', 'Please select at least one repository to import')
+      )
       return
     }
 
@@ -224,7 +228,7 @@ export function SyncRepositoriesDialog({
       .filter((repo): repo is SCMRepository => repo !== undefined)
 
     if (reposToImport.length === 0) {
-      toast.error('No valid repositories selected')
+      toast.error(t('scmConnections.sync.noneValid', 'No valid repositories selected'))
       return
     }
 
@@ -302,7 +306,7 @@ export function SyncRepositoriesDialog({
         total: importedAssetIds.length,
         completed: 0,
         failed: 0,
-        current: 'Syncing all repositories...',
+        current: t('scmConnections.sync.syncingAll', 'Syncing all repositories...'),
         phase: 'syncing',
       })
 
@@ -313,7 +317,7 @@ export function SyncRepositoriesDialog({
             total: syncResult.total_count,
             completed: syncResult.success_count,
             failed: syncResult.failed_count,
-            current: 'Completed',
+            current: t('scmConnections.sync.completed', 'Completed'),
             phase: 'syncing',
           })
         }
@@ -323,7 +327,7 @@ export function SyncRepositoriesDialog({
         setImportProgress((prev) => ({
           ...prev!,
           completed: importedAssetIds.length,
-          current: 'Sync completed with errors',
+          current: t('scmConnections.sync.completedWithErrors', 'Sync completed with errors'),
         }))
       }
     }
@@ -331,11 +335,23 @@ export function SyncRepositoriesDialog({
     setIsImporting(false)
 
     if (failCount === 0) {
-      toast.success(`Successfully imported ${successCount} repositories`)
+      toast.success(
+        t(
+          'scmConnections.sync.imported',
+          'Imported {count, plural, one {# repository} other {# repositories}}',
+          { count: successCount }
+        )
+      )
     } else if (successCount > 0) {
-      toast.warning(`Imported ${successCount} repositories, ${failCount} failed`)
+      toast.warning(
+        t(
+          'scmConnections.sync.importedSome',
+          'Imported {count, plural, one {# repository} other {# repositories}}, {failed} failed',
+          { count: successCount, failed: failCount }
+        )
+      )
     } else {
-      toast.error(`Failed to import repositories`)
+      toast.error(t('scmConnections.sync.importFailed', 'Failed to import repositories'))
     }
 
     // Invalidate all repositories caches to refresh the main list
@@ -356,6 +372,7 @@ export function SyncRepositoriesDialog({
     onSuccess,
     mutateExistingRepos,
     bulkSync,
+    t,
   ])
 
   const handleClose = () => {
@@ -377,7 +394,7 @@ export function SyncRepositoriesDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <RefreshCw className="h-5 w-5" />
-            Sync Repositories
+            {t('scmIntegration.actions.sync', 'Sync repositories')}
           </DialogTitle>
           <DialogDescription className="flex items-center gap-2">
             <ProviderIcon provider={connection.provider} className="h-4 w-4" />
@@ -395,14 +412,22 @@ export function SyncRepositoriesDialog({
           {isImporting && importProgress && (
             <div className="space-y-2 py-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">Importing: {importProgress.current}</span>
+                <span className="text-muted-foreground">
+                  {t('scmConnections.sync.importing', 'Importing: {current}', {
+                    current: importProgress.current,
+                  })}
+                </span>
                 <span className="text-muted-foreground">
                   {importProgress.completed + importProgress.failed} / {importProgress.total}
                 </span>
               </div>
               <Progress value={progressPercent} className="h-2" />
               {importProgress.failed > 0 && (
-                <p className="text-xs text-destructive">{importProgress.failed} failed</p>
+                <p className="text-xs text-destructive">
+                  {t('scmConnections.sync.failedCount', '{count} failed', {
+                    count: importProgress.failed,
+                  })}
+                </p>
               )}
             </div>
           )}
@@ -412,7 +437,7 @@ export function SyncRepositoriesDialog({
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search repositories..."
+                placeholder={t('scmConnections.sync.search', 'Search repositories...')}
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value)
@@ -453,16 +478,33 @@ export function SyncRepositoriesDialog({
                   <Square className="h-4 w-4" />
                 )}
                 <span className="text-sm font-medium">
-                  {allSelected ? 'Deselect All' : 'Select All'}
+                  {allSelected
+                    ? t('scmConnections.sync.deselectAll', 'Deselect all')
+                    : t('common.selectAll', 'Select all')}
                 </span>
               </button>
               <span className="text-sm text-muted-foreground ms-auto">
-                {repoData?.total ?? 0} repositories
+                {t(
+                  'scmConnections.sync.total',
+                  '{count, plural, one {# repository} other {# repositories}}',
+                  { count: repoData?.total ?? 0 }
+                )}
                 {availableToImport < (repoData?.total ?? 0) && (
-                  <span className="text-muted-foreground"> ({availableToImport} available)</span>
+                  <span className="text-muted-foreground">
+                    {' ('}
+                    {t('scmConnections.sync.available', '{count} available', {
+                      count: availableToImport,
+                    })}
+                    )
+                  </span>
                 )}
                 {selectedRepos.size > 0 && (
-                  <span className="text-primary font-medium"> - {selectedRepos.size} selected</span>
+                  <span className="text-primary font-medium">
+                    {' - '}
+                    {t('scmConnections.sync.selected', '{count} selected', {
+                      count: selectedRepos.size,
+                    })}
+                  </span>
                 )}
               </span>
             </div>
@@ -472,22 +514,28 @@ export function SyncRepositoriesDialog({
               {isLoading ? (
                 <div className="flex items-center justify-center h-full py-12">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  <span className="ms-2 text-muted-foreground">Loading repositories...</span>
+                  <span className="ms-2 text-muted-foreground">
+                    {t('scmConnections.sync.loading', 'Loading repositories...')}
+                  </span>
                 </div>
               ) : error ? (
                 <div className="flex flex-col items-center justify-center h-full py-12 text-center">
                   <p className="text-sm text-destructive">
-                    {error instanceof Error ? error.message : 'Failed to load repositories'}
+                    {error instanceof Error
+                      ? error.message
+                      : t('scmConnections.sync.loadFailed', 'Failed to load repositories')}
                   </p>
                   <Button variant="outline" size="sm" onClick={() => refetch()} className="mt-4">
                     <RefreshCw className="h-4 w-4 me-2" />
-                    Retry
+                    {t('common.retry', 'Retry')}
                   </Button>
                 </div>
               ) : filteredRepos.length === 0 ? (
                 <div className="flex items-center justify-center h-full py-12">
                   <p className="text-sm text-muted-foreground">
-                    {searchQuery ? 'No repositories match your search' : 'No repositories found'}
+                    {searchQuery
+                      ? t('scmConnections.sync.noMatch', 'No repositories match your search')
+                      : t('scmConnections.sync.none', 'No repositories found')}
                   </p>
                 </div>
               ) : (
@@ -518,16 +566,18 @@ export function SyncRepositoriesDialog({
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page === 1 || isLoading || isImporting}
                 >
-                  Previous
+                  {t('scmConnections.sync.previous', 'Previous')}
                 </Button>
-                <span className="text-sm text-muted-foreground">Page {page}</span>
+                <span className="text-sm text-muted-foreground">
+                  {t('scmConnections.sync.page', 'Page {page}', { page })}
+                </span>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setPage((p) => p + 1)}
                   disabled={!repoData.has_more || isLoading || isImporting}
                 >
-                  Next
+                  {t('scmConnections.sync.next', 'Next')}
                 </Button>
               </div>
             )}
@@ -536,12 +586,17 @@ export function SyncRepositoriesDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={handleClose} disabled={isImporting}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button onClick={handleImport} disabled={isImporting || selectedRepos.size === 0}>
             {isImporting ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : null}
-            Import {selectedRepos.size > 0 ? `${selectedRepos.size} ` : ''}
-            {selectedRepos.size === 1 ? 'Repository' : 'Repositories'}
+            {selectedRepos.size > 0
+              ? t(
+                  'scmConnections.sync.importCount',
+                  'Import {count, plural, one {# repository} other {# repositories}}',
+                  { count: selectedRepos.size }
+                )
+              : t('scmConnections.sync.importNone', 'Import repositories')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -558,6 +613,7 @@ interface RepositoryItemProps {
 }
 
 function RepositoryItem({ repo, selected, onSelect, disabled, isImported }: RepositoryItemProps) {
+  const { t } = useTranslation()
   return (
     <div
       className={cn(
@@ -585,11 +641,17 @@ function RepositoryItem({ repo, selected, onSelect, disabled, isImported }: Repo
             <Globe className="h-3.5 w-3.5 text-muted-foreground" />
           )}
           {repo.is_fork && <GitFork className="h-3.5 w-3.5 text-muted-foreground" />}
-          {isImported && <Tag variant="plain" icon={Download} label="Imported" />}
+          {isImported && (
+            <Tag
+              variant="plain"
+              icon={Download}
+              label={t('scmConnections.sync.importedBadge', 'Imported')}
+            />
+          )}
           {repo.is_archived && (
             <Badge variant="secondary" className="text-xs">
               <Archive className="h-3 w-3 me-1" />
-              Archived
+              {t('scmConnections.sync.archived', 'Archived')}
             </Badge>
           )}
         </div>
