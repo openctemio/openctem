@@ -125,8 +125,12 @@ type Repository interface {
 	GetByLegacyPathKey(ctx context.Context, key string) (*SAMLProvider, error)
 	// ReserveConnectionID returns the connection id the tenant's next SAML
 	// configuration takes, creating it on first use, so its addresses can be
-	// given to the identity provider before the configuration exists.
+	// given to the identity provider before the configuration exists. It is
+	// a write: only an audited write route calls it.
 	ReserveConnectionID(ctx context.Context, tenantID shared.ID) (shared.ID, error)
+	// GetReservedConnectionID reads the tenant's reserved connection id
+	// (ErrNotFound when none) without creating one.
+	GetReservedConnectionID(ctx context.Context, tenantID shared.ID) (shared.ID, error)
 	Upsert(ctx context.Context, p *SAMLProvider) error
 	// Delete removes the configuration and its reserved id: the address is
 	// retired, and a new configuration gets a new one.
