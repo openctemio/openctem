@@ -59,6 +59,15 @@ func (h *MCPHandler) writeToolsUsable(ctx context.Context) bool {
 
 const maxMCPCommentLen = 4000
 
+// summaryParamContent names the AI-written text in a confirmation summary's values.
+const summaryParamContent = "content"
+
+// summaryParamFinding names the finding title in a confirmation summary's values.
+const summaryParamFinding = "finding"
+
+// summaryParamSeverity names the finding severity in a confirmation summary's values.
+const summaryParamSeverity = "severity"
+
 func (h *MCPHandler) buildWriteTools() []mcpTool {
 	return []mcpTool{{
 		Name: "add_finding_comment",
@@ -144,7 +153,7 @@ func (h *MCPHandler) prepareAddFindingComment(ctx context.Context, tenantID stri
 	// content and the client visibility as separate fields, so a comment that
 	// imitates the visibility line cannot pass for it.
 	msg := &mcpoauthapp.SummaryMessage{Code: "mcp.add_finding_comment", Params: map[string]any{
-		"finding": title, "severity": f.Severity().String(), "content": a.Content,
+		summaryParamFinding: title, summaryParamSeverity: f.Severity().String(), summaryParamContent: a.Content,
 	}}
 	if pentestFinding {
 		msg.Params["client_visible"] = vis == vulnerability.CommentVisibilityClient
