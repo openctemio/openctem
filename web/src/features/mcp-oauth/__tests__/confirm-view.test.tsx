@@ -74,6 +74,30 @@ describe('ConfirmView', () => {
     expect(document.querySelector('b')).toBeNull()
   })
 
+  it('shows bidi and zero-width characters in the comment as visible escapes, never applied', async () => {
+    const tricky = {
+      ...pending,
+      summary_code: 'mcp.add_finding_comment',
+      summary_params: {
+        finding: 'SQLi',
+        severity: 'high',
+        content: 'line one\nsafe\u202Etxt.exe\u200Bend',
+        client_visible: false,
+      },
+    }
+    fetchFn.mockImplementationOnce(
+      async () => new Response(JSON.stringify(tricky), { status: 200 })
+    )
+    render(<ConfirmView id={ID} />)
+    const comment = await screen.findByLabelText('Comment')
+    const text = comment.textContent ?? ''
+    expect(text).not.toMatch(/[\u202E\u200B]/)
+    expect(text).toContain('\\u{202E}')
+    expect(text).toContain('\\u{200B}')
+    // Line breaks stay real lines.
+    expect(text).toContain('line one\nsafe')
+  })
+
   it('shows the English summary when the server sends no summary code (older server)', async () => {
     // A server without summary_code / summary_params (before the develop
     // change reaches this branch) gets the page it had: the English summary

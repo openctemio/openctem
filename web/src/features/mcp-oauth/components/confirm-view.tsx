@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { hasServerText, messageOf, serverText } from '@/lib/server-text'
+import { toDisplayBlock } from '@/lib/untrusted-text'
 
 import { decideConfirmation, fetchConfirmation, type McpConfirmation } from '../api/confirmations'
 import { isRequestId } from '../api/consent'
@@ -189,6 +190,12 @@ function Message({ title, text, icon }: { title: string; text: string; icon?: 'o
   )
 }
 
+/**
+ * The comment is shown whole: the server allows 4000 characters, and a
+ * character outside the basic plane counts twice in a JS string.
+ */
+const MAX_COMMENT_DISPLAY_CHARS = 8000
+
 const PRE =
   'bg-surface-sunken text-dense max-h-96 overflow-auto rounded-md p-3 break-words whitespace-pre-wrap'
 
@@ -196,7 +203,10 @@ const PRE =
  * What the application asks to do. A summary with a known code is worded in
  * the reader's language, with the application's own text and the client
  * visibility as separate fields: text the application wrote can never pass
- * for the visibility line. Otherwise the server's English summary is shown.
+ * for the visibility line. The comment keeps its line breaks, and bidi,
+ * zero-width and other control characters are shown as visible escapes, never
+ * applied (toDisplayBlock), so it reads exactly as it is stored. Otherwise the
+ * server's English summary is shown.
  */
 function ConfirmSummary({ item }: { item: McpConfirmation }) {
   const { t, locale } = useTranslation()
@@ -218,7 +228,7 @@ function ConfirmSummary({ item }: { item: McpConfirmation }) {
     <div className="space-y-2" data-slot="mcp-confirm-summary">
       <p className="text-sm break-words">{lead}</p>
       <pre className={PRE} translate="no" aria-label={t('serverText.mcp.comment_label', 'Comment')}>
-        {p.content as string}
+        {toDisplayBlock(p.content, MAX_COMMENT_DISPLAY_CHARS)}
       </pre>
       {typeof p.client_visible === 'boolean' && (
         <p className="text-sm font-medium" data-slot="mcp-confirm-visibility">
