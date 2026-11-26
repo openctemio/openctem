@@ -54,6 +54,7 @@ import en_licensePolicy from './en/licensePolicy.json'
 import en_notificationTypes from './en/notificationTypes.json'
 import en_notifications from './en/notifications.json'
 import en_notificationChannels from './en/notificationChannels.json'
+import en_scmConnections from './en/scmConnections.json'
 import en_scmIntegration from './en/scmIntegration.json'
 import en_notificationPresets from './en/notificationPresets.json'
 import en_lookalikes from './en/lookalikes.json'
@@ -163,6 +164,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   notificationTypes: en_notificationTypes,
   notifications: en_notifications,
   notificationChannels: en_notificationChannels,
+  scmConnections: en_scmConnections,
   scmIntegration: en_scmIntegration,
   notificationPresets: en_notificationPresets,
   lookalikes: en_lookalikes,

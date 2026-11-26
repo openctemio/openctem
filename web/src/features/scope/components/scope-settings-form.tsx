@@ -42,36 +42,59 @@ import {
   type ScopeOneOffPolicy,
   type UpdateScopeSettingsInput,
 } from '../api/scope-api.types'
-import { scopeErrorMessage } from '../lib/scope-codes'
+import { scopeErrorMessage, type Translate } from '../lib/scope-codes'
 import { TIER_HINT, TIER_LABEL } from '../lib/scope-entry'
 import { ScopeIntrusiveSettings } from './scope-intrusive-settings'
 import { formatNumber } from '@/lib/app-locale'
 
 /** The platform's proof requirement (RFC-054 §8.1), as the settings show it. */
-export const ACTIVE_PROOF_TEXT: Record<string, { label: string; hint: string }> = {
-  off: {
-    label: 'Not required',
-    hint: 'Scans need a scope entry, seed or verified domain, not ownership proof.',
-  },
-  platform_sensors: {
-    label: 'Platform sensors need proof',
-    hint: "Scans that run on the platform's shared sensors need every target under a verified domain of your organization, and intrusive (T2) probes need one on any sensor. Your own sensors need a scope entry only.",
-  },
+export function activeProofText(
+  t: Translate,
+  mode: 'off' | 'platform_sensors'
+): { label: string; hint: string } {
+  return mode === 'platform_sensors'
+    ? {
+        label: t('scope.settings.proof.platform_sensors.label', 'Shared sensors need proof'),
+        hint: t(
+          'scope.settings.proof.platform_sensors.hint',
+          "Scans that run on the platform's shared sensors need every target under a verified domain of your organization, and intrusive probes need one on any sensor. Your own sensors need a scope entry only."
+        ),
+      }
+    : {
+        label: t('scope.settings.proof.off.label', 'Not required'),
+        hint: t(
+          'scope.settings.proof.off.hint',
+          'Scans need a scope entry, seed or verified domain, not ownership proof.'
+        ),
+      }
 }
 
-const ONE_OFF_TEXT: Record<ScopeOneOffPolicy, { label: string; hint: string }> = {
-  admins_and_requests: {
-    label: 'Approvers; members request',
-    hint: 'A member asks for one name or address for a few days; an approver approves it.',
-  },
-  admins: {
-    label: 'Approvers only',
-    hint: 'Members cannot request one-off entries.',
-  },
-  disabled: {
-    label: 'Off',
-    hint: 'Nobody adds one-off entries; every entry is permanent.',
-  },
+const ONE_OFF_POLICIES: ScopeOneOffPolicy[] = ['admins_and_requests', 'admins', 'disabled']
+
+function oneOffText(t: Translate, k: ScopeOneOffPolicy): { label: string; hint: string } {
+  switch (k) {
+    case 'admins_and_requests':
+      return {
+        label: t('scope.settings.oneOff.admins_and_requests.label', 'Approvers; members request'),
+        hint: t(
+          'scope.settings.oneOff.admins_and_requests.hint',
+          'A member asks for one name or address for a few days; an approver approves it.'
+        ),
+      }
+    case 'admins':
+      return {
+        label: t('scope.settings.oneOff.admins.label', 'Approvers only'),
+        hint: t('scope.settings.oneOff.admins.hint', 'Members cannot request one-off entries.'),
+      }
+    default:
+      return {
+        label: t('scope.settings.oneOff.disabled.label', 'Off'),
+        hint: t(
+          'scope.settings.oneOff.disabled.hint',
+          'Nobody adds one-off entries; every entry is permanent.'
+        ),
+      }
+  }
 }
 
 const DEFAULT_SENTINEL = 'default'
@@ -215,10 +238,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
   const initial = settingsToInput(saved)
   const admins = saved.admin_count ?? 0
   const proofMode = saved.active_proof === 'platform_sensors' ? 'platform_sensors' : 'off'
-  const proof = {
-    label: t(`scope.settings.proof.${proofMode}.label`, ACTIVE_PROOF_TEXT[proofMode].label),
-    hint: t(`scope.settings.proof.${proofMode}.hint`, ACTIVE_PROOF_TEXT[proofMode].hint),
-  }
+  const proof = activeProofText(t, proofMode)
   const nextApprovals = effectiveApprovalsFor(form.widening_approvals, admins)
   const scanApproval = scanApprovalFact(t, saved.approval_policy)
 
@@ -548,10 +568,7 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
         <FieldRow
           id={`${id}-oneoff`}
           label={LABEL.one_off_targets as string}
-          hint={t(
-            `scope.settings.oneOff.${form.one_off_targets}.hint`,
-            ONE_OFF_TEXT[form.one_off_targets].hint
-          )}
+          hint={oneOffText(t, form.one_off_targets).hint}
         >
           {(a) => (
             <Select
@@ -563,9 +580,9 @@ export function ScopeSettingsForm({ settings }: { settings: ApiScopeSettings }) 
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(Object.keys(ONE_OFF_TEXT) as ScopeOneOffPolicy[]).map((k) => (
+                {ONE_OFF_POLICIES.map((k) => (
                   <SelectItem key={k} value={k}>
-                    {t(`scope.settings.oneOff.${k}.label`, ONE_OFF_TEXT[k].label)}
+                    {oneOffText(t, k).label}
                   </SelectItem>
                 ))}
               </SelectContent>
