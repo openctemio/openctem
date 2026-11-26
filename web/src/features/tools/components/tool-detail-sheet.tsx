@@ -196,6 +196,7 @@ export function ToolDetailSheet({
   }
   if (tool?.github_url) {
     menu.push({
+      // i18n-ok: brand name
       label: 'GitHub',
       icon: Github,
       onSelect: () =>

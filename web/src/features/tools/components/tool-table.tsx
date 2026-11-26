@@ -303,6 +303,7 @@ export function ToolTable({
           }
           if (tool?.github_url) {
             const url = tool.github_url
+            // i18n-ok: brand name
             actions.push({ label: 'GitHub', icon: Github, onClick: () => openExternal(url) })
           }
           if (tool?.docs_url) {
