@@ -1810,6 +1810,7 @@ to `scoped`.
 | Internal calls with no user (jobs, sensors, ingest) | everything in the tenant |
 | Member with ≥ 1 scope row | only their in-scope assets |
 | Member with no scope row | **nothing**, in every organization |
+| Request caller that is not an administrator and has neither a user nor an API key | refused: the list compiler (`datascope.ListActor`, like the query engine) never reads such a caller as an internal call |
 
 **Full data access is the Layer 2 bypass** (owner decision D3, research doc
 15 L-11). `roles.has_full_data_access` used to be stored, shown in the role
