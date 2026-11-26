@@ -34,6 +34,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	sensordom "github.com/openctemio/openctem/server/pkg/domain/sensor"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/sensorkey"
@@ -159,7 +160,10 @@ func (s *Service) CreateEnrollmentToken(ctx context.Context, actor Actor, in Cre
 		WithMetadata("expires_at", t.ExpiresAt).WithMetadata("require_approval", t.RequireApproval).
 		WithMetadata("grant_profile", t.GrantProfile).WithMetadata("zone_ids", t.ZoneIDs).
 		WithMetadata("allowed_cidrs", prefixStrings(t.AllowedCIDRs)).WithMetadata("token_hint", t.TokenHint))
-	s.notifyAdmins(ctx, actor.TenantID, "Sensor enrollment token created: "+t.Name, msg+" (by "+actor.Email+")", "high")
+	s.notifyAdminsMsg(ctx, actor.TenantID,
+		notificationdom.Msg("sensor.enrollment_token_created", "token", t.Name, "uses", t.MaxUses,
+			"expires_at", t.ExpiresAt.Format(time.RFC3339), "approval", notificationdom.Msg("sensor.approval."+approval), "by", actor.Email),
+		"Sensor enrollment token created: "+t.Name, msg+" (by "+actor.Email+")", "high")
 	v := s.tokenView(t)
 	v.Token = token
 	return v, nil
@@ -360,7 +364,9 @@ func (s *Service) approveEnrollment(ctx context.Context, p *sensordom.Pairing) e
 	}
 	from := ipString(p)
 	if t.RequireApproval {
-		s.notifyAdmins(ctx, t.TenantID, "Sensor waits for approval: "+name,
+		s.notifyAdminsMsg(ctx, t.TenantID,
+			notificationdom.Msg("sensor.waits_for_approval", "sensor", name, "token", t.Name, "from", enrollFromParam(from), "sas", p.SAS),
+			"Sensor waits for approval: "+name,
 			fmt.Sprintf("Sensor %q enrolled with token %q from %s; fingerprint %s. Compare it and approve under Sensors > Enrollment tokens.",
 				name, t.Name, from, p.SAS), "high")
 		return nil
@@ -399,7 +405,10 @@ func (s *Service) approveEnrollment(ctx context.Context, p *sensordom.Pairing) e
 			WithMetadata("enrollment_token", t.Name).WithMetadata("sas", res.Pairing.SAS).
 			WithMetadata("key_fingerprint", pairing.KeyFingerprint(p.Thumbprint)).
 			WithMetadata("host_facts", auditHostFacts(p.HostFacts)).WithMetadata("grant_profile", profile))
-	s.notifyAdmins(ctx, t.TenantID, "Sensor enrolled: "+name, msg, "high")
+	s.notifyAdminsMsg(ctx, t.TenantID,
+		notificationdom.Msg("sensor.enrolled", "sensor", name, "token", t.Name, "from", enrollFromParam(from), "sas", res.Pairing.SAS,
+			"key_fingerprint", pairing.KeyFingerprint(p.Thumbprint), "profile", sensorProfileMessage(profile)),
+		"Sensor enrolled: "+name, msg, "high")
 	return nil
 }
 
@@ -424,4 +433,13 @@ func withLabels(grant func(ctx context.Context, tx *sql.Tx, sensorID shared.ID, 
 			WHERE tenant_id = $1 AND id = $2`, tenantID.String(), sensorID.String(), b)
 		return err
 	}
+}
+
+// enrollFromParam is the address a notice names: the address, or the message
+// for "an unknown address" when the request carried none.
+func enrollFromParam(from string) any {
+	if from == "" {
+		return notificationdom.Msg("sensor.unknown_address")
+	}
+	return from
 }

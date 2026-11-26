@@ -162,6 +162,12 @@ func (s *Service) logAudit(ctx context.Context, actx auditapp.AuditContext, tena
 }
 
 func (s *Service) notifyUser(ctx context.Context, tenantID shared.ID, userID, title, body, severity string, scanID shared.ID) {
+	s.notifyUserMsg(ctx, tenantID, userID, title, body, severity, scanID, nil)
+}
+
+// notifyUserMsg is notifyUser with the notice's language-neutral form (codes
+// scan_approval.*).
+func (s *Service) notifyUserMsg(ctx context.Context, tenantID shared.ID, userID, title, body, severity string, scanID shared.ID, msg *notificationdom.Message) {
 	if s.inApp == nil {
 		return
 	}
@@ -172,7 +178,7 @@ func (s *Service) notifyUser(ctx context.Context, tenantID shared.ID, userID, ti
 	sid := scanID
 	if err := s.inApp.Notify(ctx, notificationdom.NotificationParams{
 		TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-		NotificationType: notificationdom.TypeScanApproval, Title: title, Body: body, Severity: severity,
+		NotificationType: notificationdom.TypeScanApproval, Title: title, Body: body, Message: msg, Severity: severity,
 		ResourceType: "scan", ResourceID: &sid, URL: "/scans/approvals",
 	}); err != nil {
 		s.log.Warn("scan approval notification", "error", logger.SanitizeError(err))

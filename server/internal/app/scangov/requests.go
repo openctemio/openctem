@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/audit"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	"github.com/openctemio/openctem/server/pkg/domain/scan"
 	"github.com/openctemio/openctem/server/pkg/domain/scangov"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
@@ -161,7 +163,7 @@ func (s *Service) Submit(ctx context.Context, tenantID, scanID shared.ID, in Sub
 		WithMetadata("rules", ruleNames(ev.Matched)).
 		WithMetadata("approvals", ev.Approvals).
 		WithMetadata("changed_fields", len(req.Changes)))
-	s.notifyApprovers(ctx, req, sc.Name, "Scan waiting for your approval")
+	s.notifyApprovers(ctx, req, sc.Name, "Scan waiting for your approval", "scan_approval.awaiting_your_approval")
 	return req, nil
 }
 
@@ -295,7 +297,8 @@ func (s *Service) SelfApprove(ctx context.Context, tenantID, id shared.ID, reaso
 		WithMetadata("reason", reason).
 		WithMetadata("second_factor", "totp"))
 	s.notifyAdmins(ctx, tenantID, all, actor.UserID, "Scan approved by its requester",
-		fmt.Sprintf("%q was approved by its requester, the organization's owner, with an authenticator code: no other approver exists. Reason: %s", req.ScanName, oneLine(reason, 300)), req.ScanID)
+		fmt.Sprintf("%q was approved by its requester, the organization's owner, with an authenticator code: no other approver exists. Reason: %s", req.ScanName, oneLine(reason, 300)), req.ScanID,
+		notificationdom.Msg("scan_approval.self_approved", "scan", req.ScanName, "reason", oneLine(reason, 300)))
 	s.afterDecision(ctx, req, actor)
 	return req, nil
 }
@@ -311,7 +314,8 @@ func (s *Service) afterDecision(ctx context.Context, req *scangov.Request, actor
 		WithMessage("Scan definition approved").
 		WithMetadata("request_id", req.ID.String()).
 		WithMetadata("validity", string(req.Evaluation.Validity)))
-	s.notifyUser(ctx, req.TenantID, req.RequestedBy, "Scan approved", fmt.Sprintf("%q was approved.", req.ScanName), "info", req.ScanID)
+	s.notifyUserMsg(ctx, req.TenantID, req.RequestedBy, "Scan approved", fmt.Sprintf("%q was approved.", req.ScanName), "info", req.ScanID,
+		notificationdom.Msg("scan_approval.approved", "scan", req.ScanName))
 	if !req.RunOnApproval || s.scans == nil {
 		return
 	}
@@ -352,7 +356,8 @@ func (s *Service) Reject(ctx context.Context, tenantID, id shared.ID, note strin
 		WithMessage("Scan approval rejected").
 		WithMetadata("request_id", req.ID.String()).
 		WithMetadata("note", oneLine(note, 300)))
-	s.notifyUser(ctx, tenantID, req.RequestedBy, "Scan approval rejected", fmt.Sprintf("%q was rejected: %s", req.ScanName, oneLine(note, 300)), "medium", req.ScanID)
+	s.notifyUserMsg(ctx, tenantID, req.RequestedBy, "Scan approval rejected", fmt.Sprintf("%q was rejected: %s", req.ScanName, oneLine(note, 300)), "medium", req.ScanID,
+		notificationdom.Msg("scan_approval.rejected", "scan", req.ScanName, "note", oneLine(note, 300)))
 	return req, nil
 }
 
@@ -395,7 +400,7 @@ func (s *Service) Remind(ctx context.Context, tenantID, id shared.ID, actor Acto
 	}
 	at := now.UTC()
 	req.RemindedAt = &at
-	n := s.notifyApprovers(ctx, req, req.ScanName, "Reminder: scan waiting for your approval")
+	n := s.notifyApprovers(ctx, req, req.ScanName, "Reminder: scan waiting for your approval", "scan_approval.approval_reminder")
 	s.logAudit(ctx, actor.AuditContext, tenantID, auditapp.NewSuccessEvent(audit.ActionScanApprovalReminded, audit.ResourceTypeScanConfig, req.ScanID.String()).
 		WithResourceName(req.ScanName).
 		WithMessage("Approvers of a scan reminded").
@@ -467,7 +472,8 @@ func (s *Service) Emergency(ctx context.Context, tenantID, scanID shared.ID, in 
 		WithMetadata("valid_until", req.ValidUntil.Format("2006-01-02T15:04:05Z07:00")).
 		WithMetadata("rules", ruleNames(ev.Matched)))
 	s.notifyAdmins(ctx, tenantID, all, actor.UserID, "Emergency scan run",
-		fmt.Sprintf("%q was run without its approval, as an emergency, until %s. Reason: %s", sc.Name, req.ValidUntil.Format("2006-01-02 15:04 MST"), oneLine(reason, 300)), scanID)
+		fmt.Sprintf("%q was run without its approval, as an emergency, until %s. Reason: %s", sc.Name, req.ValidUntil.Format("2006-01-02 15:04 MST"), oneLine(reason, 300)), scanID,
+		notificationdom.Msg("scan_approval.emergency_run", "scan", sc.Name, "until_at", req.ValidUntil.UTC().Format(time.RFC3339), "reason", oneLine(reason, 300)))
 	if err := s.scans.RunApproved(ctx, tenantID, scanID, actor.UserID); err != nil {
 		return req, err
 	}
@@ -521,7 +527,7 @@ func (s *Service) LatestByScans(ctx context.Context, tenantID shared.ID, scans [
 	return s.repo.LatestByScans(ctx, tenantID, ids)
 }
 
-func (s *Service) notifyApprovers(ctx context.Context, req *scangov.Request, scanName, title string) int {
+func (s *Service) notifyApprovers(ctx context.Context, req *scangov.Request, scanName, title, code string) int {
 	all, err := s.directory(ctx, req.TenantID)
 	if err != nil {
 		s.log.Warn("scan approvers: list", "error", logger.SanitizeError(err))
@@ -529,17 +535,21 @@ func (s *Service) notifyApprovers(ctx context.Context, req *scangov.Request, sca
 	}
 	body := fmt.Sprintf("%q (%s, %d target(s)) needs %d approval(s): %s.", scanName, req.Definition.Intensity,
 		len(req.Definition.Targets)+len(req.Definition.AssetGroupIDs), req.Remaining(), strings.Join(ruleNames(req.Evaluation.Matched), "; "))
+	targets := len(req.Definition.Targets) + len(req.Definition.AssetGroupIDs)
+	msg := notificationdom.Msg(code, "scan", scanName,
+		"intensity", notificationdom.Msg("scan_approval.intensity."+codeSegment(fmt.Sprint(req.Definition.Intensity))),
+		"targets", targets, "remaining", req.Remaining(), "rules", strings.Join(ruleNames(req.Evaluation.Matched), "; "))
 	eligible := req.Eligible(all)
 	for _, a := range eligible {
-		s.notifyUser(ctx, req.TenantID, a.UserID, title, body, "high", req.ScanID)
+		s.notifyUserMsg(ctx, req.TenantID, a.UserID, title, body, "high", req.ScanID, msg)
 	}
 	return len(eligible)
 }
 
-func (s *Service) notifyAdmins(ctx context.Context, tenantID shared.ID, all []scangov.Approver, except, title, body string, scanID shared.ID) {
+func (s *Service) notifyAdmins(ctx context.Context, tenantID shared.ID, all []scangov.Approver, except, title, body string, scanID shared.ID, msg *notificationdom.Message) {
 	for _, a := range all {
 		if a.UserID != except && (a.Role == scangov.RoleOwner || a.Role == scangov.RoleAdmin) {
-			s.notifyUser(ctx, tenantID, a.UserID, title, body, "high", scanID)
+			s.notifyUserMsg(ctx, tenantID, a.UserID, title, body, "high", scanID, msg)
 		}
 	}
 }
@@ -549,4 +559,18 @@ func (s *Service) notifyAdmins(ctx context.Context, tenantID shared.ID, all []sc
 func IsGovernanceError(err error) bool {
 	var de *shared.DomainError
 	return errors.As(err, &de) && strings.HasPrefix(de.Code, "SCAN_APPROVAL")
+}
+
+// codeSegment keeps a value usable as one message-code segment (lower-case
+// letters, digits, underscores); anything else is "other".
+func codeSegment(v string) string {
+	if v == "" {
+		return "other"
+	}
+	for _, r := range v {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+			return "other"
+		}
+	}
+	return v
 }

@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/logger"
@@ -136,8 +137,9 @@ func (s *Service) notifyCITrustAdded(ctx context.Context, tenantID shared.ID, in
 	if len(added) == 0 {
 		return
 	}
-	s.NotifyAdmins(ctx, tenantID, "Repositories added to scope by a CI trust",
-		fmt.Sprintf("The CI trust %q added %s to scope.", in.TrustName, strings.Join(added, ", ")))
+	s.NotifyAdminsMsg(ctx, tenantID, "Repositories added to scope by a CI trust",
+		fmt.Sprintf("The CI trust %q added %s to scope.", in.TrustName, strings.Join(added, ", ")),
+		notificationdom.Msg("scope.ci_trust_added", "trust", in.TrustName, "patterns", strings.Join(added, ", ")))
 }
 
 // ensureCITrustEntry links the tenant's entry with this pattern to the trust,
@@ -295,8 +297,9 @@ func (s *Service) activateProvenEntry(ctx context.Context, tenantID, targetID sh
 		return fmt.Errorf("activate proven scope entry: %w", err)
 	}
 	if approvals > 0 {
-		s.NotifyAdmins(ctx, tenantID, "A CI scope entry waits for approval",
-			fmt.Sprintf("A verified pipeline ran under %s; it waits for %d approval(s) before it is in scope.", t.Pattern(), approvals))
+		s.NotifyAdminsMsg(ctx, tenantID, "A CI scope entry waits for approval",
+			fmt.Sprintf("A verified pipeline ran under %s; it waits for %d approval(s) before it is in scope.", t.Pattern(), approvals),
+			notificationdom.Msg("scope.ci_entry_waiting", "pattern", t.Pattern(), "count", approvals))
 		s.logger.Info("proven ci scope entry waits for approval", "id", targetID.String(), "approvals", approvals)
 		return nil
 	}

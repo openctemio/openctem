@@ -20,6 +20,8 @@ import (
 	"strings"
 	"time"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/joinrequest"
@@ -68,7 +70,7 @@ type Tenants interface {
 	// AddMemberApprovingJoinRequest adds the member and approves the join
 	// request in one transaction.
 	AddMemberApprovingJoinRequest(ctx context.Context, tenantID string, input AddMemberInput, approver, requestID shared.ID, actx auditapp.AuditContext) (*tenantdom.Membership, error)
-	NotifyAdmins(ctx context.Context, tenantID shared.ID, title, body, severity string)
+	NotifyAdminsMsg(ctx context.Context, tenantID shared.ID, msg *notificationdom.Message, title, body, severity string)
 }
 
 // AddMemberInput mirrors tenant.AddMemberInput (kept here so the port does
@@ -279,7 +281,7 @@ func (s *Service) joinByDomain(ctx context.Context, u *userdom.User, t *tenantdo
 			return nil, err
 		}
 		s.record(ctx, actx, audit.ActionMemberJoinedByDomain, t.ID(), u, "Joined by verified email domain "+ep.Domain, role)
-		s.tenants.NotifyAdmins(ctx, t.ID(), "A colleague joined by email domain",
+		s.tenants.NotifyAdminsMsg(ctx, t.ID(), domainJoinedMessage(u.Email(), role, ep.Domain), "A colleague joined by email domain",
 			fmt.Sprintf("%s joined as %s through the verified domain %s.", u.Email(), role, ep.Domain), "info")
 		return &AcceptResult{Status: "joined", OrganizationName: t.Name(), OrganizationID: t.ID().String()}, nil
 	}
@@ -299,7 +301,7 @@ func (s *Service) joinByDomain(ctx context.Context, u *userdom.User, t *tenantdo
 		return nil, err
 	}
 	s.record(ctx, actx, audit.ActionJoinRequestCreated, t.ID(), u, "Asked to join through the verified domain "+ep.Domain, role)
-	s.tenants.NotifyAdmins(ctx, t.ID(), "Request to join your organization",
+	s.tenants.NotifyAdminsMsg(ctx, t.ID(), domainRequestMessage(u.Email(), ep.Domain), "Request to join your organization",
 		fmt.Sprintf("%s asked to join through the verified domain %s. Review it under Members > Requests.", u.Email(), ep.Domain), "info")
 	return &AcceptResult{Status: "requested", OrganizationName: t.Name()}, nil
 }
@@ -453,4 +455,15 @@ func (s *Service) verify(userID shared.ID, ref string) (kind string, tenantID, t
 		return "", shared.ID{}, shared.ID{}, ErrInvalidRef
 	}
 	return parts[0], tid, xid, nil
+}
+
+// domainJoinedMessage is the language-neutral notice that a colleague joined
+// through a verified domain; role is the organization role they got.
+func domainJoinedMessage(email, role, domain string) *notificationdom.Message {
+	return notificationdom.Msg("onboarding.domain_joined", "email", email, "role", role, "domain", domain)
+}
+
+// domainRequestMessage is the notice that a colleague asked to join.
+func domainRequestMessage(email, domain string) *notificationdom.Message {
+	return notificationdom.Msg("onboarding.join_requested", "email", email, "domain", domain)
 }

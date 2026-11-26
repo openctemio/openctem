@@ -649,7 +649,8 @@ func (s *TaskService) autoIncludeOne(ctx context.Context, d remediationdom.DueQu
 			WithMessage(fmt.Sprintf("Auto include added %d finding(s) to remediation task %q", len(res.Added), t.Title)).
 			WithMetadata("query", q.Text).WithMetadata("added", len(res.Added)).WithMetadata("skipped", len(res.Skipped)).
 			WithMetadata("capped", len(res.Capped)).WithMetadata("on_behalf_of", q.OwnerUserID.String()))
-		s.notifyQueryOwner(ctx, t, q, fmt.Sprintf("%d new finding(s) matched the query of task '%s' and were added to it.", len(res.Added), t.Title))
+		s.notifyQueryOwner(ctx, t, q, fmt.Sprintf("%d new finding(s) matched the query of task '%s' and were added to it.", len(res.Added), t.Title),
+			notificationdom.Msg("remediation.query_added", "count", len(res.Added), "task", t.Title))
 	}
 	return len(res.Added), nil
 }
@@ -672,22 +673,37 @@ func (s *TaskService) suspend(ctx context.Context, t *remediationdom.Task, q *re
 		WithMetadata("from", string(remediationdom.AutoStateActive)).WithMetadata("to", string(remediationdom.AutoStateSuspended)).
 		WithMetadata("reason", string(reason)))
 	if reason != remediationdom.AutoReasonOwnerRemoved {
-		s.notifyQueryOwner(ctx, t, q, fmt.Sprintf("Auto include of task '%s' was suspended (%s). Open the task to resume it.", t.Title, reason))
+		s.notifyQueryOwner(ctx, t, q, fmt.Sprintf("Auto include of task '%s' was suspended (%s). Open the task to resume it.", t.Title, reason),
+			notificationdom.Msg("remediation.query_suspended", "task", t.Title,
+				"reason", notificationdom.Msg("remediation.query_reason."+safeReasonSegment(string(reason)))))
 	}
 	return nil
 }
 
-func (s *TaskService) notifyQueryOwner(ctx context.Context, t *remediationdom.Task, q *remediationdom.TaskQuery, body string) {
+func (s *TaskService) notifyQueryOwner(ctx context.Context, t *remediationdom.Task, q *remediationdom.TaskQuery, body string, msg *notificationdom.Message) {
 	if s.queryNotifier == nil || q.OwnerUserID == nil {
 		return
 	}
 	uid, tid := *q.OwnerUserID, t.ID
 	if err := s.queryNotifier.Notify(ctx, notificationdom.NotificationParams{
 		TenantID: t.TenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-		NotificationType: notificationdom.TypeRemediationTask, Title: "Remediation task query", Body: body,
+		NotificationType: notificationdom.TypeRemediationTask, Title: "Remediation task query", Body: body, Message: msg,
 		Severity: "info", ResourceType: string(auditdom.ResourceTypeRemediationTask), ResourceID: &tid,
 		URL: "/remediation/tasks/" + t.ID.String(),
 	}); err != nil {
 		s.logger.Warn("notify query task owner failed", "task_id", t.ID.String(), "error", logger.SanitizeError(err))
 	}
+}
+
+// safeReasonSegment keeps a suspend reason usable as one code segment.
+func safeReasonSegment(v string) string {
+	if v == "" {
+		return "other"
+	}
+	for _, r := range v {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+			return "other"
+		}
+	}
+	return v
 }

@@ -66,7 +66,7 @@ func (s *TenantService) expireMembership(ctx context.Context, m *tenantdom.Membe
 		WithMetadata("user_id", m.UserID().String()).
 		WithMetadata("reason", tenantdom.SuspendedReasonExpired).
 		WithMetadata("member_kind", string(m.Kind())))
-	s.notifyAdmins(ctx, m.TenantID(), "A member's access expired",
+	s.notifyAdminsMsg(ctx, m.TenantID(), notificationdom.Msg("member.access_expired"), "A member's access expired",
 		"The access of a member from outside your organization reached its end date and was suspended. Open Members to extend it or remove them.",
 		notificationdom.SeverityMedium)
 	return nil

@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/asset"
 	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/stepup"
 )
@@ -607,7 +608,8 @@ func (s *Service) announceLoosened(ctx context.Context, tenantID shared.ID, a Ac
 		WithMetadata("loosened", what))
 	pid := p.ID
 	s.alertAdmins(ctx, tenantID, breakGlassAlert(AdminAlert{
-		Title: "CI gate policy loosened: " + policyName(p),
+		Message: notificationdom.Msg("ci.policy_loosened", "by", adminActorParam(a.Email), "scope", policyName(p), "what", what),
+		Title:   "CI gate policy loosened: " + policyName(p),
 		Body: fmt.Sprintf("%s changed the CI gate policy for %s so that more findings pass (%s).",
 			nonEmpty(a.Email, "an administrator"), policyName(p), what),
 		URL: "/ci-cd?tab=setup", Aggregate: "ci_gate_policy", AggregateID: &pid,
@@ -704,6 +706,8 @@ func (s *Service) CreateOverride(ctx context.Context, tenantID shared.ID, in Ove
 		WithMetadata("reason", o.Reason))
 	oid := o.ID
 	s.alertAdmins(ctx, tenantID, breakGlassAlert(AdminAlert{
+		Message: notificationdom.Msg("ci.break_glass_created", "by", adminActorParam(a.Email), "commit", shortSHA(o.CommitSHA),
+			"repository", repo.Name(), "expires_at", o.ExpiresAt.Format(time.RFC3339), "reason", o.Reason),
 		Title: "CI break-glass created: " + repo.Name(),
 		Body: fmt.Sprintf("%s let commit %s of %s pass the CI gate until %s. Reason: %s",
 			nonEmpty(a.Email, "an administrator"), shortSHA(o.CommitSHA), repo.Name(), o.ExpiresAt.Format(time.RFC3339), o.Reason),

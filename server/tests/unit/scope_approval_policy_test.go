@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	"github.com/openctemio/openctem/server/internal/app/scanpolicy"
 	"github.com/openctemio/openctem/server/internal/app/scope"
 	"github.com/openctemio/openctem/server/pkg/domain/admin"
@@ -157,10 +159,14 @@ func (a *adminAuditLog) Create(_ context.Context, e *admin.AuditLog) error {
 	return nil
 }
 
-type tenantNotes struct{ to []shared.ID }
+type tenantNotes struct {
+	to   []shared.ID
+	msgs []*notificationdom.Message
+}
 
-func (n *tenantNotes) NotifyAdmins(_ context.Context, id shared.ID, _, _ string) {
+func (n *tenantNotes) NotifyAdminsMsg(_ context.Context, id shared.ID, _, _ string, msg *notificationdom.Message) {
 	n.to = append(n.to, id)
+	n.msgs = append(n.msgs, msg)
 }
 
 type govSettings map[string]tenant.ScanGovernanceSettings
@@ -210,6 +216,11 @@ func TestScanPolicyService(t *testing.T) {
 	}
 	if len(audit.entries) != 2 || len(notes.to) != 1 || notes.to[0] != org {
 		t.Fatalf("audit %d entries, tenant notices %v", len(audit.entries), notes.to)
+	}
+	if m := notes.msgs[0]; m == nil || m.Code != "scanpolicy.approval_changed" {
+		t.Fatalf("message = %+v", m)
+	} else if mode, _ := m.Params["mode"].(*notificationdom.Message); mode == nil || mode.Code != "scanpolicy.mode.strict" {
+		t.Fatalf("mode = %+v", m.Params["mode"])
 	}
 	repo.fail = true
 	if _, _, _, err := svc.EffectiveMode(ctx, other); err == nil {
