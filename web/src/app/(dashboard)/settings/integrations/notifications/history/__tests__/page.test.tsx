@@ -16,6 +16,10 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/settings/integrations/notifications',
   useRouter: () => ({ push: vi.fn() }),
 }))
+vi.mock('@/lib/permissions', () => ({
+  Permission: { IntegrationsManage: 'integrations:manage' },
+  useHasPermission: () => true,
+}))
 vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }))

@@ -52,7 +52,7 @@
   "assetGroups.basic.namePlaceholder": "e.g., Payment Gateway Services",
   "assetGroups.basic.optional": "Optional",
   "assetGroups.basic.ownerEmail": "Owner email",
-  "assetGroups.basic.ownerEmailPlaceholder": "e.g., a.nguyen@company.vn",
+  "assetGroups.basic.ownerEmailPlaceholder": "e.g., a.nguyen@example.com.vn",
   "assetGroups.basic.ownerPlaceholder": "e.g., Nguyen Van A",
   "assetGroups.basic.quickAdd": "Quick add:",
   "assetGroups.basic.tagPlaceholder": "Type a tag and press Enter...",

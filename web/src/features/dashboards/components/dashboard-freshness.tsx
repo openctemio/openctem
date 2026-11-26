@@ -82,6 +82,11 @@ export interface DashboardFreshnessProps {
   data?: DashboardData
 }
 
+/** Whether a scheduled refresh time has already passed. */
+function isDue(at: string): boolean {
+  return new Date(at).getTime() <= Date.now()
+}
+
 /** Re-renders its component every minute so relative times keep ticking. */
 export function useMinuteTick(): number {
   const [tick, setTick] = useState(0)
@@ -130,9 +135,12 @@ export function DashboardFreshness({ kind, data }: DashboardFreshnessProps) {
               className="sr-only sm:not-sr-only"
               title={formatAbsoluteTime(data.next_refresh_at, locale)}
             >
-              {t('dashboards.freshness.next', 'Next {time}', {
-                time: rel(data.next_refresh_at),
-              })}
+              {/* A schedule time already passed reads as due, never "Next 21s ago". */}
+              {isDue(data.next_refresh_at)
+                ? t('dashboards.freshness.due', 'Refresh due')
+                : t('dashboards.freshness.next', 'Next {time}', {
+                    time: rel(data.next_refresh_at),
+                  })}
             </span>
           ) : (
             data && (

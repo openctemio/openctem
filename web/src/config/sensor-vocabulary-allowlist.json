@@ -28,8 +28,8 @@
     {
       "id": "endpoint-agent-role",
       "files": ".*",
-      "pattern": "endpoint[- ]agents?",
-      "reason": "'Agent' now names one sensor role only: the endpoint agent (RFC-023 §9.1, D18)."
+      "pattern": "endpoint[-_ ]agents?",
+      "reason": "'Agent' now names one sensor role only: the endpoint agent (RFC-023 §9.1, D18). The underscore form is the message code the server derives from its profile name endpoint-agent (serverText.sensor.profile.endpoint_agent)."
     },
     {
       "id": "historical-audit-spelling",
