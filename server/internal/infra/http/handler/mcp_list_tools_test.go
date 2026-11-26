@@ -232,3 +232,25 @@ func TestMCPExposureChains_DescribedAsPossible(t *testing.T) {
 	}
 	t.Fatal("get_exposure_chains not registered")
 }
+
+// The exposure chains tool needs attack_surface:paths:read: a key that may
+// read assets but not attack paths does not see it and is refused when it
+// calls it anyway.
+func TestMCP_ExposureChainsNeedPathsRead(t *testing.T) {
+	h := NewMCPHandler(&fakeFindingReader{}, nil, fakeSurface{}, nil, nil, nil, nil, logger.NewNop())
+	assetsOnly := []string{"findings:read", "assets:read"}
+	resp := doRPCAs(t, h, middleware.AuthProviderAPIKey, false, assetsOnly,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`)
+	if strings.Contains(string(resp.Result), `"get_exposure_chains"`) {
+		t.Error("get_exposure_chains listed for a key without attack_surface:paths:read")
+	}
+	resp = doRPCAs(t, h, middleware.AuthProviderAPIKey, false, assetsOnly,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_exposure_chains","arguments":{}}}`)
+	msg := string(resp.Result)
+	if resp.Error != nil {
+		msg += resp.Error.Message
+	}
+	if !strings.Contains(msg, "attack_surface:paths:read") {
+		t.Errorf("call without the permission was not refused for it: %s", msg)
+	}
+}
