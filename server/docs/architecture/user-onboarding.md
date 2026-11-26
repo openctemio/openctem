@@ -534,7 +534,7 @@ The user opens `<UI>/set-password#token=<setup_token>` and chooses a password
 24 hours; an administrator can issue a new one while the account is unused.
 When the person signs in through the organization's SSO first, the link is
 voided and the account gets no password by forgot-password either (unless it
-owns an organization): see
+owns that organization): see
 [sso-authentication.md](sso-authentication.md#no-password-for-accounts-the-organizations-sso-manages).
 Errors: 409 when the email already has an account (invite instead), 400 when
 the domain is not allowed, 403 when granting roles the caller does not hold.

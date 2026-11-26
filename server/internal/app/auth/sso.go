@@ -114,7 +114,10 @@ type SSOService struct {
 	authConfig       config.AuthConfig
 	logger           *logger.Logger
 	breakGlassGate   BreakGlassGate
-	httpClient       *http.Client
+	// orgSignIns records every organization sign-on on the account
+	// (managed_sign_in.go).
+	orgSignIns OrganizationSignInStore
+	httpClient *http.Client
 	// limits caps the number of connections (sso_connections). Nil: no cap.
 	limits limits.Checker
 	// oidcVerifier verifies id_tokens and logout tokens (pkg/oidc).
@@ -732,6 +735,9 @@ func (s *SSOService) HandleCallback(ctx context.Context, input SSOCallbackInput)
 		if err := s.ensureTenantMembership(ctx, u, t, rp, userInfo.Email); err != nil {
 			return nil, err
 		}
+	}
+	if err := s.recordOrganizationSignIn(ctx, u, t); err != nil {
+		return nil, err
 	}
 
 	// Create session (federated OIDC → stamped 'sso', issued by this tenant's
@@ -2183,6 +2189,9 @@ func (s *SSOService) federatedSessionResult(ctx context.Context, u *userdom.User
 	// tenant's IdP (exempt from this tenant's enforcement only — it IS this
 	// tenant's SSO login). No OIDC id_token binding — SAML single
 	// logout is out of scope for the OIDC back-channel path.
+	if err := s.recordOrganizationSignIn(ctx, u, t); err != nil {
+		return nil, err
+	}
 	sessionResult, err := s.createSession(ctx, u, sessiondom.AuthMethodSAML, t.ID(), federatedBinding{authTime: fed.authTime, mfa: fed.mfa})
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)

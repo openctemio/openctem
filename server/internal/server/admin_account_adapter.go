@@ -104,15 +104,16 @@ func (c breakGlassChecker) IsBreakGlass(ctx context.Context, userID shared.ID) b
 	return a.IsBreakGlass()
 }
 
-// IsPlatformAdmin reports whether the account is linked to a platform
-// administrator (break-glass or regular).
+// IsPlatformAdmin reports whether the account is linked to an active
+// platform administrator (break-glass or regular). A deactivated
+// administrator does not count.
 func (c breakGlassChecker) IsPlatformAdmin(ctx context.Context, userID shared.ID) (bool, error) {
-	_, err := c.admins.GetByUserID(ctx, userID)
+	a, err := c.admins.GetByUserID(ctx, userID)
 	if errors.Is(err, admin.ErrAdminNotFound) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	return true, nil
+	return a.IsActive(), nil
 }
