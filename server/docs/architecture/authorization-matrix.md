@@ -1285,7 +1285,7 @@ federation is system-level configuration, so it lives only under the admin realm
 tenant-context routes `/api/v1/settings/{saml,identity-providers,verified-domains}`
 and the `PLATFORM_ADMIN_EMAILS` flag that guarded them were removed; no tenant
 role, however high, can reach SSO setup. The SSO **login** flow
-(`/api/v1/auth/sso/*`, `/api/v1/auth/saml/{org}/*`) is public and unchanged.
+(`/api/v1/auth/sso/*`, `/api/v1/auth/saml/{connection}/*`) is public and unchanged.
 
 ### Platform administrator identity (RFC-022, RFC-134)
 
