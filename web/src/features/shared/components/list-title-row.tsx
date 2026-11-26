@@ -249,9 +249,13 @@ export function ListTitleRow({
       )}
     >
       <div data-slot="list-title-start" className="flex min-w-0 items-center gap-3">
-        {/* The name gives way first: what follows it keeps its width. */}
+        {/* The name gives way first: what follows it keeps its width. It stays
+            on one line, so the row's height never changes when the list's
+            name does (the header holds still as filters and views change);
+            a cut name keeps its whole text as the title. */}
         <h2
           data-testid={titleTestId}
+          data-cut-tooltip=""
           className={titleHidden ? 'sr-only' : 'min-w-0 truncate text-sm font-medium'}
           title={!titleHidden && typeof title === 'string' ? title : undefined}
         >

@@ -37,6 +37,15 @@ describe('cut name title', () => {
     expect(td.title).toBe('Payments gateway (production)')
   })
 
+  it('a link a parent cuts by its style (the phone card title) is a cut', () => {
+    const title = document.createElement('div')
+    const a = sized(document.createElement('a'), 320, 120)
+    a.style.textOverflow = 'ellipsis'
+    a.textContent = 'Payments platform external perimeter'
+    title.appendChild(a)
+    expect(isTextCut(title)).toBe(true)
+  })
+
   it('a box with no ellipsis or clamp is not a cut', () => {
     const td = document.createElement('td')
     const span = sized(document.createElement('span'), 320, 120)

@@ -1,10 +1,14 @@
 /**
- * The automatic phone card (a table without `mobileRow`, below 768px) keeps
- * every line one line high: whatever a cell draws stays on one line, cut with
- * an ellipsis. Regression: a run's message beside its state wrapped in the
- * few pixels the chip left and made the card taller than the screen
- * (/scans/runs at 390px, 2026-11-17). Layout itself is measured by the e2e
- * spec 66-phone-card-bounds; this pins the rules the card applies.
+ * The automatic phone card (a table without `mobileRow`, below 768px) chooses
+ * its fields on fixed one-line rows, then shows them wrapping: a label is
+ * never cut ("Hoạt động gần n…") and a value goes under its label and wraps
+ * instead of ending in an ellipsis. Regression kept: a run's message beside
+ * its state once wrapped in the few pixels the chip left and made the card
+ * taller than the screen (/scans/runs at 390px, 2026-11-17); a row of a chip
+ * and a text now wraps the text under the chip, and a text the table cuts on
+ * one line takes at most three lines, then a clamp with the field's title.
+ * Layout itself is measured by the e2e spec 66-phone-card-bounds; this pins
+ * the rules the card applies.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
@@ -44,41 +48,40 @@ const setWidth = (value: number) =>
 beforeEach(() => setWidth(390))
 afterEach(() => setWidth(1440))
 
-const ONE_LINE_RULES = [
-  'h-5',
-  'overflow-hidden',
-  'whitespace-nowrap',
-  '[&_*]:whitespace-nowrap',
-  '[&_.flex]:flex-nowrap',
-  // A stacked cell lays its lines side by side instead of growing the card.
-  '[&_.flex-col]:flex-row',
-  // ...with a gap between them, and the last one ends in the ellipsis (the
-  // outer one cannot reach text inside a flex row).
-  '[&_.flex-col]:gap-x-1.5',
-  '[&_.flex-col>*:last-child]:truncate',
+const WRAP_RULES = [
+  '[overflow-wrap:anywhere]',
+  // A chip and a text in one row: the text wraps under the chip.
+  '[&_.flex]:flex-wrap',
+  // A text the table cuts on one line wraps, up to three lines.
+  '[&_.truncate]:whitespace-normal',
+  '[&_.truncate]:line-clamp-3',
 ]
 
 describe('automatic phone card', () => {
-  it('keeps a long value beside a chip on one line of fixed height', () => {
+  it('wraps a long value beside a chip, bounded, with its whole text as the title', () => {
+    const message = 'Scan run completed partially: '.repeat(40)
     const { container } = render(
       <DataTable
         columns={columns}
-        data={[
-          {
-            id: '1',
-            name: 'Weekly web scan',
-            status: 'Partial',
-            message: 'Scan run completed partially: '.repeat(40),
-          },
-        ]}
+        data={[{ id: '1', name: 'Weekly web scan', status: 'Partial', message }]}
         getRowId={(r) => r.id}
       />
     )
     const card = container.querySelector('[data-slot="mobile-card"]')
     expect(card).not.toBeNull()
-    const value = card!.querySelector('[data-slot="mobile-card-field"] dd')!
-    for (const rule of ONE_LINE_RULES) expect(value.className).toContain(rule)
-    expect(value.className).not.toContain('line-clamp')
+    const field = card!.querySelector('[data-slot="mobile-card-field"]')!
+    expect(field.className).toContain('flex-wrap')
+    const value = field.querySelector('dd')!
+    for (const rule of WRAP_RULES) expect(value.className).toContain(rule)
+    expect(value.className).not.toContain('h-5')
+    expect(value.className).not.toContain('whitespace-nowrap')
+    // A clamped value says so and keeps its whole text reachable.
+    expect(value).toHaveAttribute('data-cut-tooltip')
+    expect(value.getAttribute('title')).toContain(message.trim())
+    // The label wraps, never cut.
+    const label = field.querySelector('dt')!
+    expect(label.className).not.toContain('truncate')
+    expect(label.className).toContain('break-words')
     // The title is the one line allowed to wrap: at most two lines, then cut.
     const title = card!.querySelector('[data-slot="mobile-card-title"]')!
     expect(title.className).toContain('max-h-10')

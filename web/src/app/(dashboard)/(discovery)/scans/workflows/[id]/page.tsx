@@ -563,10 +563,10 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                 <Server className="h-5 w-5 text-muted-foreground shrink-0" />
               )}
               <div className="min-w-0">
-                <h1 className="text-base font-semibold truncate">{workflow.name}</h1>
+                <h1 className="text-base font-semibold break-words">{workflow.name}</h1>
                 {/* How to edit the canvas: dragging is for a pointer, so a
                     phone (which only reads the canvas) shows no hint row. */}
-                <p className="hidden truncate text-xs text-muted-foreground md:block">
+                <p className="hidden text-xs text-muted-foreground md:block">
                   {isSystemTemplate
                     ? t('workflowStages.builder.hintTemplate')
                     : isReadOnly

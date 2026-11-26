@@ -309,7 +309,13 @@ export function LockedChip({
   const body = (
     <span className="inline-flex min-w-0 items-center gap-1.5" tabIndex={hint ? 0 : undefined}>
       {Icon ? <Icon className="size-3.5 shrink-0" aria-hidden="true" /> : null}
-      <span className="truncate" title={typeof children === 'string' ? children : undefined}>
+      {/* A one-line pill: a long label may end in an ellipsis, whole in its
+          title (and explained by the hint). */}
+      <span
+        className="truncate"
+        data-cut-tooltip=""
+        title={typeof children === 'string' ? children : undefined}
+      >
         {children}
       </span>
     </span>

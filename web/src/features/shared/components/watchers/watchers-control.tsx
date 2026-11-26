@@ -78,7 +78,10 @@ export function WatchersControl({
           data-testid="watchers-summary"
         >
           {requested && <Loader2 className="size-4 animate-spin" aria-hidden />}
-          <span className="truncate">{t('findings.people.manage', 'Manage watchers')}</span>
+          {/* Narrow side column: may end in an ellipsis, whole in the button's title. */}
+          <span className="truncate" data-cut-tooltip="">
+            {t('findings.people.manage', 'Manage watchers')}
+          </span>
           <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         </Button>
       </PropertyRow>
@@ -134,12 +137,14 @@ export function WatchersControl({
             data-testid="watchers-summary"
           >
             <UserAvatarStack names={names} max={1} />
-            <span className="min-w-0 truncate">
+            {/* The count leads, so a cut keeps it; the whole summary is the
+                button's title. */}
+            <span className="min-w-0 truncate" data-cut-tooltip="">
               {summary}
-              <span className="sr-only">
-                {', '}
-                {t('findings.people.manage', 'Manage watchers')}
-              </span>
+            </span>
+            <span className="sr-only">
+              {', '}
+              {t('findings.people.manage', 'Manage watchers')}
             </span>
           </Button>
           <Button

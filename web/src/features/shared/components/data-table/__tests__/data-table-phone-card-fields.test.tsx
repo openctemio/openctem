@@ -97,6 +97,10 @@ describe('automatic phone card: compact lines', () => {
     const subtitle = slot(container, 'subtitle')
     expect(subtitle?.textContent).toBe('Ana')
     expect(subtitle?.className).toContain('text-muted-foreground')
+    // A shown subtitle takes up to two lines, never one cut line.
+    expect(subtitle?.className).toContain('line-clamp-2')
+    expect(subtitle?.className).not.toContain('h-5')
+    expect(subtitle).toHaveAttribute('data-cut-tooltip')
     // Neither is repeated as a labelled field.
     expect(fieldLabels(container)).not.toContain('State')
     expect(fieldLabels(container)).not.toContain('Name')

@@ -9,13 +9,25 @@
 /** Boxes that end in an ellipsis or a line clamp. */
 const CUT_SELECTOR = '.truncate, .text-ellipsis, [class*="line-clamp-"]'
 
+/** Boxes looked at in one name: a name is a few elements, never a list. */
+const MAX_BOXES = 24
+
+/**
+ * Whether a box ends its text in an ellipsis or a clamp: by its own class, or
+ * by its computed style when a parent sets it (the phone card's title clamps
+ * its link with `[&_a]:line-clamp-2`).
+ */
+function cutsText(b: HTMLElement): boolean {
+  if (b.matches(CUT_SELECTOR)) return true
+  const cs = getComputedStyle(b)
+  return cs.textOverflow === 'ellipsis' || /\d/.test(cs.webkitLineClamp ?? '')
+}
+
 /** True when the element, or a box in it, cuts its text. */
 export function isTextCut(el: HTMLElement): boolean {
-  const boxes = [el, ...Array.from(el.querySelectorAll<HTMLElement>(CUT_SELECTOR))]
+  const boxes = [el, ...Array.from(el.querySelectorAll<HTMLElement>('*')).slice(0, MAX_BOXES)]
   return boxes.some(
-    (b) =>
-      b.matches(CUT_SELECTOR) &&
-      (b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1)
+    (b) => (b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1) && cutsText(b)
   )
 }
 

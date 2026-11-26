@@ -91,8 +91,8 @@ export function MembershipsCard({
                   <Building2 className="size-4" aria-hidden />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-body flex items-center gap-2 font-medium">
-                    <span className="truncate">{m.name}</span>
+                  <p className="text-body flex flex-wrap items-center gap-x-2 font-medium">
+                    <span className="min-w-0 break-words">{m.name}</span>
                     {m.id === currentId && (
                       <Badge variant="secondary">{t('account.orgs.current', 'Open now')}</Badge>
                     )}
