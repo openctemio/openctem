@@ -159,9 +159,10 @@ func TestSAMLConnection_ResponseForAnotherConnectionIsRefused(t *testing.T) {
 	}
 }
 
-// The SP addresses exist before the configuration: the reserved connection
-// id is the one the first saved configuration takes, and deleting the
-// configuration retires it.
+// The SP addresses exist before the configuration only once the
+// administrator creates them (an audited write); reading the SP metadata and
+// building a configuration never write. The reserved id is the one the first
+// saved configuration takes, and deleting the configuration retires it.
 func TestSAMLConnection_ReservedIDIsAdoptedAndRetired(t *testing.T) {
 	ctx := context.Background()
 	tn := newTenantForSAML(t, "acme")
@@ -169,12 +170,27 @@ func TestSAMLConnection_ReservedIDIsAdoptedAndRetired(t *testing.T) {
 	sso := &SSOService{logger: logger.NewNop()}
 	svc := NewSAMLService(repo, multiTenantRepo{byID: map[shared.ID]*tenantdom.Tenant{tn.ID(): tn}}, sso, logger.NewNop())
 
-	_, before, err := svc.SPMetadataForTenant(ctx, tn.ID(), samlACSBase)
+	// Reading creates nothing.
+	if _, _, err := svc.SPMetadataForTenant(ctx, tn.ID(), samlACSBase); !errors.Is(err, ErrSAMLNoAddress) {
+		t.Fatalf("SP metadata before any address: %v, want ErrSAMLNoAddress", err)
+	}
+	if _, err := svc.BuildConfig(ctx, tn.ID(), SAMLConfigInput{IDPEntityID: "https://idp", IDPSSOURL: "https://idp/sso",
+		IDPCertificate: genTestCertPEM(t)}); err != nil {
+		t.Fatal(err)
+	}
+	if len(repo.reserved) != 0 {
+		t.Fatal("a read or a build reserved a connection id")
+	}
+
+	_, before, err := svc.ReserveAddress(ctx, tn.ID(), samlACSBase)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if before.Legacy || !strings.Contains(before.ACSURL, before.Key) || strings.Contains(before.ACSURL, "acme") {
 		t.Fatalf("addresses before configuration: %+v", before)
+	}
+	if _, again, err := svc.SPMetadataForTenant(ctx, tn.ID(), samlACSBase); err != nil || again.Key != before.Key {
+		t.Fatalf("read after reserving: %+v %v", again, err)
 	}
 	p, err := svc.UpsertConfig(ctx, tn.ID(), SAMLConfigInput{IDPEntityID: "https://idp", IDPSSOURL: "https://idp/sso",
 		IDPCertificate: genTestCertPEM(t), Enabled: true})
@@ -187,7 +203,10 @@ func TestSAMLConnection_ReservedIDIsAdoptedAndRetired(t *testing.T) {
 	if err := svc.DeleteConfig(ctx, tn.ID()); err != nil {
 		t.Fatal(err)
 	}
-	_, after, err := svc.SPMetadataForTenant(ctx, tn.ID(), samlACSBase)
+	if _, _, err := svc.SPMetadataForTenant(ctx, tn.ID(), samlACSBase); !errors.Is(err, ErrSAMLNoAddress) {
+		t.Fatalf("after delete: %v, want no address", err)
+	}
+	_, after, err := svc.ReserveAddress(ctx, tn.ID(), samlACSBase)
 	if err != nil {
 		t.Fatal(err)
 	}

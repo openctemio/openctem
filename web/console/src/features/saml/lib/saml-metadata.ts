@@ -21,6 +21,8 @@ export interface SpMetadata {
   filename: string
   xml: string
   base_url: string
+  /** False until the organization has a configuration or a created address. */
+  has_address: boolean
   connection_key: string
   entity_id: string
   acs_url: string
@@ -56,6 +58,15 @@ export interface IdPMetadata {
 }
 
 export type IdPMetadataSource = { metadata_url: string } | { metadata_xml: string }
+
+/**
+ * Creates the organization's SAML address (the connection id its first
+ * configuration takes) so it can be registered at the IdP before saving.
+ * An audited console write with step-up.
+ */
+export function createSamlAddress(tenantId: string) {
+  return adminFetch<SpMetadata>(`/tenants/${tenantId}/sso/saml/address`, { method: 'POST' })
+}
 
 /** Reads the IdP metadata through the API. Nothing is saved. */
 export function importIdPMetadata(tenantId: string, source: IdPMetadataSource) {
