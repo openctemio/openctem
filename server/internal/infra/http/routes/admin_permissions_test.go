@@ -149,6 +149,7 @@ var legacyMinimumTier = map[string]admin.AdminRole{
 	"PUT /api/v1/admin/settings/signup-alerts/":                              admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/social-login-providers/{provider}":           admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/signup/":                                     admin.AdminRoleSuperAdmin,
+	"PUT /api/v1/admin/settings/feed-freshness/":                             admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/settings/storage-quota/":                              admin.AdminRoleSuperAdmin,
 	"PUT /api/v1/admin/tenants/{tenantId}/idle/policy":                       admin.AdminRoleOpsAdmin,
 	"PUT /api/v1/admin/tenants/{tenantId}/limits/{key}":                      admin.AdminRoleOpsAdmin,

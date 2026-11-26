@@ -131,7 +131,7 @@ func (s *IntelService) recordBundleSeen(ctx context.Context, source string, st B
 	switch {
 	case cause != nil:
 		markFailed(status, cause)
-	case s.sourceStale(source, st.FetchedAt):
+	case s.sourceStale(ctx, source, st.FetchedAt):
 		// The release carries the stream, but the collector has not read
 		// the source for longer than the feed may be old: not a success.
 		markFailed(status, feedstatus.Tag(feedstatus.CodeSourceStale,
@@ -148,9 +148,9 @@ func (s *IntelService) recordBundleSeen(ctx context.Context, source string, st B
 var ErrSourceStale = errors.New("the release's copy of the feed is old")
 
 // sourceStale: the collector read the source longer ago than the feed's
-// stale limit (feedstatus.StaleAfter); a zero time is stale.
-func (s *IntelService) sourceStale(source string, fetchedAt time.Time) bool {
-	limit := feedstatus.StaleAfter(source)
+// stale limit in force; a zero time is stale.
+func (s *IntelService) sourceStale(ctx context.Context, source string, fetchedAt time.Time) bool {
+	limit := s.staleLimits(ctx).StaleAfter(source)
 	return limit > 0 && (fetchedAt.IsZero() || s.now().Sub(fetchedAt) > limit)
 }
 

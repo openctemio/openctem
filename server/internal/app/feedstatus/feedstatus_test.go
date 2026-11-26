@@ -27,12 +27,16 @@ func TestCompute(t *testing.T) {
 	}{
 		{"off", Input{Source: SourceKEV, Enabled: false, Status: ok}, StateOff},
 		{"kev fresh", Input{Source: SourceKEV, Enabled: true, Status: ok, LastSuccessAt: ptr(now.Add(-time.Hour))}, StateUpToDate},
-		{"kev stale", Input{Source: SourceKEV, Enabled: true, Status: ok, LastSuccessAt: ptr(now.Add(-7 * time.Hour))}, StateStale},
+		{"kev 7 h is fresh (bundle limit)", Input{Source: SourceKEV, Enabled: true, Status: ok, LastSuccessAt: ptr(now.Add(-7 * time.Hour))}, StateUpToDate},
+		{"kev stale", Input{Source: SourceKEV, Enabled: true, Status: ok, LastSuccessAt: ptr(now.Add(-13 * time.Hour))}, StateStale},
+		{"kev judged by the release date", Input{Source: SourceKEV, Enabled: true, Status: ok, LastSuccessAt: ptr(now), DataAsOf: ptr(now.Add(-13 * time.Hour))}, StateStale},
+		{"kev under a raised limit", Input{Source: SourceKEV, Enabled: true, Status: ok, LastSuccessAt: ptr(now), DataAsOf: ptr(now.Add(-40 * time.Hour)), Limits: Limits{Vulnfeed: 48 * time.Hour}}, StateUpToDate},
+		{"bundle under a raised limit", Input{Source: SourceVulnfeed, Enabled: true, Status: ok, LastSuccessAt: ptr(now), DataAsOf: ptr(now.Add(-40 * time.Hour)), HasAppliedData: true, Limits: Limits{Vulnfeed: 48 * time.Hour}}, StateUpToDate},
 		{"epss 30 h is fresh", Input{Source: SourceEPSS, Enabled: true, Status: ok, LastSuccessAt: ptr(now.Add(-30 * time.Hour))}, StateUpToDate},
 		{"running", Input{Source: SourceKEV, Enabled: true, Status: threatintel.SyncStateRunning, UpdatedAt: now.Add(-time.Minute)}, StateRunning},
 		{"running forever is interrupted", Input{Source: SourceKEV, Enabled: true, Status: threatintel.SyncStateRunning, UpdatedAt: now.Add(-3 * time.Hour), LastSuccessAt: ptr(now.Add(-time.Hour))}, StateFailing},
 		{"failing, data still fresh", Input{Source: SourceKEV, Enabled: true, Status: threatintel.SyncStateFailed, ErrorCode: CodeHTTPStatus, LastSuccessAt: ptr(now.Add(-2 * time.Hour))}, StateFailing},
-		{"failing and data stale", Input{Source: SourceKEV, Enabled: true, Status: threatintel.SyncStateFailed, ErrorCode: CodeHTTPStatus, LastSuccessAt: ptr(now.Add(-8 * time.Hour))}, StateStale},
+		{"failing and data stale", Input{Source: SourceKEV, Enabled: true, Status: threatintel.SyncStateFailed, ErrorCode: CodeHTTPStatus, LastSuccessAt: ptr(now.Add(-13 * time.Hour))}, StateStale},
 		{"never succeeded, failing", Input{Source: SourceKEV, Enabled: true, Status: threatintel.SyncStateFailed, ErrorCode: CodeUnreachable}, StateFailing},
 		{"refused", Input{Source: SourceVulnfeed, Enabled: true, Status: threatintel.SyncStateFailed, ErrorCode: CodeSignatureInvalid, LastSuccessAt: ptr(now)}, StateRefused},
 		{"waiting", Input{Source: SourceVulnfeed, Enabled: true, Status: threatintel.SyncStateFailed, ErrorCode: CodePublisherEmpty, FailingSince: ptr(now.Add(-time.Hour))}, StateWaitingForPublisher},
@@ -109,5 +113,55 @@ func TestBuild_NextRunUsesTheSchedulerInterval(t *testing.T) {
 	st.SetEnabled(false)
 	if v := Build(st, 1512, now); v.NextRunAt != nil || v.State != StateOff {
 		t.Fatalf("off: %+v", v)
+	}
+}
+
+// KEV never goes stale before the bundle that carries it; EPSS takes a day
+// more; the bundle limit stays within its bounds.
+func TestLimits(t *testing.T) {
+	d := DefaultLimits()
+	if d.StaleAfter(SourceVulnfeed) != 12*time.Hour || d.StaleAfter(SourceKEV) != 12*time.Hour || d.StaleAfter(SourceEPSS) != 36*time.Hour {
+		t.Fatalf("defaults %v %v %v", d.StaleAfter(SourceVulnfeed), d.StaleAfter(SourceKEV), d.StaleAfter(SourceEPSS))
+	}
+	if (Limits{}).StaleAfter(SourceKEV) != 12*time.Hour {
+		t.Fatal("the zero value is not the default")
+	}
+	for _, h := range []time.Duration{time.Hour, 6 * time.Hour, 48 * time.Hour, 30 * 24 * time.Hour} {
+		l := Limits{Vulnfeed: h}
+		b := l.Bundle()
+		if b < MinStaleAfterVulnfeed || b > MaxStaleAfterVulnfeed {
+			t.Errorf("%v: bundle %v out of bounds", h, b)
+		}
+		if l.StaleAfter(SourceKEV) < l.StaleAfter(SourceVulnfeed) {
+			t.Errorf("%v: KEV under the bundle limit", h)
+		}
+		e := l.StaleAfter(SourceEPSS)
+		if e < StaleAfterEPSS || e < min(b+24*time.Hour, MaxBundleValidity) || e > MaxBundleValidity {
+			t.Errorf("%v: EPSS %v", h, e)
+		}
+	}
+}
+
+// KEV and EPSS show the bundle import's next run and cycle, not an hourly
+// or daily one of their own.
+func TestAlignBundleCycle(t *testing.T) {
+	next := time.Date(2026, 11, 25, 10, 20, 0, 0, time.UTC)
+	views := []View{
+		{Source: SourceVulnfeed, Enabled: true, Interval: IntervalVulnfeed, NextRunAt: &next},
+		{Source: SourceKEV, Enabled: true, Interval: IntervalKEV, State: StateUpToDate},
+		{Source: SourceEPSS, Enabled: true, Interval: IntervalEPSS, State: StateStale},
+		{Source: SourceEPSS + "-off", Enabled: false},
+	}
+	AlignBundleCycle(views)
+	for _, v := range views[1:3] {
+		if v.Interval != IntervalVulnfeed || v.NextRunAt == nil || !v.NextRunAt.Equal(next) {
+			t.Fatalf("%s: interval %v next %v", v.Source, v.Interval, v.NextRunAt)
+		}
+	}
+	// The bundle import is off: KEV and EPSS have no next run either.
+	views[0].Enabled = false
+	AlignBundleCycle(views)
+	if views[1].NextRunAt != nil {
+		t.Fatalf("next run without a bundle import: %v", views[1].NextRunAt)
 	}
 }
