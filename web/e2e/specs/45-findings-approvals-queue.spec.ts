@@ -54,7 +54,8 @@ interface FreeFinding {
 /**
  * `count` open findings that have no pending request, taken from the end of
  * the list so specs that take the first one (39-my-work) do not race for the
- * same finding.
+ * same finding. The "E2E triage" findings are never taken: the triage spec (36)
+ * decides them and a pending request here makes its request answer 409.
  */
 async function freeFindings(page: Page, count: number): Promise<FreeFinding[]> {
   const list = await apiCall<{ data?: FreeFinding[] }>(
@@ -66,7 +67,7 @@ async function freeFindings(page: Page, count: number): Promise<FreeFinding[]> {
   // Only findings on an asset: the member is granted the asset to see them.
   const NO_ASSET = '00000000-0000-0000-0000-000000000000'
   const free = (list.body.data ?? [])
-    .filter((f) => f.asset_id && f.asset_id !== NO_ASSET)
+    .filter((f) => f.asset_id && f.asset_id !== NO_ASSET && !f.title?.startsWith('E2E triage'))
     .slice(-count)
   expect(free.length, 'open findings without a pending request').toBe(count)
   return free
