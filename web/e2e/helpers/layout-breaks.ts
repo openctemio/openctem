@@ -246,27 +246,77 @@ function suppressions(scen: Scenario) {
   return { data, total: data.length }
 }
 
-/** Import and run receipts with long tool names and big counts. */
+/**
+ * Import and run receipts, the mix a real organization has: runs that changed
+ * findings (big counts, a long tool name), runs that only re-detected, runs of
+ * asset-discovery tools that received no findings (several in a row, the
+ * repeated rows the list folds), a partial run (some findings not stored), and
+ * failed, processing and queued ones.
+ */
 function receipts(scen: Scenario) {
-  const counts = (k: number) => ({
+  const zero = {
+    created: 0,
+    updated: 0,
+    reactivated: 0,
+    closed: 0,
+    skipped: 0,
+    failed: 0,
+    suppressed: 0,
+  }
+  const changed = (k: number) => ({
+    ...zero,
     created: 12 * k,
     updated: 1280 * k,
     reactivated: 3,
     closed: 40 * k,
-    skipped: 9,
-    failed: 1,
     suppressed: 4,
   })
   const kinds = ['upload', 'scan_run', 'command', 'ci_run', 'connector', 'sensor', 'platform']
-  const all = Array.from({ length: 25 }, (_, i) => ({
-    id: `rcpt-${i}`,
-    status: ['completed', 'processing', 'failed', 'queued'][i % 4],
-    source: { kind: kinds[i % kinds.length], ref: `run-${i}` },
-    tool: i % 5 === 4 ? '' : ['nuclei', 'network vulnerability scanner export', 'trivy'][i % 3],
-    received: 18402 - i,
-    counts: counts(i + 1),
-    started_at: new Date(Date.now() - (i + 1) * 3600_000).toISOString(),
-  }))
+  const all = Array.from({ length: 25 }, (_, i) => {
+    const row = {
+      id: `rcpt-${i}`,
+      status: 'completed',
+      source: { kind: kinds[i % kinds.length], ref: `run-${i}` },
+      tool: ['nuclei', 'network vulnerability scanner export', 'trivy'][i % 3],
+      received: 18402 - i,
+      counts: changed(i + 1),
+      assets: { created: 0, updated: 0, recorded_on_name: 0 },
+      errors: [] as { index: number; code: string }[],
+      started_at: new Date(Date.now() - (i + 1) * 3600_000).toISOString(),
+    }
+    // Asset discovery (subfinder, dnsx): no findings at all, only assets.
+    if ([1, 2, 3, 5, 6, 9, 10, 13, 16, 17, 20, 21, 23].includes(i)) {
+      return {
+        ...row,
+        source: { kind: 'scan_run', ref: `run-${i}` },
+        tool: i % 4 === 0 ? 'dnsx' : 'subfinder',
+        received: 0,
+        counts: zero,
+        assets: { created: i % 3, updated: 14 + i, recorded_on_name: 0 },
+      }
+    }
+    // Re-detected only: received findings, nothing changed.
+    if (i === 7 || i === 12)
+      return { ...row, tool: 'httpx', counts: { ...zero, updated: 18402 - i } }
+    if (i === 8)
+      return {
+        ...row,
+        status: 'failed',
+        counts: zero,
+        received: 0,
+        errors: [{ index: 0, code: 'parse_error' }],
+      }
+    if (i === 11)
+      return {
+        ...row,
+        counts: { ...changed(2), skipped: 9, failed: 57 },
+        errors: [{ index: 3, code: 'invalid_finding' }],
+      }
+    if (i === 14) return { ...row, status: 'processing', counts: { ...zero, created: 4 } }
+    if (i === 18) return { ...row, status: 'queued', received: 0, counts: zero }
+    if (i % 5 === 4) return { ...row, tool: '' }
+    return row
+  })
   const data = all.slice(0, scen === 'empty' ? 0 : scen === 'one' ? 1 : all.length)
   const total = scen === 'rich' ? 380 : data.length
   return {
