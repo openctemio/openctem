@@ -96,10 +96,22 @@ describe('DashboardView', () => {
     expect(cell.style.getPropertyValue('--span')).toBe('span 4 / span 4')
     expect(cell.style.getPropertyValue('--span-sm')).toBe('span 2 / span 2')
     expect(cell.className).toContain('xl:[grid-column:var(--span)]')
-    // The stored height applies from 640px; on a phone rows fit their content.
+    // The stored height places the widget from 640px; on a phone rows fit their content.
     expect(cell.style.gridRow).toBe('')
     expect(cell.className).toContain('sm:[grid-row:var(--row-span)]')
     expect((cell.parentElement as HTMLElement).style.gridAutoRows).toBe('')
+  })
+
+  it('sets no row floor: a widget is as tall as its content at every width', () => {
+    // A 128 px floor per stored row left the CTEM loop (stored two rows tall)
+    // 120 px of empty card under its tiles.
+    const loop = { ...stat('w_loop', 'ctem.loop'), w: 12, h: 2 }
+    const { container } = render(
+      <DashboardView dashboard={{ layout: [loop], columns: 4 }} data={undefined} loading={false} />
+    )
+    const grid = container.querySelector('[data-columns]') as HTMLElement
+    expect(grid.className).not.toMatch(/grid-auto-rows|auto-rows-/)
+    expect(grid.style.getPropertyValue('--row')).toBe('')
   })
 })
 

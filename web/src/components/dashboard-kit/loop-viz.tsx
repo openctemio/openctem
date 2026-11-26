@@ -4,7 +4,8 @@
  * The CTEM loop: five stages as an ordered list, each with its figure (a
  * link to the list it counts), a second figure, and its state as an icon
  * and words. The stage with the largest gap is the current step
- * (aria-current="step"), marked "Act here" with the brand marker dot (stage-state.tsx).
+ * (aria-current="step"), marked "Act here" with the brand marker dot (stage-state.tsx)
+ * on the line every stage keeps for its note, so it never adds a row to one tile.
  * The stages sit in one divided row, no inner cards; state is never only a colour.
  */
 
@@ -21,11 +22,12 @@ export function LoopViz({ result }: { result: StagesResult }) {
   const label = useLabel()
   const stateText = useStageStateText()
   // The columns follow the card, not the window: a card beside the sidebar at
-  // 1024 px is 660 px wide and five stages did not fit in it.
+  // 1024 px is 660 px wide and five stages did not fit in it. The tiles fill
+  // the card's height when its row is taller than they are.
   const chart = (
-    <div className="@container overflow-hidden rounded-lg border">
+    <div className="@container flex h-full flex-col overflow-hidden rounded-lg border">
       <ol
-        className="-ms-px -mt-px grid grid-cols-2 @min-[440px]:grid-cols-3 @min-[680px]:grid-cols-5"
+        className="-ms-px -mt-px grid flex-1 grid-cols-2 @min-[440px]:grid-cols-3 @min-[680px]:grid-cols-5"
         aria-label={t('dashboardKit.stage.listLabel', 'Stages')}
       >
         {result.stages.map((s, i) => {
@@ -37,7 +39,9 @@ export function LoopViz({ result }: { result: StagesResult }) {
               key={s.key}
               data-state={s.state}
               aria-current={current ? 'step' : undefined}
-              className="flex min-w-0 flex-col gap-1.5 border-s border-t p-3"
+              // Five stages in two or three columns end on a short row: the
+              // last stage takes two columns there, so no blank cell is left.
+              className="flex min-w-0 flex-col gap-1.5 border-s border-t p-3 last:col-span-2 @min-[680px]:last:col-span-1"
             >
               <div className="flex items-baseline justify-between gap-2 text-xs">
                 {/* A stage's name wraps ("Xác định phạm v…" said nothing). */}
@@ -69,7 +73,7 @@ export function LoopViz({ result }: { result: StagesResult }) {
                   </DrillLink>
                 )}
                 {current ? (
-                  <ActHere label={s.flag_key ? t(s.flag_key) : undefined} />
+                  <ActHere label={s.flag_key ? t(s.flag_key) : undefined} inline />
                 ) : (
                   s.flag_key && <span className="text-muted-foreground">{t(s.flag_key)}</span>
                 )}
