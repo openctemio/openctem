@@ -709,8 +709,13 @@ export async function findMatrixBreaks(
           'tbody tr, [data-phone-card], [role=row]:not(:has([role=columnheader]))'
         )
       ).find(shown)
+      // A grouped list drawn as phone cards: its group headers sit between
+      // the cards, inside the cards' frame, so the list is that frame (the
+      // parent of the groups), not the rows of the first group.
       let list: Element | null = first
-        ? (first.closest('table, [role=table], [role=grid], ul, ol') ?? first.parentElement)
+        ? (first.closest('table, [role=table], [role=grid], ul, ol') ??
+          first.closest('[role=group]:has(> [data-slot="row-group-header"])')?.parentElement ??
+          first.parentElement)
         : null
       // An overlay without a list is a form: its labels and notes are not
       // rows of a list's toolbar.
