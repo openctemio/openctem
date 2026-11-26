@@ -128,7 +128,9 @@ describe('two-factor floor', () => {
 describe('organization mail servers', () => {
   it('changes the mode with the version and a reason', async () => {
     render(<EmailRelayForm settings={relay} canEdit onSaved={() => {}} />)
-    expect(screen.getByText('Server default (ORG_EMAIL_RELAY_MODE).')).toBeInTheDocument()
+    // Plain words: the variable is not something the reader types here.
+    expect(screen.getByText('Server default.')).toBeInTheDocument()
+    expect(screen.queryByText(/ORG_EMAIL_RELAY_MODE/)).toBeNull()
     // No unsaved change, no save bar.
     expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
     await userEvent.click(screen.getByLabelText('Never'))
