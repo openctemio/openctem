@@ -120,7 +120,7 @@ export function editorSpanClass(columns: number | undefined): string {
 
 /**
  * Wide screens (web/docs/ui-style-contract.md, "Dashboard widgets"): once the
- * dashboard is 100rem wide (a 1920 px screen with the sidebar) the view lays
+ * dashboard is 96rem wide (a 1920 px screen with the sidebar) the view lays
  * widgets on a 12-column grid and packs every run of side-by-side widgets
  * three to a row, and four to a row from 136rem (a 2560 px screen), so a wide
  * screen shows more widgets instead of two stretched ones. A run is a series
@@ -130,7 +130,7 @@ export function editorSpanClass(columns: number | undefined): string {
  * never three and a lone one), so no row leaves an empty cell. Order is never
  * changed. The editor keeps the stored arrangement.
  */
-export const WIDE_PACK_THREE_REM = 100
+export const WIDE_PACK_THREE_REM = 96
 export const WIDE_PACK_FOUR_REM = 136
 
 export interface WidePlacement {
@@ -183,11 +183,11 @@ function gridColumnOf12(units: number): string {
 }
 
 /** Grid classes of the wide 12-column layout (see `widePackSpans`). */
-export const WIDE_GRID_CLASS = '@[100rem]:grid-cols-12'
+export const WIDE_GRID_CLASS = '@[96rem]:grid-cols-12'
 /**
  * Widget classes of the wide layout. The spans arrive in `--span-wide` /
  * `--span-wider` and the row spans in `--row-span-wide` / `--row-span-wider`
  * (`auto` for a packed widget).
  */
 export const WIDE_WIDGET_CLASS =
-  '@[100rem]:[grid-column:var(--span-wide)] @[100rem]:[grid-row:var(--row-span-wide)] @[136rem]:[grid-column:var(--span-wider)] @[136rem]:[grid-row:var(--row-span-wider)]'
+  '@[96rem]:[grid-column:var(--span-wide)] @[96rem]:[grid-row:var(--row-span-wide)] @[136rem]:[grid-column:var(--span-wider)] @[136rem]:[grid-row:var(--row-span-wider)]'

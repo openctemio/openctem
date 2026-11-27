@@ -1022,7 +1022,7 @@ Every settings page is built from the same parts (`@/features/shared`):
   control places a widget: "Span one more row" / "Span one row fewer"
   (Shift+Down / Shift+Up) set how many rows it spans beside its neighbours.
 - **Wide screens use the width for more widgets.** Once the dashboard is
-  100rem wide (a 1920 px screen with the sidebar) the view lays widgets on a
+  96rem wide (a 1920 px screen with the sidebar) the view lays widgets on a
   12-column grid and packs each run of side-by-side widgets three to a row,
   four to a row from 136rem (a 2560 px screen) (`widePackSpans` in
   `features/dashboards/layout.ts`). A run is a series of neighbours with the
@@ -1055,7 +1055,7 @@ health, time to fix by severity, how well fixes hold) are a
 `MetricRowList` (`features/dashboard/components/metric-row-list.tsx`;
 `framed={false}` inside a card of its own). The rows flow into columns as
 the list widens: one on a phone, two from 48rem, three (three rows) or four
-from 75rem / 100rem of list width, so a label and its figure are never a
+from 75rem / 96rem of list width, so a label and its figure are never a
 page width apart. A row that is not measured says so in muted text, never
 a dash at figure size.
 

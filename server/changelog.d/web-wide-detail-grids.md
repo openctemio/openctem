@@ -5,6 +5,6 @@
 - A vulnerability's page: the summary and "Who found it" use the same rule (summary up to 1440 px, "Who found it" a 24rem column beside it), so a source and its count are no longer 600 px apart.
 - Label and figure rows (Executive summary process health and time to fix, Program health) flow into two to four columns as the list widens, instead of a label and its figure 1,700 px apart.
 - Executive summary Top risks: a title is as wide as its column and cut by the column's width, with the full title on hover, instead of a fixed 448 px.
-- The dashboard packs runs of side-by-side widgets three to a row once it is 100rem wide and four to a row from 136rem, keeping their order and leaving no empty cell; bar charts keep bars at most 48 px wide.
+- The dashboard packs runs of side-by-side widgets three to a row once it is 96rem wide and four to a row from 136rem, keeping their order and leaving no empty cell; bar charts keep bars at most 48 px wide.
 - Card lists (dashboard templates, SCM connections, capabilities, pentest templates, asset categories) add columns on wide screens (at least 22rem each) instead of three stretched cards; the Vulnerabilities overview puts its two charts and the trend on one row from a 2048 px screen.
 - Docs: web/docs/ui-style-contract.md

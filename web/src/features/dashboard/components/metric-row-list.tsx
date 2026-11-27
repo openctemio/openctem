@@ -31,7 +31,7 @@ export function metricRowColumns(count: number): string {
   return cn(
     count >= 2 && '@3xl:grid-cols-2',
     count === 3 && '@[75rem]:grid-cols-3',
-    count >= 4 && '@[100rem]:grid-cols-4'
+    count >= 4 && '@[96rem]:grid-cols-4'
   )
 }
 
