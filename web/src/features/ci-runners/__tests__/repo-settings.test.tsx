@@ -408,7 +408,7 @@ describe('CIRunSheet baseline and code host', () => {
     )
     // An informational reason is a note, never listed as blocking.
     expect(screen.queryByRole('heading', { name: 'Blocking' })).not.toBeInTheDocument()
-    expect(screen.getByRole('list', { name: 'Notes' })).toHaveTextContent('Baseline recorded')
+    expect(screen.getByRole('group', { name: 'Notes' })).toHaveTextContent('Baseline recorded')
     expect(screen.getByTestId('ci-run-connect-host')).toHaveAttribute('href', '/ci-cd?tab=feedback')
   })
 

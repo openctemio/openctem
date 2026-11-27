@@ -52,7 +52,7 @@ import type { CITokenRefusal, CITrustConfig } from '../types'
 import { CIRequireOIDC } from './ci-require-oidc'
 import { CITrustScopeEntries, manageScopeSupported } from './ci-trust-scope'
 import { CITrustSigningKeysSummary } from './ci-trust-signing-keys'
-import { CITrustRefusals, RefusalDetail, recentRefusals } from './ci-refusals'
+import { CITrustRefusals, RefusalGroupList, recentRefusals } from './ci-refusals'
 import { SnippetPanel, TrustConfigForm } from './ci-trust-form'
 
 type TFn = ReturnType<typeof useTranslation>['t']
@@ -552,16 +552,14 @@ function HealthPanel({
           <p className="text-sm text-muted-foreground">
             {t(
               'scans.ci.health.description',
-              'Each job with the rule that refused it. A fix opens the configuration with the change filled in; nothing changes until you save.'
+              'Refused jobs with the rule that refused them; identical jobs are counted on one row. A fix opens the configuration with the change filled in; nothing changes until you save.'
             )}
           </p>
-          <ul className="divide-y rounded-lg border" data-testid="ci-health-refusals">
-            {refusals.map((r, i) => (
-              <li key={`${r.at}-${i}`} className="p-3">
-                <RefusalDetail refusal={r} onFix={onFix} />
-              </li>
-            ))}
-          </ul>
+          <RefusalGroupList
+            refusals={refusals}
+            onFix={onFix ? (_r, f) => onFix(f) : undefined}
+            testId="ci-health-refusals"
+          />
         </div>
       )}
     </div>

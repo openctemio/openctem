@@ -460,10 +460,10 @@ describe('CIRunsView', () => {
     runDetail = judgedRun
     window.history.replaceState({}, '', '/ci-cd?view=runs&run=r2')
     render(<CIRunsView />)
-    const blocking = await screen.findByRole('list', { name: 'Blocking' })
+    const blocking = await screen.findByRole('group', { name: 'Blocking' })
     expect(within(blocking).getByText('SQL injection')).toBeInTheDocument()
     expect(within(blocking).queryByText('Weak hash')).not.toBeInTheDocument()
-    const comment = screen.getByRole('list', { name: /comment only/i })
+    const comment = screen.getByRole('group', { name: /comment only/i })
     expect(within(comment).getByText('Weak hash')).toBeInTheDocument()
     expect(screen.getByText(/3 more in monitor mode/)).toBeInTheDocument()
     const deco = screen.getByTestId('ci-run-decoration')
@@ -482,7 +482,7 @@ describe('CIRunsView', () => {
     window.history.replaceState({}, '', '/ci-cd?view=runs&run=r2')
     perms = []
     const { unmount } = render(<CIRunsView />)
-    await screen.findByRole('list', { name: 'Blocking' })
+    await screen.findByRole('group', { name: 'Blocking' })
     expect(screen.queryByTestId('ci-run-break-glass')).not.toBeInTheDocument()
     unmount()
     perms = ['scans:ci:override']
@@ -541,12 +541,16 @@ describe('CIRunsView', () => {
     }
     window.history.replaceState({}, '', '/ci-cd?view=runs&run=r2')
     render(<CIRunsView />)
-    const blocking = await screen.findByRole('list', { name: 'Blocking' })
+    const blocking = await screen.findByRole('group', { name: 'Blocking' })
     // Labels shrink on a phone (minmax), long values wrap instead of
     // widening the sheet.
     const grid = document.querySelector('dl')
     expect(grid?.className).toContain('minmax(6rem,8rem)')
-    expect(within(blocking).getByText('SQL injection').className).toContain('break-words')
+    // A finding is one compact row: the title takes the free width and is cut
+    // with its full text in the tooltip, never widening the sheet.
+    expect(
+      within(blocking).getByText('SQL injection').closest('[data-testid="ci-reason"]')!.className
+    ).toContain('minmax(0,1fr)')
     expect(
       screen.getByRole('heading', { name: /a-very-long-repository-name/ }).className
     ).toContain('break-words')
@@ -556,7 +560,7 @@ describe('CIRunsView', () => {
     runDetail = judgedRun
     window.history.replaceState({}, '', '/ci-cd?view=runs&run=r2')
     render(<CIRunsView />)
-    const blocking = await screen.findByRole('list', { name: 'Blocking' })
+    const blocking = await screen.findByRole('group', { name: 'Blocking' })
     const details = screen.getByRole('heading', { name: 'Details' })
     // Blocking comes first in the document (a developer opens the run to see why).
     expect(
@@ -728,6 +732,34 @@ describe('CIConnections (Connections tab)', () => {
     expect(screen.getByRole('tab', { name: 'Rules', selected: true })).toBeInTheDocument()
     expect(screen.getByTestId('ci-fix-note')).toBeInTheDocument()
     expect(mockSaveTrust).not.toHaveBeenCalled()
+  })
+
+  it('folds identical refused jobs into one row with a count, and pages the groups', async () => {
+    trust = [ghTrust]
+    const same = (i: number) => ({
+      at: new Date(Date.now() - i * 60_000).toISOString(),
+      repository: 'acme/web',
+      provider: 'github',
+      ref: 'refs/heads/dev',
+      event: 'push',
+      reasons: ['ref_not_allowed'],
+    })
+    const other = (i: number) => ({ ...same(100 + i), ref: `refs/heads/b${i}` })
+    refusals = [
+      ...Array.from({ length: 12 }, (_, i) => same(i)),
+      ...Array.from({ length: 6 }, (_, i) => other(i)),
+    ]
+    render(<CIConnections />)
+    await userEvent.click(screen.getByRole('button', { name: /^GitHub acme/ }))
+    const list = screen.getByTestId('ci-health-refusals')
+    // 7 groups (12 identical jobs + 6 other branches), the first 5 shown.
+    const rows = within(list).getAllByTestId('ci-refusal')
+    expect(rows).toHaveLength(5)
+    expect(within(rows[0]).getByTestId('ci-refusal-count')).toHaveTextContent('12 jobs')
+    // One fix per group, not one per job.
+    expect(within(rows[0]).getAllByRole('button')).toHaveLength(1)
+    await userEvent.click(screen.getByRole('button', { name: 'Show 2 more' }))
+    expect(within(list).getAllByTestId('ci-refusal')).toHaveLength(7)
   })
 
   it('"see why" lists every recent refused job in a sheet', async () => {
