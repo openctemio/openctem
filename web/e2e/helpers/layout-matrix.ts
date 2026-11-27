@@ -115,6 +115,14 @@ import { submitSignIn } from './auth'
  *                    overhang its line by 1) to the row's ruled top or bottom
  *                    edge, or across it ("Ransomware" crossing the row's
  *                    bottom border)
+ *   repeatedRows     three or more consecutive rows of one list (ul, ol,
+ *                    role=list) that read the same once numbers, addresses
+ *                    and ids are taken out: the same issue on ten addresses
+ *                    belongs in one row with its count (audit 2026-11-27 D1)
+ *   cardPerRow       five or more framed boxes (all four borders, rounded)
+ *                    stacked one per row, each at least 90% of its column
+ *                    wide and at most 200 px tall: a list drawn as boxes,
+ *                    where one bordered list holds the same (audit D3)
  */
 
 export type MatrixBreaks = {
@@ -134,6 +142,8 @@ export type MatrixBreaks = {
   pastEdge: string[]
   sizeMismatch: string[]
   cellCrowd: string[]
+  repeatedRows: string[]
+  cardPerRow: string[]
 }
 
 export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
@@ -153,6 +163,8 @@ export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
   'pastEdge',
   'sizeMismatch',
   'cellCrowd',
+  'repeatedRows',
+  'cardPerRow',
 ]
 
 /** Widths of the v2 matrix with the height of their device class. */
@@ -691,6 +703,8 @@ export async function findMatrixBreaks(
       // Filled by the matrix run (probeRowMix with fonts, helpers/page-anatomy.ts).
       sizeMismatch: [] as string[],
       cellCrowd: [] as string[],
+      repeatedRows: [] as string[],
+      cardPerRow: [] as string[],
     }
     const roots = Array.from(document.querySelectorAll(scope))
     if (!roots.length) return out
@@ -1865,6 +1879,104 @@ export async function findMatrixBreaks(
         }
       }
     }
+
+    // ---- repeatedRows (audit D1): three or more rows of one list that read
+    // the same once numbers, addresses and ids are taken out ("Redis
+    // reachable from the internet" ten times, only the address changing).
+    // The same issue belongs in one row with its count. Lists only (ul, ol,
+    // role=list): a table of entities legitimately repeats its columns.
+    const sameText = (s: string) =>
+      s
+        .toLowerCase()
+        // IPv4 then IPv6 (each with an optional port), ids and hex digests,
+        // then every number; what is left of an address (its dots, colons,
+        // brackets) folds into the one mark
+        .replace(/\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b/g, '#')
+        .replace(/\[?[0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,7}\]?(?::\d+)?/g, '#')
+        .replace(/\b[0-9a-f]{8,}\b/g, '#')
+        .replace(/\d+(?:[.,]\d+)*/g, '#')
+        .replace(/[#.:[\]]*#[#.:[\]]*/g, '#')
+        .replace(/\s+/g, ' ')
+        .trim()
+    const LISTS = 'ul, ol, [role="list"]'
+    for (const root of roots)
+      for (const list of Array.from(root.querySelectorAll(LISTS))) {
+        if (!shown(list)) continue
+        const rows = Array.from(list.children).filter(
+          (c) => (c.tagName === 'LI' || c.getAttribute('role') === 'listitem') && shown(c)
+        )
+        if (rows.length < 3) continue
+        let run: Element[] = []
+        let key = ''
+        const flush = () => {
+          if (run.length >= 3)
+            out.repeatedRows.push(
+              `${run.length} rows read the same "${short(run[0].textContent, 60)}" at ${selectorOf(list)}`
+            )
+        }
+        for (const r of rows) {
+          const k = sameText(r.textContent ?? '')
+          // A short row (a tag, a date) may repeat by design.
+          if (k.replace(/[^a-z]/g, '').length < 16) {
+            flush()
+            run = []
+            key = ''
+            continue
+          }
+          if (k === key) run.push(r)
+          else {
+            flush()
+            run = [r]
+            key = k
+          }
+        }
+        flush()
+      }
+
+    // ---- cardPerRow (audit D3): five or more framed boxes stacked one per
+    // row, each as wide as its column and short: a list in boxes, where one
+    // bordered list (a divider between rows) holds the same in less height.
+    const boxedAllSides = (el: Element) => {
+      const s = getComputedStyle(el)
+      return (
+        ['Top', 'Right', 'Bottom', 'Left'].every(
+          (side) =>
+            parseFloat(s.getPropertyValue(`border-${side.toLowerCase()}-width`)) >= 1 &&
+            s.getPropertyValue(`border-${side.toLowerCase()}-style`) !== 'none'
+        ) && parseFloat(s.borderTopLeftRadius) > 0
+      )
+    }
+    const seenStacks = new Set<Element>()
+    for (const root of roots)
+      for (const parent of Array.from(root.querySelectorAll('*'))) {
+        if (seenStacks.has(parent) || !shown(parent)) continue
+        const kids = Array.from(parent.children).filter(shown)
+        if (kids.length < 5) continue
+        const pr = parent.getBoundingClientRect()
+        const ps = getComputedStyle(parent)
+        const inner = pr.width - parseFloat(ps.paddingLeft) - parseFloat(ps.paddingRight)
+        let run = 0
+        let best = 0
+        let prevBottom = -Infinity
+        for (const k of kids) {
+          const r = k.getBoundingClientRect()
+          const card =
+            boxedAllSides(k) &&
+            r.width >= inner * 0.9 &&
+            r.height <= 200 &&
+            r.top >= prevBottom - 1 &&
+            !k.querySelector('table, textarea, form, [role="tablist"]')
+          run = card ? run + 1 : 0
+          best = Math.max(best, run)
+          prevBottom = r.bottom
+        }
+        if (best >= 5) {
+          seenStacks.add(parent)
+          out.cardPerRow.push(
+            `${best} framed cards stacked one per row where one list fits at ${selectorOf(parent)} "${short(kids[0].textContent, 40)}"`
+          )
+        }
+      }
 
     // ---- underPinned: a notice that stays while the page scrolls, or text
     // under a sticky or fixed layer. Last, since it scrolls the page (and puts
