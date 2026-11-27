@@ -914,3 +914,74 @@ func TestBulkDismiss_UndoWhileRunningIsRefused_DB(t *testing.T) {
 		t.Fatalf("undo once recorded: %d %s", code, resp)
 	}
 }
+
+// Parallel calls must not split their way past the step-up: three calls of
+// 25 plan at once (each sees an empty hour), then reserve one after the
+// other. Only the first may decide without a re-authentication; the hour
+// is counted again under the budget lock.
+func TestBulkDismiss_ParallelCallsDoNotSkipStepUp_DB(t *testing.T) {
+	h := newBulkDismissHarness(t)
+	org := h.org()
+	setFPLevel(h.findingApprovalHarness, org, `{"fp_approval":"off"}`)
+	admin := h.member(org, "admin")
+	h.member(org, "owner")
+	h.stepUp.refuse.Store(true)
+	ids := h.findings(org, "low", 75)
+
+	// Hold the creator's budget lock so every call has planned before any
+	// reserves.
+	ctx := context.Background()
+	conn, err := h.db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('finding_bulk_dismiss|' || $1 || '|' || $2, 0))`, org, admin.id); err != nil {
+		t.Fatal(err)
+	}
+	codes := make(chan int, 3)
+	for i := range 3 {
+		b, _ := json.Marshal(dismissBody(ids[i*25:(i+1)*25], nil))
+		go func() {
+			code, _ := h.do(admin, http.MethodPost, "/api/v1/findings/bulk-dismissals", string(b))
+			codes <- code
+		}()
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		var waiting int
+		if err := h.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting >= 3 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d calls reached the budget lock", waiting)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	_ = tx.Rollback()
+
+	ok, refused := 0, 0
+	for range 3 {
+		switch c := <-codes; c {
+		case http.StatusOK:
+			ok++
+		case http.StatusForbidden:
+			refused++
+		default:
+			t.Errorf("unexpected status %d", c)
+		}
+	}
+	if ok != 1 || refused != 2 {
+		t.Errorf("parallel calls: %d decided, %d asked for step-up; want 1 and 2", ok, refused)
+	}
+	if n := h.countRows(`SELECT COUNT(*) FROM findings WHERE tenant_id = $1 AND status <> 'confirmed'`, org); n != 25 {
+		t.Errorf("%d findings decided without a re-authentication, want 25", n)
+	}
+}
