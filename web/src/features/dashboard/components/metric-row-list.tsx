@@ -62,7 +62,11 @@ export function MetricRowList({
           under the frame's edge, so each column reads as one ruled list. */}
       <ul
         data-slot="metric-row-list"
-        className={cn('grid grid-cols-1 overflow-hidden', framed && 'gap-x-2', metricRowColumns(rows.length))}
+        className={cn(
+          'grid grid-cols-1 overflow-hidden',
+          framed && 'gap-x-2',
+          metricRowColumns(rows.length)
+        )}
       >
         {rows.map((row) => (
           <li
@@ -82,7 +86,9 @@ export function MetricRowList({
                     <TooltipTrigger asChild>
                       <button
                         type="button"
-                        aria-label={row.infoLabel ?? (typeof row.label === 'string' ? row.label : undefined)}
+                        aria-label={
+                          row.infoLabel ?? (typeof row.label === 'string' ? row.label : undefined)
+                        }
                         className="shrink-0 rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <Info className="h-3.5 w-3.5" />
