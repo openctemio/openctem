@@ -247,6 +247,7 @@ test.describe('layout matrix detector: sizes in one row', { tag: ['@shell'] }, (
       doc(`<main style="width:900px"><header style="display:flex;gap:8px">
         <button data-slot="button" style="height:32px;font-size:13px">Search the console</button>
         <button data-slot="button" aria-label="Full screen" style="height:32px;width:32px;font-size:14px"><svg width="16" height="16"></svg></button>
+        <button data-slot="button" style="height:32px;width:32px;font-size:14px"><svg width="16" height="16"></svg><span class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)">Guide</span></button>
         </header></main>`)
     )
     expect(await size(page)).toEqual([])
