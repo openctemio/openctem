@@ -50,6 +50,8 @@
   "attackSurface.changes.emptyFiltered": "Không có thay đổi thuộc các loại đã chọn trong khoảng thời gian này.",
   "attackSurface.changes.emptyTitle": "Không có thay đổi",
   "attackSurface.changes.errorTitle": "thay đổi của bề mặt tấn công",
+  "attackSurface.changes.groupShowAll": "Xem cả {count} thay đổi",
+  "attackSurface.changes.groupTitle": "{kind} trên {asset}",
   "attackSurface.changes.kindOther": "Thay đổi khác",
   "attackSurface.changes.kindsLabel": "Loại thay đổi",
   "attackSurface.changes.lastDays": "{count} ngày qua",

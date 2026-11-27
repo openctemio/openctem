@@ -189,3 +189,93 @@ func TestEASMChanges(t *testing.T) {
 		t.Fatalf("claim after release: %v %v", ok, err)
 	}
 }
+
+// Grouped changes: the same exposure kind on one asset, seen many times, is
+// one row with its count; the group's own changes come back with the group
+// filter; another tenant's identical changes never join; a scoped member
+// sees only the groups of its assets.
+func TestEASMChangesGrouped(t *testing.T) {
+	sqlDB := openSensorDB(t)
+	ctx := context.Background()
+	db := &DB{DB: sqlDB}
+	repo := NewEASMChangeRepository(db)
+	dnsRepo := NewEASMDNSRepository(db)
+	tenant := seedTestTenant(ctx, t, sqlDB)
+	other := seedTestTenant(ctx, t, sqlDB)
+	now := time.Now().UTC()
+
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := sqlDB.ExecContext(ctx, q, args...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	lookalike := func(tn, asset shared.ID, name string, at time.Time) {
+		exec(`INSERT INTO exposure_events (tenant_id, asset_id, event_type, severity, state, title, fingerprint, source, first_seen_at)
+			VALUES ($1, $2, 'lookalike_domain', 'low', 'active', $3, $4, 'easm_dns', $5)`,
+			tn.String(), asset.String(), "Lookalike domain registered: "+name, shared.NewID().String(), at)
+	}
+	root := seedNamedAsset(ctx, t, dnsRepo, tenant, "example.com", "domain", "active")
+	other1 := seedNamedAsset(ctx, t, dnsRepo, tenant, "example.net", "domain", "active")
+	foreign := seedNamedAsset(ctx, t, dnsRepo, other, "example.com", "domain", "active")
+	for i, n := range []string{"examp1e.com", "exampel.com", "eaxmple.com"} {
+		lookalike(tenant, root, n, now.Add(-time.Duration(3-i)*time.Hour))
+	}
+	lookalike(tenant, other1, "examp1e.net", now.Add(-5*time.Hour))
+	lookalike(other, foreign, "examp1e.org", now.Add(-time.Hour))
+
+	page, err := repo.ListChanges(ctx, tenant, nil, easmchange.Query{From: now.Add(-24 * time.Hour), To: now, Limit: 1, Grouped: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 4 || len(page.Items) != 0 || len(page.Groups) != 1 || page.NextCursor == "" {
+		t.Fatalf("grouped page 1 = total %d items %d groups %+v next %q", page.Total, len(page.Items), page.Groups, page.NextCursor)
+	}
+	g := page.Groups[0]
+	if g.Count != 3 || g.Key.AssetID != root.String() || g.Key.Kind != easmchange.KindExposureNew || g.Key.Detail != "lookalike_domain" ||
+		g.Latest.New != "Lookalike domain registered: eaxmple.com" {
+		t.Errorf("group = %+v (3 changes on example.com, newest standing for it)", g)
+	}
+	next, err := repo.ListChanges(ctx, tenant, nil, easmchange.Query{From: now.Add(-24 * time.Hour), To: now, Limit: 1, Grouped: true, Cursor: page.NextCursor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(next.Groups) != 1 || next.Groups[0].Count != 1 || next.Groups[0].Key.AssetID != other1.String() || next.NextCursor != "" {
+		t.Errorf("grouped page 2 = %+v next %q", next.Groups, next.NextCursor)
+	}
+
+	// The group's own changes: all three, newest first, nothing else.
+	key := g.Key
+	items, err := repo.ListChanges(ctx, tenant, nil, easmchange.Query{From: now.Add(-24 * time.Hour), To: now, Limit: 50, Group: &key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items.Items) != 3 || items.Items[0].New != "Lookalike domain registered: eaxmple.com" {
+		t.Errorf("group items = %+v", items.Items)
+	}
+	// The other tenant's asset id as a group key reads nothing.
+	foreignKey := easmchange.GroupKey{Kind: easmchange.KindExposureNew, Detail: "lookalike_domain", AssetID: foreign.String()}
+	leak, err := repo.ListChanges(ctx, tenant, nil, easmchange.Query{From: now.Add(-24 * time.Hour), To: now, Limit: 50, Group: &foreignKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(leak.Items) != 0 {
+		t.Errorf("another tenant's group leaked: %+v", leak.Items)
+	}
+
+	// A member scoped to example.net sees only its group.
+	user := shared.NewID()
+	exec(`INSERT INTO users (id, email, name) VALUES ($1, $2, 'scoped')`, user.String(), user.String()+"@easm.test")
+	t.Cleanup(func() {
+		_, _ = sqlDB.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, user.String())
+	})
+	exec(`INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id) VALUES ($1, $2, $3)`, user.String(), tenant.String(), other1.String())
+	scoped, err := repo.ListChanges(ctx, tenant, &shared.DataScope{TenantID: tenant, UserID: user},
+		easmchange.Query{From: now.Add(-24 * time.Hour), To: now, Limit: 50, Grouped: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scoped.Groups) != 1 || scoped.Groups[0].Key.AssetID != other1.String() {
+		t.Errorf("scoped groups = %+v", scoped.Groups)
+	}
+}

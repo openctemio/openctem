@@ -109,4 +109,34 @@ describe('EASMOverview', () => {
     expect(exposureTypeLabel('bucket_public')).toBe('Bucket Public')
     expect(exposureTypeLabel('not_a_type')).toBe('not a type')
   })
+
+  it('shows the same issue on many assets as one row, the rest one link away', async () => {
+    api.get.mockResolvedValue({
+      ...summary,
+      top_risks: [
+        {
+          id: 'r1',
+          type: 'risky_service_exposed',
+          severity: 'critical',
+          title: 'Redis reachable from the internet without authentication (port 6379/tcp)',
+          asset_id: '0198f0e2-3333-7000-8000-000000000009',
+          asset_name: '198.51.100.50:6379:tcp',
+          last_seen: '2026-10-02T00:00:00Z',
+          count: 10,
+          assets: 10,
+        },
+      ],
+    })
+    wrap(<EASMOverview />)
+    const card = await screen.findByTestId('easm-fix-first')
+    expect(
+      await within(card).findAllByText(
+        'Redis reachable from the internet without authentication (port 6379/tcp)'
+      )
+    ).toHaveLength(1)
+    expect(within(card).getByRole('link', { name: '+9 more' })).toHaveAttribute(
+      'href',
+      '/exposures?q=Redis%20reachable%20from%20the%20internet%20without%20authentication%20(port%206379%2Ftcp)'
+    )
+  })
 })

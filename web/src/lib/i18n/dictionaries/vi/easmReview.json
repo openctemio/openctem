@@ -32,6 +32,7 @@
   "easmReview.overview.fixFirst": "Cần xử lý trước",
   "easmReview.overview.monitoringSettings": "Cài đặt giám sát",
   "easmReview.overview.monitoringSettingsHint": "Tần suất chạy khám phá và kiểm tra DNS, và những tra cứu nào gửi ra ngoài mạng của bạn.",
+  "easmReview.overview.moreAssets": "+{count} tài sản khác",
   "easmReview.overview.noRisks": "Không có rủi ro bên ngoài đang mở",
   "easmReview.overview.noRisksHint": "Không có mục nào từ mức trung bình trở lên đang mở trên bề mặt bên ngoài.",
   "easmReview.overview.notChecked": "chưa kiểm tra",

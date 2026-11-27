@@ -73,6 +73,14 @@ export const TITLE_LINK_HEADER_CLASS =
 /** The attribution review queue page. */
 export const EASM_REVIEW_HREF = '/attack-surface/review'
 
+/**
+ * The exposure list narrowed to one issue of the "Fix first" list: every
+ * asset the issue is open on (the overview row names only the latest).
+ */
+export function riskGroupHref(title: string | undefined): string {
+  return `/exposures?q=${encodeURIComponent(title ?? '')}`
+}
+
 /** The API's severity string as a known severity (unknown → info). */
 export function toSeverity(s: string | undefined): Severity {
   return SEVERITIES.includes(s as Severity) ? (s as Severity) : 'info'
@@ -152,6 +160,19 @@ export function EASMTopRisks() {
                       <AssetPeekLink assetId={r.asset_id} className="truncate text-xs">
                         {r.asset_name}
                       </AssetPeekLink>
+                    )}
+                    {/* The same issue on several assets is one row: the rest
+                        open in the exposure list, narrowed to this issue. */}
+                    {(r.assets ?? 0) > 1 && (
+                      <Link
+                        href={riskGroupHref(r.title)}
+                        className="shrink-0 text-primary hover:underline"
+                        data-testid="easm-risk-more"
+                      >
+                        {t('easmReview.overview.moreAssets', '+{count} more', {
+                          count: (r.assets ?? 1) - (r.asset_name ? 1 : 0),
+                        })}
+                      </Link>
                     )}
                   </div>
                 </div>

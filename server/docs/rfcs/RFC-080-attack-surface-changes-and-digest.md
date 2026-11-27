@@ -66,6 +66,17 @@ Non-goals (deliberately not built):
 pagination on `(at, id, kind)` with an opaque cursor. The response carries
 `counts` for every kind in the window (ignoring the kind filter) and `total`.
 
+`grouped=true` folds the changes of one kind, detail (the exposure type for
+exposure kinds) and asset into one row: the response carries `groups`
+(`key`, `count`, and `latest`, the newest change of the group) instead of
+`items`, newest first, paged by the same keyset on the newest change. The
+same lookalike kind registered against one domain 400 times is one row with
+its count. `group_kind`, `group_detail` and `group_asset` narrow `items` to one
+group's changes (an empty `group_asset` means the changes without an asset);
+the page opens them over the list. Both go through the same tenant filter and
+data scope as the plain feed: a group key naming another organization's asset
+reads nothing.
+
 One SQL `UNION ALL` over the three records, each branch tenant-scoped on its
 own table and on the joined asset. Asset-sourced changes count only assets in
 the inventory (not waiting for review, not rejected), not deleted, and on the
@@ -118,6 +129,7 @@ rendered by the server and is English.
 | Asset / actor | Abuse case | Control |
 |---|---|---|
 | Another organization's surface | Read changes across tenants | Every branch filters `tenant_id` on its table and on the joined asset; the tenant comes from the token. DB test with two tenants |
+| Member of one organization | Read another organization's changes through a group key (`group_asset` set to a foreign asset id) | The group filter is one more `WHERE` term inside the tenant-scoped union and data scope; the asset id is parsed as a UUID before it reaches SQL. DB test with a foreign asset id |
 | Member with a narrow data scope | See asset names outside their scope in the feed | The feed goes through the data-scope enforcer (`user_accessible_assets`, hidden program assets); a restricted member sees no asset-less exposure. DB test |
 | Member with a narrow data scope | See names in the digest | In-app digests go only to owners and administrators; channels are configured by administrators. The digest counts the whole organization by design |
 | Discovered names (attacker-influenced, e.g. CT entries) | Inject markup into channels or the page | Names are data: React escapes them; channel clients format messages as text as for the existing EASM alerts |

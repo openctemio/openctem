@@ -237,6 +237,8 @@ export type EASMSummary = Schemas['github_com_openctemio_openctem_api_internal_a
 export type EASMChangePage =
   Schemas['github_com_openctemio_openctem_api_pkg_domain_easmchange.Page']
 export type EASMChange = Schemas['github_com_openctemio_openctem_api_pkg_domain_easmchange.Change']
+export type EASMChangeGroup =
+  Schemas['github_com_openctemio_openctem_api_pkg_domain_easmchange.Group']
 export type EASMRisk = Schemas['github_com_openctemio_openctem_api_internal_app_easm.Risk']
 /** Lookalike-domain monitoring (RFC-083). */
 export type LookalikeWatchList = Schemas['internal_infra_http_handler.LookalikeWatchList']

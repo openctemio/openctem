@@ -251,7 +251,7 @@ export function EASMPosture() {
                   {t('attackSurface.posture.planEmpty', 'Nothing to fix to reach the next grade.')}
                 </p>
               ) : (
-                <PosturePlanList steps={posture.plan.steps} />
+                <PosturePlanList steps={posture.plan.steps} currentScore={posture.score.score} />
               )}
             </CardContent>
           </Card>
