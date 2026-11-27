@@ -4082,7 +4082,7 @@ func (r *FindingRepository) selectQueryForEnrichment() string {
 }
 
 // enrichColumnsPerRow is the number of columns per finding in the batch enrichment VALUES clause.
-const enrichColumnsPerRow = 64
+const enrichColumnsPerRow = 66
 
 // enrichWhereColumns is the number of leading enrichColumnDefs used in WHERE.
 const enrichWhereColumns = 3
@@ -4130,6 +4130,8 @@ var enrichColumnDefs = []enrichColumnDef{
 	{"metadata", "jsonb"},
 	{"updated_at", "timestamptz"},
 	{"last_seen_at", "timestamptz"},
+	{"first_detected_at", "timestamptz"},
+	{"first_detected_reported_at", "timestamptz"},
 	{"scan_id", "text"},
 	{"confidence", "int"},
 	{"impact", "text"},
@@ -4401,6 +4403,8 @@ func collectEnrichArgs(f *vulnerability.Finding) ([]interface{}, error) {
 		metadata,
 		f.UpdatedAt(),
 		f.LastSeenAt(),
+		f.FirstDetectedAt(),
+		nullTime(f.FirstDetectedReportedAt()),
 		nullString(f.ScanID()),
 		nullIntPtr(f.Confidence()),
 		nullString(f.Impact()),
@@ -4491,6 +4495,13 @@ func buildBatchEnrichQuery(rowCount int) string {
 			// Last seen only moves forward: a file observed before the
 			// stored sighting (an older scan uploaded later) keeps it.
 			sb.WriteString(" = GREATEST(f.last_seen_at, d.last_seen_at)")
+			continue
+		}
+		if col == "first_detected_at" || col == "first_detected_reported_at" {
+			// First detection only moves earlier: a producer's earlier
+			// first-seen time wins, a later one (or none, NULL) never
+			// moves it (LEAST ignores NULL).
+			sb.WriteString(" = LEAST(f." + col + ", d." + col + ")")
 			continue
 		}
 		if col == "occurrence_count" {

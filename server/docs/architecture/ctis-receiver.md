@@ -203,6 +203,16 @@ Typed members that replaced properties:
   (`public_exploit`, `weaponized`, `exploited_in_wild`) set the scanner's
   exploit verdict; KEV and EPSS still come from the platform's own feeds.
 - Evidence: `evidence_items[]` only (`raw_text` is the scanner output).
+- First seen: `first_seen_at` is when the producer first saw the finding,
+  bounded at ingest (`reportedFirstSeen`, `internal/app/ingest/observation.go`):
+  a time after now counts as now, a time before 2000-01-01 (an epoch or a value
+  in the wrong unit, the same floor as an asset's `last_seen_at`) is ignored.
+  The finding is first detected then (`findings.first_detected_at`, which also
+  starts its SLA clock) when that is earlier; first detection only ever moves
+  earlier, on a new finding and on a re-sighting, never later. The claim itself
+  is kept as producer-supplied (`findings.first_detected_reported_at`, the
+  earliest one any producer reported) and the platform's own receipt stays in
+  `created_at`. Every channel the same way: a sensor, an upload, a CI run.
 - Rule catalog: a finding with `rule_ref` takes the rule's name and
   description when it has none; never part of an identity.
 - Removed (receiver-derived or gone from the format): impact, likelihood,
