@@ -163,12 +163,13 @@ function JustificationCell({ approval, lines = 1 }: { approval: ApiApproval; lin
       </span>
       <span
         dir="auto"
-        // Two lines at most; a longer reason ends in an ellipsis with its
-        // full text as the title.
+        // A table row is one line: a longer reason ends in an ellipsis (the
+        // row's cells never wrap, so a line clamp would cut it mid-word with
+        // none). A phone card gets two lines. The full text is the title.
         data-cut-tooltip=""
         className={cn(
-          'line-clamp-2 break-words text-sm text-muted-foreground [unicode-bidi:isolate]',
-          lines === 1 && 'min-w-8 flex-1'
+          'text-sm text-muted-foreground [unicode-bidi:isolate]',
+          lines === 1 ? 'min-w-8 flex-1 truncate' : 'line-clamp-2 break-words'
         )}
         title={text}
       >
@@ -807,8 +808,9 @@ export default function ApprovalsPage() {
     // Count once: under Pending the selected tab already shows the number of
     // the view, so the row names the view for assistive technology only and
     // shows no count (the row then takes no room); another lens holds a
-    // number no tab shows, so it stays. Refresh sits at the end of the
-    // toolbar, so no line ever holds it alone.
+    // number no tab shows, so it stays and the row then shows the view's
+    // name beside it (a count never stands alone on a line). Refresh sits at
+    // the end of the toolbar, so no line ever holds it alone.
     <ListTitleRow
       title={viewTitle}
       titleHidden

@@ -133,6 +133,19 @@ describe('ListTitleRow', () => {
     expect(heading).not.toHaveAttribute('title')
     expect(screen.getByText('what it holds')).toBeVisible()
   })
+
+  it('a hidden name is drawn once the row has a count: a count never stands alone', () => {
+    render(
+      <ListTitleRow
+        title="Rejected requests"
+        titleHidden
+        count={<span data-slot="list-count">4</span>}
+      />
+    )
+    const heading = screen.getByRole('heading', { level: 2, name: 'Rejected requests' })
+    expect(heading).not.toHaveClass('sr-only')
+    expect(heading.parentElement).toContainElement(screen.getByText('4'))
+  })
 })
 
 describe('ListViewChanged', () => {

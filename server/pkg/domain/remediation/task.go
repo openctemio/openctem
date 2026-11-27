@@ -194,7 +194,16 @@ type TaskCounts struct {
 	RiskPoints int
 	// MemberDeadline is the earliest SLA deadline of an open member.
 	MemberDeadline *time.Time
+	// Held counts, for a canceled task, the findings it held when it was
+	// canceled (they left it, so no other counter includes them). A reader
+	// sees a canceled task through them. Never stored on the task.
+	Held int
 }
+
+// Seen reports whether the counted members make the task visible to the
+// reader they were counted for: an active member, or a finding the task held
+// when it was canceled.
+func (c TaskCounts) Seen() bool { return c.Total > 0 || c.Related > 0 || c.Held > 0 }
 
 // DeriveState computes a task's state from the manual state, the archive
 // mark and the member counters. The rules, first match wins:

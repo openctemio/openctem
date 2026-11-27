@@ -132,10 +132,11 @@ export function DetailSection({
       {/* The row wraps: in a narrow column the actions drop to their own line
           (end-aligned) instead of squeezing the title to nothing or running
           past the section. The title keeps its natural width and truncates
-          only when it alone is wider than the row. */}
+          only when it alone is wider than the row. The row stops at 40rem, so
+          on a wide page the actions stay near the title they belong to. */}
       <div
         data-slot="detail-section-head"
-        className="flex min-h-7 flex-wrap items-center justify-between gap-x-2 gap-y-1"
+        className="flex min-h-7 max-w-[40rem] flex-wrap items-center justify-between gap-x-2 gap-y-1"
       >
         <h3
           id={headingId}
@@ -478,13 +479,48 @@ export interface DetailChipListProps {
   /** What to show when there are none. */
   empty?: React.ReactNode
   className?: string
+  /** Chips shown before "Show N more" (default `DETAIL_CHIP_LIMIT`). */
+  limit?: number
 }
 
-export function DetailChipList({ chips, label, empty = 'none', className }: DetailChipListProps) {
+/**
+ * Chips shown before "Show N more": a member in 40 access groups or 200
+ * schedules must not turn the sheet into a wall of chips.
+ */
+export const DETAIL_CHIP_LIMIT = 12
+
+export function DetailChipList({
+  chips,
+  label,
+  empty = 'none',
+  className,
+  limit = DETAIL_CHIP_LIMIT,
+}: DetailChipListProps) {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = React.useState(false)
   if (chips.length === 0) return <span className="text-sm text-muted-foreground">{empty}</span>
+  // Hiding a single chip behind a button saves nothing: show it.
+  const capped = chips.length > limit + 1 && !expanded
+  const shown = capped ? chips.slice(0, limit) : chips
+  const toggle = chips.length > limit + 1 && (
+    <li className="inline-flex">
+      <button
+        type="button"
+        data-slot="detail-chip-toggle"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((v) => !v)}
+        // 28 px like a chip; the hit area reaches 36 px for a finger.
+        className="relative inline-flex h-7 items-center rounded-md px-2 text-sm text-muted-foreground underline-offset-3 after:absolute after:-inset-1 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      >
+        {expanded
+          ? t('common.showFewer', 'Show fewer')
+          : t('common.table.showMore', 'Show {count} more', { count: chips.length - limit })}
+      </button>
+    </li>
+  )
   return (
     <ul className={cn('flex flex-wrap gap-1.5', className)} aria-label={label}>
-      {chips.map((c) => {
+      {shown.map((c) => {
         const Icon = c.icon
         const data = Object.fromEntries(
           Object.entries(c.data ?? {}).map(([k, v]) => [`data-${k}`, v])
@@ -509,11 +545,20 @@ export function DetailChipList({ chips, label, empty = 'none', className }: Deta
             >
               {c.label}
             </span>
-            {c.meta}
+            {/* Muted, so "Empty Team owner" reads as a name and its role. */}
+            {c.meta != null && c.meta !== false && (
+              <span
+                data-slot="detail-chip-meta"
+                className="inline-flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+              >
+                {c.meta}
+              </span>
+            )}
             {c.tag}
           </li>
         )
       })}
+      {toggle}
     </ul>
   )
 }

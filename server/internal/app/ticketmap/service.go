@@ -48,9 +48,15 @@ type Tracker interface {
 	Issue(ctx context.Context, issueKey string, fieldIDs []string) (*IssueSnapshot, error)
 }
 
+// ErrTrackerNotConnected refuses a mapping whose integration is not a
+// connected Jira site of the tenant (not Jira, not connected, or its
+// credentials do not open a client): the fields are fine, the destination is
+// not ready. TICKET_MAPPING_TRACKER_NOT_CONNECTED.
+var ErrTrackerNotConnected = fmt.Errorf("%w: the integration is not a connected Jira site", shared.ErrValidation)
+
 // TrackerResolver opens the tracker of one integration of the tenant. It
-// returns ErrNotFound for an integration of another tenant, and a
-// validation error for an integration that is not a connected tracker.
+// returns ErrNotFound for an integration of another tenant, and
+// ErrTrackerNotConnected for an integration that is not a connected tracker.
 type TrackerResolver interface {
 	ForIntegration(ctx context.Context, tenantID, integrationID shared.ID) (Tracker, error)
 }
@@ -116,7 +122,7 @@ type IntentInfo struct {
 // Catalog returns the static editor data for an object kind.
 func (s *Service) Catalog(kind ticketmapdom.ObjectKind) (*CatalogView, error) {
 	if !kind.Valid() {
-		return nil, fmt.Errorf("%w: object_kind must be finding or task", shared.ErrValidation)
+		return nil, ticketmapdom.FieldInvalid("object_kind", "it must be finding or task")
 	}
 	intents := []ticketmapdom.Intent{
 		ticketmapdom.IntentIgnore, ticketmapdom.IntentInProgress, ticketmapdom.IntentFixClaim, ticketmapdom.IntentReopen,
@@ -219,7 +225,7 @@ func (s *Service) CreateProfile(ctx context.Context, in CreateProfileInput) (*Pr
 	if in.Preset != "" {
 		pr, ok := ticketmapdom.PresetByID(in.ObjectKind, in.Preset)
 		if !ok {
-			return nil, nil, fmt.Errorf("%w: unknown preset %q", shared.ErrValidation, in.Preset)
+			return nil, nil, ticketmapdom.FieldInvalid("preset", "it is not a preset of this object kind")
 		}
 		spec = pr.Spec
 	}

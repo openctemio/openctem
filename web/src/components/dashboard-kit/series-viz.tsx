@@ -225,6 +225,8 @@ export function ColumnViz({
                       name={m.label}
                       fill={m.fill}
                       stackId={stacked ? 'a' : undefined}
+                      // A few buckets on a wide card stay bars, not blocks.
+                      maxBarSize={48}
                       stroke="var(--card)"
                       strokeWidth={stacked ? 2 : 1}
                       radius={!stacked || i === meta.length - 1 ? [4, 4, 0, 0] : 0}
@@ -446,6 +448,7 @@ export function DivergingViz({
                       name={m.label}
                       fill={m.fill}
                       stackId="flow"
+                      maxBarSize={48}
                       radius={m.key === 'fixed' ? [0, 0, 4, 4] : [4, 4, 0, 0]}
                       cursor={drill ? 'pointer' : undefined}
                       onClick={(d: { payload?: Row }) =>

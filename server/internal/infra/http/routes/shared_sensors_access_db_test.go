@@ -60,7 +60,7 @@ func TestAdminSharedSensors_Routes_DB(t *testing.T) {
 		code, body := root.do(http.MethodPut, path,
 			map[string]any{"enabled": true, "new_orgs": true, "reason": "go live", "totp_code": onCode}, true)
 		if code != http.StatusConflict || !strings.Contains(body, "SHARED_SENSORS_NOT_READY") ||
-			!strings.Contains(body, scanpolicy.ReasonSharedSensorsNotReady) || strings.Contains(strings.ToLower(body), "edition") {
+			!strings.Contains(body, `"missing"`) || !strings.Contains(body, "per-job isolation") || strings.Contains(strings.ToLower(body), "edition") {
 			t.Fatalf("switch on with the gate closed: %d %s", code, body)
 		}
 		var n int

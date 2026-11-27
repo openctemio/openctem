@@ -167,7 +167,7 @@ When neither an identifier nor the name matches, the correlator checks:
 - **IP trust window**: an IP match counts only if that IP was seen on the asset within the last N days (configurable per tenant, default 7; per-IP `last_seen` from `asset_identifiers`, else the asset's `last_seen`). Outside the window the incoming host is not merged or renamed.
 - **Unambiguous**: an IP that matches several assets matches none of them; they get a `shared_ip` review.
 - **DoS protection**: Skip correlation if asset has > N IPs (configurable, default 20)
-- **Type guard**: Only correlate same asset type (host ↔ host, not host ↔ domain)
+- **Type guard**: Only correlate same asset type (host ↔ host, address ↔ address, never host ↔ domain). A named host is never matched by IP to the `ip_address` asset of its address: the two are separate assets (the host contains the address, from a CTIS `has_address` relationship), and folding the host into the address asset dropped the host's name. An address asset and a host that share a name (a host named by its address) still meet in the exact-name step.
 
 **Key files**: `internal/app/ingest/correlator.go`, `correlator_test.go`
 

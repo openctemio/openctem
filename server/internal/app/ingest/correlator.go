@@ -120,7 +120,7 @@ func (c *AssetCorrelator) CorrelateHost(
 	if len(tenantCfg) > 0 {
 		cfg = tenantCfg[0]
 	}
-	return c.CorrelateHostRecent(ctx, tenantID, incomingName, properties, cfg, nil)
+	return c.CorrelateHostRecent(ctx, tenantID, asset.AssetTypeHost, incomingName, properties, cfg, nil)
 }
 
 // CorrelateHostRecent is CorrelateHost with per-IP recency. An IP match
@@ -128,9 +128,15 @@ func (c *AssetCorrelator) CorrelateHost(
 // (cfg.StaleAssetDays), and only when it is unambiguous: an IP that matches
 // several assets matches none of them, and they are returned in Ambiguous for
 // a duplicate review.
+//
+// Only assets of the incoming type match: a host and the ip_address asset of
+// one of its addresses are two assets (the host contains the address, the
+// CTIS has_address relationship), so a named host is never folded into an
+// address asset, which has no place for the host's name.
 func (c *AssetCorrelator) CorrelateHostRecent(
 	ctx context.Context,
 	tenantID shared.ID,
+	incomingType asset.AssetType,
 	incomingName string,
 	properties map[string]any,
 	cfg CorrelationConfig,
@@ -175,7 +181,7 @@ func (c *AssetCorrelator) CorrelateHostRecent(
 					lastSeen = t
 				}
 			}
-			if !c.shouldCorrelateByIP(a, incomingName, cfg.StaleAssetDays, lastSeen) {
+			if !c.shouldCorrelateByIP(a, incomingType, incomingName, cfg.StaleAssetDays, lastSeen) {
 				continue
 			}
 			seen[a.ID().String()] = a
@@ -264,15 +270,17 @@ func hasAlias(a *asset.Asset, name string) bool {
 
 // shouldCorrelateByIP checks the trust window and type compatibility.
 // lastSeen is when the matched IP was last seen on the asset.
-func (c *AssetCorrelator) shouldCorrelateByIP(existing *asset.Asset, incomingName string, staleDays int, lastSeen time.Time) bool {
+func (c *AssetCorrelator) shouldCorrelateByIP(existing *asset.Asset, incomingType asset.AssetType, incomingName string, staleDays int, lastSeen time.Time) bool {
 	// Same name → always match (existing behavior)
 	if existing.Name() == incomingName {
 		return true
 	}
 
-	// Only correlate host and ip_address types
+	// Only a host matches a host, and an address an address: merging a
+	// named host into the ip_address asset of its address dropped the
+	// host's name (the address keeps its own name, the value).
 	t := existing.Type()
-	if t != asset.AssetTypeHost && t != asset.AssetTypeIPAddress {
+	if t != incomingType || (t != asset.AssetTypeHost && t != asset.AssetTypeIPAddress) {
 		return false
 	}
 

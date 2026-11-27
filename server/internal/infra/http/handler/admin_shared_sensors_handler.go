@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/openctemio/openctem/server/internal/app/scanpolicy"
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
@@ -19,9 +20,6 @@ import (
 )
 
 const stepUpPurposeSharedSensors = "shared sensor access change"
-
-// codeSharedSensorsNotReady is the error code of a refused switch-on.
-const codeSharedSensorsNotReady apierror.Code = "SHARED_SENSORS_NOT_READY"
 
 // codeNewOrgsChoiceRequired refuses a switch-on without the choice for
 // organizations without a decision.
@@ -118,7 +116,7 @@ func (h *AdminScanPolicyHandler) UpdateSharedSensors(w http.ResponseWriter, r *h
 	}
 	// The switch stays off until the rollout gate opens.
 	if *req.Enabled && !scanpolicy.SharedSensorsReady() {
-		apierror.New(http.StatusConflict, codeSharedSensorsNotReady, scanpolicy.ReasonSharedSensorsNotReady).WriteJSON(w)
+		writeSharedSensorsNotReady(w)
 		return
 	}
 	if !h.stepUpChange(w, r, actor, stepUpPurposeSharedSensors, req.Reason, req.TOTPCode) {
@@ -198,10 +196,25 @@ func (h *AdminScanPolicyHandler) UpdateOrganizationSharedSensors(w http.Response
 
 func (h *AdminScanPolicyHandler) writeSharedErr(w http.ResponseWriter, err error) {
 	if errors.Is(err, scanpolicy.ErrSharedSensorsNotReady) {
-		apierror.New(http.StatusConflict, codeSharedSensorsNotReady, scanpolicy.ReasonSharedSensorsNotReady).WriteJSON(w)
+		writeSharedSensorsNotReady(w)
 		return
 	}
 	h.writeErr(w, err)
+}
+
+// codeSharedSensorsNotReady is the error code of a refused switch-on (not in
+// the pkg/apierror registry yet; its console words follow in a web change).
+const codeSharedSensorsNotReady apierror.Code = "SHARED_SENSORS_NOT_READY"
+
+const sharedSensorsNotReadyMessage = "Shared sensors cannot be turned on yet: this version does not have shared job claiming and per-job isolation on shared sensors."
+
+// writeSharedSensorsNotReady refuses turning shared sensors on while the
+// rollout gate is closed, naming what this version lacks
+// (details.params.missing).
+func writeSharedSensorsNotReady(w http.ResponseWriter) {
+	apierror.New(http.StatusConflict, codeSharedSensorsNotReady, sharedSensorsNotReadyMessage).
+		WithParams(apierror.Params{"missing": strings.Join(scanpolicy.SharedSensorsMissing(), ", ")}).
+		WriteJSON(w)
 }
 
 const stepUpPurposeSharedSensorsEgress = "shared sensor egress addresses change"

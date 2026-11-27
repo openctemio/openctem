@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { Server } from 'lucide-react'
 import {
   DetailSheetHeader,
@@ -330,5 +330,45 @@ describe('DetailChipList', () => {
     expect(name).toHaveClass('truncate', 'min-w-0')
     expect(name).toHaveAttribute('title', long)
     expect(name.closest('li')).toHaveClass('max-w-full')
+  })
+
+  it('shows the meta muted, apart from the name', async () => {
+    const { DetailChipList } = await import('../detail-sheet')
+    render(
+      <DetailChipList label="Groups" chips={[{ key: 'a', label: 'Empty Team', meta: 'owner' }]} />
+    )
+    const meta = screen.getByText('owner')
+    expect(meta).toHaveAttribute('data-slot', 'detail-chip-meta')
+    expect(meta).toHaveClass('text-muted-foreground', 'text-xs')
+  })
+
+  it('bounds a long list behind "Show N more" and opens it on demand', async () => {
+    const { DetailChipList, DETAIL_CHIP_LIMIT } = await import('../detail-sheet')
+    const chips = Array.from({ length: DETAIL_CHIP_LIMIT + 8 }, (_, i) => ({
+      key: String(i),
+      label: `Group ${i}`,
+    }))
+    render(<DetailChipList label="Groups" chips={chips} />)
+    const list = screen.getByRole('list', { name: 'Groups' })
+    expect(list.querySelectorAll('li[class*="border"]')).toHaveLength(DETAIL_CHIP_LIMIT)
+    const more = screen.getByRole('button', { name: 'Show 8 more' })
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(more)
+    expect(list.querySelectorAll('li[class*="border"]')).toHaveLength(DETAIL_CHIP_LIMIT + 8)
+    expect(screen.getByRole('button', { name: 'Show fewer' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    )
+  })
+
+  it('never hides a single chip behind the button', async () => {
+    const { DetailChipList, DETAIL_CHIP_LIMIT } = await import('../detail-sheet')
+    const chips = Array.from({ length: DETAIL_CHIP_LIMIT + 1 }, (_, i) => ({
+      key: String(i),
+      label: `Group ${i}`,
+    }))
+    render(<DetailChipList label="Groups" chips={chips} />)
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getAllByText(/^Group /)).toHaveLength(DETAIL_CHIP_LIMIT + 1)
   })
 })

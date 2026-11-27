@@ -99,6 +99,8 @@ const (
 	DetailUnknownField          = "the field is not part of the CTIS version the document declares"
 	DetailCTISVersion           = "this platform accepts CTIS 2.x only: upgrade the sensor, connector or CI integration"
 	DetailTooMany               = "the array exceeds the per-segment limit"
+	DetailTooManyEntries        = "the array has more entries than CTIS allows"
+	DetailTooLong               = "the value is longer than CTIS allows"
 	DetailProcessingFailed      = "the segment could not be processed"
 	DetailQuarantined           = "the report names no command and this sensor's role may not send results on its own: held for review, not applied"
 	DetailQuarantineFull        = "the report names no command and the results quarantine is full: not kept"

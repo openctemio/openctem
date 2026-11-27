@@ -16,6 +16,7 @@
 #     built-in one), an import mapping, a bug bounty program (through the API,
 #     as the owner); an emerging-threat alert, a Jira ticket mapping draft and
 #     a pending AI-application confirmation (SQL: no API writes them)
+#   - one Findings row with a long title, EPSS, KEV and ransomware use
 #   - the legal pages turned on (platform setting "legal": they answer 404
 #     while it is off)
 # The invitation link (/invitations/[token]) and the account of two
@@ -153,6 +154,25 @@ api POST /api/v1/import-mappings/ "{\"name\":\"web-scanner-csv\",\"description\"
 PROG='{"name":"Example Shop program","platform":"Example bounty platform","handle":"example-shop","program_url":"https://bugbounty.example.com/example-shop","scope_text":"In scope:\n*.shop.example.com\napi.example.com\n192.0.2.0/28\nOut of scope:\nblog.example.com","terms_text":"Test only the listed targets. No denial of service.","rules":{"rate_limit_rps":5,"user_agent":"bugbounty-researcher"}'
 SHA=$(api POST /api/v1/programs/preview "$PROG}" | jq -r .terms_sha256)
 api POST /api/v1/programs/ "$PROG,\"accept_terms_sha256\":\"$SHA\"}" >/dev/null
+
+# The busiest Findings row: a long title with its CVE, EPSS 94%, in KEV and
+# used by ransomware (the catalog row the list reads Ransomware from). The
+# Signals and EPSS cell must stay one line (bar, KEV, "+1") and the title
+# column must keep its room at 1024 px with the sidebar open. One seeded
+# finding is rewritten: no spec of the matrix stack reads it by title.
+psql_ >/dev/null <<'SQL'
+SELECT id AS tid FROM tenants WHERE slug = :'slug' \gset
+INSERT INTO kev_catalog (cve_id, vendor_project, product, vulnerability_name, short_description, date_added,
+                         due_date, known_ransomware_campaign_use)
+VALUES ('CVE-2099-0301', 'Example', 'Example web console', 'Example web console remote code execution',
+        'Fixture entry of the layout matrix.', '2099-01-02', '2099-01-23', 'Known')
+ON CONFLICT (cve_id) DO NOTHING;
+UPDATE findings
+   SET title = 'CVE-2099-0301 in Example Web Console: remote code execution through the JMX invoker servlet',
+       cve_id = 'CVE-2099-0301', cve_ids = ARRAY['CVE-2099-0301'],
+       epss_score = 0.94, is_in_kev = true, kev_due_date = '2099-01-23'
+ WHERE tenant_id = :'tid' AND title = 'E2E finding 03';
+SQL
 
 # Rows no API writes: an emerging-threat alert on two assets, a Jira site with
 # a mapping draft (no credentials: nothing calls out), a pending confirmation.

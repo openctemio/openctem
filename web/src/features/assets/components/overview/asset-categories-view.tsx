@@ -33,7 +33,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { Main } from '@/components/layout'
-import { EmptyState, PageHeader, PageStack } from '@/features/shared'
+import { CARD_GRID, EmptyState, PageHeader, PageStack } from '@/features/shared'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -286,7 +286,7 @@ export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode
             </AlertDescription>
           </Alert>
         ) : loading ? (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          <div className={`${CARD_GRID} gap-4`}>
             {Array.from({ length: 6 }).map((_, i) => (
               <Skeleton key={i} className="h-44 w-full rounded-xl" />
             ))}
@@ -318,7 +318,7 @@ export function AssetCategoriesView({ viewSwitcher }: { viewSwitcher?: ReactNode
                 }
               />
             )}
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            <div className={`${CARD_GRID} gap-4`}>
               {ordered.map((l) => (
                 <LensCard key={l.id || 'other'} lens={l} />
               ))}

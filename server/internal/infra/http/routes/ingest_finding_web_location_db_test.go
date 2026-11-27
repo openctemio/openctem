@@ -113,7 +113,7 @@ func TestIngest_FindingKeepsWebLocationAndEndpoint_DB(t *testing.T) {
 	if err := h.db.QueryRowContext(context.Background(), `SELECT id FROM assets WHERE tenant_id = $1 AND sub_type = 'http'`, h.tenantID).Scan(&originID); err != nil {
 		t.Fatal(err)
 	}
-	fs, err := repo.OriginOpenFindings(context.Background(), shared.MustIDFromString(h.tenantID), shared.MustIDFromString(originID))
+	fs, err := repo.OriginOpenFindings(context.Background(), shared.MustIDFromString(h.tenantID), shared.MustIDFromString(originID), webendpoint.FindingViewer{})
 	if err != nil {
 		t.Fatal(err)
 	}

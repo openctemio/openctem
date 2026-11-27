@@ -12,6 +12,8 @@ export interface EpssBarProps {
   /** EPSS probability, 0 to 1. Missing shows an empty track and a dash. */
   score: number | null | undefined
   className?: string
+  /** Width of the track (default `w-11`); a tight table cell passes `w-8`. */
+  trackClassName?: string
 }
 
 /**
@@ -20,7 +22,7 @@ export interface EpssBarProps {
  * high-severity colour, and the number always carries the value, so colour
  * is never the only cue. A missing score shows an empty track and a dash.
  */
-export function EpssBar({ score, className }: EpssBarProps) {
+export function EpssBar({ score, className, trackClassName }: EpssBarProps) {
   const { t } = useTranslation()
   const has = typeof score === 'number' && Number.isFinite(score)
   const value = has ? Math.min(1, Math.max(0, score)) : 0
@@ -43,7 +45,10 @@ export function EpssBar({ score, className }: EpssBarProps) {
     >
       <span
         aria-hidden
-        className="bg-surface-sunken ring-border/60 h-1 w-11 shrink-0 overflow-hidden rounded-full ring-1 ring-inset"
+        className={cn(
+          'bg-surface-sunken ring-border/60 h-1 shrink-0 overflow-hidden rounded-full ring-1 ring-inset',
+          trackClassName ?? 'w-11'
+        )}
       >
         <span
           className={cn('block h-full', hot ? SEVERITY_DOT_COLORS.high : 'bg-muted-foreground')}

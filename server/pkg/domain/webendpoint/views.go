@@ -73,11 +73,19 @@ type PathReader interface {
 	// path template, and whether more exist.
 	OriginEndpoints(ctx context.Context, tenantID, assetID shared.ID, limit int) ([]*Endpoint, bool, error)
 	// OriginOpenFindings groups the origin asset's open findings by location
-	// key and severity.
-	OriginOpenFindings(ctx context.Context, tenantID, assetID shared.ID) ([]PathFinding, error)
+	// key and severity, as v sees them.
+	OriginOpenFindings(ctx context.Context, tenantID, assetID shared.ID, v FindingViewer) ([]PathFinding, error)
 	// OriginURLFindings returns the origin asset's open findings with a URL
-	// location, most severe first, at most MaxPathFindingRows.
-	OriginURLFindings(ctx context.Context, tenantID, assetID shared.ID) ([]FindingRow, error)
+	// location, most severe first, at most MaxPathFindingRows, as v sees them.
+	OriginURLFindings(ctx context.Context, tenantID, assetID shared.ID, v FindingViewer) ([]FindingRow, error)
+}
+
+// FindingViewer is who reads the findings of a path tree. MemberUserID set
+// applies the member visibility rule of the findings list (pentest findings
+// only to their campaign's team, no draft or in-review one to its client);
+// empty is an administrator or system work, which sees every finding.
+type FindingViewer struct {
+	MemberUserID string
 }
 
 // Retention (WS14): unseen for GoneAfter -> gone; gone for PurgeAfter ->

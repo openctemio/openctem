@@ -367,7 +367,9 @@ func (s *Service) finishPass(ctx context.Context, p *entryPass, now time.Time) e
 
 	succeeded, failed, sendResults := entry.DeliveryResults()
 	for _, r := range sendResults {
-		if r.Status != notificationStatusSuccess {
+		// A grouped delivery was handed to the channel's group message
+		// (DeliveryResults counts it as succeeded): it is not a dead letter.
+		if r.Status != notificationStatusSuccess && r.Status != string(outboxdom.DeliveryGrouped) {
 			metrics.NotificationDeadLettersTotal.WithLabelValues(deadLetterChannel).Inc()
 			s.log.Error("notification channel dead-lettered after exhausting retries",
 				"outbox_id", entry.ID().String(),
