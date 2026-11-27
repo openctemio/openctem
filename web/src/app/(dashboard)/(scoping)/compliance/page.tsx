@@ -1,5 +1,6 @@
 'use client'
 
+import { formatPercent } from '@/lib/format-metric'
 import { useState, useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
@@ -172,24 +173,38 @@ function FrameworkCard({
   fw: ComplianceFrameworkApi
   onOpen: (id: string) => void
 }) {
+  const { t } = useTranslation()
   const fwStats = fw.stats
   const total = fwStats?.TotalControls ?? fw.total_controls
   const implemented = fwStats?.Implemented ?? 0
   const partial = fwStats?.Partial ?? 0
   const notImpl = fwStats?.NotImplemented ?? 0
   const notApplicable = fwStats?.NotApplicable ?? 0
-  const score = total > 0 ? Math.round(((implemented + partial * 0.5) / total) * 100) : 0
+  // Nothing assessed yet: no score. "0% compliant" with 0 of 103 controls
+  // assessed read as a failed audit.
+  const assessed = implemented + partial + notImpl + notApplicable
+  const score =
+    assessed > 0 && total > 0 ? Math.round(((implemented + partial * 0.5) / total) * 100) : null
   const counts = [
-    { label: 'Implemented', value: implemented },
-    { label: 'Partial', value: partial },
-    { label: 'Missing', value: notImpl, danger: true },
-    { label: 'N/A', value: notApplicable },
+    {
+      key: 'implemented',
+      label: t('scoping.compliance.card.implemented', 'Implemented'),
+      value: implemented,
+    },
+    { key: 'partial', label: t('scoping.compliance.card.partial', 'Partial'), value: partial },
+    {
+      key: 'missing',
+      label: t('scoping.compliance.card.missing', 'Missing'),
+      value: notImpl,
+      danger: true,
+    },
+    { key: 'na', label: t('scoping.compliance.card.notApplicable', 'N/A'), value: notApplicable },
   ]
   return (
     <Card
       role="button"
       tabIndex={0}
-      aria-label={`Open ${fw.name} controls`}
+      aria-label={t('scoping.compliance.card.open', 'Open {name} controls', { name: fw.name })}
       className="cursor-pointer transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onClick={() => onOpen(fw.id)}
       onKeyDown={(e) => {
@@ -205,15 +220,25 @@ function FrameworkCard({
           <CardDescription>{fw.description}</CardDescription>
         </div>
         <div className="shrink-0 text-end">
-          <div className="text-2xl font-semibold tabular-nums">{score}%</div>
-          <p className="text-xs text-muted-foreground">compliant</p>
+          {score === null ? (
+            <p className="text-sm font-medium text-muted-foreground">
+              {t('scoping.compliance.card.notAssessed', 'Not assessed yet')}
+            </p>
+          ) : (
+            <>
+              <div className="text-2xl font-semibold tabular-nums">{formatPercent(score)}</div>
+              <p className="text-xs text-muted-foreground">
+                {t('scoping.compliance.card.compliant', 'compliant')}
+              </p>
+            </>
+          )}
         </div>
       </CardHeader>
       <CardContent>
-        <Progress value={score} className="mb-4" />
+        <Progress value={score ?? 0} className="mb-4" />
         <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
           {counts.map((c) => (
-            <span key={c.label}>
+            <span key={c.key}>
               <span
                 className={`font-medium tabular-nums ${c.danger && c.value > 0 ? 'text-destructive' : 'text-foreground'}`}
               >

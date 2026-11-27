@@ -16,7 +16,8 @@
 export interface EPSSScore {
   cve_id: string
   score: number // 0.0 - 1.0
-  percentile: number // 0.0 - 100.0
+  /** 0.0 - 100.0; absent when the feed has no rank for the score. */
+  percentile?: number
   model_version: string
   score_date: string
   created_at: string

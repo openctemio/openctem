@@ -196,6 +196,7 @@
   "validation.overview.coverage.howMeasured": "How coverage is measured",
   "validation.overview.coverage.label": "Validated top-priority fixes",
   "validation.overview.coverage.none": "No highest or high priority finding closed yet",
+  "validation.overview.coverage.noneValue": "None yet",
   "validation.overview.description": "Whether fixes hold and controls work, and what is waiting for you.",
   "validation.overview.module.attack_simulation": "Attack simulation",
   "validation.overview.module.control_testing": "Control testing",

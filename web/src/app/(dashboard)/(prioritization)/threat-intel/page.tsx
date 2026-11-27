@@ -350,11 +350,14 @@ function CVELookup() {
                     <p className="text-2xl font-semibold tabular-nums">
                       {formatEpssPercentile(result.epss.percentile)}
                     </p>
-                    <p className="text-xs text-muted-foreground">
-                      {t('threatIntel.lookup.percentileHint', undefined, {
-                        top: formatEpssTopPercent(result.epss.percentile),
-                      })}
-                    </p>
+                    {/* No rank for this score: no "top —" hint under the dash. */}
+                    {result.epss.percentile !== undefined && (
+                      <p className="text-xs text-muted-foreground">
+                        {t('threatIntel.lookup.percentileHint', undefined, {
+                          top: formatEpssTopPercent(result.epss.percentile),
+                        })}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">
