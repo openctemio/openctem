@@ -266,7 +266,7 @@
   "src/features/threat-intel/components/iocs-panel.tsx": 3,
   "src/features/threat-intel/components/threat-actors-panel.tsx": 3,
   "src/features/threat-model/components/threat-model-table.tsx": 1,
-  "src/features/ticket-mapping/components/field-mapper.tsx": 7,
+  "src/features/ticket-mapping/components/field-mapper.tsx": 6,
   "src/features/ticket-mapping/components/mapping-editor.tsx": 1,
   "src/features/tools/components/add-tool-dialog.tsx": 11,
   "src/features/tools/components/tool-detail-sheet.tsx": 6,

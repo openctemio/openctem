@@ -101,3 +101,23 @@ describe('Select value ellipsis', () => {
     )
   })
 })
+
+describe('Select icon-only below a toolbar width', () => {
+  it('takes its width from its height, whatever width the page sets', () => {
+    // A toolbar select with sm:min-w-36 became a 144 px tall square at 768 px.
+    const { container } = render(
+      <Select value="none">
+        <SelectTrigger iconOnlyBelow="@2xl/toolbar" className="sm:min-w-36" aria-label="Group">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">None</SelectItem>
+        </SelectContent>
+      </Select>
+    )
+    const cls = container.querySelector('[data-slot="select-trigger"]')!.className
+    expect(cls).toContain('@max-2xl/toolbar:aspect-square')
+    expect(cls).toContain('@max-2xl/toolbar:min-w-0')
+    expect(cls).toContain('@max-2xl/toolbar:w-auto')
+  })
+})

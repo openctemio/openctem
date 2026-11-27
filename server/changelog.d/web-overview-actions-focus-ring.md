@@ -7,4 +7,7 @@
 - Selects are one line, as high as the controls beside them: a long value ends in an ellipsis with its full text on hover (the notification history's channel picker no longer grows three lines tall; its provider shows in the list).
 - The repository Findings filters use the standard control size beside the search.
 - Table rows keep 4 px above and below their content (compact rows excepted), so a cell of two lines no longer touches the row's lines.
+- One text size per row: the top bar's search uses the size of the buttons beside it; a toolbar select shown as an icon is a square again at tablet width (the sensors list's grouping select stood 144 px tall); the ticketing field mapper drops its small text and ends each row's frame at its last button on a wide screen.
+- Notices stop at 56rem on a wide screen, so their sentences are not one 1500 px line.
+- Long values that end in an ellipsis show their full text on hover (the executive summary's top risks, the classification pickers' hint); narrow tables leave a column instead of running past their edge in Vietnamese (emerging threats, executive summary).
 - Docs: web/docs/ui-style-contract.md

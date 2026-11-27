@@ -77,12 +77,18 @@ function useTopRiskColumns(): ColumnDef<TopRiskRow>[] {
           row.original.finding_id ? (
             <Link
               href={`/findings/${encodeURIComponent(row.original.finding_id)}`}
+              data-cut-tooltip=""
+              title={row.original.title}
               className="block max-w-md truncate text-sm font-medium hover:underline focus-visible:underline"
             >
               {row.original.title}
             </Link>
           ) : (
-            <span className="block max-w-md truncate text-sm font-medium">
+            <span
+              data-cut-tooltip=""
+              title={row.original.title}
+              className="block max-w-md truncate text-sm font-medium"
+            >
               {row.original.title}
             </span>
           ),
@@ -105,8 +111,14 @@ function useTopRiskColumns(): ColumnDef<TopRiskRow>[] {
         accessorKey: 'asset_name',
         enableSorting: false,
         header: t('insights.executive.colAsset', 'Asset'),
+        // Leaves a narrow table rather than run past its edge (Vietnamese).
+        meta: { hideBelow: 760 },
         cell: ({ row }) => (
-          <span className="block max-w-xs truncate text-sm text-muted-foreground">
+          <span
+            data-cut-tooltip=""
+            title={row.original.asset_name}
+            className="block max-w-xs truncate text-sm text-muted-foreground"
+          >
             {row.original.asset_name}
           </span>
         ),

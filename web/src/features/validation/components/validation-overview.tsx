@@ -100,7 +100,9 @@ export function WaitingForYou({ items, starts }: { items: WaitingItem[]; starts:
 
   return (
     <SettingsSection title={t('validation.overview.waiting.title', 'Waiting for you')}>
-      <Card className="py-0">
+      {/* A list's measure: from 1280 px the card stops at 56rem, so the
+          action at a row's end stays within reach of the text it acts on. */}
+      <Card className="py-0 xl:max-w-4xl">
         <CardContent className="p-0">{body}</CardContent>
       </Card>
     </SettingsSection>

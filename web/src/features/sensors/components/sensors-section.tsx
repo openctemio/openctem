@@ -850,7 +850,7 @@ export function SensorsSection({
   const toolbarEnd = (
     <Select value={groupBy} onValueChange={(v) => setGroupParam(v === 'none' ? '' : v)}>
       <SelectTrigger
-        className="w-auto gap-2 sm:min-w-36"
+        className="gap-2"
         iconOnlyBelow="@2xl/toolbar"
         aria-label={t('sensors.list.groupBy.label')}
       >

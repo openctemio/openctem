@@ -86,16 +86,19 @@ function SelectValue({
 
 /**
  * Icon-only below a width (a toolbar select whose value is `sr-only` there):
- * drawn as a square with no chevron, like an icon button.
+ * drawn as a square with no chevron, like an icon button. Its width comes
+ * from its height (a width or minimum width the page sets for the labelled
+ * state would otherwise make the square that tall: 144 px at 768 px).
  */
 const SELECT_ICON_ONLY_BELOW = {
   '@2xl/toolbar': {
-    trigger: '@max-2xl/toolbar:aspect-square @max-2xl/toolbar:justify-center @max-2xl/toolbar:px-0',
+    trigger:
+      '@max-2xl/toolbar:aspect-square @max-2xl/toolbar:min-w-0 @max-2xl/toolbar:w-auto @max-2xl/toolbar:justify-center @max-2xl/toolbar:px-0',
     chevron: '@max-2xl/toolbar:hidden',
   },
   '@5xl/toolbar': {
     trigger:
-      '@max-5xl/toolbar:aspect-square @max-5xl/toolbar:justify-center @max-5xl/toolbar:px-0 group-data-[fold=true]/toolbar:aspect-square group-data-[fold=true]/toolbar:justify-center group-data-[fold=true]/toolbar:px-0',
+      '@max-5xl/toolbar:aspect-square @max-5xl/toolbar:min-w-0 @max-5xl/toolbar:w-auto @max-5xl/toolbar:justify-center @max-5xl/toolbar:px-0 group-data-[fold=true]/toolbar:aspect-square group-data-[fold=true]/toolbar:min-w-0 group-data-[fold=true]/toolbar:w-auto group-data-[fold=true]/toolbar:justify-center group-data-[fold=true]/toolbar:px-0',
     chevron: '@max-5xl/toolbar:hidden group-data-[fold=true]/toolbar:hidden',
   },
 } as const
