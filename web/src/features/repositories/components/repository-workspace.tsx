@@ -40,13 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu } from '@/components/ui/action-menu'
 import {
   Select,
   SelectContent,
@@ -567,11 +561,12 @@ import { cn, sanitizeExternalUrl } from '@/lib/utils'
 import { useModuleEnabled } from '@/features/integrations/api/use-tenant-modules'
 import { SEVERITY_DOT_COLORS, SEVERITY_TEXT_COLORS } from '@/lib/severity-colors'
 import { copyToClipboard } from '@/lib/clipboard'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, usePermissions } from '@/lib/permissions'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { safeAvatarSrc } from '@/lib/safe-href'
 import { SEVERITY_LEVELS, compareSeverity } from '@/lib/severity'
 import type { CriticalityLevel } from '@/lib/criticality'
+import { formatDate } from '@/lib/app-locale'
 
 // ============================================
 // Helper Components
@@ -640,6 +635,7 @@ export function TriageStatusBadge({ status }: { status: TriageStatus }) {
 }
 
 function SLAStatusBadge({ status, daysRemaining }: { status: SLAStatus; daysRemaining?: number }) {
+  const { t } = useTranslation()
   if (status === 'not_applicable') return null
   return (
     <span
@@ -650,29 +646,35 @@ function SLAStatusBadge({ status, daysRemaining }: { status: SLAStatus; daysRema
     >
       <Timer className="h-3 w-3" />
       {daysRemaining !== undefined && daysRemaining >= 0
-        ? `${daysRemaining}d left`
+        ? t('assets.repository.sla.daysLeft', '{days}d left', { days: daysRemaining })
         : daysRemaining !== undefined
-          ? `${Math.abs(daysRemaining)}d overdue`
+          ? t('assets.repository.sla.daysOverdue', '{days}d overdue', {
+              days: Math.abs(daysRemaining),
+            })
           : SLA_STATUS_LABELS[status]}
     </span>
   )
 }
 
-function formatTimeAgo(dateString: string | undefined | null): string {
-  if (!dateString) return 'Never'
+type TFn = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
+
+function formatTimeAgo(dateString: string | undefined | null, t: TFn): string {
+  if (!dateString) return t('assets.repository.time.never', 'Never')
   const date = new Date(dateString)
-  if (isNaN(date.getTime())) return 'Never'
+  if (isNaN(date.getTime())) return t('assets.repository.time.never', 'Never')
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const diffMins = Math.floor(diffMs / 60000)
   const diffHours = Math.floor(diffMins / 60)
   const diffDays = Math.floor(diffHours / 24)
 
-  if (diffMins < 1) return 'just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  if (diffDays < 7) return `${diffDays}d ago`
-  return date.toLocaleDateString()
+  if (diffMins < 1) return t('assets.repository.time.justNow', 'just now')
+  if (diffMins < 60)
+    return t('assets.repository.time.minutesAgo', '{count}m ago', { count: diffMins })
+  if (diffHours < 24)
+    return t('assets.repository.time.hoursAgo', '{count}h ago', { count: diffHours })
+  if (diffDays < 7) return t('assets.repository.time.daysAgo', '{count}d ago', { count: diffDays })
+  return formatDate(date)
 }
 
 // ============================================
@@ -759,7 +761,15 @@ function OverviewTab({
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <p className="text-xs text-muted-foreground">{findings.length} total findings</p>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'assets.repository.overview.totalFindings',
+                '{count, plural, one {# total finding} other {# total findings}}',
+                {
+                  count: findings.length,
+                }
+              )}
+            </p>
           </CardContent>
         </Card>
 
@@ -767,7 +777,7 @@ function OverviewTab({
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
               <Timer className="h-4 w-4 text-muted-foreground" />
-              SLA Overdue
+              {t('assets.repository.overview.slaOverdue', 'SLA overdue')}
             </CardDescription>
             <CardTitle
               className={cn(
@@ -779,7 +789,15 @@ function OverviewTab({
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <p className="text-xs text-muted-foreground">{slaWarningsCount} warnings</p>
+            <p className="text-xs text-muted-foreground">
+              {t(
+                'assets.repository.overview.warnings',
+                '{count, plural, one {# warning} other {# warnings}}',
+                {
+                  count: slaWarningsCount,
+                }
+              )}
+            </p>
           </CardContent>
         </Card>
 
@@ -787,13 +805,10 @@ function OverviewTab({
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
               <GitBranch className="h-4 w-4 text-muted-foreground" />
-              Branches
+              {t('assets.repository.overview.branches', 'Branches')}
             </CardDescription>
             <CardTitle
-              className={cn(
-                'text-3xl',
-                neverScanned ? 'text-muted-foreground/50' : 'text-foreground'
-              )}
+              className={cn('text-3xl', neverScanned ? 'text-muted-foreground' : 'text-foreground')}
             >
               {neverScanned ? '—' : branches.length}
             </CardTitle>
@@ -801,8 +816,10 @@ function OverviewTab({
           <CardContent className="pt-0">
             <p className="text-xs text-muted-foreground">
               {neverScanned
-                ? 'scan to map branches'
-                : `${branches.filter((b) => b.scan_status === 'passed').length} passing`}
+                ? t('assets.repository.overview.scanToMapBranches', 'scan to map branches')
+                : t('assets.repository.overview.passing', '{count} passing', {
+                    count: branches.filter((b) => b.scan_status === 'passed').length,
+                  })}
             </p>
           </CardContent>
         </Card>
@@ -811,14 +828,12 @@ function OverviewTab({
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
               <Package className="h-4 w-4 text-muted-foreground" />
-              Components
+              {t('assets.repository.overview.components', 'Components')}
             </CardDescription>
             <CardTitle
               className={cn(
                 'text-3xl',
-                !repository.components_summary?.total
-                  ? 'text-muted-foreground/50'
-                  : 'text-foreground'
+                !repository.components_summary?.total ? 'text-muted-foreground' : 'text-foreground'
               )}
             >
               {repository.components_summary?.total ? repository.components_summary.total : '—'}
@@ -827,8 +842,10 @@ function OverviewTab({
           <CardContent className="pt-0">
             <p className="text-xs text-muted-foreground">
               {repository.components_summary?.total
-                ? `${repository.components_summary?.vulnerable || 0} vulnerable`
-                : 'scan to build SBOM'}
+                ? t('assets.repository.overview.vulnerable', '{count} vulnerable', {
+                    count: repository.components_summary?.vulnerable || 0,
+                  })
+                : t('assets.repository.overview.scanToBuildSbom', 'scan to build SBOM')}
             </p>
           </CardContent>
         </Card>
@@ -854,7 +871,9 @@ function OverviewTab({
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <GitBranch className="h-4 w-4" />
-              {defaultBranch ? 'Default Branch' : 'Security posture'}
+              {defaultBranch
+                ? t('assets.repository.overview.defaultBranch', 'Default branch')
+                : t('assets.repository.overview.securityPosture', 'Security posture')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -866,16 +885,22 @@ function OverviewTab({
                     <BranchStatusBadge status={defaultBranch.scan_status} />
                   </div>
                   <span className="text-sm text-muted-foreground">
-                    Last scan: {formatTimeAgo(defaultBranch.last_scanned_at || '')}
+                    {t('assets.repository.lastScan', 'Last scan: {time}', {
+                      time: formatTimeAgo(defaultBranch.last_scanned_at || '', t),
+                    })}
                   </span>
                 </div>
 
                 {/* Findings bar */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span>Findings by Severity</span>
+                    <span>
+                      {t('assets.repository.overview.findingsBySeverity', 'Findings by severity')}
+                    </span>
                     <span className="text-muted-foreground">
-                      {defaultBranch.findings_summary.total} total
+                      {t('assets.repository.overview.total', '{count} total', {
+                        count: defaultBranch.findings_summary.total,
+                      })}
                     </span>
                   </div>
                   <div className="flex h-3 rounded-full overflow-hidden bg-muted">
@@ -930,8 +955,10 @@ function OverviewTab({
                     <div className="flex-1 min-w-0">
                       <p className="text-sm truncate">{defaultBranch.last_commit_message}</p>
                       <p className="text-xs text-muted-foreground">
-                        {defaultBranch.last_commit_author} committed{' '}
-                        {formatTimeAgo(defaultBranch.last_commit_at || '')}
+                        {t('assets.repository.overview.committed', '{author} committed {time}', {
+                          author: defaultBranch.last_commit_author ?? '',
+                          time: formatTimeAgo(defaultBranch.last_commit_at || '', t),
+                        })}
                       </p>
                     </div>
                     <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
@@ -945,8 +972,14 @@ function OverviewTab({
                 {/* Severity breakdown from real findings — available even before a scan */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span>Findings by severity</span>
-                    <span className="text-muted-foreground">{findings.length} total</span>
+                    <span>
+                      {t('assets.repository.overview.findingsBySeverity', 'Findings by severity')}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {t('assets.repository.overview.total', '{count} total', {
+                        count: findings.length,
+                      })}
+                    </span>
                   </div>
                   <div className="flex h-3 overflow-hidden rounded-full bg-muted">
                     {SEVERITY_LEVELS.map((severity) => {
@@ -1003,7 +1036,10 @@ function OverviewTab({
 
                 <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
                   <GitBranch className="h-3.5 w-3.5" />
-                  No branches scanned yet — run a scan to see per-branch drift &amp; SLA.
+                  {t(
+                    'assets.repository.overview.noBranchesScanned',
+                    'No branches scanned yet. Run a scan to see per-branch drift and SLA.'
+                  )}
                 </p>
               </div>
             )}
@@ -1015,7 +1051,7 @@ function OverviewTab({
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               <History className="h-4 w-4" />
-              Activity
+              {t('assets.repository.overview.activity', 'Activity')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -1035,9 +1071,14 @@ function OverviewTab({
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <AlertTriangle className="h-4 w-4 text-destructive" />
-            Critical & High Severity Findings
+            {t('assets.repository.overview.criticalHigh', 'Critical and high severity findings')}
           </CardTitle>
-          <CardDescription>Findings requiring immediate attention</CardDescription>
+          <CardDescription>
+            {t(
+              'assets.repository.overview.criticalHighHint',
+              'Findings requiring immediate attention'
+            )}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
@@ -1083,7 +1124,12 @@ function OverviewTab({
             ).length === 0 && (
               <div className="text-center py-8 text-muted-foreground">
                 <CheckCircle className="h-8 w-8 mx-auto mb-2 text-success" />
-                <p>No critical or high severity findings!</p>
+                <p>
+                  {t(
+                    'assets.repository.overview.noCriticalHigh',
+                    'No critical or high severity findings'
+                  )}
+                </p>
               </div>
             )}
           </div>
@@ -1127,12 +1173,13 @@ function BranchesTab({
   const defaultTotal = defaultBranch?.findings_summary?.total ?? 0
   const [baseBranch, setBaseBranch] = useState<string>(defaultBranchName)
   const [compareBranch, setCompareBranch] = useState<string>('')
+  const { t } = useTranslation()
   const [comparison, setComparison] = useState<ComparisonResult | null>(null)
   const [isComparing, setIsComparing] = useState(false)
 
   const handleCompare = async () => {
     if (!baseBranch || !compareBranch) {
-      toast.error('Select both branches to compare')
+      toast.error(t('assets.repository.branches.selectBoth', 'Select both branches to compare'))
       return
     }
     setIsComparing(true)
@@ -1143,7 +1190,7 @@ function BranchesTab({
       )
       setComparison(data)
     } catch {
-      toast.error('Failed to compare branches')
+      toast.error(t('assets.repository.branches.compareFailed', 'Failed to compare branches'))
     } finally {
       setIsComparing(false)
     }
@@ -1156,19 +1203,23 @@ function BranchesTab({
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <GitMerge className="h-4 w-4" />
-            Compare Branches
+            {t('assets.repository.branches.compareTitle', 'Compare branches')}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4">
             <Select value={baseBranch} onValueChange={setBaseBranch}>
               <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Base branch" />
+                <SelectValue
+                  placeholder={t('assets.repository.branches.baseBranch', 'Base branch')}
+                />
               </SelectTrigger>
               <SelectContent>
                 {branches.map((branch) => (
                   <SelectItem key={branch.id} value={branch.name}>
-                    {branch.name} {branch.is_default && '(default)'}
+                    {branch.name}{' '}
+                    {branch.is_default &&
+                      t('assets.repository.branches.defaultSuffix', '(default)')}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1176,7 +1227,9 @@ function BranchesTab({
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
             <Select value={compareBranch} onValueChange={setCompareBranch}>
               <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Compare branch" />
+                <SelectValue
+                  placeholder={t('assets.repository.branches.compareBranch', 'Compare branch')}
+                />
               </SelectTrigger>
               <SelectContent>
                 {branches
@@ -1194,7 +1247,7 @@ function BranchesTab({
               disabled={isComparing || !compareBranch}
             >
               {isComparing ? <Loader2 className="h-4 w-4 animate-spin me-1" /> : null}
-              Compare
+              {t('assets.repository.branches.compare', 'Compare')}
             </Button>
           </div>
 
@@ -1204,7 +1257,7 @@ function BranchesTab({
                 <div className="flex items-center gap-2">
                   <Badge variant="destructive">{comparison.new_findings}</Badge>
                   <span>
-                    New findings in{' '}
+                    {t('assets.repository.branches.newFindingsIn', 'New findings in')}{' '}
                     <code className="text-xs bg-muted px-1 rounded">
                       {comparison.compare_branch}
                     </code>
@@ -1213,7 +1266,7 @@ function BranchesTab({
                 <div className="flex items-center gap-2">
                   <Counter value={comparison.resolved_findings} />
                   <span>
-                    Resolved (not in{' '}
+                    {t('assets.repository.branches.resolvedNotIn', 'Resolved (not in')}{' '}
                     <code className="text-xs bg-muted px-1 rounded">
                       {comparison.compare_branch}
                     </code>
@@ -1222,14 +1275,14 @@ function BranchesTab({
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary">{comparison.common_findings}</Badge>
-                  <span>Common</span>
+                  <span>{t('assets.repository.branches.common', 'Common')}</span>
                 </div>
               </div>
 
               {comparison.new_items && comparison.new_items.length > 0 && (
                 <div>
                   <p className="text-xs font-medium text-muted-foreground mb-2">
-                    New findings introduced:
+                    {t('assets.repository.branches.newIntroduced', 'New findings introduced:')}
                   </p>
                   <div className="space-y-1">
                     {comparison.new_items.slice(0, 10).map((item) => (
@@ -1261,22 +1314,33 @@ function BranchesTab({
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <GitBranch className="h-4 w-4" />
-            All Branches
+            {t('assets.repository.branches.all', 'All branches')}
           </CardTitle>
           <CardDescription>
-            {branches.length} branches in {repositoryName}
+            {t(
+              'assets.repository.branches.countIn',
+              '{count, plural, one {# branch} other {# branches}} in {name}',
+              {
+                count: branches.length,
+                name: repositoryName,
+              }
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Branch</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Findings</TableHead>
-                <TableHead>vs Default</TableHead>
-                <TableHead>Last Scan</TableHead>
-                <TableHead>Last Commit</TableHead>
+                <TableHead>{t('assets.repository.branches.col.branch', 'Branch')}</TableHead>
+                <TableHead>{t('assets.repository.branches.col.status', 'Status')}</TableHead>
+                <TableHead>{t('assets.repository.branches.col.findings', 'Findings')}</TableHead>
+                <TableHead>
+                  {t('assets.repository.branches.col.vsDefault', 'Compared with default')}
+                </TableHead>
+                <TableHead>{t('assets.repository.branches.col.lastScan', 'Last scan')}</TableHead>
+                <TableHead>
+                  {t('assets.repository.branches.col.lastCommit', 'Last commit')}
+                </TableHead>
                 <TableHead></TableHead>
               </TableRow>
             </TableHeader>
@@ -1295,7 +1359,7 @@ function BranchesTab({
                       <code className="text-sm bg-muted px-2 py-1 rounded">{branch.name}</code>
                       {branch.is_default && (
                         <Badge variant="secondary" className="text-xs">
-                          default
+                          {t('assets.repository.branches.default', 'default')}
                         </Badge>
                       )}
                       {branch.is_protected && <Lock className="h-3 w-3 text-muted-foreground" />}
@@ -1317,13 +1381,19 @@ function BranchesTab({
                         </SeverityBadge>
                       )}
                       <span className="text-sm text-muted-foreground ms-1">
-                        ({branch.findings_summary.total} total)
+                        (
+                        {t('assets.repository.overview.total', '{count} total', {
+                          count: branch.findings_summary.total,
+                        })}
+                        )
                       </span>
                     </div>
                   </TableCell>
                   <TableCell>
                     {branch.is_default ? (
-                      <span className="text-muted-foreground text-xs">base</span>
+                      <span className="text-muted-foreground text-xs">
+                        {t('assets.repository.branches.base', 'base')}
+                      </span>
                     ) : (
                       (() => {
                         const diff = branch.findings_summary.total - defaultTotal
@@ -1343,7 +1413,7 @@ function BranchesTab({
                         return (
                           <span className="flex items-center gap-1 text-sm text-muted-foreground">
                             <Minus className="h-3 w-3" />
-                            same
+                            {t('assets.repository.branches.same', 'same')}
                           </span>
                         )
                       })()
@@ -1351,7 +1421,7 @@ function BranchesTab({
                   </TableCell>
                   <TableCell>
                     <span className="text-sm text-muted-foreground">
-                      {formatTimeAgo(branch.last_scanned_at || '')}
+                      {formatTimeAgo(branch.last_scanned_at || '', t)}
                     </span>
                   </TableCell>
                   <TableCell>
@@ -1368,10 +1438,13 @@ function BranchesTab({
                         </span>
                       </div>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>{branch.last_commit_author || 'unknown'}</span>
+                        <span>
+                          {branch.last_commit_author ||
+                            t('assets.repository.branches.unknownAuthor', 'unknown')}
+                        </span>
                         {branch.last_commit_at && (
                           <>
-                            <span>{formatTimeAgo(branch.last_commit_at)}</span>
+                            <span>{formatTimeAgo(branch.last_commit_at, t)}</span>
                           </>
                         )}
                       </div>
@@ -1379,9 +1452,10 @@ function BranchesTab({
                   </TableCell>
                   <TableCell>
                     <DataTableRowActions
+                      title={branch.name}
                       actions={[
                         {
-                          label: 'View Findings',
+                          label: t('assets.repository.branches.viewFindings', 'View findings'),
                           icon: Eye,
                           onClick: () => onViewBranchFindings?.(branch.name),
                         },
@@ -1513,7 +1587,7 @@ function FindingsTab({
           <div className="flex items-center justify-between gap-3">
             <CardTitle className="flex items-center gap-2 text-base shrink-0">
               <Shield className="h-4 w-4" />
-              Findings
+              {t('assets.repository.findings.title', 'Findings')}
               <Badge variant="secondary" className="ms-1">
                 {total}
               </Badge>
@@ -1533,11 +1607,15 @@ function FindingsTab({
                   value={severityFilter}
                   onValueChange={(v) => handleFilterChange(setSeverityFilter, 'severity', v)}
                 >
-                  <SelectTrigger className="w-[110px] h-9 text-xs">
-                    <SelectValue placeholder="Severity" />
+                  <SelectTrigger className="w-[110px] text-xs">
+                    <SelectValue
+                      placeholder={t('assets.repository.findings.severity', 'Severity')}
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Severities</SelectItem>
+                    <SelectItem value="all">
+                      {t('assets.repository.findings.allSeverities', 'All severities')}
+                    </SelectItem>
                     {SEVERITY_LEVELS.map((s) => (
                       <SelectItem key={s} value={s}>
                         {SEVERITY_LABELS[s]}
@@ -1549,33 +1627,59 @@ function FindingsTab({
                   value={statusFilter}
                   onValueChange={(v) => handleFilterChange(setStatusFilter, 'status', v)}
                 >
-                  <SelectTrigger className="w-[110px] h-9 text-xs">
-                    <SelectValue placeholder="Status" />
+                  <SelectTrigger className="w-[110px] text-xs">
+                    <SelectValue placeholder={t('assets.repository.findings.status', 'Status')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="new">New</SelectItem>
-                    <SelectItem value="confirmed">Confirmed</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="fix_applied">Fix Applied</SelectItem>
-                    <SelectItem value="resolved">Resolved</SelectItem>
-                    <SelectItem value="false_positive">False Positive</SelectItem>
+                    <SelectItem value="all">
+                      {t('assets.repository.findings.allStatuses', 'All statuses')}
+                    </SelectItem>
+                    <SelectItem value="new">
+                      {t('assets.repository.findings.statusOption.new', 'New')}
+                    </SelectItem>
+                    <SelectItem value="confirmed">
+                      {t('assets.repository.findings.statusOption.confirmed', 'Confirmed')}
+                    </SelectItem>
+                    <SelectItem value="in_progress">
+                      {t('assets.repository.findings.statusOption.in_progress', 'In progress')}
+                    </SelectItem>
+                    <SelectItem value="fix_applied">
+                      {t('assets.repository.findings.statusOption.fix_applied', 'Fix applied')}
+                    </SelectItem>
+                    <SelectItem value="resolved">
+                      {t('assets.repository.findings.statusOption.resolved', 'Resolved')}
+                    </SelectItem>
+                    <SelectItem value="false_positive">
+                      {t(
+                        'assets.repository.findings.statusOption.false_positive',
+                        'False positive'
+                      )}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 <Select
                   value={scannerFilter}
                   onValueChange={(v) => handleFilterChange(setScannerFilter, 'scanner', v)}
                 >
-                  <SelectTrigger className="w-[120px] h-9 text-xs">
-                    <SelectValue placeholder="Scanner" />
+                  <SelectTrigger className="w-[120px] text-xs">
+                    <SelectValue placeholder={t('assets.repository.findings.scanner', 'Scanner')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Scanners</SelectItem>
+                    <SelectItem value="all">
+                      {t('assets.repository.findings.allScanners', 'All scanners')}
+                    </SelectItem>
+                    {/* i18n-ok: scanner acronym */}
                     <SelectItem value="sast">SAST</SelectItem>
+                    {/* i18n-ok: scanner acronym */}
                     <SelectItem value="sca">SCA</SelectItem>
-                    <SelectItem value="secret">Secret</SelectItem>
+                    <SelectItem value="secret">
+                      {t('assets.repository.findings.scannerOption.secret', 'Secret')}
+                    </SelectItem>
+                    {/* i18n-ok: scanner acronym */}
                     <SelectItem value="iac">IaC</SelectItem>
-                    <SelectItem value="container">Container</SelectItem>
+                    <SelectItem value="container">
+                      {t('assets.repository.findings.scannerOption.container', 'Container')}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 {branches.length > 0 && (
@@ -1583,11 +1687,13 @@ function FindingsTab({
                     value={branchFilter}
                     onValueChange={(v) => handleFilterChange(setBranchFilter, 'branch', v)}
                   >
-                    <SelectTrigger className="w-[160px] h-9 text-xs">
-                      <SelectValue placeholder="Branch" />
+                    <SelectTrigger className="w-[160px] text-xs">
+                      <SelectValue placeholder={t('assets.repository.findings.branch', 'Branch')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Branches</SelectItem>
+                      <SelectItem value="all">
+                        {t('assets.repository.branches.all', 'All branches')}
+                      </SelectItem>
                       {branches.map((b) => (
                         <SelectItem key={b.id} value={b.name}>
                           <span className="flex items-center gap-1">
@@ -1606,13 +1712,21 @@ function FindingsTab({
                       handleFilterChange(setBranchStatusFilter, 'branch_status', v)
                     }
                   >
-                    <SelectTrigger className="w-[130px] h-9 text-xs">
-                      <SelectValue placeholder="On branch" />
+                    <SelectTrigger className="w-[130px] text-xs">
+                      <SelectValue
+                        placeholder={t('assets.repository.findings.onBranch', 'On branch')}
+                      />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All on branch</SelectItem>
-                      <SelectItem value="open">Open on branch</SelectItem>
-                      <SelectItem value="fixed">Fixed on branch</SelectItem>
+                      <SelectItem value="all">
+                        {t('assets.repository.findings.allOnBranch', 'All on branch')}
+                      </SelectItem>
+                      <SelectItem value="open">
+                        {t('assets.repository.findings.openOnBranch', 'Open on branch')}
+                      </SelectItem>
+                      <SelectItem value="fixed">
+                        {t('assets.repository.findings.fixedOnBranch', 'Fixed on branch')}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 )}
@@ -1678,7 +1792,9 @@ function FindingsTab({
                       )}
                       <span className="flex items-center gap-1">
                         <Clock className="h-3 w-3" />
-                        First seen: {formatTimeAgo(finding.first_detected_at)}
+                        {t('assets.repository.findings.firstSeen', 'First seen: {time}', {
+                          time: formatTimeAgo(finding.first_detected_at, t),
+                        })}
                       </span>
                     </div>
                   </div>
@@ -1712,7 +1828,11 @@ function FindingsTab({
               </div>
             ))}
             {filteredFindings.length === 0 && !findingsLoading && (
-              <EmptyState card={false} icon={Shield} title="No findings match your filters" />
+              <EmptyState
+                card={false}
+                icon={Shield}
+                title={t('assets.repository.findings.noMatch', 'No findings match your filters')}
+              />
             )}
             {findingsLoading && (
               <div className="space-y-3">
@@ -1727,7 +1847,15 @@ function FindingsTab({
           {totalPages > 1 && (
             <div className="flex items-center justify-between border-t pt-4 mt-4">
               <span className="text-xs text-muted-foreground">
-                Page {page} of {totalPages} ({total} total)
+                {t(
+                  'assets.repository.findings.pageOf',
+                  'Page {page} of {totalPages} ({total} total)',
+                  {
+                    page,
+                    totalPages,
+                    total,
+                  }
+                )}
               </span>
               <div className="flex gap-2">
                 <Button
@@ -1736,7 +1864,7 @@ function FindingsTab({
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page <= 1}
                 >
-                  Previous
+                  {t('assets.repository.findings.previous', 'Previous')}
                 </Button>
                 <Button
                   variant="outline"
@@ -1744,7 +1872,7 @@ function FindingsTab({
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages}
                 >
-                  Next
+                  {t('assets.repository.findings.next', 'Next')}
                 </Button>
               </div>
             </div>
@@ -1757,7 +1885,7 @@ function FindingsTab({
 
 // Settings Tab
 function SettingsTab({ repository, onDelete }: { repository: Repository; onDelete?: () => void }) {
-  const { t: tDanger } = useTranslation()
+  const { t } = useTranslation()
   const [autoScan, setAutoScan] = useState(repository.scan_settings?.auto_scan ?? false)
   const [scanOnPush, setScanOnPush] = useState(repository.scan_settings?.scan_on_push ?? false)
   const [scanOnPR, setScanOnPR] = useState(repository.scan_settings?.scan_on_pr ?? false)
@@ -1790,33 +1918,33 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
   const securityFeatures = [
     {
       key: 'branch_protection',
-      label: 'Branch Protection',
+      label: t('assets.repository.settings.feature.branchProtection', 'Branch protection'),
       enabled: (repository.repository?.protectedBranchCount ?? 0) > 0,
     },
     {
       key: 'secret_scanning',
-      label: 'Secret Scanning',
+      label: t('assets.repository.settings.feature.secretScanning', 'Secret scanning'),
       enabled: repository.security_features?.secret_scanning ?? false,
     },
     {
       key: 'dependabot',
-      label: 'Dependency Scanning',
+      label: t('assets.repository.settings.feature.dependencyScanning', 'Dependency scanning'),
       enabled: repository.security_features?.dependabot ?? false,
     },
     {
       key: 'code_scanning',
-      label: 'Code Scanning (SAST)',
+      label: t('assets.repository.settings.feature.codeScanning', 'Code scanning (SAST)'),
       enabled:
         repository.security_features?.code_scanning ?? repository.scan_settings?.auto_scan ?? false,
     },
     {
       key: 'security_policy',
-      label: 'Security Policy',
+      label: t('assets.repository.settings.feature.securityPolicy', 'Security policy'),
       enabled: repository.security_features?.security_policy ?? false,
     },
     {
       key: 'signed_commits',
-      label: 'Signed Commits',
+      label: t('assets.repository.settings.feature.signedCommits', 'Signed commits'),
       enabled: repository.security_features?.signed_commits ?? false,
     },
   ]
@@ -1830,13 +1958,20 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Play className="h-4 w-4" />
-            Scan Configuration
+            {t('assets.repository.settings.scanConfig', 'Scan configuration')}
           </CardTitle>
-          <CardDescription>Configure automated scanning for this repository</CardDescription>
+          <CardDescription>
+            {t(
+              'assets.repository.settings.scanConfigHint',
+              'Configure automated scanning for this repository'
+            )}
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div>
-            <h4 className="text-sm font-medium mb-3">Enabled Scanners</h4>
+            <h4 className="text-sm font-medium mb-3">
+              {t('assets.repository.settings.enabledScanners', 'Enabled scanners')}
+            </h4>
             <div className="flex flex-wrap gap-2">
               {enabledScanners.length > 0 ? (
                 enabledScanners.map((scanner) => (
@@ -1845,7 +1980,9 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
                   </Badge>
                 ))
               ) : (
-                <span className="text-sm text-muted-foreground">No scanners configured</span>
+                <span className="text-sm text-muted-foreground">
+                  {t('assets.repository.settings.noScanners', 'No scanners configured')}
+                </span>
               )}
             </div>
           </div>
@@ -1854,39 +1991,58 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
 
           <div className="space-y-4">
             <p className="text-xs text-muted-foreground rounded-md border border-dashed px-3 py-2">
-              Preview only — scan automation settings below are not yet persisted to the backend.
+              {t(
+                'assets.repository.settings.previewOnly',
+                'Preview only. The scan automation settings below are not saved yet.'
+              )}
             </p>
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium text-sm">Auto Scan</p>
-                <p className="text-xs text-muted-foreground">Automatically scan on schedule</p>
+                <p className="font-medium text-sm">
+                  {t('assets.repository.settings.autoScan', 'Auto scan')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('assets.repository.settings.autoScanHint', 'Automatically scan on schedule')}
+                </p>
               </div>
               <Switch
-                aria-label="Auto Scan"
+                aria-label={t('assets.repository.settings.autoScan', 'Auto scan')}
                 checked={autoScan}
                 onCheckedChange={(v) => handleToggle('Auto Scan', v, setAutoScan)}
               />
             </div>
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium text-sm">Scan on Push</p>
-                <p className="text-xs text-muted-foreground">Trigger scan when code is pushed</p>
+                <p className="font-medium text-sm">
+                  {t('assets.repository.settings.scanOnPush', 'Scan on push')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t(
+                    'assets.repository.settings.scanOnPushHint',
+                    'Trigger a scan when code is pushed'
+                  )}
+                </p>
               </div>
               <Switch
-                aria-label="Scan on Push"
+                aria-label={t('assets.repository.settings.scanOnPush', 'Scan on push')}
                 checked={scanOnPush}
                 onCheckedChange={(v) => handleToggle('Scan on Push', v, setScanOnPush)}
               />
             </div>
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium text-sm">Scan on Pull Request</p>
+                <p className="font-medium text-sm">
+                  {t('assets.repository.settings.scanOnPr', 'Scan on pull request')}
+                </p>
                 <p className="text-xs text-muted-foreground">
-                  Trigger scan when PR is opened/updated
+                  {t(
+                    'assets.repository.settings.scanOnPrHint',
+                    'Trigger a scan when a pull request is opened or updated'
+                  )}
                 </p>
               </div>
               <Switch
-                aria-label="Scan on Pull Request"
+                aria-label={t('assets.repository.settings.scanOnPr', 'Scan on pull request')}
                 checked={scanOnPR}
                 onCheckedChange={(v) => handleToggle('Scan on PR', v, setScanOnPR)}
               />
@@ -1896,25 +2052,28 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
           <Separator />
 
           <div>
-            <h4 className="text-sm font-medium mb-3">Branch Patterns</h4>
+            <h4 className="text-sm font-medium mb-3">
+              {t('assets.repository.settings.branchPatterns', 'Branch patterns')}
+            </h4>
             <p className="text-xs text-muted-foreground mb-3">
-              Only branches matching these patterns will be scanned. Use * for wildcards.
+              {t(
+                'assets.repository.settings.branchPatternsHint',
+                'Only branches matching these patterns will be scanned. Use * for wildcards.'
+              )}
             </p>
             <div className="flex gap-2 mb-3">
               <Input
-                placeholder="e.g. main, develop, release/*"
+                placeholder={t(
+                  'assets.repository.settings.branchPatternsPlaceholder',
+                  'e.g. main, develop, release/*'
+                )}
                 value={branchPatternInput}
                 onChange={(e) => setBranchPatternInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddPattern()}
-                className="h-8 text-sm"
+                className="text-sm"
               />
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleAddPattern}
-                className="h-8 shrink-0"
-              >
-                Add
+              <Button variant="outline" size="sm" onClick={handleAddPattern} className="shrink-0">
+                {t('assets.repository.settings.add', 'Add')}
               </Button>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1931,7 +2090,9 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
                 </Badge>
               ))}
               {branchPatterns.length === 0 && (
-                <span className="text-xs text-muted-foreground">All branches will be scanned</span>
+                <span className="text-xs text-muted-foreground">
+                  {t('assets.repository.settings.allBranches', 'All branches will be scanned')}
+                </span>
               )}
             </div>
           </div>
@@ -1946,9 +2107,14 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <Shield className="h-4 w-4" />
-            Security Features
+            {t('assets.repository.settings.securityFeatures', 'Security features')}
           </CardTitle>
-          <CardDescription>Repository security configuration from SCM provider</CardDescription>
+          <CardDescription>
+            {t(
+              'assets.repository.settings.securityFeaturesHint',
+              'Repository security configuration from the SCM provider'
+            )}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1976,25 +2142,36 @@ function SettingsTab({ repository, onDelete }: { repository: Repository; onDelet
         <DangerZone>
           <Can permission={Permission.AssetsWrite}>
             <DangerZoneItem
-              title="Archive repository"
-              description="Archive this repository. It can be restored later."
+              title={t('assets.repository.settings.archiveTitle', 'Archive repository')}
+              description={t(
+                'assets.repository.settings.archiveDescription',
+                'Archive this repository. It can be restored later.'
+              )}
               action={
-                <Button variant="outline" size="sm" disabled title="Archiving is not yet available">
-                  Archive
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled
+                  title={t(
+                    'assets.repository.settings.archiveUnavailable',
+                    'Archiving is not yet available'
+                  )}
+                >
+                  {t('assets.repository.settings.archive', 'Archive')}
                 </Button>
               }
             />
           </Can>
           <Can permission={Permission.AssetsDelete}>
             <DangerZoneItem
-              title={tDanger('assets.repository.danger.deleteTitle', 'Delete repository')}
-              description={tDanger(
+              title={t('assets.repository.danger.deleteTitle', 'Delete repository')}
+              description={t(
                 'assets.repository.danger.deleteDesc',
                 'Remove this repository from the inventory. It leaves its groups, owners and scope. A repository with findings is not deleted, so the finding history is kept.'
               )}
               action={
                 <Button variant="destructive" size="sm" onClick={onDelete} disabled={!onDelete}>
-                  {tDanger('assets.repository.danger.deleteButton', 'Delete repository')}
+                  {t('assets.repository.danger.deleteButton', 'Delete repository')}
                 </Button>
               }
             />
@@ -2088,6 +2265,7 @@ function DetailPageSkeleton() {
  */
 export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) {
   const { t } = useTranslation()
+  const { can } = usePermissions()
   const router = useRouter()
 
   // Reactive URL params for shareable links
@@ -2189,14 +2367,14 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
       if (!response.ok) {
         throw new Error('Failed to sync repository')
       }
-      toast.success('Repository sync initiated')
+      toast.success(t('assets.repository.syncStarted', 'Repository sync started'))
       mutateRepo()
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to sync repository'))
     } finally {
       setIsSyncing(false)
     }
-  }, [repository, mutateRepo])
+  }, [repository, mutateRepo, t])
 
   const handleScan = useCallback(async () => {
     if (!repository) return
@@ -2245,18 +2423,24 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
       <div className="flex h-screen items-center justify-center">
         <div className="text-center">
           <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-destructive" />
-          <h2 className="text-xl font-semibold mb-2">Error Loading Repository</h2>
+          <h2 className="text-xl font-semibold mb-2">
+            {t('assets.repository.error.loadTitle', 'Error loading repository')}
+          </h2>
           <p className="text-muted-foreground mb-4">
-            {repoError.message || 'Failed to load repository data. Please try again.'}
+            {repoError.message ||
+              t(
+                'assets.repository.error.loadFailed',
+                'Failed to load repository data. Please try again.'
+              )}
           </p>
           <div className="flex gap-2 justify-center">
             <Button variant="outline" onClick={() => mutateRepo()}>
               <RefreshCw className="me-2 h-4 w-4" />
-              Retry
+              {t('assets.repository.error.retry', 'Retry')}
             </Button>
             <Button onClick={() => router.push('/assets?types=repository')}>
               <ArrowLeft className="me-2 h-4 w-4" />
-              Back to Repositories
+              {t('assets.repository.error.back', 'Back to repositories')}
             </Button>
           </div>
         </div>
@@ -2269,13 +2453,18 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="text-center">
-          <h2 className="text-xl font-semibold mb-2">Repository Not Found</h2>
+          <h2 className="text-xl font-semibold mb-2">
+            {t('assets.repository.notFound.title', 'Repository not found')}
+          </h2>
           <p className="text-muted-foreground mb-4">
-            The repository you&apos;re looking for doesn&apos;t exist.
+            {t(
+              'assets.repository.notFound.description',
+              "The repository you're looking for doesn't exist."
+            )}
           </p>
           <Button onClick={() => router.push('/assets?types=repository')}>
             <ArrowLeft className="me-2 h-4 w-4" />
-            Back to Repositories
+            {t('assets.repository.error.back', 'Back to repositories')}
           </Button>
         </div>
       </div>
@@ -2296,14 +2485,15 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
               </div>
               <div className="min-w-0">
                 <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <h1 className="min-w-0 text-2xl font-bold break-words">{repository.name}</h1>
+                  <h1 className="min-w-0 text-page break-words">{repository.name}</h1>
                   <Tag variant="plain" label={SCM_PROVIDER_LABELS[repository.scm_provider]} />
-                  <Badge variant={repository.status === 'active' ? 'default' : 'secondary'}>
+                  <Badge variant={repository.status === 'active' ? 'outline' : 'secondary'}>
                     {STATUS_LABELS[repository.status]}
                   </Badge>
                 </div>
                 <p className="text-muted-foreground mb-2">
-                  {repository.description || 'No description'}
+                  {repository.description ||
+                    t('assets.repository.header.noDescription', 'No description')}
                 </p>
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
@@ -2325,10 +2515,11 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
                   )}
                   <span className="flex items-center gap-1">
                     <Clock className="h-3.5 w-3.5" />
-                    Last scan:{' '}
-                    {repository.last_scanned_at
-                      ? formatTimeAgo(repository.last_scanned_at)
-                      : 'Never'}
+                    {t('assets.repository.lastScan', 'Last scan: {time}', {
+                      time: repository.last_scanned_at
+                        ? formatTimeAgo(repository.last_scanned_at, t)
+                        : t('assets.repository.time.never', 'Never'),
+                    })}
                   </span>
                 </div>
               </div>
@@ -2348,7 +2539,9 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
                 }
               >
                 <ExternalLink className="me-2 h-4 w-4" />
-                Open in {SCM_PROVIDER_LABELS[repository.scm_provider]}
+                {t('assets.repository.header.openIn', 'Open in {provider}', {
+                  provider: SCM_PROVIDER_LABELS[repository.scm_provider],
+                })}
               </Button>
               <Button variant="outline" size="sm" onClick={handleSync} disabled={isSyncing}>
                 {isSyncing ? (
@@ -2356,7 +2549,9 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
                 ) : (
                   <RefreshCw className="me-2 h-4 w-4" />
                 )}
-                {isSyncing ? 'Syncing...' : 'Sync'}
+                {isSyncing
+                  ? t('assets.repository.header.syncing', 'Syncing...')
+                  : t('assets.repository.header.sync', 'Sync')}
               </Button>
               <Button size="sm" onClick={() => setShowScanDialog(true)} disabled={isScanning}>
                 {isScanning ? (
@@ -2368,40 +2563,52 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
                   ? t('assets.repository.scanning', 'Scanning...')
                   : t('assets.repository.scanNow', 'Scan now')}
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" disabled={isDeleting}>
+              <ActionMenu
+                title={repository.name}
+                label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                  name: repository.name,
+                })}
+                items={[
+                  {
+                    id: 'copy-url',
+                    label: t('assets.repository.menu.copyUrl', 'Copy URL'),
+                    icon: Copy,
+                    onSelect: async () => {
+                      const url = repository.repository?.webUrl || window.location.href
+                      const ok = await copyToClipboard(url)
+                      if (ok) toast.success(t('assets.repository.menu.urlCopied', 'URL copied'))
+                      else toast.error(t('common.copyFailed', 'Could not copy'))
+                    },
+                  },
+                  ...(can(Permission.AssetsDelete)
+                    ? [
+                        {
+                          id: 'delete',
+                          label: t('assets.repository.danger.deleteTitle', 'Delete repository'),
+                          icon: Trash2,
+                          destructive: true,
+                          onSelect: () => setShowDeleteDialog(true),
+                        },
+                      ]
+                    : []),
+                ]}
+                trigger={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    disabled={isDeleting}
+                    aria-label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                      name: repository.name,
+                    })}
+                  >
                     {isDeleting ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <MoreHorizontal className="h-4 w-4" />
                     )}
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      const url = repository.repository?.webUrl || window.location.href
-                      const ok = await copyToClipboard(url)
-                      if (ok) toast.success('URL copied')
-                      else toast.error('Failed to copy')
-                    }}
-                  >
-                    <Copy className="me-2 h-4 w-4" />
-                    Copy URL
-                  </DropdownMenuItem>
-                  <Can permission={Permission.AssetsDelete}>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-destructive"
-                      onClick={() => setShowDeleteDialog(true)}
-                    >
-                      <Trash2 className="me-2 h-4 w-4" />
-                      {t('assets.repository.danger.deleteTitle', 'Delete repository')}
-                    </DropdownMenuItem>
-                  </Can>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                }
+              />
 
               <ScanConfirmDialog
                 open={showScanDialog}
@@ -2434,23 +2641,23 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
           <TabsList className="mb-6">
             <TabsTrigger value="overview" className="gap-2">
               <Layers className="h-4 w-4" />
-              Overview
+              {t('assets.repository.tab.overview', 'Overview')}
             </TabsTrigger>
             {branchesEnabled && (
               <TabsTrigger value="branches" className="gap-2">
                 <GitBranch className="h-4 w-4" />
-                Branches
+                {t('assets.repository.overview.branches', 'Branches')}
                 <TabsCount value={branches.length} />
               </TabsTrigger>
             )}
             <TabsTrigger value="findings" className="gap-2">
               <Shield className="h-4 w-4" />
-              Findings
+              {t('assets.repository.findings.title', 'Findings')}
               <TabsCount value={findings.length} />
             </TabsTrigger>
             <TabsTrigger value="settings" className="gap-2">
               <Settings className="h-4 w-4" />
-              Settings
+              {t('assets.repository.tab.settings', 'Settings')}
             </TabsTrigger>
           </TabsList>
 

@@ -6,6 +6,36 @@
 @custom-variant dark (&:is(.dark *));
 
 @layer base {
+  /* Links in rendered prose (markdown previews) follow the inline link rule
+     of TextLink: signal colour, underlined at 45%, 3px under the text. */
+  :is(.prose, .wmde-markdown) a {
+    color: var(--signal-text);
+    text-decoration-line: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+    text-underline-offset: 3px;
+  }
+  :is(.prose, .wmde-markdown) a:is(:hover, :focus-visible) {
+    text-decoration-color: currentColor;
+  }
+  /* A one-line text that ends in an ellipsis keeps its line: Chrome breaks at
+     a <wbr> (BreakText) even under white-space: nowrap, which turned a table's
+     one-line name into two or more lines. A phone card's title wraps (at most
+     two lines), so there the break opportunities stay. */
+  .truncate wbr:not([data-phone-card] wbr) {
+    display: none;
+  }
+  /* An e-mail address wraps only before its "@" (BreakText): the person's
+     part and the domain each move as one piece, so the hyphens and dots
+     inside them ("openctem-" / "test.local") are no break; a part wider than
+     its box still wraps inside. On a one-line text that ends in an ellipsis
+     they stay inline, so the ellipsis still cuts them. */
+  [data-email-part] {
+    display: inline-block;
+    max-width: 100%;
+  }
+  .truncate [data-email-part]:not([data-phone-card] [data-email-part]) {
+    display: inline;
+  }
   * {
     @apply border-border outline-ring/50;
     scrollbar-width: thin;
@@ -13,7 +43,13 @@
   }
   html {
     @apply overflow-x-hidden;
-    scrollbar-gutter: stable;
+    /* Room for the page scrollbar is kept from 768 px up, so content does not
+       shift when a page starts to scroll. Below that, screens use overlay
+       scrollbars; a reserved gutter there only made fixed overlays (sheets,
+       menus) stop 10 px short of the right edge in a narrow desktop window. */
+    @media (width >= 48rem) {
+      scrollbar-gutter: stable;
+    }
     /* Kill the document-level rubber-band bounce. On iOS Safari that bounce
        lets the body "scroll" and intermittently steal touch-scroll from the
        app-shell's inner scrollers (the sidebar nav). Additive + safe: pages
@@ -28,6 +64,58 @@
       'ss01' 1;
     @apply bg-background text-foreground min-h-svh w-full;
     overscroll-behavior: none;
+  }
+
+  /* Wide screens: prose stops at a reading measure and a field at a sensible
+     width, the way the settings column already does, so a description never
+     runs 1500 px across a 2560 px window. Zero specificity: any max-w-*
+     utility on the element wins. A truncated or one-line clamped line keeps the room
+     its row gives it (the ellipsis shows where it must). Tables, lists and
+     the page frame are not touched. */
+  :where(p:not(.truncate, .line-clamp-1)),
+  /* Muted text is help text (a hint under a label, a card's note); a muted
+     flex or grid box is a layout row, not prose, and is left alone. */
+  :where(
+    .text-muted-foreground:not(
+        .truncate,
+        .line-clamp-1,
+        [class*='flex'],
+        [class*='grid'],
+        td,
+        th,
+        a,
+        button
+      )
+  ),
+  :where(
+    [data-slot='card-description'],
+    [data-slot='alert-description'],
+    [data-slot='dialog-description'],
+    [data-slot='sheet-description']
+  ) {
+    max-width: var(--measure);
+  }
+  /* Centred text centres its capped box too, not only its lines. */
+  :where(
+    p.text-center,
+    .text-center > p,
+    .text-muted-foreground.text-center,
+    .text-center > .text-muted-foreground
+  ) {
+    margin-inline: auto;
+  }
+  :where(
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='hidden']),
+    select,
+    [role='combobox']
+  ),
+  /* A field with a button drawn inside it (Show value, Clear) sits in a
+     relative box: that box takes the cap, so the button stays in the field. */
+  :where(.relative:has(> input:not([type='checkbox'], [type='radio'], [type='hidden']))) {
+    max-width: var(--field-max);
+  }
+  :where(textarea, .relative:has(> textarea)) {
+    max-width: var(--field-max-multiline);
   }
 
   /* iOS Safari draws date/time inputs with a native control that ignores the
@@ -118,6 +206,31 @@
 
 @utility faded-bottom {
   @apply after:pointer-events-none after:absolute after:start-0 after:bottom-0 after:hidden after:h-32 after:w-full after:rounded-b-2xl after:bg-[linear-gradient(180deg,_transparent_10%,_var(--background)_70%)] md:after:block;
+}
+
+/* Scroll cue of a floating surface (menu, popover) that scrolls inside: an
+   8 px shade at the edge where more content is, shown only while there is
+   more that way. Pure CSS: the two covers in the surface's own colour scroll
+   with the content (local) and hide the shades (fixed to the box) at the
+   ends. Background images only, so the surface keeps its bg-* colour. */
+@utility scroll-cue {
+  background-image:
+    linear-gradient(var(--popover) 40%, transparent),
+    linear-gradient(transparent, var(--popover) 60%),
+    linear-gradient(color-mix(in oklab, var(--foreground) 14%, transparent), transparent),
+    linear-gradient(transparent, color-mix(in oklab, var(--foreground) 14%, transparent));
+  background-position:
+    top center,
+    bottom center,
+    top center,
+    bottom center;
+  background-size:
+    100% 1rem,
+    100% 1rem,
+    100% 0.5rem,
+    100% 0.5rem;
+  background-repeat: no-repeat;
+  background-attachment: local, local, scroll, scroll;
 }
 
 /* Scroll fade indicators for horizontal scrollable content */

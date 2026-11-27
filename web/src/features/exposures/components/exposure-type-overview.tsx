@@ -34,6 +34,9 @@ import { SEVERITY_CHART_COLORS, SEVERITY_ORDER, type SeverityLevel } from '@/lib
 import { findingsHrefForSources } from './exposures-section'
 import { SEVERITY_LABELS as SHARED_SEVERITY_LABELS } from '@/lib/severity'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatNumber } from '@/lib/app-locale'
+import { useSeverityLabel } from '@/hooks/use-scale-labels'
+import { CHART_AXIS, CHART_GRID, CHART_TOOLTIP_PROPS } from '@/components/charts/chart-defaults'
 
 export const SEVERITY_LABELS: Record<SeverityLevel, string> = SHARED_SEVERITY_LABELS
 
@@ -46,7 +49,15 @@ export const CATEGORY_CHART_COLORS = [
   'var(--chart-5)',
 ]
 
-const AXIS_TICK = { fontSize: 12, fill: 'var(--muted-foreground)' }
+/**
+ * The legend under a chart: the caption size in the muted ink, in the order
+ * of the series (the library sorts by name unless told not to).
+ */
+const LEGEND_PROPS = {
+  itemSorter: null,
+  wrapperStyle: { fontSize: 12, color: 'var(--muted-foreground)' },
+  formatter: (value: string) => <span className="text-muted-foreground">{value}</span>,
+} as const
 
 /** Grid of four headline cards, then the chart sections. */
 export const OVERVIEW_STATS_GRID = 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4'
@@ -116,7 +127,7 @@ export function TypeBreakdownUnavailable({
   return (
     <EmptyState
       icon={icon}
-      title={`${total.toLocaleString()} ${total === 1 ? noun[0] : noun[1]}`}
+      title={`${formatNumber(total)} ${total === 1 ? noun[0] : noun[1]}`}
       description={t(
         'findings.typeOverview.breakdownUnavailable',
         'The breakdown for this type is not available here. The findings list shows it in full.'
@@ -166,10 +177,13 @@ export function ChartEmpty({
   return <EmptyState card={false} icon={icon} title={title} description={description} />
 }
 
-function severityRows(bySeverity: Record<string, number>) {
+export function severityRows(
+  bySeverity: Record<string, number>,
+  label: (s: SeverityLevel) => string
+) {
   return SEVERITY_ORDER.map((severity) => ({
     severity,
-    name: SEVERITY_LABELS[severity],
+    name: label(severity),
     value: bySeverity[severity] || 0,
     color: SEVERITY_CHART_COLORS[severity],
   })).filter((d) => d.value > 0)
@@ -177,7 +191,8 @@ function severityRows(bySeverity: Record<string, number>) {
 
 export function SeverityDonut({ bySeverity }: { bySeverity: Record<string, number> }) {
   const { t } = useTranslation()
-  const data = severityRows(bySeverity)
+  const severityLabel = useSeverityLabel()
+  const data = severityRows(bySeverity, severityLabel)
   if (data.length === 0)
     return <ChartEmpty title={t('exposures.chart.noSeverity', 'No severity data yet')} />
   return (
@@ -197,8 +212,8 @@ export function SeverityDonut({ bySeverity }: { bySeverity: Record<string, numbe
             <Cell key={entry.severity} fill={entry.color} />
           ))}
         </Pie>
-        <Tooltip />
-        <Legend />
+        <Tooltip {...CHART_TOOLTIP_PROPS} />
+        <Legend {...LEGEND_PROPS} />
       </PieChart>
     </ResponsiveContainer>
   )
@@ -206,17 +221,23 @@ export function SeverityDonut({ bySeverity }: { bySeverity: Record<string, numbe
 
 export function SeverityBars({ bySeverity }: { bySeverity: Record<string, number> }) {
   const { t } = useTranslation()
-  const data = severityRows(bySeverity)
+  const severityLabel = useSeverityLabel()
+  const data = severityRows(bySeverity, severityLabel)
   if (data.length === 0)
     return <ChartEmpty title={t('exposures.chart.noSeverity', 'No severity data yet')} />
   return (
     <ResponsiveContainer width="100%" height={300}>
       <BarChart data={data} barCategoryGap="20%">
-        <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-muted" />
-        <XAxis dataKey="name" tick={AXIS_TICK} tickLine={false} axisLine={false} />
-        <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} />
-        <Tooltip />
-        <Bar dataKey="value" name="Findings" radius={[4, 4, 0, 0]} barSize={40}>
+        <CartesianGrid {...CHART_GRID} />
+        <XAxis dataKey="name" {...CHART_AXIS} />
+        <YAxis {...CHART_AXIS} allowDecimals={false} />
+        <Tooltip {...CHART_TOOLTIP_PROPS} />
+        <Bar
+          dataKey="value"
+          name={t('exposures.chart.findings', 'Findings')}
+          radius={[4, 4, 0, 0]}
+          barSize={40}
+        >
           {data.map((entry) => (
             <Cell key={entry.severity} fill={entry.color} />
           ))}
@@ -229,27 +250,23 @@ export function SeverityBars({ bySeverity }: { bySeverity: Record<string, number
 export function StatusBars({ byStatus }: { byStatus: Record<string, number> }) {
   const { t } = useTranslation()
   const data = Object.entries(byStatus || {})
-    .map(([status, count]) => ({ name: humanize(status), count }))
+    .map(([status, count]) => ({
+      name: t(`findings.status.${status}`, humanize(status)),
+      count,
+    }))
     .sort((a, b) => b.count - a.count)
   if (data.length === 0)
     return <ChartEmpty title={t('exposures.chart.noStatus', 'No status data yet')} />
   return (
     <ResponsiveContainer width="100%" height={Math.max(300, data.length * 40)}>
       <BarChart data={data} layout="vertical" barCategoryGap="20%">
-        <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-muted" />
+        <CartesianGrid {...CHART_GRID} vertical horizontal={false} />
         <XAxis type="number" hide />
-        <YAxis
-          dataKey="name"
-          type="category"
-          tick={AXIS_TICK}
-          tickLine={false}
-          axisLine={false}
-          width={100}
-        />
-        <Tooltip />
+        <YAxis dataKey="name" type="category" {...CHART_AXIS} width={100} />
+        <Tooltip {...CHART_TOOLTIP_PROPS} />
         <Bar
           dataKey="count"
-          name="Findings"
+          name={t('exposures.chart.findings', 'Findings')}
           fill="var(--chart-1)"
           radius={[0, 4, 4, 0]}
           barSize={20}
@@ -278,6 +295,7 @@ export function SeverityTrend({
   emptyDescription?: string
 }) {
   const { t } = useTranslation()
+  const severityLabel = useSeverityLabel()
   if (data.length === 0) {
     return (
       <ChartEmpty
@@ -289,11 +307,11 @@ export function SeverityTrend({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <AreaChart data={data}>
-        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-        <XAxis dataKey="date" tick={AXIS_TICK} tickLine={false} axisLine={false} />
-        <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} />
-        <Tooltip />
-        <Legend />
+        <CartesianGrid {...CHART_GRID} vertical={false} />
+        <XAxis dataKey="date" {...CHART_AXIS} />
+        <YAxis {...CHART_AXIS} allowDecimals={false} />
+        <Tooltip {...CHART_TOOLTIP_PROPS} />
+        <Legend {...LEGEND_PROPS} />
         {SEVERITY_ORDER.map((severity) => (
           <Area
             key={severity}
@@ -303,7 +321,7 @@ export function SeverityTrend({
             stroke={SEVERITY_CHART_COLORS[severity]}
             fill={SEVERITY_CHART_COLORS[severity]}
             fillOpacity={0.8}
-            name={SEVERITY_LABELS[severity]}
+            name={severityLabel(severity)}
           />
         ))}
       </AreaChart>
@@ -326,7 +344,8 @@ export function SeverityShareList({
   noun: [string, string]
 }) {
   const { t } = useTranslation()
-  const rows = severityRows(bySeverity)
+  const severityLabel = useSeverityLabel()
+  const rows = severityRows(bySeverity, severityLabel)
   if (rows.length === 0)
     return (
       <ChartEmpty title={t('exposures.chart.nothingToPrioritise', 'Nothing to prioritise yet')} />
@@ -341,7 +360,7 @@ export function SeverityShareList({
             <div className="min-w-0 flex-1">
               <div className="mb-1 flex items-center justify-between gap-2 text-sm">
                 <span className="font-medium tabular-nums">
-                  {row.value.toLocaleString()} {row.value === 1 ? noun[0] : noun[1]}
+                  {formatNumber(row.value)} {row.value === 1 ? noun[0] : noun[1]}
                 </span>
                 <span className="text-muted-foreground tabular-nums">{percentage.toFixed(1)}%</span>
               </div>
@@ -379,7 +398,7 @@ export function RankedBarList({
             <div className="mb-1 flex items-center justify-between gap-2 text-sm">
               <span className="truncate font-medium">{row.name}</span>
               <span className="shrink-0 text-muted-foreground tabular-nums">
-                {row.count.toLocaleString()} {row.count === 1 ? unit[0] : unit[1]}
+                {formatNumber(row.count)} {row.count === 1 ? unit[0] : unit[1]}
               </span>
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-muted">

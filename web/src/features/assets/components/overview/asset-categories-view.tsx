@@ -44,6 +44,7 @@ import { useDedupReviews } from '../../api/use-asset-dedup'
 import { useInventoryOverview } from '../../api/use-inventory-overview'
 import { buildOverview, type OverviewLens } from '../../lib/inventory-overview'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatNumber } from '@/lib/app-locale'
 
 /** Icons of the registry's lenses; an unknown lens gets the generic one. */
 const LENS_ICONS: Record<string, LucideIcon> = {
@@ -120,7 +121,7 @@ function AttentionChip({
         tone === 'danger' ? 'border-destructive/40 text-destructive' : 'text-muted-foreground'
       )}
     >
-      {count.toLocaleString()} {label}
+      {formatNumber(count)} {label}
     </Link>
   )
 }
@@ -150,7 +151,7 @@ function LensCard({ lens }: { lens: OverviewLens }) {
               {lens.description && <CardDescription>{lens.description}</CardDescription>}
             </div>
           </div>
-          <span className="text-lg font-semibold tabular-nums">{lens.total.toLocaleString()}</span>
+          <span className="text-lg font-semibold tabular-nums">{formatNumber(lens.total)}</span>
         </div>
       </CardHeader>
       <CardContent className="space-y-3 pt-0">
@@ -203,7 +204,7 @@ function LensCard({ lens }: { lens: OverviewLens }) {
                     <span className="text-sm">{type.label}</span>
                     <span className="flex items-center gap-2">
                       <span className="text-sm tabular-nums text-muted-foreground">
-                        {type.count.toLocaleString()}
+                        {formatNumber(type.count)}
                       </span>
                       <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                     </span>

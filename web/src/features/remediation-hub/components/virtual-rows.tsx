@@ -2,15 +2,26 @@
 
 /**
  * A windowed list: only the rows in view (plus a margin) are in the DOM, so
- * a task with ten thousand findings scrolls as fast as one with ten. Rows
- * have a fixed height; reaching the end asks for more.
+ * a task with ten thousand findings scrolls as fast as one with ten. Each row
+ * has a known height (one number, or one per kind of row, so a group heading
+ * can stay short while a finding takes two lines on a phone); reaching the
+ * end asks for more.
  */
 
-import { useCallback, useEffect, useRef, useState, type ReactNode, type UIEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type UIEvent,
+} from 'react'
 
 export interface VirtualRowsProps<T> {
   rows: T[]
-  rowHeight: number
+  /** One height for every row, or the height of each row. */
+  rowHeight: number | ((row: T) => number)
   height: number
   overscan?: number
   renderRow: (row: T, index: number) => ReactNode
@@ -33,6 +44,52 @@ export function visibleRange(
   return { first, last }
 }
 
+/** The top of every row, plus the total height as the last entry. */
+export function rowOffsets(heights: number[]): number[] {
+  const out = new Array<number>(heights.length + 1)
+  out[0] = 0
+  for (let i = 0; i < heights.length; i++) out[i + 1] = out[i] + heights[i]
+  return out
+}
+
+/** The last row whose top is at or above `y` (binary search over the offsets). */
+function rowAt(offsets: number[], y: number): number {
+  let lo = 0
+  let hi = offsets.length - 2
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if (offsets[mid] <= y) lo = mid
+    else hi = mid - 1
+  }
+  return Math.max(0, lo)
+}
+
+/** Like `visibleRange`, for rows of different heights. */
+export function visibleRangeAt(
+  offsets: number[],
+  scrollTop: number,
+  height: number,
+  overscan: number
+) {
+  const count = offsets.length - 1
+  if (count <= 0) return { first: 0, last: 0 }
+  const first = Math.max(0, rowAt(offsets, scrollTop) - overscan)
+  const last = Math.min(count, rowAt(offsets, scrollTop + height) + 1 + overscan)
+  return { first, last }
+}
+
+/**
+ * The height of the scroll box: every row when they fit in `height`, else the
+ * bottom of the last row that fits whole, so the box never ends halfway
+ * through a row before it is scrolled (at least the first row).
+ */
+export function boxHeight(offsets: number[], height: number, minimum = 0): number {
+  const total = offsets[offsets.length - 1]
+  if (total <= height) return Math.max(total, minimum)
+  const k = rowAt(offsets, height)
+  return Math.max(offsets[k], offsets[1] ?? 0)
+}
+
 export function VirtualRows<T>({
   rows,
   rowHeight,
@@ -46,26 +103,31 @@ export function VirtualRows<T>({
 }: VirtualRowsProps<T>) {
   const [scrollTop, setScrollTop] = useState(0)
   const box = useRef<HTMLDivElement>(null)
+  const offsets = useMemo(
+    () => rowOffsets(rows.map((r) => (typeof rowHeight === 'number' ? rowHeight : rowHeight(r)))),
+    [rows, rowHeight]
+  )
+  const total = offsets[offsets.length - 1]
+  const tail = rows.length ? total / rows.length : 0
   useEffect(() => {
     const el = box.current
-    if (!el || scrollToIndex == null || scrollToIndex < 0) return
-    const top = scrollToIndex * rowHeight
+    if (!el || scrollToIndex == null || scrollToIndex < 0 || scrollToIndex >= rows.length) return
+    const top = offsets[scrollToIndex]
+    const bottom = offsets[scrollToIndex + 1]
     if (top < el.scrollTop) el.scrollTop = top
-    else if (top + rowHeight > el.scrollTop + el.clientHeight)
-      el.scrollTop = top + rowHeight - el.clientHeight
-  }, [scrollToIndex, rowHeight])
+    else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight
+  }, [scrollToIndex, offsets, rows.length])
   const onScroll = useCallback(
     (e: UIEvent<HTMLDivElement>) => {
       const el = e.currentTarget
       setScrollTop(el.scrollTop)
-      if (onEndReached && el.scrollTop + el.clientHeight >= el.scrollHeight - rowHeight * 4)
+      if (onEndReached && el.scrollTop + el.clientHeight >= el.scrollHeight - tail * 4)
         onEndReached()
     },
-    [onEndReached, rowHeight]
+    [onEndReached, tail]
   )
-  const total = rows.length * rowHeight
-  const viewport = Math.min(height, Math.max(total, rowHeight))
-  const { first, last } = visibleRange(scrollTop, viewport, rowHeight, rows.length, overscan)
+  const viewport = boxHeight(offsets, height, tail)
+  const { first, last } = visibleRangeAt(offsets, scrollTop, viewport, overscan)
   return (
     <div
       ref={box}
@@ -85,10 +147,10 @@ export function VirtualRows<T>({
               role="listitem"
               style={{
                 position: 'absolute',
-                top: index * rowHeight,
+                top: offsets[index],
                 left: 0,
                 right: 0,
-                height: rowHeight,
+                height: offsets[index + 1] - offsets[index],
               }}
             >
               {renderRow(row, index)}

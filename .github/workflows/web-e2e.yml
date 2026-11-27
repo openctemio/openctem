@@ -35,7 +35,7 @@ name: Web E2E
 # nightly and dispatch: all of them. Pull request: the @smoke set, or with
 # impact selection the changed files mapped to area tags with
 # web/e2e/impact-map.yml (the @smoke specs always run; a shared or unmapped
-# path runs everything; only docs and unit tests select nothing). The specs are split into 1 to 4 shards
+# path runs everything; only docs and unit tests select nothing). The specs are split into 1 to 5 shards
 # by their recorded durations (artifact `e2e-timings` of the last green
 # develop run, the median for a spec without one), longest first, and the
 # every-page request budget check runs only when the @budget specs are
@@ -47,7 +47,7 @@ name: Web E2E
 #            commits with the same inputs), by digest. `build` pulls them once
 #            and hands the shards one artifact, so no shard builds. A fork pull
 #            request builds them in `build` (bake, GitHub Actions layer cache).
-#   shards   Playwright runs the specs `plan` assigned to each shard (1 to 4)
+#   shards   Playwright runs the specs `plan` assigned to each shard (1 to 5)
 #            plus, when selected, one job for the every-page request budget
 #            check, each against its own stack; 25 minute cap each. The first
 #            failing shard cancels the others (matrix fail-fast, plus
@@ -298,18 +298,24 @@ jobs:
           esac
           wc -l < "$RUNNER_TEMP/changed.txt"
 
-      # Per-spec durations recorded by the newest green develop run. None found
-      # (first run, expired artifact): every spec costs the same.
+      # Per-spec durations recorded by the newest green run of the branch under
+      # test (the pull request's base, or the pushed branch), else of develop:
+      # a long-lived branch such as next has specs develop does not, and those
+      # would all cost the median. None found (first run, expired artifact):
+      # every spec costs the same.
       - name: Recorded durations
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          UNDER_TEST: ${{ github.base_ref || github.ref_name }}
         run: |
           mkdir -p "$RUNNER_TEMP/timings"
-          for id in $(gh run list -R "$REPO" --workflow web-e2e.yml --branch develop --status success --limit 10 --json databaseId --jq '.[].databaseId' 2>/dev/null); do
-            if gh run download "$id" -R "$REPO" -n e2e-timings -D "$RUNNER_TEMP/timings" >/dev/null 2>&1; then
-              echo "timings from run $id"; break
-            fi
+          for branch in "$UNDER_TEST" develop; do
+            for id in $(gh run list -R "$REPO" --workflow web-e2e.yml --branch "$branch" --status success --limit 10 --json databaseId --jq '.[].databaseId' 2>/dev/null); do
+              if gh run download "$id" -R "$REPO" -n e2e-timings -D "$RUNNER_TEMP/timings" >/dev/null 2>&1; then
+                echo "timings from run $id ($branch)"; break 2
+              fi
+            done
           done
           ls "$RUNNER_TEMP/timings" || true
 
@@ -439,11 +445,16 @@ jobs:
     # the tests call http://localhost, which on the self-hosted runner (Docker via
     # dind) is a different machine. Playwright's apt dependencies need sudo too.
     runs-on: ubuntu-latest
-    # Stack start, install and a quarter of the tests; no image build here.
-    timeout-minutes: 25
+    # Stack start, install and a seventh of the tests; no image build here.
+    # The heaviest shard took 21-24 min on green runs and now passes 25 once
+    # the lists hold seeded rows: 40 leaves room until `plan` re-balances on
+    # fresh durations (recorded only by green push runs).
+    timeout-minutes: 40
     strategy:
-      # The first red shard cancels the rest: the gate fails either way.
-      fail-fast: true
+      # The first red shard cancels the rest on a pull request or in the queue:
+      # the gate fails either way. A push (develop, next) and the nightly run
+      # let every shard finish, so one report covers the whole suite.
+      fail-fast: ${{ github.event_name != 'push' && github.event_name != 'schedule' }}
       # From `plan`: one entry per shard (id 1..4, `files` = its specs) and,
       # when @budget is selected, id 0 = the request budget check alone.
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}

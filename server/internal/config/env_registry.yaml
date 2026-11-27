@@ -1652,7 +1652,7 @@ vars:
     component: api
     group: "Internal entitlements API"
     type: url
-    description: "A hosted service's account page (absolute https URL). When set, Settings > Usage & limits links to it for owners and admins whenever a limit applies to their organization. Empty (the default): no link."
+    description: "A hosted service's account page (absolute https URL). When set, Settings > Usage and limits links to it for owners and admins whenever a limit applies to their organization. Empty (the default): no link."
   - name: INTERNAL_API_ADDR
     component: api
     group: "Internal entitlements API"

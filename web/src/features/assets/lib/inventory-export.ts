@@ -11,6 +11,7 @@ import type { TypeView } from '@/features/asset-types/lib/type-view'
 import { fetchAllAssets, type AssetSearchFilters } from '../hooks/use-assets'
 import type { Asset } from '../types'
 import { attributeText } from './attribute-value'
+import { formatNumber } from '@/lib/app-locale'
 
 /** The CSV columns: core fields, then the type's attributes (not objects). */
 export function inventoryExportFields(view: TypeView | null): ExportFieldConfig<Asset>[] {
@@ -46,7 +47,7 @@ export async function exportInventory(
   const { page: _page, pageSize: _pageSize, ...rest } = filters
   const rows = await fetchAllAssets(rest, (loaded) =>
     toast.warning(
-      `Export limited to the first ${loaded.toLocaleString()} assets: narrow the filters to export the rest`
+      `Export limited to the first ${formatNumber(loaded)} assets: narrow the filters to export the rest`
     )
   )
   const name = view ? view.plural.toLowerCase().replace(/[^a-z0-9]+/g, '-') : 'assets'

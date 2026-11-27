@@ -180,6 +180,10 @@ export default function CtemCyclesPage() {
       },
       {
         id: 'criteria',
+        // Steps aside on a 768 screen (frame about 650), where the long vi
+        // header "Tiêu chí thành công" ran past the frame; the outcome is
+        // on the cycle's page.
+        meta: { hideBelow: 760, label: t('scoping.cycles.col.criteria', 'Success criteria') },
         header: () => <span>{t('scoping.cycles.col.criteria', 'Success criteria')}</span>,
         enableSorting: false,
         cell: ({ row }) => {
@@ -225,6 +229,43 @@ export default function CtemCyclesPage() {
             </Can>
           </PageHeader>
 
+          <div>
+            {isLoading ? (
+              <div className="space-y-2 rounded-xl border p-3">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : loadError ? (
+              <ErrorState
+                title={t('scope.cycles.loadError', 'cycles')}
+                error={loadError}
+                onRetry={() => mutate()}
+              />
+            ) : cycles.length === 0 ? (
+              <EmptyState
+                icon={RefreshCw}
+                title={t('scope.cycles.emptyTitle', 'No cycles yet')}
+                description={t('scope.cycles.empty', 'Create a cycle to start.')}
+              />
+            ) : (
+              <DataTable
+                columns={columns}
+                data={cycles}
+                onRowClick={(cycle) => router.push(`/cycles/${cycle.id}`)}
+                searchPlaceholder={t('scoping.cycles.search', 'Search cycles…')}
+                emptyMessage={t('scoping.cycles.noMatch', 'No cycles found')}
+                emptyDescription={t(
+                  'scoping.cycles.noMatchHint',
+                  'No cycles match the current search.'
+                )}
+              />
+            )}
+          </div>
+          <CappedNotice loaded={cycles.length} total={response?.total ?? 0} />
+
+          {/* The policy and the rhythm come after the list, so the cycles are
+            the first thing on the page. */}
           <CyclePolicyCard />
 
           {/* CTEM operating rhythm: a lightweight, always-visible reminder of
@@ -266,41 +307,6 @@ export default function CtemCyclesPage() {
               </p>
             )}
           </section>
-
-          <div>
-            {isLoading ? (
-              <div className="space-y-2 rounded-xl border p-3">
-                {[1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : loadError ? (
-              <ErrorState
-                title={t('scope.cycles.loadError', 'cycles')}
-                error={loadError}
-                onRetry={() => mutate()}
-              />
-            ) : cycles.length === 0 ? (
-              <EmptyState
-                icon={RefreshCw}
-                title={t('scope.cycles.emptyTitle', 'No cycles yet')}
-                description={t('scope.cycles.empty', 'Create a cycle to start.')}
-              />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={cycles}
-                onRowClick={(cycle) => router.push(`/cycles/${cycle.id}`)}
-                searchPlaceholder={t('scoping.cycles.search', 'Search cycles…')}
-                emptyMessage={t('scoping.cycles.noMatch', 'No cycles found')}
-                emptyDescription={t(
-                  'scoping.cycles.noMatchHint',
-                  'No cycles match the current search.'
-                )}
-              />
-            )}
-          </div>
-          <CappedNotice loaded={cycles.length} total={response?.total ?? 0} />
         </PageStack>
       </Main>
 

@@ -1,13 +1,13 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { EmptyCell } from '@/features/shared/components/empty-cell'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { ShieldAlert, X } from 'lucide-react'
+import { KeyRound, ShieldAlert, ShieldPlus, UserRound, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -16,7 +16,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { DataTable, ErrorState, PageHeader, PageStack, StackedCell } from '@/features/shared'
+import {
+  DataTable,
+  DataTableRowActions,
+  EmptyState,
+  MetaLine,
+  PageHeader,
+  PageStack,
+} from '@/features/shared'
+import { ListCount, ListToolbarTitle } from '@/features/shared/components/list-title-row'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   assignPlatformRole,
@@ -58,22 +67,37 @@ export default function AdminRolesPage() {
     [t, roles]
   )
   const additional = useMemo(() => roles.filter((r) => !r.base), [roles])
+  const holders = useMemo(() => assignments.data?.data ?? [], [assignments.data])
 
   const roleColumns = useMemo<ColumnDef<PlatformRoleInfo>[]>(
     () => [
       {
         accessorKey: 'name',
         header: t('admin.roles.col.role', 'Role'),
-        cell: ({ row }) => (
-          <StackedCell
-            primary={t(`admin.platformRole.${row.original.key}`, row.original.name)}
-            secondary={t(`admin.platformRoleDesc.${row.original.key}`, row.original.description)}
-          />
-        ),
+        // The role is the row's name, its description beside it on one line.
+        meta: {
+          kind: 'name',
+          pin: 'start',
+          minWidth: 200,
+          label: t('admin.roles.col.role', 'Role'),
+        },
+        cell: ({ row }) => {
+          const name = t(`admin.platformRole.${row.original.key}`, row.original.name)
+          const desc = t(`admin.platformRoleDesc.${row.original.key}`, row.original.description)
+          return (
+            <div className="flex min-w-0 items-baseline gap-2">
+              <span className="shrink-0 font-medium">{name}</span>
+              <span className="truncate text-muted-foreground" title={desc}>
+                {desc}
+              </span>
+            </div>
+          )
+        },
       },
       {
         id: 'kind',
-        header: t('admin.roles.col.kind', 'Kind'),
+        header: t('admin.roles.col.kind', 'Type'),
+        meta: { kind: 'status', width: 128, label: t('admin.roles.col.kind', 'Type') },
         cell: ({ row }) => (
           <Badge variant="outline">
             {row.original.base
@@ -85,20 +109,54 @@ export default function AdminRolesPage() {
       {
         id: 'permissions',
         header: t('admin.roles.col.permissions', 'Permissions'),
+        meta: {
+          kind: 'number',
+          width: 96,
+          label: t('admin.roles.col.permissions', 'Permissions'),
+        },
         cell: ({ row }) => (
-          <span className="text-muted-foreground text-sm">
-            {t('admin.roles.permissionCount', '{n} permissions', {
+          <span
+            className="tabular-nums"
+            title={t('admin.roles.permissionCount', '{n} permissions', {
               n: row.original.permissions.length,
             })}
+          >
+            {row.original.permissions.length}
           </span>
         ),
       },
       {
         accessorKey: 'holders',
         header: t('admin.roles.col.holders', 'Holders'),
+        meta: { kind: 'number', width: 96, label: t('admin.roles.col.holders', 'Holders') },
+        cell: ({ row }) => <span className="tabular-nums">{row.original.holders}</span>,
       },
     ],
     [t]
+  )
+
+  // Giving a role: the row's one action, behind its menu (table and phone card).
+  const holderMenu = useCallback(
+    (a: PlatformRoleAssignment) =>
+      canAssign && a.admin_id !== me.id && a.active ? (
+        <DataTableRowActions
+          label={t('admin.roles.rowActions', 'Actions for the administrator {email}', {
+            email: toDisplayText(a.email),
+          })}
+          actions={[
+            {
+              label: t('admin.roles.giveRole', 'Give a role'),
+              // One action with an icon: the row shows it as the button itself.
+              icon: ShieldPlus,
+              onClick: () => {
+                setNewRole('')
+                setChange({ kind: 'assign', target: a })
+              },
+            },
+          ]}
+        />
+      ) : null,
+    [t, canAssign, me.id]
   )
 
   const holderColumns = useMemo<ColumnDef<PlatformRoleAssignment>[]>(
@@ -106,26 +164,53 @@ export default function AdminRolesPage() {
       {
         accessorKey: 'email',
         header: t('admin.roles.col.admin', 'Administrator'),
-        cell: ({ row }) => (
-          <div className="flex items-center gap-2">
-            <StackedCell
-              primary={row.original.name || row.original.email}
-              secondary={row.original.email}
-            />
-            {row.original.break_glass && (
-              <Badge variant="secondary">{t('admin.roles.breakGlass', 'Break-glass')}</Badge>
-            )}
-            {!row.original.active && (
-              <Badge variant="secondary">{t('admin.roles.inactive', 'Inactive')}</Badge>
-            )}
-          </div>
-        ),
+        meta: {
+          kind: 'name',
+          pin: 'start',
+          minWidth: 200,
+          label: t('admin.roles.col.admin', 'Administrator'),
+        },
+        cell: ({ row }) => {
+          const a = row.original
+          const name = toDisplayText(a.name || a.email)
+          return (
+            <div className="flex min-w-0 items-baseline gap-2">
+              <span className="truncate font-medium" title={name}>
+                {name}
+              </span>
+              {a.name && a.name !== a.email && (
+                <span className="truncate text-muted-foreground" title={toDisplayText(a.email)}>
+                  {toDisplayText(a.email)}
+                </span>
+              )}
+            </div>
+          )
+        },
+      },
+      {
+        id: 'state',
+        header: t('admin.roles.col.state', 'State'),
+        meta: { kind: 'tags', width: 176, label: t('admin.roles.col.state', 'State') },
+        cell: ({ row }) =>
+          row.original.break_glass || !row.original.active ? (
+            <div className="flex flex-wrap gap-1 md:flex-nowrap md:*:shrink-0">
+              {row.original.break_glass && (
+                <Badge variant="secondary">{t('admin.roles.breakGlass', 'Emergency access')}</Badge>
+              )}
+              {!row.original.active && (
+                <Badge variant="secondary">{t('admin.roles.inactive', 'Inactive')}</Badge>
+              )}
+            </div>
+          ) : (
+            <EmptyCell title={t('admin.roles.noFlags', 'Active, nothing to flag')} />
+          ),
       },
       {
         id: 'roles',
         header: t('admin.roles.col.roles', 'Roles'),
+        meta: { kind: 'tags', minWidth: 240, label: t('admin.roles.col.roles', 'Roles') },
         cell: ({ row }) => (
-          <div className="flex flex-wrap items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1 md:flex-nowrap md:overflow-hidden md:*:shrink-0">
             {row.original.roles.map((key) => {
               const removable =
                 canAssign &&
@@ -155,22 +240,12 @@ export default function AdminRolesPage() {
       {
         id: 'actions',
         header: '',
-        cell: ({ row }) =>
-          canAssign && row.original.admin_id !== me.id && row.original.active ? (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                setNewRole('')
-                setChange({ kind: 'assign', target: row.original })
-              }}
-            >
-              {t('admin.roles.giveRole', 'Give a role')}
-            </Button>
-          ) : null,
+        meta: { kind: 'actions' },
+        // Giving a role is the row's one action: it stays behind the row's menu.
+        cell: ({ row }) => holderMenu(row.original),
       },
     ],
-    [t, canAssign, me.id, roleName, additional]
+    [t, canAssign, me.id, roleName, additional, holderMenu]
   )
 
   const assignable =
@@ -195,52 +270,98 @@ export default function AdminRolesPage() {
             <AlertDescription>
               {t(
                 'admin.roles.ownersWarning',
-                'Keep at least two named platform owners (besides the break-glass account): with one, four-eyes approvals have no second approver and a lost account locks the platform out.'
+                'Keep at least two named platform owners (besides the emergency access account): with one, four-eyes approvals have no second approver and a lost account locks the platform out.'
               )}
             </AlertDescription>
           </Alert>
         )}
-        {catalog.error ? (
-          <ErrorState
-            title={t('admin.roles.title', 'roles')}
-            error={catalog.error}
-            onRetry={() => void catalog.mutate()}
-          />
-        ) : (
-          <DataTable
-            columns={roleColumns}
-            data={catalog.data?.roles ?? []}
-            getRowId={(r) => r.key}
-            isLoading={catalog.isLoading}
-            showSearch={false}
-            showColumnToggle={false}
-            showSelectionCount={false}
-            mobileCards
-            emptyMessage={t('admin.roles.empty', 'No roles')}
-          />
-        )}
-        {canSeeHolders &&
-          (assignments.error ? (
-            <ErrorState
-              title={t('admin.roles.holdersTitle', 'role holders')}
-              error={assignments.error}
-              onRetry={() => void assignments.mutate()}
+        <DataTable
+          columns={roleColumns}
+          data={roles}
+          caption={t('admin.roles.viewRoles', 'Platform roles')}
+          // The name and count share the Display menu's row.
+          toolbarTitle={
+            <ListToolbarTitle
+              title={t('admin.roles.viewRoles', 'Platform roles')}
+              count={
+                <ListCount
+                  total={roles.length}
+                  loading={!catalog.data && !catalog.error}
+                  label={t('admin.roles.total', '{count, plural, one {# role} other {# roles}}', {
+                    count: roles.length,
+                  })}
+                />
+              }
             />
-          ) : (
+          }
+          getRowId={(r) => r.key}
+          error={catalog.error}
+          onRetry={() => void catalog.mutate()}
+          errorTitle={t('admin.roles.title', 'roles')}
+          isLoading={catalog.isLoading && !catalog.data}
+          showSearch={false}
+          showSelectionCount={false}
+          // A phone card with fixed slots: the description gets the card's
+          // width under the name, never squeezed beside it.
+          mobileRow={(r) => <RolePhoneCard role={r} />}
+          paginationNoun={t('admin.roles.noun', 'roles')}
+          emptyState={{
+            nothingYet: <EmptyState icon={KeyRound} title={t('admin.roles.empty', 'No roles')} />,
+          }}
+        />
+        {canSeeHolders && (
+          <>
             <DataTable
               columns={holderColumns}
-              data={assignments.data?.data ?? []}
+              data={holders}
+              caption={t('admin.roles.viewHolders', 'Who holds them')}
+              toolbarTitle={
+                <ListToolbarTitle
+                  title={t('admin.roles.viewHolders', 'Who holds them')}
+                  count={
+                    <ListCount
+                      total={holders.length}
+                      loading={!assignments.data && !assignments.error}
+                      label={t(
+                        'admin.roles.holdersTotal',
+                        '{count, plural, one {# administrator} other {# administrators}}',
+                        { count: holders.length }
+                      )}
+                    />
+                  }
+                />
+              }
+              // When the table scrolls sideways the row menu stays in view.
+              pinActions
               getRowId={(a) => a.admin_id}
-              isLoading={assignments.isLoading}
+              error={assignments.error}
+              onRetry={() => void assignments.mutate()}
+              errorTitle={t('admin.roles.holdersTitle', 'role holders')}
+              isLoading={assignments.isLoading && !assignments.data}
               showSearch={false}
-              showColumnToggle={false}
               showSelectionCount={false}
-              mobileCards
-              emptyMessage={t('admin.roles.noHolders', 'No administrators')}
+              mobileRow={(a) => (
+                <HolderPhoneCard holder={a} roleName={roleName} menu={holderMenu(a)} />
+              )}
+              paginationNoun={t('admin.roles.holdersNoun', 'administrators')}
+              emptyState={{
+                nothingYet: (
+                  <EmptyState
+                    icon={UserRound}
+                    title={t('admin.roles.noHolders', 'No administrators')}
+                  />
+                ),
+              }}
             />
-          ))}
+          </>
+        )}
         {change && (
           <AdminConfirmDialog
+            reasonPlaceholder={
+              change.kind === 'assign'
+                ? t('admin.roles.reasonGive', 'Joins the content team, change 2231')
+                : t('admin.roles.reasonTake', 'Moved to another team, ticket 2231')
+            }
             open
             onOpenChange={(open) => !open && setChange(null)}
             title={
@@ -303,5 +424,105 @@ export default function AdminRolesPage() {
         )}
       </PageStack>
     </Main>
+  )
+}
+
+/**
+ * A role holder on a phone: the name with its roles at the line's end and the
+ * row menu (when the viewer may give a role), then the address and the
+ * account's state. The roles end the first line, so the card never stops short.
+ *
+ *   Ana Example                                   Platform owner   (...)
+ *   ana@example.com
+ *   Break-glass
+ */
+function HolderPhoneCard({
+  holder,
+  roleName,
+  menu,
+}: {
+  holder: PlatformRoleAssignment
+  roleName: (key: string) => string
+  menu: ReactNode
+}) {
+  const { t } = useTranslation()
+  const name = toDisplayText(holder.name || holder.email)
+  const email = holder.name && holder.name !== holder.email ? toDisplayText(holder.email) : ''
+  return (
+    <div data-slot="holder-card" className="flex w-full min-w-0 items-start gap-2 px-3 py-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span data-cut-tooltip className="min-w-0 flex-1 truncate font-medium" title={name}>
+            {name}
+          </span>
+          <span className="flex shrink-0 flex-wrap justify-end gap-1">
+            {holder.roles.map((key) => (
+              <Badge key={key} variant="outline">
+                {roleName(key)}
+              </Badge>
+            ))}
+          </span>
+        </div>
+        {email && (
+          <span data-token className="text-cap text-muted-foreground [overflow-wrap:anywhere]">
+            {email}
+          </span>
+        )}
+        {(holder.break_glass || !holder.active) && (
+          <span className="flex flex-wrap gap-1">
+            {holder.break_glass && (
+              <Badge variant="secondary">{t('admin.roles.breakGlass', 'Emergency access')}</Badge>
+            )}
+            {!holder.active && (
+              <Badge variant="secondary">{t('admin.roles.inactive', 'Inactive')}</Badge>
+            )}
+          </span>
+        )}
+      </div>
+      {menu ? <div className="shrink-0">{menu}</div> : null}
+    </div>
+  )
+}
+
+/**
+ * A platform role on a phone: the name with its kind at the line's end, the
+ * description on the card's width under it, then the counts.
+ *
+ *   Platform owner                                             Base
+ *   Every platform permission. Keep at least two named owners...
+ *   40 permissions   2 administrators
+ */
+function RolePhoneCard({ role }: { role: PlatformRoleInfo }) {
+  const { t } = useTranslation()
+  const name = t(`admin.platformRole.${role.key}`, role.name)
+  const desc = t(`admin.platformRoleDesc.${role.key}`, role.description)
+  return (
+    <div data-slot="role-card" className="flex w-full min-w-0 flex-col gap-1 px-3 py-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0 flex-1 truncate font-medium" title={name}>
+          {name}
+        </span>
+        <Badge variant="outline">
+          {role.base
+            ? t('admin.roles.kind.base', 'Base')
+            : t('admin.roles.kind.additional', 'Additional')}
+        </Badge>
+      </div>
+      {desc && <p className="text-cap text-muted-foreground">{desc}</p>}
+      <MetaLine
+        items={[
+          <span key="permissions" className="tabular-nums">
+            {t('admin.roles.permissionCount', '{n} permissions', { n: role.permissions.length })}
+          </span>,
+          <span key="holders" className="tabular-nums">
+            {t(
+              'admin.roles.holdersTotal',
+              '{count, plural, one {# administrator} other {# administrators}}',
+              { count: role.holders }
+            )}
+          </span>,
+        ]}
+      />
+    </div>
   )
 }

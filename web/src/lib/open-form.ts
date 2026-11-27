@@ -1,14 +1,22 @@
 /**
- * The "open a form" link the command palette uses: `?new=<form>` on a page
+ * The "open a form" link the Create menu, its "c" chords and the command
+ * palette use: `?new=<form>` on a page
  * opens that page's create form once, and the param is then removed from the
  * address so a reload or Back does not open it again. The page still checks
  * its own permission before it opens anything; the param only says which
  * form to show.
  */
 
-export type OpenForm = 'scan' | 'import' | 'task'
+export type OpenForm = 'scan' | 'import' | 'asset' | 'finding' | 'task' | 'invite'
 
-const FORMS: ReadonlySet<string> = new Set<OpenForm>(['scan', 'import', 'task'])
+const FORMS: ReadonlySet<string> = new Set<OpenForm>([
+  'scan',
+  'import',
+  'asset',
+  'finding',
+  'task',
+  'invite',
+])
 
 /** The page address that opens a form. */
 export function openFormHref(path: string, form: OpenForm): string {

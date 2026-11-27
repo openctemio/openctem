@@ -26,7 +26,7 @@ import {
   DialogTitle,
   DialogBody,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
+import { FilePicker } from '@/features/shared/components/file-picker'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 
@@ -46,6 +46,7 @@ import {
 } from '../lib/import-results'
 import { MappingFormatField } from './mapping-format-field'
 import { ReceiptSummary, RecentImports } from './receipt-summary'
+import { BreakText } from '@/features/shared/components/break-text'
 
 const ACCEPT_RECON = '.zip,application/zip'
 const ACCEPT = '.nessus,.xml,.json,.zip,application/xml,text/xml,application/json,application/zip'
@@ -80,8 +81,11 @@ export function ImportResultsDialog({
   const [preview, setPreview] = useState<FindingImportResponse | null>(null)
   const [result, setResult] = useState<FindingImportResponse | null>(null)
   const [error, setError] = useState<{ message: string; file?: ImportFileResponse } | null>(null)
+  // Preview was pressed without a file: said under the picker.
+  const [tried, setTried] = useState(false)
 
   function reset() {
+    setTried(false)
     setFile(null)
     setKb(null)
     setFormat('')
@@ -92,6 +96,7 @@ export function ImportResultsDialog({
   }
 
   async function run(dryRun: boolean) {
+    setTried(true)
     if (!file) return
     setBusy(dryRun ? 'preview' : 'import')
     setError(null)
@@ -210,12 +215,17 @@ export function ImportResultsDialog({
               )}
               <div className="space-y-1">
                 <Label htmlFor="import-file">{t('findings.importResults.file', 'File')}</Label>
-                <Input
+                <FilePicker
                   id="import-file"
-                  type="file"
+                  file={file}
                   accept={source === 'recon' ? ACCEPT_RECON : format ? ACCEPT_MAPPED : ACCEPT}
-                  onChange={(e) => {
-                    setFile(e.target.files?.[0] ?? null)
+                  error={
+                    tried && !file
+                      ? t('findings.importResults.fileRequired', 'Choose the file to import first.')
+                      : undefined
+                  }
+                  onFile={(f) => {
+                    setFile(f)
                     setPreview(null)
                     setError(null)
                   }}
@@ -229,12 +239,12 @@ export function ImportResultsDialog({
                       ({t('findings.importResults.optional', 'optional')})
                     </span>
                   </Label>
-                  <Input
+                  <FilePicker
                     id="import-kb"
-                    type="file"
+                    file={kb}
                     accept=".xml,application/xml,text/xml"
-                    onChange={(e) => {
-                      setKb(e.target.files?.[0] ?? null)
+                    onFile={(f) => {
+                      setKb(f)
                       setPreview(null)
                     }}
                   />
@@ -293,32 +303,29 @@ export function ImportResultsDialog({
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 {t('common.cancel', 'Cancel')}
               </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={!file || busy !== null}
-                onClick={() => run(true)}
-              >
-                {busy === 'preview' && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                {t('findings.importResults.preview', 'Preview')}
-              </Button>
-              <Button
-                type="button"
-                disabled={
-                  !file ||
-                  !preview ||
-                  busy !== null ||
-                  importTotals(preview.files ?? []).failed === (preview.files ?? []).length
-                }
-                onClick={() => run(false)}
-              >
-                {busy === 'import' ? (
-                  <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <FileUp className="me-2 h-4 w-4" />
-                )}
-                {t('findings.importResults.import', 'Import')}
-              </Button>
+              {/* One main action: Preview until a preview is shown, then Import. */}
+              {preview ? (
+                <Button
+                  type="button"
+                  disabled={
+                    busy !== null ||
+                    importTotals(preview.files ?? []).failed === (preview.files ?? []).length
+                  }
+                  onClick={() => run(false)}
+                >
+                  {busy === 'import' ? (
+                    <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <FileUp className="me-2 h-4 w-4" />
+                  )}
+                  {t('findings.importResults.import', 'Import')}
+                </Button>
+              ) : (
+                <Button type="button" disabled={busy !== null} onClick={() => run(true)}>
+                  {busy === 'preview' && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                  {t('findings.importResults.preview', 'Preview')}
+                </Button>
+              )}
             </>
           )}
         </DialogFooter>
@@ -355,7 +362,9 @@ function FileSummary({ file, dryRun }: { file: ImportFileResponse; dryRun: boole
   return (
     <div className="space-y-2 rounded-md border p-3 text-sm" data-testid="import-file">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium break-all">{file.name}</span>
+        <span className="font-medium break-words">
+          <BreakText>{file.name}</BreakText>
+        </span>
         <Badge variant="outline">{formatLabel(file.format)}</Badge>
       </div>
       {file.error ? (
@@ -500,7 +509,7 @@ function PathList({
       <CollapsibleContent>
         <ul className="mt-1 max-h-32 overflow-y-auto font-mono text-xs">
           {paths.map((p) => (
-            <li key={p.path} className="break-all">
+            <li key={p.path} className="break-words">
               {p.path}
               {p.reason ? (
                 <span className="text-muted-foreground font-sans"> ({p.reason})</span>

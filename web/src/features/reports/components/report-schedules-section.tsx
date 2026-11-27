@@ -232,7 +232,7 @@ export function ReportSchedulesSection() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+
             disabled={deletingId === schedule.id}
             aria-label={t('confirm.reportSchedule.deleteLabel', 'Delete {name}', {
               name: schedule.name,
@@ -254,10 +254,7 @@ export function ReportSchedulesSection() {
             {t('reports.schedules.title', 'Scheduled reports')}
           </h2>
           <p className="text-sm text-muted-foreground">
-            {t(
-              'reports.schedulesHint',
-              'Finding-summary digests emailed to recipients on a schedule.'
-            )}
+            {t('reports.schedulesHint', 'Finding summaries emailed to recipients on a schedule.')}
           </p>
         </div>
         {schedules.length > 0 && (

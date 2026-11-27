@@ -88,11 +88,15 @@ describe('GroupExceptionDialog', () => {
     api.preview.mockResolvedValue(preview)
   })
 
-  it('asks for a reason before previewing', () => {
+  it('asks for a reason before previewing', async () => {
+    const user = userEvent.setup()
     renderDialog()
     expect(screen.getByText(/Choose a reason to see who decides/)).toBeInTheDocument()
     expect(api.preview).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'Request exception' })).toBeDisabled()
+    // The button stays enabled; pressing it names the missing reason and sends nothing.
+    await user.click(screen.getByRole('button', { name: 'Request exception' }))
+    expect(await screen.findByText('Choose a reason.')).toBeInTheDocument()
+    expect(api.request).not.toHaveBeenCalled()
   })
 
   it('previews the group: tier and why, members with shortened and skipped markers', async () => {
@@ -126,10 +130,12 @@ describe('GroupExceptionDialog', () => {
     await chooseReason(user, 'Risk accepted')
     await screen.findByTestId('approval-evaluation')
 
-    const note = screen.getByLabelText('Justification')
+    const note = screen.getByLabelText('Note')
     await user.type(note, 'too short')
     expect(screen.getByRole('alert')).toHaveTextContent('Write at least 20 characters')
-    expect(screen.getByRole('button', { name: 'Request exception' })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: 'Request exception' }))
+    expect(api.request).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert')).toHaveTextContent('Write at least 20 characters')
 
     await user.type(note, ' but now it is long enough')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
@@ -142,10 +148,7 @@ describe('GroupExceptionDialog', () => {
     const props = renderDialog()
     await chooseReason(user, 'Risk accepted')
     await screen.findByTestId('approval-evaluation')
-    await user.type(
-      screen.getByLabelText('Justification'),
-      '  No maintenance window until December  '
-    )
+    await user.type(screen.getByLabelText('Note'), '  No maintenance window until December  ')
     await user.click(screen.getByRole('button', { name: 'Request exception' }))
 
     await waitFor(() => expect(api.request).toHaveBeenCalledTimes(1))
@@ -164,7 +167,7 @@ describe('GroupExceptionDialog', () => {
     const props = renderDialog()
     await chooseReason(user, 'Risk accepted')
     await screen.findByTestId('approval-evaluation')
-    await user.type(screen.getByLabelText('Justification'), 'A long enough justification here')
+    await user.type(screen.getByLabelText('Note'), 'A long enough justification here')
     await user.click(screen.getByRole('button', { name: 'Request exception' }))
 
     await waitFor(() =>
@@ -183,7 +186,7 @@ describe('GroupExceptionDialog', () => {
     const props = renderDialog()
     await chooseReason(user, 'Risk accepted')
     await screen.findByTestId('approval-evaluation')
-    await user.type(screen.getByLabelText('Justification'), 'A long enough justification here')
+    await user.type(screen.getByLabelText('Note'), 'A long enough justification here')
     await user.click(screen.getByRole('button', { name: 'Request exception' }))
 
     expect(await screen.findByTestId('group-exception-bulk-confirm')).toBeInTheDocument()

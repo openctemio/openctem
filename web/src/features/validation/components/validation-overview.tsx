@@ -46,9 +46,12 @@ export function WaitingForYou({ items, starts }: { items: WaitingItem[]; starts:
     body = (
       <ul className="divide-y" data-testid="validation-waiting">
         {waiting.map((item, idx) => (
+          // The text column stops at 32rem and the tracks do not stretch
+          // (justify-start), so on a wide screen the action stays beside
+          // what it acts on instead of at the far edge.
           <li
             key={item.key}
-            className="grid grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-4 py-3 sm:grid-cols-[3.5rem_minmax(0,1fr)_auto]"
+            className="grid grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-4 py-3 sm:grid-cols-[3.5rem_minmax(0,32rem)_auto] sm:justify-start"
           >
             <span className="text-xl font-semibold tabular-nums">{item.count}</span>
             <span className="min-w-0">
@@ -59,7 +62,7 @@ export function WaitingForYou({ items, starts }: { items: WaitingItem[]; starts:
               asChild
               size="sm"
               variant={idx === 0 ? 'default' : 'outline'}
-              className="col-start-2 justify-self-start sm:col-start-auto sm:justify-self-end"
+              className="col-start-2 justify-self-start sm:col-start-auto"
             >
               <Link href={item.href}>{item.action}</Link>
             </Button>

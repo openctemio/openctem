@@ -1,0 +1,353 @@
+'use client'
+
+import * as React from 'react'
+import { ChevronDown } from 'lucide-react'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
+import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/context/i18n-provider'
+import { cn } from '@/lib/utils'
+
+/**
+ * The list's one count: the results of the view as the list shows it (its
+ * filters and search applied), beside the view name in the title row. A list
+ * says its count here and nowhere else (the pager's "1 to 25 of N" is
+ * navigation, and tab counts are other queues'); the page-anatomy check
+ * fails a list page with more than one `data-slot="list-count"`.
+ *
+ * A pill (20 px, 12/16 medium, muted text on the raised surface) whose
+ * tooltip says what was counted: the viewer's own data scope.
+ *
+ * - `capped`: the server stopped counting; the count reads "1,000+" and the
+ *   tooltip says so too.
+ * - `label`: the full sentence for assistive technology ("26 findings"); the
+ *   region is polite and atomic, so a new count is announced once.
+ * - While the count is not known yet the slot stays, empty.
+ * - `failed`: the list answered but its total is not known. The slot says
+ *   "Could not count" ("Not counted" on a phone, the full sentence in its
+ *   tooltip) with Retry (`onRetry`) after it.
+ */
+export function ListCount({
+  total,
+  capped = false,
+  loading = false,
+  failed = false,
+  onRetry,
+  label,
+  className,
+}: {
+  total: number
+  capped?: boolean
+  loading?: boolean
+  failed?: boolean
+  onRetry?: () => void
+  /** "26 findings": read instead of the bare number. */
+  label?: string
+  className?: string
+}) {
+  const { t, locale } = useTranslation()
+  const n = new Intl.NumberFormat(locale).format(total)
+  const text = capped ? t('common.listCount.capped', '{count}+', { count: n }) : n
+  const scopeHint = t('common.listCount.scopeHint', 'Counted in your data scope')
+  const hint = capped
+    ? t('common.listCount.hints', '{first}. {second}.', {
+        first: scopeHint,
+        second: t('common.listCount.cappedHint', 'Counted up to this number'),
+      })
+    : scopeHint
+  if (failed && !loading) {
+    const reason = t('common.listCount.failed', 'Could not count')
+    return (
+      <>
+        <span
+          data-slot="list-count"
+          data-state="failed"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          title={t('common.listCount.failedHint', 'The total could not be counted. Try again.')}
+          className={cn('shrink-0 text-sm text-muted-foreground', className)}
+        >
+          <span aria-hidden="true" className="md:hidden">
+            {t('common.listCount.failedShort', 'Not counted')}
+          </span>
+          <span className="max-md:sr-only">{reason}</span>
+        </span>
+        {onRetry && (
+          <Button variant="ghost" data-slot="list-count-retry" onClick={onRetry}>
+            {t('common.retry', 'Retry')}
+          </Button>
+        )}
+      </>
+    )
+  }
+  return (
+    <span
+      data-slot="list-count"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      title={loading ? undefined : hint}
+      className={cn(
+        'inline-flex h-5 shrink-0 items-center rounded-full text-cap-m tabular-nums text-muted-foreground',
+        // The pill is drawn once there is a number in it.
+        !loading && 'bg-surface-raised px-2',
+        className
+      )}
+    >
+      {loading ? null : label ? (
+        <>
+          <span aria-hidden="true">{text}</span>
+          <span className="sr-only">{label}</span>
+        </>
+      ) : (
+        text
+      )}
+    </span>
+  )
+}
+
+/**
+ * "Modified": the list is its view plus something (a filter, search text,
+ * unsaved changes to a saved view). A dashed lozenge, 20 px tall with its
+ * border, 12/16, muted: a state of the view, never a status.
+ */
+export function ListModified({ title, className }: { title?: string; className?: string }) {
+  const { t } = useTranslation()
+  return (
+    <span
+      data-slot="list-modified"
+      title={title}
+      className={cn(
+        'inline-flex h-5 shrink-0 items-center rounded-md border border-dashed border-border px-1.5 text-cap text-muted-foreground',
+        className
+      )}
+    >
+      {t('common.listView.modified', 'Modified')}
+    </span>
+  )
+}
+
+/**
+ * What a changed view offers, right after the count: the Modified lozenge,
+ * then one "Save view" menu button with Save view (or Save changes and Save
+ * as new view on a view the viewer owns) and Reset. One button, not two: a
+ * narrow title row then keeps room for the view's name, and the row's end
+ * never moves when the view changes (1024 px vi cut "Đang hoạt động" to
+ * "Đan…" beside two buttons, 2026-11-26). Nothing is drawn while the view
+ * is unchanged.
+ *
+ * - `onSave`: opens the list's save-view dialog ("Save as new view…" when
+ *   `onSaveChanges` is given too). Leave it out for someone who may not save
+ *   views.
+ * - `onSaveChanges`: updates the open saved view (its owner only).
+ * - `onReset`: back to the exact base view. Alone (a list without saved
+ *   views) it is a plain Reset button.
+ * - `actionsClassName`: where the row is too narrow even for the one button,
+ *   the page hides it here and offers its items in the row's More instead;
+ *   the lozenge stays.
+ */
+export function ListViewChanged({
+  changed,
+  summary,
+  onSave,
+  onSaveChanges,
+  onReset,
+  actionsClassName,
+}: {
+  changed: boolean
+  /** What differs ("2 filters added, sort changed"): the lozenge's tooltip. */
+  summary?: string
+  onSave?: () => void
+  onSaveChanges?: () => void
+  onReset?: () => void
+  actionsClassName?: string
+}) {
+  const { t } = useTranslation()
+  if (!changed) return null
+  const saveLabel = t('common.listView.save', 'Save view')
+  const resetLabel = t('common.listView.reset', 'Reset')
+  const items: ActionMenuEntry[] = [
+    ...(onSaveChanges
+      ? [
+          {
+            id: 'view-save-changes',
+            label: t('confirm.savedView.saveChanges', 'Save changes'),
+            onSelect: onSaveChanges,
+          },
+        ]
+      : []),
+    ...(onSave
+      ? [
+          {
+            id: 'view-save',
+            label: onSaveChanges
+              ? t('confirm.savedView.saveAsNew', 'Save as new view…')
+              : saveLabel,
+            onSelect: onSave,
+          },
+        ]
+      : []),
+    ...(onReset ? [{ id: 'view-reset', label: resetLabel, onSelect: onReset }] : []),
+  ]
+  const canSave = !!(onSave || onSaveChanges)
+  return (
+    <>
+      <ListModified title={summary} />
+      {(canSave || onReset) && (
+        <div
+          data-slot="list-view-actions"
+          className={cn('flex shrink-0 items-center gap-2', actionsClassName)}
+        >
+          {canSave ? (
+            <ActionMenu
+              title={saveLabel}
+              label={saveLabel}
+              items={items}
+              trigger={
+                <Button data-slot="list-view-save" variant="outline" size="sm">
+                  {saveLabel}
+                  <ChevronDown aria-hidden="true" />
+                </Button>
+              }
+            />
+          ) : (
+            <Button data-slot="list-view-reset" variant="ghost" size="sm" onClick={onReset}>
+              {resetLabel}
+            </Button>
+          )}
+        </div>
+      )}
+    </>
+  )
+}
+
+/**
+ * The title row of a list (above its toolbar): the view or list name and its
+ * one count at the start, the list's own actions (Refresh, Export, More) at
+ * the end. Page-level actions (Add, the list or grid switch) stay in the page
+ * header.
+ */
+export function ListTitleRow({
+  title,
+  count,
+  start,
+  children,
+  className,
+  titleTestId,
+  titleHidden = false,
+  ref,
+  'data-testid': testId,
+}: {
+  title: React.ReactNode
+  /** The list's `ListCount`. */
+  count?: React.ReactNode
+  /** More after the count (a description, `ListViewChanged`). */
+  start?: React.ReactNode
+  /** The list's actions, pinned to the row's end. */
+  children?: React.ReactNode
+  /** The row's own classes (a size container for its actions). */
+  className?: string
+  /** A test id for the view name. */
+  titleTestId?: string
+  /**
+   * The name is said to assistive technology only: for a list whose selected
+   * tab already shows its name and count, so the row does not repeat them.
+   */
+  titleHidden?: boolean
+  /** The row element (a page reads its width to fold its actions). */
+  ref?: React.Ref<HTMLDivElement>
+  'data-testid'?: string
+}) {
+  // On a phone a row that can only ever draw the name and the count (no
+  // `start`, no actions) is a wasted row above the toolbar: it is read to
+  // assistive technology only, and the list's footer says how many rows
+  // there are ("25 of 200"). Decided from the props, never from what is drawn,
+  // so nothing appearing later (a Modified mark) moves the toolbar.
+  // The raw props: a page that renders its actions only on wide screens
+  // (`{!isPhone && <Refresh />}`) or a start that appears later (a Modified
+  // mark) still keeps the row, so the toolbar never moves.
+  const metaOnly = start == null && children == null
+  // Nothing to draw (a hidden name, no count, nothing after it, no actions):
+  // the heading stays for assistive technology and the row takes no room, so
+  // the page never shows an empty line.
+  if (titleHidden && !count && !start && !children) {
+    return (
+      <h2 data-slot="list-title-row" data-testid={titleTestId} className="sr-only">
+        {title}
+      </h2>
+    )
+  }
+  return (
+    <div
+      ref={ref}
+      data-slot="list-title-row"
+      data-testid={testId}
+      data-meta-only={metaOnly || undefined}
+      className={cn(
+        'flex min-h-control items-center gap-2',
+        metaOnly && 'max-md:sr-only',
+        className
+      )}
+    >
+      <div data-slot="list-title-start" className="flex min-w-0 items-center gap-3">
+        {/* The name gives way first: what follows it keeps its width. It stays
+            on one line, so the row's height never changes when the list's
+            name does (the header holds still as filters and views change);
+            a cut name keeps its whole text as the title. */}
+        <h2
+          data-testid={titleTestId}
+          data-cut-tooltip=""
+          className={titleHidden ? 'sr-only' : 'min-w-0 truncate text-sm font-medium'}
+          title={!titleHidden && typeof title === 'string' ? title : undefined}
+        >
+          {title}
+        </h2>
+        {count}
+        {start}
+      </div>
+      {children ? (
+        <div data-slot="list-title-end" className="ms-auto flex shrink-0 items-center gap-2">
+          {children}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/**
+ * A list's name and its one count at the start of its toolbar row
+ * (`DataTable` `toolbarTitle`, `ListToolbar` `title`): for a list with no
+ * search box, whose filters and Display menu then share the name's line.
+ * One control height tall, so the controls beside it keep their centre line.
+ */
+export function ListToolbarTitle({
+  title,
+  count,
+  start,
+  titleTestId,
+}: {
+  title: React.ReactNode
+  /** The list's `ListCount`. */
+  count?: React.ReactNode
+  /** More after the count: an info mark that explains the list. */
+  start?: React.ReactNode
+  /** A test id for the name. */
+  titleTestId?: string
+}) {
+  return (
+    <div
+      data-slot="list-toolbar-title"
+      className="flex min-h-control min-w-0 items-center gap-3 max-md:min-h-control-touch"
+    >
+      <h2
+        data-testid={titleTestId}
+        className="min-w-0 truncate text-sm font-medium"
+        title={typeof title === 'string' ? title : undefined}
+      >
+        {title}
+      </h2>
+      {count}
+      {start}
+    </div>
+  )
+}

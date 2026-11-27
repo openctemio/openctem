@@ -401,7 +401,7 @@ can read at least one finding of the task (`notificationScopeCond`). The tracker
 
 | Page | Shows |
 |---|---|
-| `/remediation` Fix plan | open tasks and new-fix suggestions in one list ranked by risk left; open, overdue, to-review and my-task counts |
+| `/remediation` Fix plan | open tasks ranked by risk removed (`GET /remediation/tasks?sort=risk`, paged on the server) in one table: rank and task, findings, risk removed, running total (a share of the list's risk only when the whole list is on the page), state, owner, deadline, progress; search, State and Campaign filters, sort by risk or deadline; Open tasks, Overdue and My tasks tiles filter the table. New-fix suggestions stay in the Suggestions tab (its count is on the tab) |
 | `/remediation/suggestions` | the inbox: cards with the fix, reach, risk parts, proposed owners and "Why?" (key, algorithm, fix steps); accept, edit then accept, dismiss with a reason (undo), snooze 7 days (undo), bulk accept; keyboard j/k, a, e, d, s, x, ? |
 | `/remediation/tasks` | views (all open, mine, verifying, on hold, closed, all), search and sort; a server-paged table or a board by state where only "on hold" moves by drag |
 | `/remediation/tasks/{id}` | header (state, deadline and its source, owner, risk left), fix steps with the command to copy, progress, findings grouped by asset in a windowed list that loads as it scrolls, select and Move to… (palette with the server's compatibility warnings) or drag onto a task of the same fix, Split, Mark fixed, Request exception (or the pending exception), hold/resume/cancel, timeline; every move offers Undo |

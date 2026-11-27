@@ -128,7 +128,7 @@ function MetricCard({ metric }: { metric: QualityMetric }) {
         {/* Value and status share a row that wraps, so the pill never squeezes
             (or clips) the title at narrow widths. */}
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className={cn('text-2xl font-bold tabular-nums', stateTextClass(metric.status))}>
+          <span className={cn('text-figure tabular-nums', stateTextClass(metric.status))}>
             {metric.display ?? '—'}
           </span>
           <StatusPill status={metric.status} />
@@ -214,7 +214,7 @@ export function DataQualityView() {
         label: t('insights.dataQuality.evidence', 'Finding evidence coverage'),
         measures: t(
           'insights.dataQuality.evidenceMeasures',
-          'Findings carrying evidence or context metadata'
+          'Findings with evidence or context attached'
         ),
         display: fmtPct(evidence, locale),
         target: '≥ 90%',
@@ -240,7 +240,7 @@ export function DataQualityView() {
           'Assets not re-observed in the last 30 days, which should trend down'
         ),
         display: fmtPct(stale, locale),
-        target: t('insights.programHealth.trendingDown', 'Trending down'),
+        target: t('insights.programHealth.trendingDown', 'Falling over time'),
         status: staleState(stale),
         bar: stale ?? null,
       },
@@ -278,7 +278,7 @@ export function DataQualityView() {
           title={t('insights.dataQuality.title', 'Data quality')}
           description={t(
             'insights.dataQuality.description',
-            'Whether the inventory is owned, evidenced and fresh enough to prioritise on.'
+            'Whether the inventory is owned, backed by evidence and fresh enough to prioritize on.'
           )}
         />
 
@@ -334,14 +334,14 @@ export function DataQualityView() {
               />
               <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
                 <div className="flex gap-1.5">
-                  <dt>{t('insights.dataQuality.dedup', 'Dedup merges (of inventory)')}</dt>
+                  <dt>{t('insights.dataQuality.dedup', 'Duplicate assets merged')}</dt>
                   <dd className="font-medium text-foreground tabular-nums">{dedupPct ?? '—'}</dd>
                 </div>
                 <div className="flex gap-1.5">
                   <dt>
                     {t(
                       'insights.dataQuality.lastSeenExposed',
-                      'Median last-seen (internet-exposed)'
+                      'Typical time since last seen (internet-facing)'
                     )}
                   </dt>
                   <dd className="font-medium text-foreground tabular-nums">

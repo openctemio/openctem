@@ -5,9 +5,13 @@ import { toast } from 'sonner'
 import { useSWRConfig } from 'swr'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSaveBar, SettingsSection } from '@/features/shared'
+import {
+  SettingsBlock,
+  SettingsSaveBar,
+  SettingsSection,
+  SettingsSwitchRow,
+} from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { EMERGING_SETTINGS_ENDPOINT, updateEmergingThreatsSettings } from '../api'
 import {
@@ -119,8 +123,9 @@ export function EmergingThreatsSettingsForm({
 
   return (
     <>
-      <form id={formId} className="space-y-8" onSubmit={handleSubmit} noValidate>
+      <form id={formId} className="flex flex-col gap-section" onSubmit={handleSubmit} noValidate>
         <SettingsSection
+          framed
           title={t('emergingThreats.settings.alerts')}
           description={t('emergingThreats.settings.alertsHelp')}
         >
@@ -131,41 +136,43 @@ export function EmergingThreatsSettingsForm({
             checked={form.enabled}
             onChange={(v) => set('enabled', v)}
           />
-          <div className="grid gap-4 sm:grid-cols-2">
-            <NumberField
-              id="et-immediate"
-              label={t('emergingThreats.settings.immediateThreshold')}
-              help={t('emergingThreats.settings.immediateThresholdHelp', undefined, {
-                min: b.immediate_threshold[0],
-                max: b.immediate_threshold[1],
-              })}
-              value={form.immediate_threshold}
-              onChange={(v) => set('immediate_threshold', v)}
-              error={err('immediate_threshold')}
-            />
-            <NumberField
-              id="et-digest"
-              label={t('emergingThreats.settings.digestThreshold')}
-              help={t('emergingThreats.settings.digestThresholdHelp', undefined, {
-                min: b.digest_threshold[0],
-                max: b.digest_threshold[1],
-              })}
-              value={form.digest_threshold}
-              onChange={(v) => set('digest_threshold', v)}
-              error={err('digest_threshold')}
-            />
-            <NumberField
-              id="et-digest-hour"
-              label={t('emergingThreats.settings.digestHour')}
-              help={t('emergingThreats.settings.digestHourHelp', undefined, {
-                time: hourPreview(form.digest_hour),
-                timezone,
-              })}
-              value={form.digest_hour}
-              onChange={(v) => set('digest_hour', v)}
-              error={err('digest_hour')}
-            />
-          </div>
+          <SettingsBlock>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <NumberField
+                id="et-immediate"
+                label={t('emergingThreats.settings.immediateThreshold')}
+                help={t('emergingThreats.settings.immediateThresholdHelp', undefined, {
+                  min: b.immediate_threshold[0],
+                  max: b.immediate_threshold[1],
+                })}
+                value={form.immediate_threshold}
+                onChange={(v) => set('immediate_threshold', v)}
+                error={err('immediate_threshold')}
+              />
+              <NumberField
+                id="et-digest"
+                label={t('emergingThreats.settings.digestThreshold')}
+                help={t('emergingThreats.settings.digestThresholdHelp', undefined, {
+                  min: b.digest_threshold[0],
+                  max: b.digest_threshold[1],
+                })}
+                value={form.digest_threshold}
+                onChange={(v) => set('digest_threshold', v)}
+                error={err('digest_threshold')}
+              />
+              <NumberField
+                id="et-digest-hour"
+                label={t('emergingThreats.settings.digestHour')}
+                help={t('emergingThreats.settings.digestHourHelp', undefined, {
+                  time: hourPreview(form.digest_hour),
+                  timezone,
+                })}
+                value={form.digest_hour}
+                onChange={(v) => set('digest_hour', v)}
+                error={err('digest_hour')}
+              />
+            </div>
+          </SettingsBlock>
           <ToggleRow
             id="et-possible"
             label={t('emergingThreats.settings.includePossible')}
@@ -176,6 +183,7 @@ export function EmergingThreatsSettingsForm({
         </SettingsSection>
 
         <SettingsSection
+          framed
           title={t('emergingThreats.settings.quiet')}
           description={t('emergingThreats.settings.quietHelp')}
         >
@@ -187,39 +195,42 @@ export function EmergingThreatsSettingsForm({
             onChange={(v) => set('quiet_enabled', v)}
           />
           {form.quiet_enabled && (
-            <div className="grid gap-4 sm:grid-cols-3">
-              <NumberField
-                id="et-quiet-start"
-                label={t('emergingThreats.settings.quietStart')}
-                help={hourPreview(form.quiet_start)}
-                value={form.quiet_start}
-                onChange={(v) => set('quiet_start', v)}
-                error={err('quiet_start')}
-              />
-              <NumberField
-                id="et-quiet-end"
-                label={t('emergingThreats.settings.quietEnd')}
-                help={hourPreview(form.quiet_end)}
-                value={form.quiet_end}
-                onChange={(v) => set('quiet_end', v)}
-                error={err('quiet_end')}
-              />
-              <NumberField
-                id="et-quiet-override"
-                label={t('emergingThreats.settings.quietOverride')}
-                help={t('emergingThreats.settings.quietOverrideHelp', undefined, {
-                  min: b.quiet_override[0],
-                  max: b.quiet_override[1],
-                })}
-                value={form.quiet_override}
-                onChange={(v) => set('quiet_override', v)}
-                error={err('quiet_override')}
-              />
-            </div>
+            <SettingsBlock>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <NumberField
+                  id="et-quiet-start"
+                  label={t('emergingThreats.settings.quietStart')}
+                  help={hourPreview(form.quiet_start)}
+                  value={form.quiet_start}
+                  onChange={(v) => set('quiet_start', v)}
+                  error={err('quiet_start')}
+                />
+                <NumberField
+                  id="et-quiet-end"
+                  label={t('emergingThreats.settings.quietEnd')}
+                  help={hourPreview(form.quiet_end)}
+                  value={form.quiet_end}
+                  onChange={(v) => set('quiet_end', v)}
+                  error={err('quiet_end')}
+                />
+                <NumberField
+                  id="et-quiet-override"
+                  label={t('emergingThreats.settings.quietOverride')}
+                  help={t('emergingThreats.settings.quietOverrideHelp', undefined, {
+                    min: b.quiet_override[0],
+                    max: b.quiet_override[1],
+                  })}
+                  value={form.quiet_override}
+                  onChange={(v) => set('quiet_override', v)}
+                  error={err('quiet_override')}
+                />
+              </div>
+            </SettingsBlock>
           )}
         </SettingsSection>
 
         <SettingsSection
+          framed
           title={t('emergingThreats.settings.messages')}
           description={t('emergingThreats.settings.messagesHelp')}
         >
@@ -289,6 +300,7 @@ function NumberField({
   )
 }
 
+/** One on/off setting: the shared settings row (label, hint, switch at the end). */
 function ToggleRow({
   id,
   label,
@@ -303,12 +315,12 @@ function ToggleRow({
   onChange: (v: boolean) => void
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
-      <div>
-        <Label htmlFor={id}>{label}</Label>
-        <p className="text-sm text-muted-foreground">{description}</p>
-      </div>
-      <Switch id={id} checked={checked} onCheckedChange={onChange} />
-    </div>
+    <SettingsSwitchRow
+      id={id}
+      label={label}
+      hint={description}
+      checked={checked}
+      onCheckedChange={onChange}
+    />
   )
 }

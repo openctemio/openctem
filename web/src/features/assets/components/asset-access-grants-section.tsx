@@ -134,7 +134,7 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('assets.grants.search', 'Search members by name or email…')}
-            className="h-8 text-sm"
+            className="text-sm"
             aria-label={t('assets.grants.searchAria', 'Search members')}
           />
           {debouncedSearch.trim() && options.length === 0 && (
@@ -226,7 +226,7 @@ export function AssetAccessGrantsSection({ assetId }: { assetId: string }) {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 text-destructive hover:text-destructive"
+                  className="text-destructive hover:text-destructive"
                   aria-label={t('assets.grants.revokeAria', 'Revoke access for {name}', {
                     name: g.userName || g.userEmail || t('assets.grants.userFallback', 'user'),
                   })}

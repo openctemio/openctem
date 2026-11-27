@@ -5,7 +5,7 @@
 #   - an organization and its owner (bootstrap-admin), who signs in
 #   - assets of two types, two sensors, a CTIS report with 15 findings
 #     (enough for the findings picker to scroll; two name CVE-2099-0101) and 10 for the triage
-#     spec, a scan with a run in progress, a remediation task
+#     spec, a scan with a run in progress, a scan that never ran, a remediation task
 #   - an account that owns two organizations, A with 50 findings and B with 3
 #     (the organization switch spec)
 #
@@ -124,6 +124,34 @@ SELECT a.tenant_id, a.id, t.k, t.n, t.v, t.c, now(), now()
  WHERE a.id = :'asset';
 SQL
 
+# 62-list-toolbar-stability (CVE catalog tab): the shared CVE catalog is filled
+# by intelligence feeds, which a CI stack does not sync, so the seed inserts a
+# few catalog entries (reserved 2099 block, none of the CVEs the findings above
+# name). Global rows: no tenant.
+docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA >/dev/null <<'SQL'
+INSERT INTO vulnerabilities (cve_id, external_id, namespace, origin, title, severity, cvss_score, epss_score,
+                             exploit_available, exploit_maturity, cisa_kev_date_added, cisa_kev_due_date, published_at)
+VALUES ('CVE-2099-0201', 'CVE-2099-0201', 'CVE', 'nvd', 'Remote code execution in the e2e request parser', 'critical', 9.8, 0.97, true, 'weaponized', '2099-01-02', '2099-01-23', '2099-01-01'),
+       ('CVE-2099-0202', 'CVE-2099-0202', 'CVE', 'nvd', 'Path traversal in the e2e archive extractor', 'high', 8.1, 0.12, true, 'poc', NULL, NULL, '2099-01-05'),
+       ('CVE-2099-0203', 'CVE-2099-0203', 'CVE', 'nvd', 'SQL injection in the e2e report filter', 'high', 7.5, 0.004, false, 'none', NULL, NULL, '2099-02-01'),
+       ('CVE-2099-0204', 'CVE-2099-0204', 'CVE', 'nvd', 'Cross-site scripting in the e2e search page', 'medium', 6.1, 0.0004, false, 'none', NULL, NULL, '2099-02-10'),
+       ('CVE-2099-0205', 'CVE-2099-0205', 'CVE', 'nvd', 'Information disclosure in the e2e status endpoint', 'low', 3.1, NULL, false, 'none', NULL, NULL, '2099-03-01')
+ON CONFLICT DO NOTHING;
+SQL
+
+log "risk trend"
+# Program health draws open findings over time from the daily risk snapshots
+# (a controller writes them once a day): 90 days of them, the page's default
+# window, so the trend chart and its screen-reader table render with a full
+# series (31-page-rhythm, helpers/scroll-end.ts).
+docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v tid="$TENANT_ID" >/dev/null <<'SQL'
+INSERT INTO risk_snapshots (tenant_id, snapshot_date, risk_score_avg, risk_score_max, findings_open, p0_open, p1_open)
+SELECT :'tid'::uuid, CURRENT_DATE - d, 40 + d % 7, 80, 120 - d, d % 3, 2 + d % 4
+  FROM generate_series(1, 90) AS d;
+SQL
+
 log "sensors and a CTIS report"
 # The seed pushes its report from a worker sensor without a command. A new
 # tenant holds such reports for review (RFC-040 §5.3, mode "quarantine");
@@ -186,6 +214,13 @@ findings=$({
     printf '{"type":"vulnerability","title":"E2E triage %02d","severity":"high","rule_id":"e2e-tri-%02d","asset_ref":"a1","description":"e2e triage"}\n' \
       "$i" "$i"
   done
+  # Four for the seeded remediation tasks (the tasks and campaigns lists, 14
+  # and 75): a finding belongs to one task, so the specs that create a task
+  # from the "E2E finding" rows (21) never meet these.
+  for i in $(seq 1 4); do
+    printf '{"type":"vulnerability","title":"E2E remediation %02d","severity":"high","rule_id":"e2e-rem-%02d","asset_ref":"a1","description":"e2e remediation"}\n' \
+      "$i" "$i"
+  done
   # One web finding with the proof nuclei sends (an HTTP exchange, then its
   # curl item) for the drawer evidence spec (31-finding-drawer-evidence). The
   # Authorization value must arrive masked; no other spec reads it.
@@ -231,6 +266,22 @@ code=$(curl -sS -o "$WORK/body" -w '%{http_code}' -X PUT "$API/api/v2/sensor/res
   -H "Content-Digest: sha-256=:$DIGEST:" --data-binary @"$WORK/report.json")
 [[ "$code" =~ ^2 ]] || { log "ingest -> $code: $(head -c 300 "$WORK/body")"; exit 1; }
 
+log "credential leaks"
+# /credentials (specs 36 and 62): a list with rows, so its toolbar, chips and
+# grouping are drawn. Every severity, four sources, one long identifier, one
+# leak dated today ("Recent"), one without a breach date. No secret values.
+TODAY=$(date -u +%F)
+call POST /api/v1/credentials/import "{\"credentials\":[
+  {\"identifier\":\"e2e-alice@example.com\",\"credential_type\":\"password\",\"severity\":\"critical\",\"source\":{\"type\":\"data_breach\",\"name\":\"e2e breach\"},\"dedup_key\":{\"breach_name\":\"e2e breach\",\"breach_date\":\"$TODAY\"},\"context\":{\"email\":\"e2e-alice@example.com\",\"username\":\"alice\"}},
+  {\"identifier\":\"e2e-alice@example.com\",\"credential_type\":\"access_token\",\"severity\":\"high\",\"source\":{\"type\":\"dark_web\"},\"dedup_key\":{\"breach_name\":\"e2e market\",\"breach_date\":\"2024-03-01\"},\"context\":{\"email\":\"e2e-alice@example.com\"}},
+  {\"identifier\":\"e2e-ci-deploy-key\",\"credential_type\":\"api_key\",\"severity\":\"medium\",\"source\":{\"type\":\"code_repository\"},\"dedup_key\":{\"repository\":\"example.com/e2e/app\",\"file_path\":\"deploy/ci.env\"}},
+  {\"identifier\":\"e2e-a-very-long-service-account-name-for-the-reporting-pipeline@example.com\",\"credential_type\":\"refresh_token\",\"severity\":\"low\",\"source\":{\"type\":\"paste_site\"},\"dedup_key\":{\"paste_id\":\"e2e-paste-1\"}},
+  {\"identifier\":\"e2e-bob\",\"credential_type\":\"password\",\"severity\":\"info\",\"source\":{\"type\":\"data_breach\",\"name\":\"e2e old breach\"},\"dedup_key\":{\"breach_name\":\"e2e old breach\",\"breach_date\":\"2019-07-15\"},\"context\":{\"username\":\"e2e-bob\"}}
+]}"
+
+log "a scan that never ran (the request budget loads its page: a run in progress polls every 10 s)"
+call POST /api/v1/scans/ '{"name":"E2E scan never run","scan_type":"single","scanner_name":"nuclei","targets":["e2e-web.example.com"],"schedule_type":"manual"}'
+
 log "a scan with a run in progress"
 call POST /api/v1/scans/ '{"name":"E2E scan","scan_type":"single","scanner_name":"nuclei","targets":["e2e-web.example.com"],"schedule_type":"manual"}'
 call POST "/api/v1/scans/$(jq -r .id <<<"$BODY")/trigger" '{}'
@@ -244,10 +295,21 @@ for _ in $(seq 1 30); do
   call GET "/api/v1/findings?per_page=50"
   n=$(jq -r '[.data[]? | select(.title|startswith("E2E finding"))] | length' <<<"$BODY")
   nt=$(jq -r '[.data[]? | select(.title|startswith("E2E triage"))] | length' <<<"$BODY")
-  [[ "$n" -ge 15 && "$nt" -ge 10 ]] && break
+  nr=$(jq -r '[.data[]? | select(.title|startswith("E2E remediation"))] | length' <<<"$BODY")
+  [[ "$n" -ge 15 && "$nt" -ge 10 && "$nr" -ge 4 ]] && break
   sleep 1
 done
-[[ "$n" -ge 15 && "$nt" -ge 10 ]] || { log "only $n of 15 findings and $nt of 10 triage findings visible"; exit 1; }
+[[ "$n" -ge 15 && "$nt" -ge 10 && "$nr" -ge 4 ]] || { log "only $n of 15 findings, $nt of 10 triage and $nr of 4 remediation findings visible"; exit 1; }
+
+log "remediation tasks (the tasks and campaigns lists)"
+# Two tasks of the four remediation findings, one in the campaign with a due date, so the
+# lists show progress, owners, deadlines and a campaign with tasks.
+FIDS=$(jq -c '[.data[]? | select(.title|startswith("E2E remediation")) | .id]' <<<"$BODY")
+call GET "/api/v1/remediation/campaigns?per_page=5"
+CAMPAIGN_ID=$(jq -r '[.data[]? | select(.name=="E2E remediation campaign")][0].id // empty' <<<"$BODY")
+DUE=$(date -u -d '+5 days' +%Y-%m-%dT00:00:00Z 2>/dev/null || date -u -v+5d +%Y-%m-%dT00:00:00Z)
+call POST /api/v1/remediation/tasks "{\"title\":\"E2E upgrade OpenSSH on the edge hosts\",\"finding_ids\":$(jq -c '.[0:3]' <<<"$FIDS"),\"deadline\":\"$DUE\"${CAMPAIGN_ID:+,\"campaign_id\":\"$CAMPAIGN_ID\"}}"
+call POST /api/v1/remediation/tasks "{\"title\":\"E2E renew the certificate on shop.example.com\",\"finding_ids\":$(jq -c '.[3:4]' <<<"$FIDS")}"
 
 log "a member (E2E_LIMITED_*)"
 # The member-or-viewer checks in 09, 11 and 12 skip without one.
@@ -459,6 +521,115 @@ JAR="$WORK/journeys-cookies"
 XFF=198.18.250.1
 call POST /api/v1/auth/reset-password "{\"token\":\"$JOURNEY_SET_TOKEN\",\"new_password\":\"$OWNER_PASSWORD\"}"
 XFF=
+
+log "work assigned to the owner and two watchers (My work and the finding rail)"
+# /my-work lists the owner's assigned findings, and the finding rail reads
+# "2 watching" with two real people: both were measured only empty before.
+# The first rows of the default findings list (the ones a detail check opens)
+# go to the owner; the owner and an administrator watch them (a watcher must
+# be able to read the finding, and the plain member's data scope is empty).
+owner_session() {
+  ACCESS_TOKEN=
+  JAR="$WORK/owner-again-cookies-$1"
+  XFF="198.18.250.$((10 + $1))"
+  call POST /api/v1/auth/login "{\"email\":\"$EMAIL\",\"password\":\"$OWNER_PASSWORD\"}"
+  call POST /api/v1/auth/token "{\"tenant_id\":\"$TENANT_ID\"}"
+  ACCESS_TOKEN=$(jq -r .access_token <<<"$BODY")
+  XFF=
+}
+owner_session 1
+call GET /api/v1/roles
+ADMIN_ROLE_ID=$(jq -r '[(.roles // .data // .)[] | select((.slug // .name | ascii_downcase) == "admin")][0].id' <<<"$BODY")
+[[ -n "$ADMIN_ROLE_ID" && "$ADMIN_ROLE_ID" != null ]] || { log "no admin role"; exit 1; }
+WATCHER_EMAIL="e2e-watcher-$RUN@openctem-test.local"
+WATCHER_PASSWORD="$(openssl rand -hex 10)W$(openssl rand -hex 3)"
+call POST "/api/v1/tenants/$SLUG/invitations" "{\"email\":\"$WATCHER_EMAIL\",\"role_ids\":[\"$ADMIN_ROLE_ID\"]}"
+WATCHER_TOKEN=$(jq -r .token <<<"$BODY")
+call POST /api/v1/auth/logout '{}'
+ACCESS_TOKEN=
+JAR="$WORK/watcher-cookies"
+XFF=198.18.250.20
+call POST /api/v1/auth/register "{\"email\":\"$WATCHER_EMAIL\",\"password\":\"$WATCHER_PASSWORD\",\"name\":\"E2E Watcher\",\"invitation_token\":\"$WATCHER_TOKEN\"}"
+call POST /api/v1/auth/login "{\"email\":\"$WATCHER_EMAIL\",\"password\":\"$WATCHER_PASSWORD\"}"
+call POST /api/v1/invitations/accept-with-refresh "{\"token\":\"$WATCHER_TOKEN\",\"refresh_token\":\"$(jq -r '.refresh_token // empty' <<<"$BODY")\"}"
+call POST /api/v1/auth/logout '{}'
+XFF=
+owner_session 2
+call GET "/api/v1/tenants/$SLUG/members?include=user&per_page=50"
+MEMBERS=$(jq -c '[(.data // .members // .)[]? | {u: (.user_id // .user.id), e: (.email // .user.email // "")}]' <<<"$BODY")
+OWNER_ID=$(jq -r --arg e "$EMAIL" '[.[] | select(.e == $e)][0].u // empty' <<<"$MEMBERS")
+WATCHER_ID=$(jq -r --arg e "$WATCHER_EMAIL" '[.[] | select(.e == $e)][0].u // empty' <<<"$MEMBERS")
+[[ -n "$OWNER_ID" && -n "$WATCHER_ID" ]] || { log "owner or watcher missing from the member list"; exit 1; }
+call GET "/api/v1/findings?per_page=6"
+MINE=$(jq -c '[.data[]?.id]' <<<"$BODY")
+call POST /api/v1/findings/bulk/assign "{\"finding_ids\":$MINE,\"user_id\":\"$OWNER_ID\"}"
+for fid in $(jq -r '.[0:2][]' <<<"$MINE"); do
+  call POST "/api/v1/findings/$fid/watchers" "{\"user_ids\":[\"$OWNER_ID\",\"$WATCHER_ID\"]}"
+done
+call POST /api/v1/auth/logout '{}'
+
+log "approval requests and closes waiting for a person (queue pages)"
+# /findings/approvals needs requests from another person (the administrator
+# who watches above asks for false positives) and one of the owner's own;
+# /findings/ready-to-close needs pending close proposals. Findings from the
+# middle of the list, so the first rows (My work, the detail checks) and the
+# last ones (spec 45 takes them from the end) stay free.
+ACCESS_TOKEN=
+JAR="$WORK/watcher-again-cookies"
+XFF=198.18.250.30
+call POST /api/v1/auth/login "{\"email\":\"$WATCHER_EMAIL\",\"password\":\"$WATCHER_PASSWORD\"}"
+call POST /api/v1/auth/token "{\"tenant_id\":\"$TENANT_ID\"}"
+ACCESS_TOKEN=$(jq -r .access_token <<<"$BODY")
+XFF=
+call GET "/api/v1/findings?per_page=50"
+QIDS=$(jq -c '[.data[]?.id]' <<<"$BODY")
+n=0
+for fid in $(jq -r '.[8:13][]' <<<"$QIDS"); do
+  n=$((n + 1))
+  call POST "/api/v1/findings/$fid/approvals/" "{\"requested_status\":\"false_positive\",\"closure_reason\":\"detection_error\",\"justification\":\"Seeded request $n: the rule matched a test banner, not a flaw.\"}"
+done
+call POST /api/v1/auth/logout '{}'
+owner_session 3
+OWN=$(jq -r '.[13]' <<<"$QIDS")
+call POST "/api/v1/findings/$OWN/approvals/" '{"requested_status":"false_positive","closure_reason":"detection_error","justification":"Seeded request from the owner."}'
+call POST /api/v1/auth/logout '{}'
+PROPOSED=$(jq -r '.[14:19][]' <<<"$QIDS" | paste -sd, -)
+docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v tid="$TENANT_ID" -v ids="$PROPOSED" >/dev/null <<'SQL'
+INSERT INTO finding_closure_proposals (tenant_id, finding_id, method, evidence_at)
+SELECT :'tid'::uuid, f::uuid,
+       (ARRAY['covered_scan','obsolete_asset','retest_verified','claimed_fix_scan','source_reported'])[1 + (row_number() OVER ())::int % 5],
+       now() + interval '1 day'
+  FROM unnest(string_to_array(:'ids', ',')) AS f
+ON CONFLICT DO NOTHING;
+SQL
+
+log "exception rules in every state (the /exceptions list)"
+# Rules of all three types in every status the page draws: pending (two, one
+# with a long name), approved with and without an end, one that ends in days,
+# rejected with a reason, and expired. Written straight into the table:
+# approving a rule through the API needs a second person and a 2FA code.
+docker run --rm -i --network "$NETWORK" -e PGCONNECT_TIMEOUT=10 "${PSQL_IMAGE:-postgres:17-alpine}" \
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -qtA -v tid="$TENANT_ID" -v uid="$OWNER_ID" >/dev/null <<'SQL'
+INSERT INTO suppression_rules (tenant_id, name, description, suppression_type, status, rule_id, tool_name, path_pattern,
+                               requested_by, requested_at, approved_by, approved_at, rejected_by, rejected_at, rejection_reason, expires_at)
+SELECT :'tid'::uuid, v.name, v.descr, v.typ, v.st, v.rid, v.tool, v.path,
+       :'uid'::uuid, now() - v.age, CASE WHEN v.st IN ('approved','expired') THEN :'uid'::uuid END,
+       CASE WHEN v.st IN ('approved','expired') THEN now() - v.age + interval '1 hour' END,
+       CASE WHEN v.st = 'rejected' THEN :'uid'::uuid END,
+       CASE WHEN v.st = 'rejected' THEN now() - v.age + interval '1 hour' END,
+       CASE WHEN v.st = 'rejected' THEN 'The path is production code, not a test fixture.' END,
+       CASE WHEN v.endsin IS NOT NULL THEN now() + v.endsin END
+  FROM (VALUES
+    ('Test fixtures in the checkout service', 'Fixtures never ship', 'false_positive', 'pending', 'e2e.sql-injection', 'semgrep', 'tests/**', interval '1 day', interval '60 days'),
+    ('Legacy report generator with a very long rule name that keeps going to test how the name column copes with it', 'Replaced next quarter', 'accepted_risk', 'pending', 'e2e.weak-hash', 'opengrep', 'legacy/reports/**', interval '2 days', interval '30 days'),
+    ('Vendored JavaScript bundle', 'Third-party code', 'false_positive', 'approved', 'e2e.xss', 'semgrep', 'vendor/**', interval '20 days', interval '180 days'),
+    ('Internal admin tool, long exception', 'Owned by platform team', 'wont_fix', 'approved', 'e2e.csrf', 'opengrep', 'tools/admin/**', interval '40 days', interval '800 days'),
+    ('Staging TLS certificate', 'Rotated in the next sprint', 'accepted_risk', 'approved', 'e2e.tls-expiry', 'nuclei', NULL, interval '10 days', interval '5 days'),
+    ('Generated protobuf code', 'Not editable by hand', 'false_positive', 'rejected', 'e2e.hardcoded-secret', 'betterleaks', 'gen/**', interval '15 days', interval '90 days'),
+    ('Old load-test credentials', 'Environment removed', 'false_positive', 'expired', 'e2e.default-credentials', 'betterleaks', 'loadtest/**', interval '120 days', interval '-30 days')
+  ) AS v(name, descr, typ, st, rid, tool, path, age, endsin);
+SQL
 
 log "done"
 echo "E2E_USER_EMAIL=$EMAIL"

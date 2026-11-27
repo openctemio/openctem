@@ -1,14 +1,14 @@
 'use client'
 
 import { useEffect, useId, useRef, useState } from 'react'
-import { Clock, KeyRound, Loader2, RefreshCw, Smartphone } from 'lucide-react'
+import { Clock, KeyRound, Loader2, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { SignalChip } from '@/components/ui/signal-chip'
 import { StatusLozenge } from '@/components/ui/status-lozenge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { SettingsRow, SettingsSection } from '@/features/shared'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -102,54 +102,53 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
     !!requiredBy && (status?.enabled || status?.required_by_organization || !status?.grace_due_at)
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Smartphone className="h-5 w-5" aria-hidden />
-          {t('settings.twoFactor.title', 'Two-factor authentication')}
-        </CardTitle>
-        <CardDescription>
+    <SettingsSection
+      framed
+      id="two-factor"
+      className="scroll-mt-4"
+      title={t('settings.twoFactor.title', 'Two-factor authentication')}
+      description={t(
+        'settings.twoFactor.description',
+        'Ask for a code from an authenticator app every time you sign in with your password.'
+      )}
+    >
+      {isLoading || !status ? (
+        <Skeleton className="h-16 w-full" />
+      ) : !status.supported ? (
+        <p className="border-t border-border-subtle py-3.5 text-dense text-muted-foreground">
           {t(
-            'settings.twoFactor.description',
-            'Ask for a code from an authenticator app every time you sign in with your password.'
+            'settings.twoFactor.federated',
+            "You sign in through your organization's identity provider, which handles two-factor authentication."
           )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {isLoading || !status ? (
-          <Skeleton className="h-16 w-full" />
-        ) : !status.supported ? (
-          <p className="text-sm text-muted-foreground">
-            {t(
-              'settings.twoFactor.federated',
-              "You sign in through your organization's identity provider, which handles two-factor authentication."
-            )}
-          </p>
-        ) : (
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">
-                  {status.enabled
-                    ? t('settings.twoFactor.on', 'On')
-                    : t('settings.twoFactor.off', 'Off')}
-                </span>
-                {status.enabled ? (
-                  <StatusLozenge
-                    tone="resolved"
-                    label={t('settings.twoFactor.protected', 'Protected')}
-                  />
-                ) : null}
-                {showRequiredBadge && <Badge variant="outline">{requiredBy}</Badge>}
-                {!status.enabled && !status.required_by_organization && status.grace_due_at && (
-                  <SignalChip icon={Clock} tone="alert">
-                    {t('settings.twoFactor.dueBy', 'Required from {date}', {
-                      date: formatDateSafe(status.grace_due_at),
-                    })}
-                  </SignalChip>
-                )}
-              </div>
-              <p className="text-sm text-muted-foreground">
+        </p>
+      ) : (
+        <SettingsRow
+          label={
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">
+                {status.enabled
+                  ? t('settings.twoFactor.on', 'On')
+                  : t('settings.twoFactor.off', 'Off')}
+              </span>
+              {status.enabled ? (
+                <StatusLozenge
+                  tone="resolved"
+                  label={t('settings.twoFactor.protected', 'Protected')}
+                />
+              ) : null}
+              {showRequiredBadge && <Badge variant="outline">{requiredBy}</Badge>}
+              {!status.enabled && !status.required_by_organization && status.grace_due_at && (
+                <SignalChip icon={Clock} tone="alert">
+                  {t('settings.twoFactor.dueBy', 'Required from {date}', {
+                    date: formatDateSafe(status.grace_due_at),
+                  })}
+                </SignalChip>
+              )}
+            </span>
+          }
+          hint={
+            <>
+              <span className="block">
                 {status.enabled
                   ? t('settings.twoFactor.turnedOnAt', 'Turned on {date}.', {
                       date: formatDateSafe(status.enabled_at),
@@ -172,55 +171,54 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
                         })}
                   </span>
                 )}
-              </p>
+              </span>
               {status.enabled && !canTurnOff && (
-                <p className="text-sm text-muted-foreground">
+                <span className="block">
                   {t(
                     'settings.twoFactor.staysOn',
                     'It stays on while required. New phone? Replace the authenticator.'
                   )}
-                </p>
+                </span>
               )}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {throughSession ? (
-                !status.enabled && (
-                  <Button size="sm" asChild>
-                    <Link href="/two-factor-setup?next=%2Faccount%2Fsecurity">
-                      {t('settings.twoFactor.setUp', 'Set up')}
-                    </Link>
-                  </Button>
-                )
-              ) : status.enabled ? (
-                <>
-                  <Button variant="outline" size="sm" onClick={() => setDialog('replace')}>
-                    <RefreshCw className="h-4 w-4" aria-hidden />
-                    {t('settings.twoFactor.replace', 'Replace authenticator')}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setDialog('regenerate')}>
-                    <KeyRound className="h-4 w-4" aria-hidden />
-                    {t('settings.twoFactor.newCodes', 'New recovery codes')}
-                  </Button>
-                  {canTurnOff && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => setDialog('disable')}
-                    >
-                      {t('settings.twoFactor.turnOff', 'Turn off')}
-                    </Button>
-                  )}
-                </>
-              ) : (
-                <Button size="sm" onClick={() => setDialog('enable')}>
+            </>
+          }
+        >
+          {throughSession ? (
+            !status.enabled && (
+              <Button asChild>
+                <Link href="/two-factor-setup?next=%2Faccount%2Fsecurity">
                   {t('settings.twoFactor.setUp', 'Set up')}
+                </Link>
+              </Button>
+            )
+          ) : status.enabled ? (
+            <>
+              <Button variant="outline" onClick={() => setDialog('replace')}>
+                <RefreshCw className="h-4 w-4" aria-hidden />
+                {t('settings.twoFactor.replace', 'Replace authenticator')}
+              </Button>
+              <Button variant="outline" onClick={() => setDialog('regenerate')}>
+                <KeyRound className="h-4 w-4" aria-hidden />
+                {t('settings.twoFactor.newCodes', 'New recovery codes')}
+              </Button>
+              {canTurnOff && (
+                <Button
+                  variant="outline"
+
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setDialog('disable')}
+                >
+                  {t('settings.twoFactor.turnOff', 'Turn off')}
                 </Button>
               )}
-            </div>
-          </div>
-        )}
-      </CardContent>
+            </>
+          ) : (
+            <Button onClick={() => setDialog('enable')}>
+              {t('settings.twoFactor.setUp', 'Set up')}
+            </Button>
+          )}
+        </SettingsRow>
+      )}
 
       <EnableTwoFactorDialog
         open={dialog === 'enable'}
@@ -263,7 +261,7 @@ export function TwoFactorCard({ email, onOtherSessionsSignedOut }: TwoFactorCard
           mutate()
         }}
       />
-    </Card>
+    </SettingsSection>
   )
 }
 

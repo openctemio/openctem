@@ -1,6 +1,6 @@
 /**
  * Social / SSO sign-in navigation: a successful start navigates to the provider
- * without an error toast; a failed start or a non-https URL shows the toast.
+ * without an error; a failed start or a non-https URL shows the error in the card.
  */
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -10,6 +10,12 @@ import { toast } from 'sonner'
 import { LoginForm } from './login-form'
 import { useAuthProviders } from '../api/use-auth-providers'
 import { useTenantSSOProviders } from '@/features/sso/api/use-sso-api'
+
+// No per-action timer hop: each hop waits a whole macrotask, which a busy machine stretches.
+let user: ReturnType<typeof userEvent.setup>
+beforeEach(() => {
+  user = userEvent.setup({ delay: null })
+})
 
 const initiateSocialLogin = vi.fn()
 vi.mock('../actions/social-auth-actions', () => ({
@@ -51,27 +57,32 @@ describe('LoginForm social sign-in navigation', () => {
 
   const click = async () => {
     render(<LoginForm />)
-    await userEvent.click(screen.getAllByRole('button', { name: /Google/ })[0])
+    await user.click(screen.getAllByRole('button', { name: /Google/ })[0])
   }
 
   it('navigates to the provider and shows no error', async () => {
     initiateSocialLogin.mockResolvedValue({ ok: true, url: 'https://accounts.example/auth' })
     await click()
     await waitFor(() => expect(assign).toHaveBeenCalledWith('https://accounts.example/auth'))
+    expect(screen.queryByTestId('login-notice')).not.toBeInTheDocument()
     expect(toast.error).not.toHaveBeenCalled()
   })
 
   it('shows the error when the backend cannot start the sign-in', async () => {
     initiateSocialLogin.mockResolvedValue({ ok: false })
     await click()
-    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    expect(await screen.findByTestId('login-notice')).toHaveTextContent(
+      'Could not sign in with Google. Try again.'
+    )
     expect(assign).not.toHaveBeenCalled()
   })
 
   it('refuses a non-https URL', async () => {
     initiateSocialLogin.mockResolvedValue({ ok: true, url: 'javascript:alert(1)' })
     await click()
-    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    expect(await screen.findByTestId('login-notice')).toHaveTextContent(
+      'Could not sign in with Google. Try again.'
+    )
     expect(assign).not.toHaveBeenCalled()
   })
 })

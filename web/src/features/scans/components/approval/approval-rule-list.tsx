@@ -87,15 +87,23 @@ function RuleRow({
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
+      // Grip | text | actions. On a phone the actions take their own line
+      // under the text, so a long rule name never shrinks to one word a line.
       className={cn(
-        'flex flex-wrap items-start gap-3 bg-background p-3',
+        'bg-background p-3',
+        canEdit &&
+          'grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)_auto]',
         isDragging && 'ring-2 ring-primary'
       )}
       data-testid={`approval-rule-${index}`}
     >
       {canEdit && (
-        <button
+        // The kit's icon button, so the handle has the height of the row's
+        // other controls.
+        <Button
           type="button"
+          size="icon"
+          variant="ghost"
           ref={setActivatorNodeRef}
           {...attributes}
           {...listeners}
@@ -104,19 +112,24 @@ function RuleRow({
             listeners?.onKeyDown?.(e)
           }}
           aria-label={t('scans.ruleList.reorder', 'Reorder {name}', { name: rule.name })}
-          className="mt-0.5 cursor-grab touch-none rounded p-1 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="cursor-grab touch-none"
         >
           <GripVertical className="size-4" />
-        </button>
+        </Button>
       )}
-      <div className="min-w-0 flex-1 space-y-1.5">
+      <div className="min-w-0 space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground">{index + 1}.</span>
-          <span className="font-medium">{rule.name}</span>
+          {/* The number stays on the first line of a long name. */}
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            <span className="text-xs text-muted-foreground">{index + 1}.</span>
+            <span className="min-w-0 font-medium">{rule.name}</span>
+          </span>
           {rule.monitor && (
             <Badge variant="outline">{t('scans.approvalSettings.monitor', 'Monitor')}</Badge>
           )}
-          {!rule.enabled && (
+          {/* Who can edit sees the state on the switch; the badge is for the
+              read-only view, so the state is said once. */}
+          {!rule.enabled && !canEdit && (
             <Badge variant="secondary">{t('scans.approvalSettings.disabled', 'Off')}</Badge>
           )}
         </div>
@@ -132,17 +145,26 @@ function RuleRow({
           )}
         </div>
         <p className="text-xs text-muted-foreground">
-          {approversText(t, {
-            mode,
-            required: true,
-            approvals: rule.requirement.approvals,
-            approver_roles: rule.requirement.approver_roles,
-            approver_user_ids: rule.requirement.approver_user_ids,
-          })}
+          {[
+            approversText(t, {
+              mode,
+              required: true,
+              approvals: rule.requirement.approvals,
+              approver_roles: rule.requirement.approver_roles,
+              approver_user_ids: rule.requirement.approver_user_ids,
+            }),
+            rule.requirement.require_justification &&
+              t('scans.ruleList.needsJustification', 'a justification'),
+            rule.requirement.require_ticket && t('scans.ruleList.needsTicket', 'a change ticket'),
+          ]
+            .filter(Boolean)
+            .join(', ')}
         </p>
       </div>
       {canEdit && (
-        <div className="flex flex-wrap items-center gap-2">
+        // On a phone the controls fit one line under the text (tighter gaps,
+        // Remove pushed to the end) instead of Remove wrapping alone.
+        <div className="col-start-2 flex flex-wrap items-center gap-1 sm:col-start-3 sm:gap-2">
           <label className="flex items-center gap-2 text-sm">
             <Switch
               checked={rule.enabled}
@@ -180,7 +202,7 @@ function RuleRow({
           <Button
             size="icon"
             variant="ghost"
-            className="ms-3 text-destructive hover:text-destructive"
+            className="ms-auto text-destructive hover:text-destructive sm:ms-3"
             aria-label={t('scans.approvalSettings.removeRule', 'Remove rule "{name}"', {
               name: rule.name,
             })}

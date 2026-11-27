@@ -4,13 +4,15 @@
  * Group exceptions in the approvals inbox: one row per exception (source
  * task, status, tier and sign-offs, member count, deadline) and a side panel
  * with its members and the decision (approve, reject with a reason, cancel
- * by the requester). See server/docs/rfcs/RFC-111-approval-policy.md.
+ * by the requester, leave one member out with a reason, and the sole
+ * member's own approval). Approvers can select several groups and approve or
+ * reject them at once. See server/docs/rfcs/RFC-111-approval-policy.md.
  * The API decides who may act; the UI hides what the caller could not do.
  */
 
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { type ColumnDef, type PaginationState } from '@tanstack/react-table'
-import { Ban, Check, Loader2, X } from 'lucide-react'
+import { Ban, Check, Loader2, ShieldCheck, X } from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
@@ -37,11 +39,17 @@ import {
 } from '@/components/ui/sheet'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { DataTable } from '@/features/shared/components/data-table/data-table'
+import type { DataTableColumnMeta } from '@/features/shared/components/data-table/column-meta'
+import { ApprovalStatusLozenge } from '@/features/shared/components/approval-status-lozenge'
+import { NoAccessState } from '@/features/shared/components/no-access-state'
+import { accessStateOf } from '@/lib/api/access-state'
+import { QueueDecideBy } from '@/features/shared/components/queue'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import type { Severity } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatRelative } from '@/lib/format-date'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, usePermissions } from '@/lib/permissions'
+import { QueueReasonDialog } from '@/features/shared/components/queue'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { cn } from '@/lib/utils'
 import {
@@ -49,11 +57,15 @@ import {
   useApprovalBatch,
   useApprovalBatches,
   type ApprovalBatch,
+  type ApprovalBatchMember,
 } from '../api/use-approval-batches'
 import type { ApprovalStatus } from '../types/finding.types'
 import { approveErrorOutcome, approveResultOutcome, kindLabel } from '../lib/approval-policy'
 import { closureReasonLabel } from '../lib/closure'
 import { ApprovalTierCell } from './approval-tier-cell'
+import { formatDate, formatNumber } from '@/lib/app-locale'
+import { useApprovalBulkDecide } from './approval-bulk-decide'
+import { FindingSelfApproveDialog } from './finding-self-approve-dialog'
 
 type Translate = ReturnType<typeof useTranslation>['t']
 
@@ -157,8 +169,9 @@ export function GroupExceptionsPanel({
   toolbarStart,
   toolbarEnd,
 }: GroupExceptionsPanelProps) {
-  const { t, locale } = useTranslation()
-  const { data, isLoading, mutate } = useApprovalBatches(
+  const { t } = useTranslation()
+  const { can } = usePermissions()
+  const { data, isLoading, isValidating, error, mutate } = useApprovalBatches(
     pagination.pageIndex + 1,
     pagination.pageSize,
     status
@@ -166,28 +179,52 @@ export function GroupExceptionsPanel({
   const rows = useMemo(() => data?.data ?? [], [data?.data])
   const pageCount = data ? Math.max(1, Math.ceil(data.total / pagination.pageSize)) : 1
 
-  const columns = useMemo<ColumnDef<ApprovalBatch>[]>(
-    () => [
+  const columns = useMemo<ColumnDef<ApprovalBatch>[]>(() => {
+    const label = {
+      source: t('findingApprovals.group.col.source', 'Asked from'),
+      status: t('findings.approvals.col.status', 'Status'),
+      kind: t('findings.approvals.col.requestedStatus', 'Requested status'),
+      tier: t('findings.approvals.col.tier', 'Approval'),
+      members: t('findingApprovals.group.col.members', 'Findings'),
+      decideBy: t('findings.approvals.col.decideBy', 'Decide by'),
+      actions: t('findingApprovals.group.col.actions', 'Open'),
+    }
+    const meta = (m: DataTableColumnMeta) => m
+    return [
       {
-        id: 'status',
-        header: t('findings.approvals.col.status', 'Status'),
-        cell: ({ row }) => <StatusBadge status={row.original.status} />,
-      },
-      {
+        // The row's name: the task or selection the exception was asked from.
         id: 'task',
-        header: t('findingApprovals.group.col.source', 'Asked from'),
+        meta: meta({ kind: 'name', pin: 'start', label: label.source }),
+        header: label.source,
+        enableHiding: false,
         cell: ({ row }) => (
           <Link
             href={batchSourceHref(row.original)}
-            className="line-clamp-2 max-w-[280px] font-medium hover:underline"
+            className="block truncate text-sm font-medium hover:underline"
+            title={batchSourceTitle(row.original, t)}
           >
             {batchSourceTitle(row.original, t)}
           </Link>
         ),
       },
       {
+        id: 'status',
+        meta: meta({ kind: 'status', label: label.status }),
+        header: label.status,
+        cell: ({ row }) => (
+          <ApprovalStatusLozenge
+            status={row.original.status}
+            label={t(
+              `findings.approvals.status.${row.original.status}`,
+              STATUS_FALLBACK[row.original.status] ?? row.original.status
+            )}
+          />
+        ),
+      },
+      {
         id: 'kind',
-        header: t('findings.approvals.col.requestedStatus', 'Requested status'),
+        meta: meta({ kind: 'text', width: 160, label: label.kind }),
+        header: label.kind,
         cell: ({ row }) => (
           <span className="text-sm whitespace-nowrap">
             {kindLabel(t, row.original.requested_status)}
@@ -196,58 +233,90 @@ export function GroupExceptionsPanel({
       },
       {
         id: 'tier',
-        header: t('findings.approvals.col.tier', 'Approval'),
-        cell: ({ row }) => <ApprovalTierCell approval={row.original} showSingleProgress />,
+        meta: meta({ kind: 'text', width: 200, hideBelow: 880, label: label.tier }),
+        header: label.tier,
+        cell: ({ row }) => <ApprovalTierCell approval={row.original} showSingleProgress inline />,
       },
       {
         id: 'members',
-        header: t('findingApprovals.group.col.members', 'Findings'),
-        cell: ({ row }) => <span className="font-mono text-sm">{row.original.member_count}</span>,
+        meta: meta({ kind: 'number', label: label.members }),
+        header: label.members,
+        cell: ({ row }) => (
+          <span className="text-sm tabular-nums">{formatNumber(row.original.member_count)}</span>
+        ),
       },
       {
         id: 'decide_by',
-        header: t('findings.approvals.col.decideBy', 'Decide by'),
+        meta: meta({ kind: 'due', label: label.decideBy }),
+        header: label.decideBy,
         cell: ({ row }) => (
-          <span className="text-sm whitespace-nowrap text-muted-foreground">
-            {row.original.status === 'pending' ? ago(row.original.decide_by, locale) : '-'}
-          </span>
+          <QueueDecideBy
+            value={row.original.status === 'pending' ? row.original.decide_by : undefined}
+          />
         ),
       },
       {
         id: 'actions',
+        meta: meta({ kind: 'actions', width: 96, label: label.actions }),
+        header: () => <span className="sr-only">{label.actions}</span>,
         enableHiding: false,
         cell: ({ row }) => (
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(row.original.id)}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onOpenChange(row.original.id)}
+            aria-label={t('findingApprovals.group.viewNamed', 'View {name}', {
+              name: batchSourceTitle(row.original, t),
+            })}
+          >
             {t('findingApprovals.group.view', 'View')}
           </Button>
         ),
       },
-    ],
-    [onOpenChange, t]
-  )
+    ]
+  }, [onOpenChange, t])
 
   const decided = useCallback(async () => {
     await Promise.all([mutate(), onDecided?.()])
   }, [mutate, onDecided])
 
+  // Approve or reject the selected groups at once.
+  const groupName = useCallback((b: ApprovalBatch) => batchSourceTitle(b, t), [t])
+  const bulkDecide = useApprovalBulkDecide<ApprovalBatch>({
+    kind: 'batch',
+    idOf: (b) => b.id,
+    nameOf: groupName,
+    canDecide: can(Permission.FindingsApprove) && (status === undefined || status === 'pending'),
+    onDecided: decided,
+  })
+
   return (
     <>
-      {isLoading && !data ? (
-        <Skeleton className="h-40 w-full" />
+      {!data && accessStateOf(error) === 'no_access' ? (
+        <NoAccessState title={t('findingApprovals.group.subject', 'group exceptions')} />
       ) : (
         <DataTable
           columns={columns}
           data={rows}
+          caption={t('findingApprovals.group.viewGroups', 'Group exceptions')}
+          isLoading={isLoading && !data}
+          isRefreshing={isValidating && !!data}
+          error={error}
+          onRetry={() => void mutate()}
+          errorTitle={t('findingApprovals.group.subject', 'group exceptions')}
+          paginationNoun={t('findingApprovals.group.paginationNoun', 'group exceptions')}
           manualPagination
           pageCount={pageCount}
           rowCount={data?.total ?? 0}
           pagination={pagination}
           onPaginationChange={onPaginationChange}
           getRowId={(row) => row.id}
-          showColumnToggle={false}
           showSearch={false}
           toolbarStart={toolbarStart}
           toolbarEnd={toolbarEnd}
+          bulk={bulkDecide.bulk}
+          resetSelectionKey={bulkDecide.resetKey}
+          showSelectionCount={false}
           emptyMessage={t('findingApprovals.group.empty', 'No group exceptions')}
           emptyDescription={t(
             'findingApprovals.group.emptyDesc',
@@ -261,6 +330,7 @@ export function GroupExceptionsPanel({
         currentUserId={currentUserId}
         onDecided={decided}
       />
+      {bulkDecide.dialogs}
     </>
   )
 }
@@ -284,6 +354,12 @@ export function GroupExceptionSheet({
   const [reason, setReason] = useState('')
   const [cancelOpen, setCancelOpen] = useState(false)
   const [approveOpen, setApproveOpen] = useState(false)
+  const [selfApproveOpen, setSelfApproveOpen] = useState(false)
+  // "Leave out": one member rejected with a reason, the rest stays pending.
+  const [leaveOut, setLeaveOut] = useState<ApprovalBatchMember | null>(null)
+  const [leaveReason, setLeaveReason] = useState('')
+  const [leaveError, setLeaveError] = useState<string | null>(null)
+  const [leaving, setLeaving] = useState(false)
 
   const pending = batch?.status === 'pending'
   // The four-eyes rule: someone else decides your own request.
@@ -357,6 +433,43 @@ export function GroupExceptionSheet({
     }
   }
 
+  const confirmLeaveOut = async () => {
+    if (!batch || !leaveOut || leaving || !leaveReason.trim()) return
+    setLeaving(true)
+    setLeaveError(null)
+    try {
+      const res = await approvalBatchApi.leaveOut(batch.id, leaveOut.finding_id, leaveReason.trim())
+      toast.success(t('findingApprovals.group.leftOut', 'Left out of the group'), {
+        description:
+          res?.status === 'rejected'
+            ? t(
+                'findingApprovals.group.leftOutClosed',
+                'No finding is left waiting, so the group is closed as rejected.'
+              )
+            : t(
+                'findingApprovals.group.leftOutDesc',
+                'The requester sees your reason. The rest of the group still waits for a decision.'
+              ),
+      })
+      setLeaveOut(null)
+      setLeaveReason('')
+      await after()
+    } catch (err) {
+      // The dialog stays open with the reason as typed.
+      const outcome = approveErrorOutcome(t, err)
+      setLeaveError(
+        outcome.kind === 'refused'
+          ? outcome.message
+          : getErrorMessage(
+              err,
+              t('findingApprovals.group.leaveOutFailed', 'Could not leave the finding out')
+            )
+      )
+    } finally {
+      setLeaving(false)
+    }
+  }
+
   const cancel = async () => {
     if (!batch || busy) return
     setBusy('cancel')
@@ -425,7 +538,7 @@ export function GroupExceptionSheet({
                       <dt className="text-muted-foreground">
                         {t('findings.approvalDialog.expires', 'Expires:')}
                       </dt>
-                      <dd>{new Date(batch.expires_at).toLocaleDateString()}</dd>
+                      <dd>{formatDate(new Date(batch.expires_at))}</dd>
                     </>
                   )}
                   {pending && (
@@ -476,15 +589,41 @@ export function GroupExceptionSheet({
                         {m.expires_at && (
                           <span className="text-xs whitespace-nowrap text-muted-foreground">
                             {t('findingApprovals.group.endsOn', 'ends {date}', {
-                              date: new Date(m.expires_at).toLocaleDateString(),
+                              date: formatDate(new Date(m.expires_at)),
                             })}
                           </span>
+                        )}
+                        {/* An approver leaves one finding out; the group's
+                            requester cancels the group instead. */}
+                        {pending && !own && m.status === 'pending' && (
+                          <Can permission={Permission.FindingsApprove}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setLeaveReason('')
+                                setLeaveError(null)
+                                setLeaveOut(m)
+                              }}
+                              disabled={!!busy || leaving}
+                              aria-label={t(
+                                'findingApprovals.group.leaveOutNamed',
+                                'Leave out {name}',
+                                {
+                                  name: m.title || m.finding_id,
+                                }
+                              )}
+                              data-testid="batch-member-leave-out"
+                            >
+                              {t('findingApprovals.group.leaveOut', 'Leave out')}
+                            </Button>
+                          </Can>
                         )}
                       </li>
                     ))}
                   </ul>
                 </section>
-                {pending && own && (
+                {pending && own && !batch.self_approval_available && (
                   <p className="text-xs text-muted-foreground">
                     {t(
                       'findings.approvals.ownRequestHint',
@@ -502,6 +641,20 @@ export function GroupExceptionSheet({
                   <Button variant="outline" onClick={() => setCancelOpen(true)} disabled={!!busy}>
                     <Ban className="me-2 h-4 w-4" aria-hidden />
                     {t('findings.approvals.action.cancel', 'Cancel request')}
+                  </Button>
+                </Can>
+              )}
+              {/* The organization's sole member and owner: nobody else can
+                  decide their group, so they approve it with a code. */}
+              {own && batch.self_approval_available && (
+                <Can permission={Permission.FindingsApprove}>
+                  <Button
+                    onClick={() => setSelfApproveOpen(true)}
+                    disabled={!!busy}
+                    data-testid="batch-self-approve"
+                  >
+                    <ShieldCheck className="me-2 h-4 w-4" aria-hidden />
+                    {t('findingApprovals.selfApprove.cardAction', 'Approve myself')}
                   </Button>
                 </Can>
               )}
@@ -607,6 +760,41 @@ export function GroupExceptionSheet({
         isLoading={busy === 'approve'}
         handleConfirm={approve}
       />
+
+      <QueueReasonDialog
+        open={leaveOut !== null}
+        onOpenChange={(o) => !o && !leaving && setLeaveOut(null)}
+        title={t('findingApprovals.group.leaveOutTitle', 'Leave this finding out?')}
+        description={t(
+          'findingApprovals.group.leaveOutDesc',
+          'Its request is rejected and the finding keeps its status. The rest of the group still waits for a decision. Give a reason; the requester sees it.'
+        )}
+        summary={
+          leaveOut ? (
+            <p className="rounded-md border bg-muted/50 p-2 text-sm break-words">
+              {leaveOut.title || leaveOut.finding_id}
+            </p>
+          ) : null
+        }
+        reason={leaveReason}
+        onReasonChange={setLeaveReason}
+        reasonLabel={t('findings.approvals.rejectPlaceholder', 'Reason for rejection…')}
+        maxLength={2000}
+        error={leaveError}
+        busy={leaving}
+        confirmLabel={t('findingApprovals.group.leaveOut', 'Leave out')}
+        busyLabel={t('findings.approvals.rejecting', 'Rejecting…')}
+        cancelLabel={t('findings.approvals.cancel', 'Cancel')}
+        onConfirm={() => void confirmLeaveOut()}
+      />
+
+      {selfApproveOpen && batch && (
+        <FindingSelfApproveDialog
+          batch={batch}
+          onOpenChange={setSelfApproveOpen}
+          onApproved={() => void after()}
+        />
+      )}
 
       <ConfirmDialog
         open={cancelOpen}

@@ -49,7 +49,7 @@ import {
   scopeFileTooLarge,
   shortHash,
 } from '../lib/program-form'
-import { DetailDisclosure } from '@/features/shared'
+import { DetailDisclosure, FilePicker } from '@/features/shared'
 import {
   RequireIdentificationSwitch,
   UserAgentRotationField,
@@ -333,7 +333,7 @@ export function ProgramForm({
             </div>
             <div className="space-y-2">
               <Label htmlFor={`${id}-handle`}>
-                {t('programs.form.handle', 'Your handle (optional)')}
+                {t('programs.form.handle', 'Your username (optional)')}
               </Label>
               <Input
                 id={`${id}-handle`}
@@ -382,11 +382,11 @@ export function ProgramForm({
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor={`${id}-file`}>{t('programs.file.label', 'Scope file')}</Label>
-                  <Input
+                  <FilePicker
                     id={`${id}-file`}
-                    type="file"
+                    file={v.fileName ? { name: v.fileName } : null}
                     accept=".csv,.tsv,.json,.txt,text/csv,application/json,text/plain"
-                    onChange={(e) => void readFile(e.target.files?.[0])}
+                    onFile={(f) => void readFile(f ?? undefined)}
                   />
                   {v.fileName && (
                     <p className="text-muted-foreground text-xs">
@@ -512,7 +512,7 @@ export function ProgramForm({
               <p className="text-sm text-muted-foreground" data-testid="program-required-no-header">
                 {t(
                   'programs.form.requiredNoHeader',
-                  'Add a required header below, or make sure the organization sets a header or query parameter in Settings > Scanning > Scan identification. Jobs fail without one.'
+                  'Add a required header below, or set one in Settings > Scanning > Scan identification. Scans fail without one.'
                 )}
               </p>
             )}

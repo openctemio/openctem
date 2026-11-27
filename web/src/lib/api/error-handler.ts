@@ -9,7 +9,7 @@ import type { ApiError } from './types'
 import { devLog } from '@/lib/logger'
 import { IP_NOT_ALLOWED_CODE, IP_NOT_ALLOWED_MESSAGE, notifyIpNotAllowed } from './ip-not-allowed'
 import { describePermissionDenied } from './permission-denied'
-import { apiErrorMessage, toastError } from './error-message'
+import { apiErrorMessage, documentTranslate, toastError } from './error-message'
 
 // ============================================
 // ERROR CLASSES
@@ -196,7 +196,7 @@ export function handleApiError(
     logError = true,
     customMessages = {},
     onError,
-    fallbackMessage = 'An unexpected error occurred',
+    fallbackMessage = documentTranslate()('errors.generic', 'An unexpected error occurred'),
   } = options
 
   // Convert to ApiClientError if needed, keeping the HTTP status when the
@@ -226,6 +226,9 @@ export function handleApiError(
     }
   }
 
+  // Toast titles in the page's language (this runs outside React).
+  const t = documentTranslate()
+
   // Show toast if enabled
   // Defense-in-depth: a disabled module returns 403 MODULE_NOT_ENABLED. This is
   // an expected empty state, not an error the user can act on — features for a
@@ -242,37 +245,37 @@ export function handleApiError(
   } else if (showToast && isReadOnlyModuleError(apiError)) {
     // Unlike a module that is off (its pages are hidden), a module in
     // read-only grace shows its pages, so a refused save must say why.
-    toast.error('Read-only', { description: message })
+    toast.error(t('errors.title.readOnly', 'Read-only'), { description: message })
   } else if (showToast && apiError.code !== 'MODULE_NOT_ENABLED') {
     // Different toast types based on error
     if (apiError.code === APPROVAL_REQUIRED_CODE) {
       // The server message says who can approve and what to do instead.
-      toast.error('Approval required', {
+      toast.error(t('errors.title.approvalRequired', 'Approval required'), {
         description: message,
       })
     } else if (apiError.code === 'FORBIDDEN' && describePermissionDenied(apiError.details)) {
       // The refusal named the missing permission or role.
-      toast.error('Permission needed', {
+      toast.error(t('errors.title.permissionNeeded', 'Permission needed'), {
         description: message,
       })
     } else if (apiError.isAuthError()) {
-      toast.error('Authentication Error', {
+      toast.error(t('errors.title.signIn', 'Sign-in needed'), {
         description: message,
       })
     } else if (apiError.isValidationError()) {
-      toast.error('Validation Error', {
+      toast.error(t('errors.title.validation', 'Check the entered values'), {
         description: message,
       })
     } else if (apiError.isNotFoundError()) {
-      toast.error('Not Found', {
+      toast.error(t('errors.title.notFound', 'Not found'), {
         description: message,
       })
     } else if (apiError.isServerError()) {
-      toast.error('Server Error', {
+      toast.error(t('errors.title.server', 'Server error'), {
         description: message,
       })
     } else {
-      toast.error('Error', {
+      toast.error(t('errors.title.generic', 'Error'), {
         description: message,
       })
     }

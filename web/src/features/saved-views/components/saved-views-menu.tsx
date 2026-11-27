@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react'
+import { CornerDot } from '@/components/ui/corner-dot'
 import { Bookmark, Building2, Copy, Pin, PinOff, Trash2, Users } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
+import { ToolbarSlot } from '@/features/shared/components/toolbar-slot'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import {
@@ -59,14 +61,29 @@ export interface BuiltInView {
   onToggle: () => void
 }
 
+/**
+ * What a list's title row asks of the menu (its Save view button): the menu
+ * owns the one save dialog and the update of the open view.
+ */
+export interface SavedViewsActions {
+  /** Open the save-view dialog (a new view from the list as it is). */
+  openSave: () => void
+  /** Save the changes into the open view (its owner only). */
+  saveChanges: () => Promise<void>
+}
+
 interface SavedViewsMenuProps {
   page: SavedViewPage
+  /** Lets the page's title row open the save dialog and save the open view's changes. */
+  actionsRef?: Ref<SavedViewsActions>
   /**
    * The filter to save: the API's own list params, or a checked filter document.
    * Defaults to the page URL's query; a page whose URL keeps other names (or
    * holds a filter as text) resolves its own here.
    */
   resolveFilter?: () => Promise<{ query?: string; filter?: Record<string, unknown> }>
+  /** The page's own params saved beside the filter (the search mode, `modePageParams`). */
+  pageParams?: Record<string, string>
   /** Views the page ships with, listed first under `builtInLabel`. */
   builtIn?: BuiltInView[]
   builtInLabel?: string
@@ -106,6 +123,8 @@ export function summarizeChanges(
             '{count, plural, one {# filter added} other {# filters added}}',
             { count: c.count }
           )
+        case 'query':
+          return t('confirm.savedView.change.query', 'query text changed')
         case 'search':
           return t('confirm.savedView.change.search', 'search changed')
         case 'sort':
@@ -129,7 +148,9 @@ export function summarizeChanges(
  */
 export function SavedViewsMenu({
   page,
+  actionsRef,
   resolveFilter,
+  pageParams,
   builtIn,
   builtInLabel,
   activeId,
@@ -157,6 +178,8 @@ export function SavedViewsMenu({
   const { can } = usePermissions()
   const canShareOrg = can(Permission.FindingsViewsShare)
   const [saving, setSaving] = useState(false)
+  // Why the last save in the dialog failed; shown in the dialog, which stays open.
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<SavedView | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const { t } = useTranslation()
@@ -174,12 +197,20 @@ export function SavedViewsMenu({
       : builtInOn.length > 1
         ? t('confirm.savedView.builtInCount', '{count} views', { count: builtInOn.length })
         : t('confirm.savedView.trigger', 'Views')
+  // The trigger's label box: as wide as the longest built-in name, at least
+  // 8rem, at most 10rem. A view's own name is cut there (full name in the
+  // tooltip and the accessible name), so opening a view moves nothing.
+  const slotLabels = [
+    t('confirm.savedView.trigger', 'Views'),
+    ...(builtIn ?? []).map((b) => b.label),
+  ]
 
   const currentFilter = async () =>
     resolveFilter ? resolveFilter() : { query: viewQueryFromSearch(window.location.search) }
 
   const save = async () => {
     setSaving(true)
+    setSaveError(null)
     try {
       const view = await createSavedView({
         page,
@@ -190,6 +221,7 @@ export function SavedViewsMenu({
         group_by: groupBy || undefined,
         columns,
         density,
+        page_params: pageParams,
       })
       await mutate()
       setSaveOpen(false)
@@ -198,10 +230,14 @@ export function SavedViewsMenu({
       toast.success(t('confirm.savedView.saved', 'Saved view "{name}"', { name: view.name }))
       onSelect(view)
     } catch (e) {
-      toast.error(
-        e instanceof Error
-          ? e.message
-          : t('confirm.savedView.saveFailed', 'Could not save the view')
+      // The dialog stays open with the name and the choices; the reason shows in it.
+      const failed = t('confirm.savedView.saveFailed', 'Could not save the view')
+      setSaveError(
+        e instanceof Error && e.message
+          ? t('confirm.savedView.saveFailedWhy', 'Could not save the view: {reason}', {
+              reason: e.message,
+            })
+          : failed
       )
     } finally {
       setSaving(false)
@@ -225,6 +261,7 @@ export function SavedViewsMenu({
         group_by: groupBy || undefined,
         columns,
         density,
+        page_params: pageParams,
       })
       await mutate()
       toast.success(t('confirm.savedView.updated', 'Updated view "{name}"', { name: view.name }))
@@ -239,6 +276,20 @@ export function SavedViewsMenu({
       setSaving(false)
     }
   }
+
+  // One handle for the life of the menu; it always runs the latest save.
+  const latestSaveChanges = useRef(saveChanges)
+  useEffect(() => {
+    latestSaveChanges.current = saveChanges
+  })
+  useImperativeHandle(
+    actionsRef,
+    () => ({
+      openSave: () => setSaveOpen(true),
+      saveChanges: () => latestSaveChanges.current(),
+    }),
+    []
+  )
 
   const remove = async (view: SavedView) => {
     try {
@@ -359,9 +410,11 @@ export function SavedViewsMenu({
       >
         <DropdownMenuTrigger asChild>
           <Button
+            iconOnlyBelow="@5xl/toolbar"
             variant="outline"
             size="sm"
-            className="h-9 max-w-[14rem]"
+            title={triggerName}
+            data-testid="saved-views-trigger"
             // The name stays readable when only the icon shows (narrow toolbar).
             aria-label={
               active
@@ -377,20 +430,18 @@ export function SavedViewsMenu({
             onFocus={() => setWanted(true)}
           >
             {/* Label by the list toolbar's width (DataTable's size container). */}
-            <Bookmark className="h-4 w-4 @2xl/toolbar:me-2" />
-            <span className="hidden truncate @2xl/toolbar:inline">{triggerName}</span>
-            {dirty && (
-              // The unsaved-changes dot: state by shape and colour, never colour alone
-              // (the button's name says it too).
-              <span
-                data-testid="saved-view-dirty-dot"
-                aria-hidden
-                className="ms-1.5 size-2 shrink-0 rounded-full bg-warning"
-              />
-            )}
+            <Bookmark className="h-4 w-4 @5xl/toolbar:me-2 group-data-[fold=true]/toolbar:me-0" />
+            <span className="hidden @5xl/toolbar:inline-grid group-data-[fold=true]/toolbar:hidden">
+              <ToolbarSlot options={slotLabels} className="min-w-32 max-w-40">
+                {triggerName}
+              </ToolbarSlot>
+            </span>
+            {/* Unsaved changes: a dot on the corner, out of the layout, so the
+                icon stays centred in its square (the button's name says it too). */}
+            {dirty && <CornerDot data-testid="saved-view-dirty-dot" />}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuContent>
           {builtIn && builtIn.length > 0 && (
             <>
               <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
@@ -416,7 +467,8 @@ export function SavedViewsMenu({
           )}
           {dirty && active && (
             <>
-              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+              {/* A sentence, not an item: it wraps at a reading measure and never widens the menu. */}
+              <DropdownMenuLabel className="max-w-64 text-xs font-normal whitespace-normal text-muted-foreground">
                 {t('confirm.savedView.unsaved', 'Unsaved changes to “{name}”: {changes}', {
                   name: active.name,
                   changes: changes ? summarizeChanges(changes, t) : '',
@@ -460,7 +512,13 @@ export function SavedViewsMenu({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
+      <Dialog
+        open={saveOpen}
+        onOpenChange={(open) => {
+          setSaveOpen(open)
+          if (!open) setSaveError(null)
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('confirm.savedView.saveTitle', 'Save view')}</DialogTitle>
@@ -479,7 +537,10 @@ export function SavedViewsMenu({
                   id="saved-view-name"
                   value={name}
                   maxLength={120}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value)
+                    setSaveError(null)
+                  }}
                 />
               </div>
               <div className="space-y-2">
@@ -507,6 +568,11 @@ export function SavedViewsMenu({
                   </SelectContent>
                 </Select>
               </div>
+              {saveError && (
+                <p role="alert" className="text-sm text-destructive">
+                  {saveError}
+                </p>
+              )}
             </div>
           </DialogBody>
           <DialogFooter>

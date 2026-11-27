@@ -47,18 +47,25 @@
 
 import * as React from 'react'
 import { createPortal } from 'react-dom'
+import dynamic from 'next/dynamic'
 import Link from '@/components/link'
-import { ChevronDown, ExternalLink, Maximize2, MoreHorizontal, X } from 'lucide-react'
+import {
+  ChevronDown,
+  ExternalLink,
+  Maximize2,
+  MoreHorizontal,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Drawer, DrawerContent, DrawerHandle } from '@/components/ui/drawer'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { TAB_CLASS, Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -67,8 +74,6 @@ import { useIsMobile } from '@/hooks/use-mobile'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { cn } from '@/lib/utils'
 import { MetaLine } from './text-layout'
-
-type IconType = React.ElementType
 
 // ============================================================================
 // DetailSheet — the drawer itself
@@ -129,23 +134,12 @@ function assignRef<T>(ref: React.Ref<T> | undefined, node: T | null) {
   else if (ref) ref.current = node
 }
 
-/**
- * Inputs and other controls never start a drag: dragging on a text field
- * selects text or moves the caret, a slider slides. Vaul skips any element
- * under `[data-vaul-no-drag]`, so the control under the finger is tagged as
- * the press starts, before Vaul decides.
- */
-const NO_DRAG_SELECTOR =
-  'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="slider"], [role="textbox"]'
-
-function keepControlsFromDragging(e: React.PointerEvent) {
-  const target = e.target
-  if (!(target instanceof Element)) return
-  const control = target.closest(NO_DRAG_SELECTOR)
-  if (control && !control.hasAttribute('data-vaul-no-drag')) {
-    control.setAttribute('data-vaul-no-drag', '')
-  }
-}
+// The phone sheet is a Vaul drawer (detail-sheet-phone.tsx). Vaul is about 9 KB
+// gzipped and only a phone needs it, so it downloads when a phone mounts a sheet
+// (below), not with every list page. The desktop drawer is a Radix sheet.
+const PhoneDrawer = dynamic(() => import('./detail-sheet-phone').then((m) => m.PhoneDrawer), {
+  ssr: false,
+})
 
 // The footer's mount point, owned by the sheet. A tab component renders its
 // "View all" through <DetailSheetFooter>, which portals into it.
@@ -204,6 +198,11 @@ export function DetailSheet({
   // drawer. Read on the first render, so an opening sheet never starts as one
   // and becomes the other.
   const isPhone = useIsMobile()
+  // Warm the phone drawer's code as soon as a phone mounts a sheet, so opening
+  // it does not wait on the download.
+  React.useEffect(() => {
+    if (isPhone) void import('./detail-sheet-phone')
+  }, [isPhone])
   const pad = isPhone ? 'px-4' : 'px-5'
   const panelId = React.useId()
 
@@ -308,25 +307,20 @@ export function DetailSheet({
 
   if (isPhone) {
     return (
-      <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent
-          data-slot="detail-sheet"
-          className={cn(
-            'w-full gap-0 overflow-hidden supports-[overflow:clip]:overflow-clip p-0 outline-none',
-            // One height whatever the content (svh: the browser's bars never
-            // cover it), clear of the home indicator.
-            'rounded-t-2xl border-t pb-[env(safe-area-inset-bottom)]',
-            phoneHeight === 'auto' ? 'max-h-[92svh]' : 'h-[92svh]',
-            className
-          )}
-          onPointerDownCapture={keepControlsFromDragging}
-          onOpenAutoFocus={onOpenAutoFocus}
-          onCloseAutoFocus={onCloseAutoFocus}
-        >
-          <DrawerHandle />
-          {frame}
-        </DrawerContent>
-      </Drawer>
+      <PhoneDrawer
+        open={open}
+        onOpenChange={onOpenChange}
+        className={cn(
+          // One height whatever the content (svh: the browser's bars never
+          // cover it), clear of the home indicator.
+          phoneHeight === 'auto' ? 'max-h-[92svh]' : 'h-[92svh]',
+          className
+        )}
+        onOpenAutoFocus={onOpenAutoFocus}
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
+        {frame}
+      </PhoneDrawer>
     )
   }
 
@@ -367,12 +361,14 @@ export function scrollDetailBodyTo(el: HTMLElement | null) {
 
 export interface DetailMenuItem {
   label: string
-  icon?: IconType
+  icon?: LucideIcon
   onSelect: () => void
   /** Delete, revoke, …: drawn in the destructive colour. */
   destructive?: boolean
   /** A divider above this item (between everyday and destructive actions). */
   separatorBefore?: boolean
+  /** Shown but not usable, with this as the reason (nothing to scan, busy). */
+  disabledReason?: string
 }
 
 export interface DetailHeaderProps {
@@ -386,8 +382,10 @@ export interface DetailHeaderProps {
   /** What it is and where: short parts on one wrapping line under the title (MetaLine, no glyph). */
   meta?: React.ReactNode[]
   /**
-   * The row under the title: at most one primary and one outline button
-   * (style contract §8), plus a muted note when the viewer cannot act.
+   * At most one primary and one outline button (style contract §8), plus a
+   * muted note when the viewer cannot act. They end the line under the title,
+   * beside the meta line (or the badges, moved there when there is no meta
+   * line), so a control never takes a row alone.
    */
   actions?: React.ReactNode
   /**
@@ -397,8 +395,9 @@ export interface DetailHeaderProps {
   menu?: DetailMenuItem[]
   /**
    * The record's own page. Adds an "Open full page" icon button beside the
-   * header icons and the same entry at the top of the `⋯` menu. A real link,
-   * so ctrl/cmd-click and middle-click open it in a new tab.
+   * header icons and, when the `⋯` menu has items of its own, the same entry
+   * at its top (a menu never holds the one entry the icon already is). A real
+   * link, so ctrl/cmd-click and middle-click open it in a new tab.
    */
   fullPageHref?: string
   onClose: () => void
@@ -423,7 +422,54 @@ export function DetailHeader({
 }: DetailHeaderProps) {
   const { t } = useTranslation()
   const fullPageLabel = t('common.openFullPage', 'Open full page')
+  const moreLabel = t('common.actionMenu.more', 'More actions')
+  // The record's own page first, then the caller's items; a divider
+  // (separatorBefore) starts a new section.
+  const moreItems: ActionMenuEntry[] = []
+  if (fullPageHref && (menu?.length ?? 0) > 0) {
+    moreItems.push({
+      id: 'full-page',
+      label: fullPageLabel,
+      icon: ExternalLink,
+      href: fullPageHref,
+      section: 'page',
+    })
+  }
+  let section = 0
+  ;(menu ?? []).forEach((item, i) => {
+    if (item.separatorBefore && i > 0) section += 1
+    moreItems.push({
+      id: `item-${i}`,
+      label: item.label,
+      icon: item.icon,
+      onSelect: item.onSelect,
+      destructive: item.destructive,
+      disabledReason: item.disabledReason,
+      section: `menu-${section}`,
+    })
+  })
   const parts = (meta ?? []).filter((p) => p !== null && p !== undefined && p !== false && p !== '')
+  const hasActions = actions !== null && actions !== undefined && actions !== false
+  // Separated by space, not a glyph, and wrapping instead of cut off: on a
+  // phone the last part (often the address) stays visible. text-meta here
+  // too: the description's own text-sm would win.
+  const metaLine =
+    parts.length > 0 ? (
+      <SheetDescription asChild className="text-meta">
+        <MetaLine items={parts} className={cn('tabular-nums', !hasActions && 'mt-1')} />
+      </SheetDescription>
+    ) : null
+  // The actions never take a row alone: they end the line under the title,
+  // beside its facts (the meta line, or the badges when there is no meta
+  // line). Only a header with neither puts them beside the header icons.
+  const badgesBelow = hasActions && parts.length === 0 && !!badges
+  const factsBelow = hasActions ? (metaLine ?? (badgesBelow ? badges : null)) : null
+  const actionsOnTop = hasActions && !factsBelow
+  const actionsGroup = (
+    <div data-slot="detail-header-actions" className="flex flex-wrap items-center gap-2">
+      {actions}
+    </div>
+  )
   return (
     <div data-slot="detail-header">
       <div className="flex items-start justify-between gap-3">
@@ -432,21 +478,18 @@ export function DetailHeader({
             <SheetTitle className="min-w-0 text-lg leading-tight font-semibold break-words">
               {title}
             </SheetTitle>
-            {badges}
+            {!badgesBelow && badges}
           </div>
-          {parts.length > 0 ? (
-            // Separated by space, not a glyph, and wrapping instead of cut
-            // off: on a phone the last part (often the address) stays visible.
-            // text-meta here too: the description's own text-sm would win.
-            <SheetDescription asChild className="text-meta">
-              <MetaLine items={parts} className="mt-1 tabular-nums" />
-            </SheetDescription>
-          ) : (
+          {!hasActions && metaLine}
+          {parts.length === 0 && (
             // Radix wants a description; keep it for screen readers only.
-            <SheetDescription className="sr-only">Details</SheetDescription>
+            <SheetDescription className="sr-only">
+              {t('common.detailSheet.description', 'Details')}
+            </SheetDescription>
           )}
         </div>
         <div className="-me-2 flex shrink-0 items-center gap-3">
+          {actionsOnTop && actionsGroup}
           {fullPageHref && (
             <TooltipProvider>
               <Tooltip>
@@ -461,60 +504,52 @@ export function DetailHeader({
               </Tooltip>
             </TooltipProvider>
           )}
-          {((menu && menu.length > 0) || fullPageHref) && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+          {moreItems.length > 0 && (
+            <ActionMenu
+              items={moreItems}
+              title={typeof title === 'string' ? title : moreLabel}
+              label={moreLabel}
+              trigger={
                 <Button
                   variant="ghost"
                   size="icon"
                   className={HEADER_ICON_BUTTON}
-                  aria-label="More actions"
+                  aria-label={moreLabel}
                 >
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
-                {fullPageHref && (
-                  <DropdownMenuItem asChild>
-                    <Link href={fullPageHref}>
-                      <ExternalLink className="h-4 w-4" />
-                      {fullPageLabel}
-                    </Link>
-                  </DropdownMenuItem>
-                )}
-                {fullPageHref && menu && menu.length > 0 && <DropdownMenuSeparator />}
-                {(menu ?? []).map((item, i) => {
-                  const Icon = item.icon
-                  return (
-                    <React.Fragment key={item.label}>
-                      {item.separatorBefore && i > 0 && <DropdownMenuSeparator />}
-                      <DropdownMenuItem
-                        className={cn(
-                          item.destructive && 'text-destructive focus:text-destructive'
-                        )}
-                        onClick={item.onSelect}
-                      >
-                        {Icon && <Icon className="h-4 w-4" />}
-                        {item.label}
-                      </DropdownMenuItem>
-                    </React.Fragment>
-                  )
-                })}
-              </DropdownMenuContent>
-            </DropdownMenu>
+              }
+            />
           )}
           <Button
             variant="ghost"
             size="icon"
             className={HEADER_ICON_BUTTON}
-            aria-label="Close"
+            aria-label={t('common.actionMenu.close', 'Close')}
             onClick={onClose}
           >
             <X className="h-4 w-4" />
           </Button>
         </div>
       </div>
-      {actions && <div className="mt-3 flex flex-wrap items-center gap-2">{actions}</div>}
+      {factsBelow && (
+        // One line: the facts take what is left (at least 8rem, wrapping
+        // inside it) and the actions end it. Only actions wider than the
+        // rest (a toolbar of several controls) drop to the next line, as a
+        // group, never one control alone.
+        <div
+          data-slot="detail-header-line"
+          className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2"
+        >
+          <div className="flex min-w-0 flex-[1_1_8rem] flex-wrap items-center gap-2">
+            {factsBelow}
+          </div>
+          {/* The facts grow to fill the line, which puts the actions at its
+              end; a toolbar that drops to the next line starts it, under
+              the facts, instead of floating to the far edge. */}
+          {actionsGroup}
+        </div>
+      )}
     </div>
   )
 }
@@ -592,7 +627,7 @@ export function DetailTabs<T extends string>({
                 <ChevronDown aria-hidden="true" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent>
               {overflow.map((tab) => (
                 <DropdownMenuItem key={tab.value} onSelect={() => onValueChange(tab.value)}>
                   {tab.label}

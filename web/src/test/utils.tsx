@@ -114,3 +114,15 @@ export function sleep(ms: number): Promise<void> {
 // Re-export everything from React Testing Library
 export * from '@testing-library/react'
 export { default as userEvent } from '@testing-library/user-event'
+
+/**
+ * A text matcher for a value that BreakText draws in parts (an e-mail
+ * address is its person's part and its domain, each kept whole): matches the
+ * innermost element whose whole text is `text`.
+ */
+export function wholeText(text: string) {
+  return (_content: string, el: Element | null): boolean =>
+    !!el &&
+    el.textContent === text &&
+    !Array.from(el.children).some((child) => child.textContent === text)
+}

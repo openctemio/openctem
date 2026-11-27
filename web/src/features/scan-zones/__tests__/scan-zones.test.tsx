@@ -100,7 +100,8 @@ describe('ScanZoneTable', () => {
     perms.granted = new Set(['sensors:zones:read', 'sensors:zones:write', 'sensors:zones:delete'])
     renderTable()
     await userEvent.click(screen.getByRole('button', { name: /actions for hq/i }))
-    expect(screen.getByRole('menuitem', { name: /edit/i })).toBeInTheDocument()
+    // The menu's code loads after the page: its items appear a moment later.
+    expect(await screen.findByRole('menuitem', { name: /edit/i })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /assign sensors/i })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: /delete/i })).toBeInTheDocument()
   })

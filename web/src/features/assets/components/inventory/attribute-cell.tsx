@@ -61,7 +61,7 @@ export function AttributeCell({ asset, attribute }: { asset: Asset; attribute: T
     return (
       <div className="flex max-w-[240px] flex-wrap items-center gap-1">
         <OverflowChips
-          label={propertyLabel(key)}
+          label={propertyLabel(key, locale)}
           values={values}
           mono={format === 'ip' || format === 'code'}
           showLabel={false}

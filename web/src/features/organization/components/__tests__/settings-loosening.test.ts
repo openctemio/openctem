@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { looseningsOf, signInFormFrom, type SignInForm } from '../authentication-settings'
+import { looseningsOf, signInFormFrom, type SignInForm } from '../sign-in-settings'
 import { lastChangeOf, changedFields } from '../last-changed'
 import type { AuditLog } from '../../types/audit.types'
 

@@ -20,11 +20,11 @@ describe('LegalNotice', () => {
         privacyUrl="https://example.com/privacy"
       />
     )
-    expect(screen.getByRole('link', { name: 'Terms of Service' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Terms of service' })).toHaveAttribute(
       'href',
       'https://example.com/terms'
     )
-    expect(screen.getByRole('link', { name: 'Privacy Policy' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Privacy policy' })).toHaveAttribute(
       'href',
       'https://example.com/privacy'
     )
@@ -33,7 +33,7 @@ describe('LegalNotice', () => {
 
   it('shows only the document that is configured', () => {
     render(<LegalNotice kind="register" privacyUrl="https://example.com/p" termsUrl="" />)
-    expect(screen.queryByRole('link', { name: 'Terms of Service' })).toBeNull()
-    expect(screen.getByRole('link', { name: 'Privacy Policy' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Terms of service' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Privacy policy' })).toBeInTheDocument()
   })
 })

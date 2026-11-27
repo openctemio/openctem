@@ -1,19 +1,16 @@
 'use client'
 
-import { useId, useState } from 'react'
-import { Fingerprint } from 'lucide-react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState } from '@/features/shared'
+import { ErrorState, SettingsBlock, SettingsSection, SettingsSwitchRow } from '@/features/shared'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import { saveConsoleMfaPolicy, useConsoleMfaPolicy } from '../api/use-console-factors'
+import { formatDateTime } from '@/lib/app-locale'
 
 /**
  * System > Admin sign-in: "Require security keys" (RFC-078 §7.2). Super admin
@@ -23,8 +20,7 @@ import { saveConsoleMfaPolicy, useConsoleMfaPolicy } from '../api/use-console-fa
  * the authority.
  */
 export function ConsoleMfaPolicyCard() {
-  const { t, locale } = useTranslation()
-  const switchId = useId()
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useConsoleMfaPolicy()
   const [pending, setPending] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(false)
@@ -33,7 +29,7 @@ export function ConsoleMfaPolicyCard() {
   if (error) {
     return (
       <ErrorState
-        title={t('admin.mfaPolicy.title', 'Require security keys')}
+        title={t('admin.mfaPolicy.title', 'Security keys for administrators')}
         error={error}
         onRetry={() => void mutate()}
       />
@@ -91,21 +87,17 @@ export function ConsoleMfaPolicyCard() {
         : problem
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Fingerprint className="size-4 text-muted-foreground" />
-          {t('admin.mfaPolicy.title', 'Require security keys')}
-        </CardTitle>
-        <CardDescription>
-          {t(
-            'admin.mfaPolicy.description',
-            'Administrators who hold a security key or passkey must use it: the authenticator app is refused at sign-in and for sensitive actions, since a phishing site can relay its codes but not a key.'
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {!data.webauthn_enabled && (
+    <SettingsSection
+      framed
+      id="admin-security-keys"
+      title={t('admin.mfaPolicy.sectionTitle', 'Security keys')}
+      description={t(
+        'admin.mfaPolicy.description',
+        'Administrators who hold a security key or passkey must use it: the authenticator app is refused at sign-in and for sensitive actions, since a phishing site can relay its codes but not a key.'
+      )}
+    >
+      {!data.webauthn_enabled && (
+        <SettingsBlock>
           <Alert>
             <AlertDescription>
               {t(
@@ -114,26 +106,18 @@ export function ConsoleMfaPolicyCard() {
               )}
             </AlertDescription>
           </Alert>
-        )}
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <Label htmlFor={switchId}>{t('admin.mfaPolicy.switch', 'Require security keys')}</Label>
-            <p className="text-xs text-muted-foreground">
-              {data.require_webauthn
-                ? t('admin.mfaPolicy.stateOn', 'On')
-                : t('admin.mfaPolicy.stateOff', 'Off')}
-            </p>
-          </div>
-          <Switch
-            id={switchId}
-            checked={data.require_webauthn}
-            disabled={busy || (!data.webauthn_enabled && !data.require_webauthn)}
-            onCheckedChange={(v) => {
-              setProblem(null)
-              setPending(v)
-            }}
-          />
-        </div>
+        </SettingsBlock>
+      )}
+      <SettingsSwitchRow
+        label={t('admin.mfaPolicy.switch', 'Require security keys')}
+        checked={data.require_webauthn}
+        disabled={busy || (!data.webauthn_enabled && !data.require_webauthn)}
+        onCheckedChange={(v) => {
+          setProblem(null)
+          setPending(v)
+        }}
+      />
+      <SettingsBlock>
         <ul className="list-disc space-y-1 ps-5 text-sm text-muted-foreground">
           <li>
             {t(
@@ -155,7 +139,7 @@ export function ConsoleMfaPolicyCard() {
               {t(
                 'admin.mfaPolicy.grace',
                 'Administrators who hold no key may use the authenticator app until {date}; after that they are refused and must be reset by another super admin or sign in with a recovery code.',
-                { date: new Date(data.grace_until).toLocaleString(locale) }
+                { date: formatDateTime(new Date(data.grace_until)) }
               )}
             </li>
           )}
@@ -168,7 +152,7 @@ export function ConsoleMfaPolicyCard() {
           <li>
             {t(
               'admin.mfaPolicy.ruleBreakGlass',
-              'Break-glass (emergency) administrators keep the authenticator app.'
+              'Emergency access administrators keep the authenticator app.'
             )}
           </li>
         </ul>
@@ -177,7 +161,7 @@ export function ConsoleMfaPolicyCard() {
             <AlertDescription>{problemText}</AlertDescription>
           </Alert>
         )}
-      </CardContent>
+      </SettingsBlock>
       <ConfirmDialog
         open={pending !== null}
         onOpenChange={(open) => !open && !busy && setPending(null)}
@@ -206,6 +190,6 @@ export function ConsoleMfaPolicyCard() {
         isLoading={busy}
         handleConfirm={() => void save()}
       />
-    </Card>
+    </SettingsSection>
   )
 }

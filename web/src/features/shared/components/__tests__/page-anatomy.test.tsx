@@ -39,8 +39,12 @@ describe('PageStack', () => {
       </PageStack>
     )
     const stack = screen.getByTestId('stack')
-    expect(stack.className).toContain('[&>[data-slot=page-header]+[data-slot=page-tabs]]:-mt-1!')
-    expect(stack.className).toContain('[&>[data-slot=page-header]+[data-slot=tabs]]:-mt-1!')
+    expect(stack.className).toContain(
+      '[&>[data-slot=page-header]+[data-slot=page-tabs]]:mt-[calc(var(--sp-section)-var(--sp-page))]!'
+    )
+    expect(stack.className).toContain(
+      '[&>[data-slot=page-header]+[data-slot=tabs]]:mt-[calc(var(--sp-section)-var(--sp-page))]!'
+    )
     const header = stack.firstElementChild as HTMLElement
     const tabs = screen.getByRole('navigation', { name: 'Scans sections' })
     expect(header).toHaveAttribute('data-slot', 'page-header')
@@ -68,7 +72,8 @@ describe('ListToolbar', () => {
     const order = [...bar.querySelectorAll('button, input')].map(
       (el) => el.textContent || el.getAttribute('aria-label')
     )
-    expect(order).toEqual(['Search', 'Status', 'View'])
+    // The phone's Filters button (hidden from a 28rem toolbar) leads the field.
+    expect(order).toEqual(['Filters', 'Search', 'Status', 'View'])
     expect(screen.getByText('View').parentElement).toHaveClass('ms-auto')
   })
 

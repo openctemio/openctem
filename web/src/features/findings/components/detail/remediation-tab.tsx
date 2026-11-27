@@ -42,6 +42,7 @@ import { MobilizationBriefCard } from './mobilization-brief-card'
 import { buildRepositoryCodeUrl } from '../../lib/repository-url'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 interface RemediationTabProps {
   remediation: Remediation
@@ -64,7 +65,7 @@ const EFFORT_CONFIG: Record<string, { label: string; color: string }> = {
 }
 
 export function RemediationTab({ remediation, finding }: RemediationTabProps) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const [copiedCode, setCopiedCode] = useState(false)
 
   const { hasPermission } = usePermissions()
@@ -148,7 +149,7 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
   ])
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString(locale, {
+    return localeFormatDate(new Date(dateString), {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -497,7 +498,7 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
                   {t('findings.remediationTab.add', 'Add')}
                 </Button>
                 <Button
-                  size="sm"
+                  size="icon-sm"
                   variant="ghost"
                   onClick={() => {
                     setNewStep('')
@@ -610,7 +611,7 @@ export function RemediationTab({ remediation, finding }: RemediationTabProps) {
                 <li key={index}>
                   <SafeExternalLink
                     href={ref}
-                    className="flex items-center gap-2 text-sm text-primary hover:underline break-all"
+                    className="flex items-center gap-2 text-sm text-primary hover:underline break-words"
                   >
                     <ExternalLink className="h-3 w-3 shrink-0" />
                     {ref}

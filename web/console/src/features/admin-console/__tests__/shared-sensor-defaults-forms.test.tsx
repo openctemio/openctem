@@ -29,7 +29,7 @@ describe('internal zones card', () => {
     )
     expect(screen.getByText('Shared sensors may scan internal zones')).toBeInTheDocument()
     expect(screen.getByText(/shared sensors scan public targets only/)).toBeInTheDocument()
-    expect(screen.getByText(/default applies \(off\)/)).toBeInTheDocument()
+    expect(screen.getByText(/The default applies: off/)).toBeInTheDocument()
     expect(screen.getByRole('switch')).toBeDisabled()
   })
 

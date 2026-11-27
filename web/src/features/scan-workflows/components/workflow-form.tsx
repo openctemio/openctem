@@ -232,7 +232,7 @@ function SortableStepCard(props: StepCardProps) {
             size="icon"
             aria-label={t('scans.workflowForm.removeStep', undefined, { label })}
             onClick={props.onRemove}
-            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+            className="text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
@@ -347,7 +347,6 @@ function SortableStepCard(props: StepCardProps) {
               <SelectTrigger
                 id={`${step.id}-tool`}
                 aria-label={t('scans.workflowForm.toolAria', undefined, { n: index + 1 })}
-                className="h-9"
               >
                 <SelectValue
                   placeholder={
@@ -366,7 +365,7 @@ function SortableStepCard(props: StepCardProps) {
                   // why; the step's current tool stays selectable.
                   const reason = entry.is_available
                     ? null
-                    : (toolUnavailableReason(availability.get(entry.tool.name)) ??
+                    : (toolUnavailableReason(availability.get(entry.tool.name), t) ??
                       t('scans.workflowForm.noSensorCanRun'))
                   return (
                     <SelectItem
@@ -434,7 +433,6 @@ function SortableStepCard(props: StepCardProps) {
                 onChange={(e) =>
                   props.onChange({ ...step, timeout_seconds: parseInt(e.target.value) || 3600 })
                 }
-                className="h-9"
               />
             </div>
           </div>

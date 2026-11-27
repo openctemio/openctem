@@ -164,7 +164,9 @@ describe('RelatedAssetsList (full)', () => {
     api.get.mockResolvedValue(GROUPED)
     const onNavigate = vi.fn()
     render(wrap(<RelatedAssetsList assetId="a1" onNavigateToAsset={onNavigate} />))
-    await userEvent.click(await screen.findByRole('button', { name: 'Open payments-db' }))
+    const link = await screen.findByRole('link', { name: 'Open payments-db' })
+    expect(link).toHaveAttribute('href', '/assets/db')
+    await userEvent.click(link)
     expect(onNavigate).toHaveBeenCalledWith('db', 'payments-db')
   })
 
@@ -227,7 +229,7 @@ describe('RelatedAssetsList (full)', () => {
   it('shows an error with retry instead of an empty list when the request fails', async () => {
     api.get.mockRejectedValueOnce(new Error('boom')).mockResolvedValue(GROUPED)
     render(wrap(<RelatedAssetsList assetId="a1" />))
-    expect(await screen.findByText('Failed to load related assets')).toBeInTheDocument()
+    expect(await screen.findByText("Couldn't load related assets")).toBeInTheDocument()
     expect(screen.queryByText('No related assets yet')).not.toBeInTheDocument()
   })
 
@@ -261,9 +263,9 @@ describe('RelatedAssetsList data scope', () => {
       wrap(<RelatedAssetsList assetId="a1" onNavigateToAsset={onNavigate} />)
     )
     expect(await screen.findByText('2 related assets you can’t access')).toBeInTheDocument()
-    expect(screen.getByText('1 related assets in 1 groups')).toBeInTheDocument()
+    expect(screen.getByText('1 related asset in 1 group')).toBeInTheDocument()
     // Exactly one navigable neighbour: the hidden ones are not links.
-    expect(screen.getAllByRole('button', { name: /^Open / })).toHaveLength(1)
+    expect(screen.getAllByRole('link', { name: /^Open / })).toHaveLength(1)
     expect(container.querySelectorAll('li')).toHaveLength(1)
   })
 

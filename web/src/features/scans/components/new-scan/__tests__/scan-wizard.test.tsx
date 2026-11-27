@@ -61,8 +61,7 @@ function Harness({
 
 function desktopStep(name: RegExp) {
   const nav = screen.getByRole('navigation', { name: 'Steps' })
-  const desktop = nav.querySelector('ol.hidden') as HTMLElement
-  return within(desktop).getByRole('button', { name })
+  return within(nav).getByRole('button', { name })
 }
 
 describe('ScanWizard', () => {
@@ -143,13 +142,26 @@ describe('ScanWizard', () => {
     expect(screen.getByTestId('wizard-next')).toBeInTheDocument()
   })
 
-  it('shows the summary beside the step and in the phone bar', async () => {
+  it('shows the summary as one line in the footer that opens the whole of it', async () => {
     const user = userEvent.setup()
     render(<Harness />)
     const bar = screen.getByTestId('summary-bar')
     expect(bar).toHaveTextContent('2 targets, Run now, Active')
-    await user.click(within(bar).getByRole('button'))
-    expect(within(bar).getByText('summary body')).toBeInTheDocument()
-    expect(screen.getByRole('complementary', { name: 'Summary' })).toHaveTextContent('summary body')
+    expect(bar).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('summary body')).not.toBeInTheDocument()
+    await user.click(bar)
+    expect(bar).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('region', { name: 'Summary' })).toHaveTextContent('summary body')
+  })
+
+  it('is a navigation landmark with an ordered list and the current step marked', async () => {
+    const user = userEvent.setup()
+    render(<Harness />)
+    const nav = screen.getByRole('navigation', { name: 'Steps' })
+    expect(nav.querySelector('ol')).not.toBeNull()
+    await user.click(desktopStep(/Targets/))
+    const current = nav.querySelectorAll('[aria-current="step"]')
+    expect(current).toHaveLength(1)
+    expect(current[0]).toHaveTextContent('Targets')
   })
 })

@@ -39,6 +39,12 @@ import {
   useEASMNetworkSeeds,
 } from '../hooks/use-easm-network-seeds'
 import { useEASMSettings } from '../hooks/use-easm-settings'
+import { BreakText } from '@/features/shared/components/break-text'
+import {
+  FieldError,
+  fieldErrorProps,
+  focusFirstInvalid,
+} from '@/features/shared/components/forms/field-error'
 
 type SeedKind = 'asn' | 'org_name'
 
@@ -93,15 +99,17 @@ function SeedCard({
             ? t('networkSeeds.kindAsn', 'AS number')
             : t('networkSeeds.kindOrg', 'Organization')}
         </Badge>
-        <span className="break-all font-medium">{seed.value}</span>
+        <span className="break-words font-medium">
+          <BreakText>{seed.value}</BreakText>
+        </span>
         {seed.holder && (
-          <span className="break-all text-sm text-muted-foreground">{seed.holder}</span>
+          <span className="break-words text-sm text-muted-foreground">{seed.holder}</span>
         )}
         {seed.label && <span className="text-xs text-muted-foreground">({seed.label})</span>}
         <span className="ms-auto flex items-center gap-1">
           {canWrite && (
             <Button
-              size="sm"
+              size="icon-sm"
               variant="ghost"
               disabled={busy || expanding}
               onClick={() => void refresh()}
@@ -112,7 +120,7 @@ function SeedCard({
           )}
           {canDelete && (
             <Button
-              size="sm"
+              size="icon-sm"
               variant="ghost"
               onClick={() => onRemove(seed)}
               aria-label={t('networkSeeds.remove', 'Remove {value}', { value: seed.value ?? '' })}
@@ -204,7 +212,7 @@ function SeedCard({
             {(seed.suggestions ?? []).map((s) => (
               <li key={s.asn} className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="font-mono">{s.asn}</span>
-                <span className="break-all text-muted-foreground">{s.description}</span>
+                <span className="break-words text-muted-foreground">{s.description}</span>
                 {canWrite && s.asn && (
                   <Button
                     size="sm"
@@ -235,6 +243,8 @@ export function EASMNetworkSeedsPanel() {
   const [kind, setKind] = useState<SeedKind>('asn')
   const [value, setValue] = useState('')
   const [saving, setSaving] = useState(false)
+  const [valueError, setValueError] = useState<string | null>(null)
+  const valueField = fieldErrorProps('network-seed-value', valueError)
   const [removing, setRemoving] = useState<EASMNetworkSeed | null>(null)
 
   if (error) {
@@ -281,7 +291,7 @@ export function EASMNetworkSeedsPanel() {
       <p className="text-sm text-muted-foreground">
         {t(
           'networkSeeds.intro',
-          'AS numbers and organization names that are yours. Each is looked up in public routing data (RIPEstat; the value is sent there): an AS number lists the address ranges it announces, which you can add as scope entries; an organization name lists the AS numbers registered to it. A seed never lets a scan reach anything by itself, scope entries do.'
+          'AS numbers and organization names that are yours. Each is looked up in public routing data (RIPEstat; the value is sent there): an AS number lists the address ranges it announces, which you can add as scope entries; an organization name lists the AS numbers registered to it.'
         )}
       </p>
       {lookupsOff && (
@@ -292,15 +302,31 @@ export function EASMNetworkSeedsPanel() {
           )}
         </p>
       )}
-      {canWrite && (
+      {canWrite && seeds.length >= max && (
+        <p className="text-sm text-muted-foreground">
+          {t(
+            'networkSeeds.limitReached',
+            'You have reached the limit of {max, plural, one {# seed} other {# seeds}}. Remove one to add another.',
+            { max }
+          )}
+        </p>
+      )}
+      {canWrite && seeds.length < max && (
         <form
           className="flex flex-wrap items-end gap-2"
           onSubmit={(e) => {
             e.preventDefault()
+            if (!value.trim()) {
+              setValueError(
+                t('networkSeeds.valueRequired', 'Enter an AS number or an organization name.')
+              )
+              focusFirstInvalid(e.currentTarget)
+              return
+            }
             void add(kind, value)
           }}
         >
-          <div className="space-y-1">
+          <div className="flex flex-col gap-1">
             <Label htmlFor="network-seed-kind">{t('networkSeeds.kind', 'Kind')}</Label>
             <Select value={kind} onValueChange={(v) => setKind(v as SeedKind)}>
               <SelectTrigger id="network-seed-kind" className="w-44">
@@ -325,10 +351,15 @@ export function EASMNetworkSeedsPanel() {
                   ? t('networkSeeds.asnPlaceholder', 'AS64500')
                   : t('networkSeeds.orgPlaceholder', 'Example Corporation')
               }
-              onChange={(e) => setValue(e.target.value)}
+              onChange={(e) => {
+                setValue(e.target.value)
+                setValueError(null)
+              }}
+              {...valueField.control}
             />
+            <FieldError {...valueField.message} />
           </div>
-          <Button type="submit" disabled={saving || !value.trim() || seeds.length >= max}>
+          <Button type="submit" disabled={saving}>
             <Plus className="me-1 h-4 w-4" aria-hidden />
             {t('networkSeeds.add', 'Add seed')}
           </Button>

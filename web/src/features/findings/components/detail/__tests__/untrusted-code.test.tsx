@@ -57,6 +57,6 @@ describe('RelatedTab', () => {
 
   it('shows the empty state when nothing exists', () => {
     render(<RelatedTab finding={base} />)
-    expect(screen.getByText('No Related Findings')).toBeInTheDocument()
+    expect(screen.getByText('No related findings')).toBeInTheDocument()
   })
 })

@@ -314,7 +314,7 @@ export function LifecycleDraftEditor({
                         }
                       >
                         <SelectTrigger
-                          className="h-8 w-full"
+                          className="w-full"
                           aria-label={t('findingLifecycle.draft.defaultOf', 'Default of {status}', {
                             status: t(`findings.status.${st}`, st),
                           })}
@@ -408,7 +408,7 @@ export function LifecycleDraftEditor({
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="size-8"
+
                       aria-label={t('findingLifecycle.draft.editMove', 'Edit {name}', {
                         name: tr.name,
                       })}
@@ -419,7 +419,7 @@ export function LifecycleDraftEditor({
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="size-8"
+
                       aria-label={t('findingLifecycle.draft.removeMove', 'Remove {name}', {
                         name: tr.name,
                       })}

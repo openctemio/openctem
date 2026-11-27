@@ -22,7 +22,7 @@ describe('filters the page has no control for', () => {
     const f = parseInventoryFilters(q('network=198.51.100.0/24&port_gte=1&service_not=ssh'))
     const chips = inventoryChips(f, ctx)
     expect(chips.map((c) => c.text)).toEqual([
-      'network is 198.51.100.0/24',
+      'network: 198.51.100.0/24',
       'port at least 1',
       'service is not ssh',
     ])
@@ -51,5 +51,16 @@ describe('the starter views of the IP addresses tab', () => {
     const off = deactivatePreset(on, open)
     expect(off.extra).toEqual({ network: '198.51.100.0/24' })
     expect(open.isActive(off)).toBe(false)
+  })
+})
+
+describe('the search mode in the inventory URL', () => {
+  it('mode=query round-trips; anything else is Basic and not written', () => {
+    const on = parseInventoryFilters(new URLSearchParams('fq=port%3D22+OR+port%3D23&mode=query'))
+    expect(on.queryMode).toBe(true)
+    expect(serializeInventoryFilters(on).get('mode')).toBe('query')
+    const off = parseInventoryFilters(new URLSearchParams('mode=basic&criticalities=high'))
+    expect(off.queryMode).toBeUndefined()
+    expect(serializeInventoryFilters(off).has('mode')).toBe(false)
   })
 })

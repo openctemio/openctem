@@ -47,71 +47,77 @@ import type {
   CreateSecretStoreCredentialRequest,
 } from '@/lib/api/secret-store-types'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { useTranslation } from '@/context/i18n-provider'
+
+type Translate = ReturnType<typeof useTranslation>['t']
 
 // Form schema - matches backend credential types
-const formSchema = z
-  .object({
-    name: z.string().min(1, 'Name is required').max(255),
-    description: z.string().max(1000).optional(),
-    credential_type: z.enum(CREDENTIAL_TYPES, { message: 'Credential type is required' }),
-    expires_at: z.string().optional(),
-    // API Key
-    api_key_value: z.string().optional(),
-    // Basic Auth
-    basic_username: z.string().optional(),
-    basic_password: z.string().optional(),
-    // Bearer Token (for Git tokens, etc.)
-    bearer_token: z.string().optional(),
-    // SSH Key
-    ssh_private_key: z.string().optional(),
-    ssh_passphrase: z.string().optional(),
-    // AWS Role
-    aws_role_arn: z.string().optional(),
-    aws_external_id: z.string().optional(),
-    // GCP Service Account
-    gcp_json_key: z.string().optional(),
-    // Azure Service Principal
-    azure_tenant_id: z.string().optional(),
-    azure_client_id: z.string().optional(),
-    azure_client_secret: z.string().optional(),
-    // GitHub App
-    github_app_id: z.string().optional(),
-    github_installation_id: z.string().optional(),
-    github_private_key: z.string().optional(),
-    // GitLab Token
-    gitlab_token: z.string().optional(),
-  })
-  .superRefine((data, ctx) => {
-    // The secret fields above are all optional at the type level (only the
-    // selected credential_type's fields apply), but the backend marks the
-    // active type's data required. Without this, submitting e.g. a Bearer
-    // Token with an empty token passed client validation and only failed at
-    // the server with a generic 400. Require the active type's field(s) so the
-    // error shows inline on the right input.
-    const requiredByType: Record<string, string[]> = {
-      api_key: ['api_key_value'],
-      basic_auth: ['basic_username', 'basic_password'],
-      bearer_token: ['bearer_token'],
-      ssh_key: ['ssh_private_key'],
-      aws_role: ['aws_role_arn'],
-      gcp_service_account: ['gcp_json_key'],
-      azure_service_principal: ['azure_tenant_id', 'azure_client_id', 'azure_client_secret'],
-      github_app: ['github_app_id', 'github_installation_id', 'github_private_key'],
-      gitlab_token: ['gitlab_token'],
-    }
-    for (const field of requiredByType[data.credential_type] ?? []) {
-      const value = (data as Record<string, unknown>)[field]
-      if (typeof value !== 'string' || value.trim() === '') {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [field],
-          message: 'This field is required',
-        })
+const buildFormSchema = (t: Translate) =>
+  z
+    .object({
+      name: z.string().min(1, t('scans.credentials.add.nameRequired', 'Name is required')).max(255),
+      description: z.string().max(1000).optional(),
+      credential_type: z.enum(CREDENTIAL_TYPES, {
+        message: t('scans.credentials.add.typeRequired', 'Credential type is required'),
+      }),
+      expires_at: z.string().optional(),
+      // API Key
+      api_key_value: z.string().optional(),
+      // Basic Auth
+      basic_username: z.string().optional(),
+      basic_password: z.string().optional(),
+      // Bearer Token (for Git tokens, etc.)
+      bearer_token: z.string().optional(),
+      // SSH Key
+      ssh_private_key: z.string().optional(),
+      ssh_passphrase: z.string().optional(),
+      // AWS Role
+      aws_role_arn: z.string().optional(),
+      aws_external_id: z.string().optional(),
+      // GCP Service Account
+      gcp_json_key: z.string().optional(),
+      // Azure Service Principal
+      azure_tenant_id: z.string().optional(),
+      azure_client_id: z.string().optional(),
+      azure_client_secret: z.string().optional(),
+      // GitHub App
+      github_app_id: z.string().optional(),
+      github_installation_id: z.string().optional(),
+      github_private_key: z.string().optional(),
+      // GitLab Token
+      gitlab_token: z.string().optional(),
+    })
+    .superRefine((data, ctx) => {
+      // The secret fields above are all optional at the type level (only the
+      // selected credential_type's fields apply), but the backend marks the
+      // active type's data required. Without this, submitting e.g. a Bearer
+      // Token with an empty token passed client validation and only failed at
+      // the server with a generic 400. Require the active type's field(s) so the
+      // error shows inline on the right input.
+      const requiredByType: Record<string, string[]> = {
+        api_key: ['api_key_value'],
+        basic_auth: ['basic_username', 'basic_password'],
+        bearer_token: ['bearer_token'],
+        ssh_key: ['ssh_private_key'],
+        aws_role: ['aws_role_arn'],
+        gcp_service_account: ['gcp_json_key'],
+        azure_service_principal: ['azure_tenant_id', 'azure_client_id', 'azure_client_secret'],
+        github_app: ['github_app_id', 'github_installation_id', 'github_private_key'],
+        gitlab_token: ['gitlab_token'],
       }
-    }
-  })
+      for (const field of requiredByType[data.credential_type] ?? []) {
+        const value = (data as Record<string, unknown>)[field]
+        if (typeof value !== 'string' || value.trim() === '') {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [field],
+            message: t('scans.credentials.fieldRequired', 'This field is required'),
+          })
+        }
+      }
+    })
 
-type FormData = z.infer<typeof formSchema>
+type FormData = z.infer<ReturnType<typeof buildFormSchema>>
 
 interface AddCredentialDialogProps {
   open: boolean
@@ -132,11 +138,12 @@ const CREDENTIAL_TYPE_ICONS: Record<CredentialType, React.ElementType> = {
 }
 
 export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCredentialDialogProps) {
+  const { t } = useTranslation()
   const [credentialType, setCredentialType] = useState<CredentialType>('bearer_token')
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({})
 
   const form = useForm<FormData>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(buildFormSchema(t)),
     defaultValues: {
       name: '',
       description: '',
@@ -209,7 +216,9 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
 
     try {
       await createCredential(request)
-      toast.success(`Credential "${data.name}" created`)
+      toast.success(
+        t('scans.credentials.add.created', 'Credential "{name}" created', { name: data.name })
+      )
       await invalidateSecretStoreCache()
       form.reset()
       setCredentialType('bearer_token')
@@ -217,7 +226,9 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
       onOpenChange(false)
       onSuccess?.()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to create credential'))
+      toast.error(
+        getErrorMessage(err, t('scans.credentials.add.createFailed', 'Failed to create credential'))
+      )
     }
   }
 
@@ -239,9 +250,12 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Add Credential</DialogTitle>
+          <DialogTitle>{t('scans.credentials.add', 'Add credential')}</DialogTitle>
           <DialogDescription>
-            Securely store authentication credentials for template sources.
+            {t(
+              'scans.credentials.add.description',
+              'Securely store authentication credentials for template sources.'
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -255,9 +269,15 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Name</FormLabel>
+                      <FormLabel>{t('scans.credentials.add.name', 'Name')}</FormLabel>
                       <FormControl>
-                        <Input placeholder="GitHub Personal Access Token" {...field} />
+                        <Input
+                          placeholder={t(
+                            'scans.credentials.add.namePlaceholder',
+                            'GitHub personal access token'
+                          )}
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -269,10 +289,15 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Description (optional)</FormLabel>
+                      <FormLabel>
+                        {t('scans.credentials.add.descriptionLabel', 'Description (optional)')}
+                      </FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="Used for accessing company template repositories"
+                          placeholder={t(
+                            'scans.credentials.add.descriptionPlaceholder',
+                            'Used for accessing company template repositories'
+                          )}
                           className="resize-none"
                           {...field}
                         />
@@ -287,12 +312,17 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                   name="expires_at"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Expiration Date (optional)</FormLabel>
+                      <FormLabel>
+                        {t('scans.credentials.add.expiry', 'Expiration date (optional)')}
+                      </FormLabel>
                       <FormControl>
                         <Input type="date" {...field} />
                       </FormControl>
                       <FormDescription>
-                        Set an expiration date to receive reminders before the credential expires
+                        {t(
+                          'scans.credentials.add.expiryHint',
+                          'Set an expiration date to receive reminders before the credential expires'
+                        )}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -304,7 +334,9 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
 
               {/* Credential Type Selection */}
               <div className="space-y-4">
-                <h4 className="text-sm font-medium">Credential Type</h4>
+                <h4 className="text-sm font-medium">
+                  {t('scans.credentials.add.credentialType', 'Credential type')}
+                </h4>
                 <Tabs
                   value={credentialType}
                   onValueChange={(v) => handleCredentialTypeChange(v as CredentialType)}
@@ -324,19 +356,25 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                   {/* Bearer Token (Git PAT, etc.) */}
                   <TabsContent value="bearer_token" className="space-y-4 pt-4">
                     <p className="text-sm text-muted-foreground">
-                      {CREDENTIAL_TYPE_DESCRIPTIONS.bearer_token}
+                      {t(
+                        'scans.credentials.type.bearer_token.description',
+                        CREDENTIAL_TYPE_DESCRIPTIONS.bearer_token
+                      )}
                     </p>
                     <FormField
                       control={form.control}
                       name="bearer_token"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Token</FormLabel>
+                          <FormLabel>{t('scans.credentials.field.token', 'Token')}</FormLabel>
                           <FormControl>
                             <div className="relative">
                               <Input
                                 type={showSecrets.bearer_token ? 'text' : 'password'}
-                                placeholder="ghp_xxxxxxxxxxxx or glpat-xxxxxxxxxxxx"
+                                placeholder={t(
+                                  'scans.credentials.placeholder.token',
+                                  'ghp_xxxxxxxxxxxx or glpat-xxxxxxxxxxxx'
+                                )}
                                 {...field}
                               />
                               <Button
@@ -355,7 +393,10 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                             </div>
                           </FormControl>
                           <FormDescription>
-                            Personal access token for GitHub, GitLab, Bitbucket, etc.
+                            {t(
+                              'scans.credentials.field.tokenHint',
+                              'Personal access token for GitHub, GitLab, Bitbucket, etc.'
+                            )}
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
@@ -366,16 +407,22 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                   {/* SSH Key */}
                   <TabsContent value="ssh_key" className="space-y-4 pt-4">
                     <p className="text-sm text-muted-foreground">
-                      {CREDENTIAL_TYPE_DESCRIPTIONS.ssh_key}
+                      {t(
+                        'scans.credentials.type.ssh_key.description',
+                        CREDENTIAL_TYPE_DESCRIPTIONS.ssh_key
+                      )}
                     </p>
                     <FormField
                       control={form.control}
                       name="ssh_private_key"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Private Key</FormLabel>
+                          <FormLabel>
+                            {t('scans.credentials.field.privateKey', 'Private key')}
+                          </FormLabel>
                           <FormControl>
                             <Textarea
+                              // i18n-ok: PEM format sample
                               placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----"
                               className="font-mono text-xs"
                               rows={6}
@@ -383,7 +430,10 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                             />
                           </FormControl>
                           <FormDescription>
-                            Paste your SSH private key (RSA, ED25519, etc.)
+                            {t(
+                              'scans.credentials.field.privateKeyHint',
+                              'Paste your SSH private key (RSA, ED25519, etc.)'
+                            )}
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
@@ -394,11 +444,25 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                       name="ssh_passphrase"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Passphrase (optional)</FormLabel>
+                          <FormLabel>
+                            {t('scans.credentials.field.passphrase', 'Passphrase (optional)')}
+                          </FormLabel>
                           <FormControl>
-                            <Input type="password" placeholder="Key passphrase" {...field} />
+                            <Input
+                              type="password"
+                              placeholder={t(
+                                'scans.credentials.field.passphrasePlaceholder',
+                                'Key passphrase'
+                              )}
+                              {...field}
+                            />
                           </FormControl>
-                          <FormDescription>Only required if your key is encrypted</FormDescription>
+                          <FormDescription>
+                            {t(
+                              'scans.credentials.field.passphraseHint',
+                              'Only required if your key is encrypted'
+                            )}
+                          </FormDescription>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -408,19 +472,25 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                   {/* API Key */}
                   <TabsContent value="api_key" className="space-y-4 pt-4">
                     <p className="text-sm text-muted-foreground">
-                      {CREDENTIAL_TYPE_DESCRIPTIONS.api_key}
+                      {t(
+                        'scans.credentials.type.api_key.description',
+                        CREDENTIAL_TYPE_DESCRIPTIONS.api_key
+                      )}
                     </p>
                     <FormField
                       control={form.control}
                       name="api_key_value"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>API Key</FormLabel>
+                          <FormLabel>{t('scans.credentials.field.apiKey', 'API key')}</FormLabel>
                           <FormControl>
                             <div className="relative">
                               <Input
                                 type={showSecrets.api_key ? 'text' : 'password'}
-                                placeholder="your-api-key"
+                                placeholder={t(
+                                  'scans.credentials.field.apiKeyPlaceholder',
+                                  'your-api-key'
+                                )}
                                 {...field}
                               />
                               <Button
@@ -447,16 +517,25 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                   {/* Basic Auth */}
                   <TabsContent value="basic_auth" className="space-y-4 pt-4">
                     <p className="text-sm text-muted-foreground">
-                      {CREDENTIAL_TYPE_DESCRIPTIONS.basic_auth}
+                      {t(
+                        'scans.credentials.type.basic_auth.description',
+                        CREDENTIAL_TYPE_DESCRIPTIONS.basic_auth
+                      )}
                     </p>
                     <FormField
                       control={form.control}
                       name="basic_username"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Username</FormLabel>
+                          <FormLabel>{t('scans.credentials.field.username', 'Username')}</FormLabel>
                           <FormControl>
-                            <Input placeholder="username" {...field} />
+                            <Input
+                              placeholder={t(
+                                'scans.credentials.field.usernamePlaceholder',
+                                'username'
+                              )}
+                              {...field}
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -467,12 +546,15 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                       name="basic_password"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Password</FormLabel>
+                          <FormLabel>{t('scans.credentials.field.password', 'Password')}</FormLabel>
                           <FormControl>
                             <div className="relative">
                               <Input
                                 type={showSecrets.basic_password ? 'text' : 'password'}
-                                placeholder="password"
+                                placeholder={t(
+                                  'scans.credentials.field.passwordPlaceholder',
+                                  'password'
+                                )}
                                 {...field}
                               />
                               <Button
@@ -499,14 +581,17 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                   {/* AWS Role */}
                   <TabsContent value="aws_role" className="space-y-4 pt-4">
                     <p className="text-sm text-muted-foreground">
-                      {CREDENTIAL_TYPE_DESCRIPTIONS.aws_role}
+                      {t(
+                        'scans.credentials.type.aws_role.description',
+                        CREDENTIAL_TYPE_DESCRIPTIONS.aws_role
+                      )}
                     </p>
                     <FormField
                       control={form.control}
                       name="aws_role_arn"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Role ARN</FormLabel>
+                          <FormLabel>{t('scans.credentials.field.roleArn', 'Role ARN')}</FormLabel>
                           <FormControl>
                             <Input placeholder="arn:aws:iam::123456789012:role/MyRole" {...field} />
                           </FormControl>
@@ -519,12 +604,23 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                       name="aws_external_id"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>External ID (optional)</FormLabel>
+                          <FormLabel>
+                            {t('scans.credentials.field.externalId', 'External ID (optional)')}
+                          </FormLabel>
                           <FormControl>
-                            <Input placeholder="External ID for cross-account access" {...field} />
+                            <Input
+                              placeholder={t(
+                                'scans.credentials.field.externalIdPlaceholder',
+                                'External ID for cross-account access'
+                              )}
+                              {...field}
+                            />
                           </FormControl>
                           <FormDescription>
-                            Required if the role has an external ID condition
+                            {t(
+                              'scans.credentials.field.externalIdHint',
+                              'Required if the role has an external ID condition'
+                            )}
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
@@ -542,11 +638,11 @@ export function AddCredentialDialog({ open, onOpenChange, onSuccess }: AddCreden
                 onClick={() => handleClose(false)}
                 disabled={isMutating}
               >
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </Button>
               <Button type="submit" disabled={isMutating}>
                 {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                Create Credential
+                {t('scans.credentials.add.submit', 'Create credential')}
               </Button>
             </DialogFooter>
           </DialogForm>

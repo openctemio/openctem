@@ -1,13 +1,14 @@
 'use client'
 
 import * as React from 'react'
-import { ArrowDown, ChevronLeft, ChevronRight, Crown } from 'lucide-react'
+import { ArrowDown, ChevronLeft, ChevronRight, Crown, Globe, Zap } from 'lucide-react'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import { Counter } from '@/components/ui/counter'
 import { KevBadge } from '@/components/ui/kev-badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { GraphLegendList, type GraphLegendItem } from '@/components/graph-page/graph-page'
 import type { AttackPathDetail, PathNode } from '../hooks/use-attack-path-detail'
 import {
   assetFindingsHref,
@@ -47,9 +48,12 @@ export function FindingsLink({ node, className }: { node: PathNode; className?: 
 export function ChokePointsCard({
   detail,
   onFocus,
+  action,
 }: {
   detail: AttackPathDetail
   onFocus: (focus: Focus) => void
+  /** An action on the choke points, in the card's title row (the phone's task button). */
+  action?: React.ReactNode
 }) {
   const { t } = useTranslation()
   const rows = chokeRows(detail)
@@ -60,6 +64,7 @@ export function ChokePointsCard({
           {t('prioritization.attackPath.chokeTitle', 'Choke points')}
           <Counter value={rows.length} />
         </h2>
+        {action}
       </div>
       {rows.length === 0 ? (
         <p className="px-4 py-3 text-sm text-muted-foreground">
@@ -165,7 +170,7 @@ export function PathScoreCard({
               type="button"
               variant="ghost"
               size="icon"
-              className="size-7"
+
               aria-label={t('prioritization.attackPath.prevPath', 'Previous path')}
               onClick={() => onSelect((selected - 1 + total) % total)}
             >
@@ -181,7 +186,7 @@ export function PathScoreCard({
               type="button"
               variant="ghost"
               size="icon"
-              className="size-7"
+
               aria-label={t('prioritization.attackPath.nextPath', 'Next path')}
               onClick={() => onSelect((selected + 1) % total)}
             >
@@ -266,11 +271,14 @@ export function AttackPathList({
   shown,
   selected,
   onSelect,
+  onOpenNode,
 }: {
   detail: AttackPathDetail
   shown: number[]
   selected: number
   onSelect: (index: number) => void
+  /** Opens the detail of a step over the page. */
+  onOpenNode?: (key: string) => void
 }) {
   const { t } = useTranslation()
   const labels = useAttackPathLabels()
@@ -325,11 +333,28 @@ export function AttackPathList({
                       {n.isCrownJewel && <Crown className="size-3.5" aria-hidden />}
                     </div>
                     <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                      <span
-                        className={cn('font-semibold break-all', n.hidden && 'font-normal italic')}
-                      >
-                        {n.hidden ? labels.hiddenTitle : n.name}
-                      </span>
+                      {onOpenNode ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenNode(k)}
+                          data-testid="list-step-open"
+                          className={cn(
+                            'rounded text-start font-semibold break-words outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring',
+                            n.hidden && 'font-normal italic'
+                          )}
+                        >
+                          {n.hidden ? labels.hiddenTitle : n.name}
+                        </button>
+                      ) : (
+                        <span
+                          className={cn(
+                            'font-semibold break-words',
+                            n.hidden && 'font-normal italic'
+                          )}
+                        >
+                          {n.hidden ? labels.hiddenTitle : n.name}
+                        </span>
+                      )}
                       {!n.hidden && <FindingsLink node={n} className="text-xs" />}
                     </div>
                     {i === 0 && stepText(n) && (
@@ -380,10 +405,36 @@ export function AttackPathList({
   )
 }
 
-/** The legend: the kind dots, the KEV chip and the edge states, in the shared label language. */
-export function AttackPathLegend() {
+/** A small chip drawn like the graph's step chips (the label on an edge). */
+function StepChipMark({ danger, children }: { danger?: boolean; children: React.ReactNode }) {
+  return (
+    <span
+      className={cn(
+        'flex items-center gap-0.5 rounded border bg-card px-1 text-cap whitespace-nowrap',
+        danger ? 'border-tone-danger-fg/40 text-tone-danger-fg' : 'text-muted-foreground'
+      )}
+    >
+      {children}
+    </span>
+  )
+}
+
+/**
+ * The legend's marks: every mark the graph draws (the internet, the kind dots,
+ * the target's crown and criticality, the step chips, the edge states and the
+ * dashed node of another path), in the shared label language.
+ */
+export function useAttackPathLegendItems(): GraphLegendItem[] {
   const { t } = useTranslation()
-  const items: { key: string; mark: React.ReactNode; label: string }[] = [
+  return [
+    {
+      key: 'internet',
+      mark: <Globe className="size-3.5" />,
+      label: t(
+        'prioritization.attackPath.legendInternet',
+        'The internet; on an entry point, internet-facing'
+      ),
+    },
     {
       key: 'entry',
       mark: <span className={cn('size-2 rounded-sm', ROLE_DOT.entry)} />,
@@ -400,6 +451,31 @@ export function AttackPathLegend() {
       label: t('prioritization.attackPath.role.target', 'Target'),
     },
     {
+      key: 'crown',
+      mark: <Crown className="size-3" />,
+      label: t(
+        'prioritization.attackPath.legendCrown',
+        "Crown jewel; beside it, the target's business criticality"
+      ),
+    },
+    {
+      key: 'step',
+      mark: <StepChipMark>0.4</StepChipMark>,
+      label: t(
+        'prioritization.attackPath.legendStep',
+        'Finding that allows the step, with its weight'
+      ),
+    },
+    {
+      key: 'kev',
+      mark: (
+        <StepChipMark danger>
+          <Zap className="size-2.5" />
+        </StepChipMark>
+      ),
+      label: t('prioritization.attackPath.legendKev', 'Known exploited step'),
+    },
+    {
       key: 'selected',
       mark: <span className="h-0.5 w-5 rounded bg-signal" />,
       label: t('prioritization.attackPath.legendSelected', 'Selected path'),
@@ -410,29 +486,29 @@ export function AttackPathLegend() {
       label: t('prioritization.attackPath.legendAlt', 'Other path'),
     },
     {
+      key: 'alt-node',
+      mark: <span className="h-3 w-5 rounded-sm border border-dashed border-border-strong" />,
+      label: t(
+        'prioritization.attackPath.legendAltNode',
+        'Asset only on another path, or hidden from you'
+      ),
+    },
+    {
       key: 'width',
       mark: <span className="h-1 w-5 rounded bg-border-strong" />,
       label: t('prioritization.attackPath.legendWidth', 'Thicker line, likelier step'),
     },
   ]
+}
+
+/** The legend in one wrapping line: over the graph when it fills the screen. */
+export function AttackPathLegend() {
+  const items = useAttackPathLegendItems()
   return (
-    <ul
-      className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground"
-      aria-label={t('prioritization.attackPath.legend', 'Legend')}
-      data-testid="attack-path-legend"
-    >
-      {items.map((i) => (
-        <li key={i.key} className="flex items-center gap-1.5">
-          <span aria-hidden className="flex items-center">
-            {i.mark}
-          </span>
-          {i.label}
-        </li>
-      ))}
-      <li className="flex items-center gap-1.5">
-        <KevBadge />
-        <span>{t('prioritization.attackPath.legendKev', 'Known exploited step')}</span>
-      </li>
-    </ul>
+    <GraphLegendList
+      items={items}
+      className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-cap"
+      testId="attack-path-legend"
+    />
   )
 }

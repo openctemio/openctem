@@ -5,15 +5,9 @@ import { Pencil, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { cn } from '@/lib/utils'
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-  CardFooter,
-  CardAction,
-} from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface EditableCardProps {
   title: string
@@ -38,6 +32,7 @@ export function EditableCard({
   emptyText,
   canEdit = true,
 }: EditableCardProps) {
+  const { t } = useTranslation()
   const [isEditing, setIsEditing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
@@ -83,23 +78,24 @@ export function EditableCard({
   return (
     <Card className={cn('group', isEditing && 'ring-2 ring-primary/20')}>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
+        {/* The edit button sits beside the title, always shown: a hover-only
+            button at the far edge is out of reach on a touch screen and, on a
+            wide one, sits far from what it edits. */}
+        <CardTitle className="flex min-w-0 items-center gap-2">
           {icon}
           {title}
           {badge}
-        </CardTitle>
-        {canEdit && !isEditing && (
-          <CardAction>
+          {canEdit && !isEditing && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+              aria-label={t('common.editNamed', 'Edit {name}', { name: title })}
               onClick={() => setIsEditing(true)}
             >
-              <Pencil className="size-4" />
+              <Pencil aria-hidden />
             </Button>
-          </CardAction>
-        )}
+          )}
+        </CardTitle>
       </CardHeader>
 
       <CardContent>
@@ -115,11 +111,11 @@ export function EditableCard({
       {isEditing && (
         <CardFooter className="justify-end gap-2">
           <Button variant="ghost" size="sm" onClick={handleCancel} disabled={isSaving}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button size="sm" onClick={handleSave} disabled={isSaving}>
             {isSaving && <Loader2 className="size-4 animate-spin" />}
-            Save
+            {t('common.save', 'Save')}
           </Button>
         </CardFooter>
       )}

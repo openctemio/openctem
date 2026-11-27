@@ -11,6 +11,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 
 import { useWordlistPreview } from '../api/use-wordlists'
+import { formatNumber } from '@/lib/app-locale'
 
 /**
  * Preview for a domain: how many labels a standard discovery run of it
@@ -21,8 +22,10 @@ export function WordlistPreviewCard() {
   const id = useId()
   const [input, setInput] = useState('')
   const [root, setRoot] = useState<string | null>(null)
+  // Preview was pressed with no domain: said under the field.
+  const [missing, setMissing] = useState(false)
   const { data, error, isLoading } = useWordlistPreview(root)
-  const n = (v: number) => v.toLocaleString()
+  const n = (v: number) => formatNumber(v)
 
   return (
     <Card data-testid="wordlist-preview">
@@ -43,6 +46,7 @@ export function WordlistPreviewCard() {
           onSubmit={(e) => {
             e.preventDefault()
             const v = input.trim()
+            setMissing(v === '')
             setRoot(v === '' ? null : v)
           }}
         >
@@ -52,14 +56,24 @@ export function WordlistPreviewCard() {
               id={id}
               value={input}
               placeholder="example.com"
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value)
+                setMissing(false)
+              }}
+              aria-invalid={missing ? true : undefined}
+              aria-describedby={missing ? `${id}-error` : undefined}
             />
           </div>
-          <Button type="submit" variant="outline" disabled={input.trim() === ''}>
+          <Button type="submit" variant="outline">
             <Search className="size-4" aria-hidden />
             {t('wordlists.preview.run', 'Preview')}
           </Button>
         </form>
+        {missing && (
+          <p id={`${id}-error`} className="text-cap font-medium text-destructive">
+            {t('wordlists.preview.domainRequired', 'Enter a domain first.')}
+          </p>
+        )}
         {isLoading && (
           <p className="text-sm text-muted-foreground">
             {t('wordlists.preview.loading', 'Counting...')}

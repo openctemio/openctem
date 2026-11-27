@@ -40,7 +40,7 @@ describe('ErrorState tells a refusal from a failure', () => {
   it('a failure keeps the message and Retry', () => {
     const err = new ApiClientError('boom', 'INTERNAL_ERROR', 500)
     render(<ErrorState title="program metrics" error={err} onRetry={vi.fn()} />)
-    expect(screen.getByText('Failed to load program metrics')).toBeInTheDocument()
+    expect(screen.getByText("Couldn't load program metrics")).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Retry/ })).toBeInTheDocument()
   })
 

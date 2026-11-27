@@ -86,9 +86,7 @@ describe('Configuration page', () => {
   it('marks a console setting the server configuration locks', () => {
     render(<ConfigurationPage />)
     expect(screen.getByText('Locked by the server')).toBeInTheDocument()
-    expect(
-      screen.getByText(/locked by the server configuration \(CAPTCHA_TURNSTILE_SECRET\)/)
-    ).toBeInTheDocument()
+    expect(screen.getByText(/locked by the server configuration/)).toBeInTheDocument()
   })
 
   it('filters to the settings that need a restart', async () => {

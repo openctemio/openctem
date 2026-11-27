@@ -14,10 +14,12 @@
 import { useEffect, useState, type HTMLAttributes } from 'react'
 import { cn } from '@/lib/utils'
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
-import { useLayout } from '@/context/layout-provider'
+import { useLayoutOrNull } from '@/context/layout-provider'
 import { Separator } from '@/components/ui/separator'
-import { BreadcrumbNav } from './breadcrumb-nav'
+import { BreadcrumbNav, type CrumbTrail } from './breadcrumb-nav'
 import { HeaderActions } from './header-actions'
+import { HEADER_ICON_BUTTON } from './header-controls'
+import { PhoneBarTitle } from './phone-bar-title'
 
 interface HeaderProps extends HTMLAttributes<HTMLElement> {
   /**
@@ -35,6 +37,11 @@ interface HeaderProps extends HTMLAttributes<HTMLElement> {
    * @default true
    */
   showHeaderActions?: boolean
+  /**
+   * The breadcrumb's levels, for a shell whose pages are not the tenant app's
+   * (the platform console). Default: built from the URL.
+   */
+  crumbs?: CrumbTrail
 }
 
 export function Header({
@@ -42,12 +49,14 @@ export function Header({
   fixed,
   showBreadcrumb = true,
   showHeaderActions = true,
+  crumbs,
   children,
   ...props
 }: HeaderProps) {
   const [offset, setOffset] = useState(0)
   const { state, isMobile } = useSidebar()
-  const { collapsible } = useLayout()
+  // The platform console has no LayoutProvider: its sidebar is always `icon`.
+  const collapsible = useLayoutOrNull()?.collapsible ?? 'icon'
   // The desktop toggle lives in the sidebar's brand row. The header keeps one
   // only where the sidebar cannot show its own: on phones (sheet), and when an
   // offcanvas sidebar is collapsed fully off screen.
@@ -65,7 +74,7 @@ export function Header({
   return (
     <header
       className={cn(
-        'border-border z-50 h-12 border-b',
+        'border-border-subtle bg-background z-50 h-12 border-b',
         // Phones: an opaque bar, no backdrop blur. A blur is re-rasterised
         // whenever anything moves under or over it (a sheet sliding up, its
         // backdrop fading), which is where phone animations dropped frames.
@@ -74,9 +83,10 @@ export function Header({
       )}
       {...props}
     >
+      {/* Below 768 px the phone bar: padding 0 8, controls 8 apart. */}
       <div
         className={cn(
-          'relative flex h-full items-center gap-3 px-4',
+          'relative flex h-full items-center gap-3 px-4 max-md:gap-2 max-md:px-2',
           offset > 10 &&
             fixed &&
             'after:absolute after:inset-0 after:-z-10 after:bg-background/40 md:after:backdrop-blur-md'
@@ -84,13 +94,16 @@ export function Header({
       >
         {showTrigger && (
           <>
-            <SidebarTrigger variant="outline" className="max-md:scale-125" />
+            <SidebarTrigger className={HEADER_ICON_BUTTON} />
             <Separator orientation="vertical" className="h-6" />
           </>
         )}
-        {/* From lg: at tablet width the sidebar and header actions leave no room for
-            a readable trail, and the page title already says where you are. */}
-        {showBreadcrumb && <BreadcrumbNav className="hidden min-w-0 shrink lg:flex" />}
+        {isMobile && <PhoneBarTitle />}
+        {/* From 768px; it folds by width (breadcrumb-fold.ts). A phone shows no
+            trail: the page title says where you are. */}
+        {showBreadcrumb && (
+          <BreadcrumbNav trail={crumbs} className="hidden min-w-0 flex-1 basis-0 md:flex" />
+        )}
         {children}
         {showHeaderActions && <HeaderActions />}
       </div>

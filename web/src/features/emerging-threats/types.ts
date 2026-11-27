@@ -39,7 +39,11 @@ export interface EmergingThreatSummary {
   product: string
   /** How many distinct products match, in the caller's scope. */
   product_count: number
-  ets_breakdown: EtsBreakdown
+  /**
+   * The parts of ets; null when the stored parts do not add up to ets (the
+   * server never sends parts that contradict the score).
+   */
+  ets_breakdown: EtsBreakdown | null
   last_event_kind: string
   event_at: string | null
   source_at: string | null

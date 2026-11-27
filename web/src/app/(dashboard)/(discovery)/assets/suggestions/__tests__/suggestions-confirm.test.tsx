@@ -48,10 +48,19 @@ vi.mock('@/features/assets/components/assets-section-tabs', () => ({
 vi.mock('@/features/assets/components/attention/attention-queue-header', () => ({
   AttentionQueueHeader: () => null,
 }))
-vi.mock('@/hooks/use-url-param', () => ({ useUrlFilter: () => ['', vi.fn()] }))
 vi.mock('@/hooks/use-list-params', () => ({
-  useListParams: () => ({ page: 1, setPage: vi.fn(), perPage: 20, setPagination: vi.fn() }),
+  useListParams: () => ({
+    page: 1,
+    perPage: 25,
+    q: '',
+    searchTerm: '',
+    pagination: { pageIndex: 0, pageSize: 25 },
+    setPage: vi.fn(),
+    setPagination: vi.fn(),
+    setSearch: vi.fn(),
+  }),
 }))
+vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => false }))
 
 import RelationshipSuggestionsPage from '../page'
 
@@ -66,11 +75,11 @@ describe('Relationship suggestions: approving asks first', () => {
     render(<RelationshipSuggestionsPage />)
     await userEvent.click(screen.getByRole('button', { name: /approve all/i }))
     const dialog = await screen.findByRole('alertdialog')
-    expect(dialog).toHaveTextContent('Approve all 1 suggestions?')
+    expect(dialog).toHaveTextContent('Approve all 1 suggestion?')
     // Relationships can be removed afterwards, so it must not claim otherwise.
     expect(dialog).not.toHaveTextContent(/cannot be undone/i)
     expect(perms.approveAll).not.toHaveBeenCalled()
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Approve 1 suggestions' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Approve 1 suggestion' }))
     await waitFor(() => expect(perms.approveAll).toHaveBeenCalled())
   })
 
@@ -81,9 +90,9 @@ describe('Relationship suggestions: approving asks first', () => {
       within(await screen.findByRole('toolbar')).getByRole('button', { name: 'Approve' })
     )
     const dialog = await screen.findByRole('alertdialog')
-    expect(within(dialog).getByText('api.example.com → 192.0.2.10')).toBeInTheDocument()
+    expect(within(dialog).getByText('api.example.com to 192.0.2.10')).toBeInTheDocument()
     expect(perms.approveBatch).not.toHaveBeenCalled()
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Approve 1 suggestions' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Approve 1 suggestion' }))
     await waitFor(() => expect(perms.approveBatch).toHaveBeenCalledWith(['s1']))
   })
 })

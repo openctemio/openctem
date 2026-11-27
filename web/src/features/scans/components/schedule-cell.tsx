@@ -52,9 +52,16 @@ export function formatNextRun(
 export function ScheduleCell({
   config,
   onToggle,
+  inline = false,
 }: {
   config: ScanConfig
   onToggle: (action: 'pause' | 'activate', config: ScanConfig) => Promise<void>
+  /**
+   * One line (a table row): the switch, the schedule, then its next run (or
+   * its state) and a missed-occurrence note in the room left, cut with an
+   * ellipsis.
+   */
+  inline?: boolean
 }) {
   const { t } = useTranslation()
   const canWrite = useHasPermission(Permission.ScansWrite)
@@ -82,8 +89,25 @@ export function ScheduleCell({
     }
   }
 
+  const stateText = disabled
+    ? t('scans.state.disabled')
+    : on
+      ? nextRun
+        ? t('scans.cell.next', undefined, { time: nextRun })
+        : t('scans.state.scheduleOn')
+      : t('scans.state.scheduleOff')
+  const state =
+    on && !disabled && nextRun ? (
+      <>
+        <Clock className="inline h-3 w-3 shrink-0 align-middle" aria-hidden />
+        {stateText}
+      </>
+    ) : (
+      stateText
+    )
+
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 items-center gap-2">
       <ScheduleOnConfirm
         name={config.name}
         open={confirmOn}
@@ -104,26 +128,28 @@ export function ScheduleCell({
           </span>
         )}
       </div>
-      <div className="flex min-w-0 flex-col">
-        <span className="text-sm">{scheduleTypeName(t, config.schedule_type)}</span>
-        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-          {disabled ? (
-            t('scans.state.disabled')
-          ) : on ? (
-            nextRun ? (
-              <>
-                <Clock className="h-3 w-3" />
-                {t('scans.cell.next', undefined, { time: nextRun })}
-              </>
-            ) : (
-              t('scans.state.scheduleOn')
-            )
-          ) : (
-            t('scans.state.scheduleOff')
-          )}
-        </span>
-        <ScheduleMissedNote config={config} showRunNow={false} />
-      </div>
+      {inline ? (
+        <div
+          data-slot="schedule-cell-text"
+          className="flex min-w-0 items-center gap-2 whitespace-nowrap"
+        >
+          <span className="shrink-0 text-sm">{scheduleTypeName(t, config.schedule_type)}</span>
+          <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+            <span className="min-w-0 truncate [&>svg]:me-1" title={stateText}>
+              {state}
+            </span>
+          </span>
+          <span className="min-w-0 truncate [&>span]:flex-nowrap [&>span]:text-xs">
+            <ScheduleMissedNote config={config} showRunNow={false} />
+          </span>
+        </div>
+      ) : (
+        <div className="flex min-w-0 flex-col">
+          <span className="text-sm">{scheduleTypeName(t, config.schedule_type)}</span>
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">{state}</span>
+          <ScheduleMissedNote config={config} showRunNow={false} />
+        </div>
+      )}
     </div>
   )
 }

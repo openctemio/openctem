@@ -8,9 +8,9 @@
     "prebuild": "node scripts/ensure-generated.mjs",
     "build": "next build",
     "start": "next start",
-    "predev:console": "node scripts/ensure-generated.mjs",
+    "predev:console": "node scripts/ensure-generated.mjs && node scripts/console-fonts.mjs",
     "dev:console": "next dev console --port 3001",
-    "prebuild:console": "node scripts/ensure-generated.mjs",
+    "prebuild:console": "node scripts/ensure-generated.mjs && node scripts/console-fonts.mjs",
     "build:console": "next build console",
     "prelint": "node scripts/ensure-generated.mjs",
     "lint": "eslint",
@@ -143,5 +143,14 @@
     "@typescript-eslint/typescript-estree": {
       "minimatch": "^11.0.3"
     }
-  }
+  },
+  "sideEffects": [
+    "*.css",
+    "./src/features/findings/config/register-layouts.ts",
+    "./src/instrumentation-client.ts",
+    "./console/src/instrumentation-client.ts",
+    "./instrumentation.ts",
+    "./sentry.*.config.ts",
+    "./src/extensions/**"
+  ]
 }

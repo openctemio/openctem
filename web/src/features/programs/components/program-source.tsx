@@ -27,6 +27,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError } from '@/lib/api/error-handler'
 import type { Program, ProgramScopeSource } from '../api/programs-api.types'
 import { setProgramSource, syncProgram } from '../api/use-programs'
+import { formatDateTime } from '@/lib/app-locale'
 
 export const SCOPE_SOURCE_LABEL: Record<ProgramScopeSource, string> = {
   paste: 'Pasted by hand',
@@ -179,7 +180,7 @@ export function ProgramSource({ program: p, canWrite, onChanged }: ProgramSource
             <dt className="text-muted-foreground">{t('programs.source.lastSync', 'Last sync')}</dt>
             <dd>
               {p.sync?.last_synced_at
-                ? new Date(p.sync.last_synced_at).toLocaleString()
+                ? formatDateTime(new Date(p.sync.last_synced_at))
                 : t('programs.source.never', 'Never')}
             </dd>
           </>

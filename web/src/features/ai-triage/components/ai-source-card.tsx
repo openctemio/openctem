@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
 import { KeyRound, Loader2, ShieldAlert } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -19,6 +19,7 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatDateSafe } from '@/lib/format-date'
+import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 
 import {
   testAIProvider,
@@ -82,7 +83,8 @@ export function AISourceCard({ settings, canEdit, onSaved }: AISourceCardProps) 
   const [testing, setTesting] = useState(false)
   const [testCode, setTestCode] = useState<AITestCode | undefined>()
 
-  useEffect(() => {
+  // The saved values: on load, after a save and on Discard.
+  const reset = useCallback(() => {
     setSource(settings.source)
     setProvider(settings.provider)
     setBaseUrl(settings.base_url)
@@ -91,6 +93,7 @@ export function AISourceCard({ settings, canEdit, onSaved }: AISourceCardProps) 
     setRemoveKey(false)
     setTestCode(undefined)
   }, [settings])
+  useEffect(reset, [reset])
 
   const own = source === 'own'
   const compat = provider === 'openai_compatible'
@@ -377,28 +380,28 @@ export function AISourceCard({ settings, canEdit, onSaved }: AISourceCardProps) 
           )}
         </div>
 
-        {canEdit && (
+        {/* Test shows once there is something to test; Save is the save bar. */}
+        {canEdit && own && provider !== '' && (compat || hasKey) && (
           <div className="flex flex-wrap items-center justify-end gap-3">
-            {own && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void test()}
-                disabled={testing || saving || provider === '' || (!compat && !hasKey)}
-              >
-                {testing && <Loader2 className="me-1.5 size-4 animate-spin" aria-hidden />}
-                {t('settings.ai.source.test', 'Test connection')}
-              </Button>
-            )}
             <Button
               type="button"
-              onClick={() => void save()}
-              disabled={!dirty || incomplete || saving}
+              variant="outline"
+              onClick={() => void test()}
+              disabled={testing || saving}
             >
-              {saving && <Loader2 className="me-1.5 size-4 animate-spin" aria-hidden />}
-              {t('settings.ai.source.save', 'Save')}
+              {testing && <Loader2 className="me-1.5 size-4 animate-spin" aria-hidden />}
+              {t('settings.ai.source.test', 'Test connection')}
             </Button>
           </div>
+        )}
+        {canEdit && (
+          <SettingsSaveBar
+            dirty={dirty}
+            saving={saving}
+            saveDisabled={incomplete}
+            onSave={() => void save()}
+            onDiscard={reset}
+          />
         )}
       </CardContent>
     </Card>

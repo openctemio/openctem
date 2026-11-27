@@ -25,7 +25,14 @@ export function useEASMVerifiedDomains(active = true) {
     get,
     { revalidateOnFocus: false }
   )
-  return { domains: data?.data ?? [], error, isLoading: isLoading || modulesLoading, mutate }
+  return {
+    domains: data?.data ?? [],
+    /** The list is read here (scope:read and the attack_surface module). */
+    enabled,
+    error,
+    isLoading: isLoading || modulesLoading,
+    mutate,
+  }
 }
 
 /** POST /api/v1/easm/verified-domains: returns the TXT record to publish. */

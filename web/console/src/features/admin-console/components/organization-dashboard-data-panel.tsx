@@ -63,7 +63,7 @@ export function OrganizationDashboardDataPanel({ tenantId, canRebuild }: Props) 
         <CardDescription>
           {t(
             'admin.org.dashboardData.description',
-            'Stored per-asset data behind the organization dashboards, kept current from every change and reconciled every night.'
+            'The figures behind the organization dashboards. They update with every change and are rechecked every night.'
           )}
         </CardDescription>
       </CardHeader>
@@ -71,13 +71,13 @@ export function OrganizationDashboardDataPanel({ tenantId, canRebuild }: Props) 
         <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <dt className="text-muted-foreground">
-              {t('admin.org.dashboardData.lastRebuilt', 'Last full run')}
+              {t('admin.org.dashboardData.lastRebuilt', 'Last full rebuild')}
             </dt>
             <dd>{formatDateSafe(data.rebuilt_at, 'PPp')}</dd>
           </div>
           <div>
             <dt className="text-muted-foreground">
-              {t('admin.org.dashboardData.lastDrift', 'Drift corrected')}
+              {t('admin.org.dashboardData.lastDrift', 'Fixed in last check')}
             </dt>
             <dd>{data.last_drift ?? '—'}</dd>
           </div>

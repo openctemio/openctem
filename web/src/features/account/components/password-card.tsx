@@ -1,11 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { Key, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { SettingsSection } from '@/features/shared'
 import {
   Dialog,
   DialogContent,
@@ -51,7 +51,7 @@ export function PasswordCard({ isLocalAccount, onChanged, activeApiKeys }: Passw
   async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-    const issue = passwordPolicy && passwordPolicyIssue(form.new_password, passwordPolicy)
+    const issue = passwordPolicy && passwordPolicyIssue(form.new_password, passwordPolicy, t)
     if (issue) {
       setError(issue)
       return
@@ -77,32 +77,29 @@ export function PasswordCard({ isLocalAccount, onChanged, activeApiKeys }: Passw
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Key className="h-5 w-5" />
-          {t('account.password.title', 'Password')}
-        </CardTitle>
-        <CardDescription>
-          {isLocalAccount
-            ? t(
-                'account.password.description',
-                'Changing your password signs out every other session.'
-              )
-            : t(
-                'account.password.federated',
-                'You sign in through your organization’s identity provider. Change your password there.'
-              )}
-        </CardDescription>
-      </CardHeader>
-      {isLocalAccount && (
-        <CardContent>
-          <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+    <SettingsSection
+      framed
+      id="password"
+      title={t('account.password.title', 'Password')}
+      description={
+        isLocalAccount
+          ? t(
+              'account.password.description',
+              'Changing your password signs out every other session.'
+            )
+          : t(
+              'account.password.federated',
+              'You sign in through your organization’s identity provider. Change your password there.'
+            )
+      }
+      actions={
+        isLocalAccount && (
+          <Button variant="outline" onClick={() => setOpen(true)}>
             {t('account.password.change', 'Change password')}
           </Button>
-        </CardContent>
-      )}
-
+        )
+      }
+    >
       <Dialog
         open={open}
         onOpenChange={(o) => {
@@ -181,6 +178,6 @@ export function PasswordCard({ isLocalAccount, onChanged, activeApiKeys }: Passw
           </DialogForm>
         </DialogContent>
       </Dialog>
-    </Card>
+    </SettingsSection>
   )
 }

@@ -6,32 +6,16 @@ import { OUTBOX_HEALTH } from '@/features/notifications/lib/outbox-health'
 import { useState } from 'react'
 import { useListParams } from '@/hooks/use-list-params'
 import type { ColumnDef } from '@tanstack/react-table'
-import Link from '@/components/link'
-import {
-  ArrowLeft,
-  RefreshCw,
-  MoreHorizontal,
-  Clock,
-  Loader2,
-  RotateCcw,
-  Trash2,
-  ExternalLink,
-  CheckCircle2,
-  AlertCircle,
-} from 'lucide-react'
+import { MoreHorizontal, Loader2, RotateCcw, Trash2, ExternalLink, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Main } from '@/components/layout'
-import { ErrorState, DataTable, PageHeader, PageStack } from '@/features/shared'
+import { ErrorState, DataTable, PageStack } from '@/features/shared'
+import { RefreshButton } from '@/components/list-page-parts'
+import { NotificationSectionHeader } from '@/features/integrations/components/notification-sections'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   Select,
@@ -43,9 +27,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getErrorMessage } from '@/lib/api/error-handler'
-import { Can } from '@/lib/permissions'
-import { HEALTH_ICON_CLASS } from '@/lib/health-colors'
-import { cn } from '@/lib/utils'
+import { useCanMutate } from '@/lib/permissions'
 
 import {
   useNotificationOutboxApi,
@@ -60,7 +42,6 @@ import {
   type OutboxStatus,
 } from '@/features/notifications/types/notification-outbox.types'
 import { safeHref } from '@/lib/safe-href'
-import { SafeExternalLink } from '@/components/safe-external-link'
 import { useTranslation } from '@/context/i18n-provider'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 
@@ -80,23 +61,10 @@ function QueueHealthStatus({
   }
 
   const hasIssues = stats.failed > 0 || stats.dead > 0
-  const hasPending = stats.pending > 0 || stats.processing > 0
-  const isHealthy = !hasIssues && !hasPending
-
-  if (isHealthy) {
-    return (
-      <Alert>
-        <CheckCircle2 className={cn('h-4 w-4', HEALTH_ICON_CLASS.ok)} />
-        <AlertTitle>{t('notificationChannels.outbox.healthy', 'Queue is healthy')}</AlertTitle>
-        <AlertDescription>
-          {t(
-            'notificationChannels.outbox.healthyDesc',
-            'All notifications are being delivered normally'
-          )}
-        </AlertDescription>
-      </Alert>
-    )
-  }
+  // Only a problem earns a banner above the list: a healthy or busy queue is
+  // read from the table itself (its rows carry their status), so a box of its
+  // own there was a wasted row.
+  if (!hasIssues) return null
 
   // Build status parts
   const parts: string[] = []
@@ -118,24 +86,16 @@ function QueueHealthStatus({
     parts.push(t('notificationChannels.outbox.count.dead', '{count} dead', { count: stats.dead }))
 
   return (
-    <Alert variant={hasIssues ? 'destructive' : 'default'}>
-      {hasIssues ? (
-        <AlertCircle className="h-4 w-4" />
-      ) : (
-        <Clock className={cn('h-4 w-4', HEALTH_ICON_CLASS.run)} />
-      )}
+    <Alert variant="destructive">
+      <AlertCircle className="h-4 w-4" />
       <AlertTitle>{parts.join(', ')}</AlertTitle>
       <AlertDescription>
-        {hasIssues
-          ? t('notificationChannels.outbox.needAttention', 'Some notifications need attention')
-          : t('notificationChannels.outbox.processingDesc', 'Notifications are being processed')}
-        {hasIssues && (
-          <div className="mt-2">
-            <Button variant="outline" size="sm" onClick={onViewFailed}>
-              {t('notificationChannels.outbox.viewIssues', 'View Issues')}
-            </Button>
-          </div>
-        )}
+        {t('notificationChannels.outbox.needAttention', 'Some notifications need attention')}
+        <div className="mt-2">
+          <Button variant="outline" size="sm" onClick={onViewFailed}>
+            {t('notificationChannels.outbox.viewIssues', 'View Issues')}
+          </Button>
+        </div>
       </AlertDescription>
     </Alert>
   )
@@ -147,7 +107,7 @@ export default function NotificationOutboxPage() {
     t(`notificationChannels.outbox.status.${s}`, OUTBOX_HEALTH[s as OutboxStatus]?.label ?? s)
   // State
   // The list lives in the URL (one list convention): page, per_page, status.
-  const list = useListParams({ defaultPageSize: 10, filters: { status: 'all' } })
+  const list = useListParams({ filters: { status: 'all' } })
   const statusFilter = list.filters.status as OutboxStatus | 'all'
   const setStatusFilter = (value: OutboxStatus | 'all') => list.setFilter('status', value)
   const { pagination, setPagination, setPage } = list
@@ -174,6 +134,8 @@ export default function NotificationOutboxPage() {
   })
 
   // Mutations
+  const mayRetryRoute = useCanMutate('POST /api/v1/notification-outbox/{id}/retry')
+  const mayDeleteRoute = useCanMutate('DELETE /api/v1/notification-outbox/{id}')
   const { trigger: retryEntry, isMutating: isRetrying } = useRetryOutboxEntryApi()
   const { trigger: deleteEntry, isMutating: isDeleting } = useDeleteOutboxEntryApi(
     selectedEntry?.id || ''
@@ -188,10 +150,6 @@ export default function NotificationOutboxPage() {
     dead: 0,
     total: 0,
   }
-
-  // Check if there are any actionable entries
-  const hasActionableEntries =
-    stats.pending > 0 || stats.processing > 0 || stats.failed > 0 || stats.dead > 0
 
   // Handlers
   const handleRefresh = async () => {
@@ -261,6 +219,7 @@ export default function NotificationOutboxPage() {
     {
       accessorKey: 'title',
       header: t('notificationChannels.outbox.col.title', 'Title'),
+      meta: { kind: 'name' },
       cell: ({ row }) => {
         const entry = row.original
         return (
@@ -284,6 +243,7 @@ export default function NotificationOutboxPage() {
     {
       accessorKey: 'event_type',
       header: t('notificationChannels.outbox.col.event', 'Event'),
+      meta: { kind: 'text', hideBelow: 960 },
       cell: ({ row }) => (
         <div className="flex flex-col">
           <span className="font-medium">{row.original.event_type}</span>
@@ -294,6 +254,7 @@ export default function NotificationOutboxPage() {
     {
       accessorKey: 'severity',
       header: t('notificationChannels.outbox.col.severity', 'Severity'),
+      meta: { kind: 'severity' },
       cell: ({ row }) => {
         return (
           <SeverityBadge severity={row.original.severity}>
@@ -305,6 +266,7 @@ export default function NotificationOutboxPage() {
     {
       accessorKey: 'status',
       header: t('notificationChannels.outbox.col.status', 'Status'),
+      meta: { kind: 'status' },
       cell: ({ row }) => {
         const entry = row.original
         const health = OUTBOX_HEALTH[entry.status]
@@ -339,6 +301,7 @@ export default function NotificationOutboxPage() {
     {
       id: 'retries',
       header: t('notificationChannels.outbox.col.retries', 'Retries'),
+      meta: { kind: 'number', hideBelow: 1100 },
       cell: ({ row }) => (
         <span className="text-sm tabular-nums">
           {row.original.retry_count} / {row.original.max_retries}
@@ -348,6 +311,7 @@ export default function NotificationOutboxPage() {
     {
       accessorKey: 'scheduled_at',
       header: t('notificationChannels.outbox.col.scheduled', 'Scheduled'),
+      meta: { kind: 'datetime-recent' },
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground">
           <RelativeTime date={row.original.scheduled_at} />
@@ -360,55 +324,78 @@ export default function NotificationOutboxPage() {
       cell: ({ row }) => {
         const entry = row.original
         const canRetry = entry.status === 'failed' || entry.status === 'dead'
+        const sourceUrl = safeHref(entry.url)
+        const busy = actionInProgress === entry.id
+        const label = t('common.actionMenu.label', 'Actions for {name}', { name: entry.title })
+        const items: ActionMenuEntry[] = [
+          ...(sourceUrl
+            ? [
+                {
+                  id: 'view-source',
+                  label: t('notificationChannels.outbox.viewSource', 'View source'),
+                  icon: ExternalLink,
+                  onSelect: () => {
+                    const u = safeHref(entry.url)
+                    if (u) window.open(u, '_blank', 'noopener,noreferrer')
+                  },
+                },
+              ]
+            : []),
+          ...(mayRetryRoute && canRetry
+            ? [
+                {
+                  id: 'retry',
+                  label: t('notificationChannels.outbox.retry', 'Retry'),
+                  icon: RotateCcw,
+                  disabledReason: isRetrying
+                    ? t(
+                        'notificationChannels.outbox.retryingReason',
+                        'A retry is already in progress.'
+                      )
+                    : undefined,
+                  onSelect: () => handleRetry(entry),
+                },
+              ]
+            : []),
+          ...(mayDeleteRoute
+            ? [
+                {
+                  id: 'delete',
+                  label: t('notificationChannels.outbox.delete', 'Delete'),
+                  icon: Trash2,
+                  destructive: true,
+                  disabledReason: isDeleting
+                    ? t(
+                        'notificationChannels.outbox.deletingReason',
+                        'A delete is already in progress.'
+                      )
+                    : undefined,
+                  onSelect: () => handleDeleteClick(entry),
+                },
+              ]
+            : []),
+        ]
         return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          <ActionMenu
+            title={entry.title}
+            label={label}
+            items={items}
+            trigger={
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
-                aria-label={t('notificationChannels.outbox.actionsFor', 'Actions for {title}', {
-                  title: entry.title,
-                })}
-                disabled={actionInProgress === entry.id}
+                size="icon-sm"
+                className="p-0"
+                aria-label={label}
+                disabled={busy}
               >
-                {actionInProgress === entry.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                 ) : (
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
                 )}
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {safeHref(entry.url) && (
-                <DropdownMenuItem asChild>
-                  <SafeExternalLink href={entry.url}>
-                    <ExternalLink className="me-2 h-4 w-4" />
-                    {t('notificationChannels.outbox.viewSource', 'View source')}
-                  </SafeExternalLink>
-                </DropdownMenuItem>
-              )}
-              <Can route="POST /api/v1/notification-outbox/{id}/retry">
-                {canRetry && (
-                  <DropdownMenuItem onClick={() => handleRetry(entry)} disabled={isRetrying}>
-                    <RotateCcw className="me-2 h-4 w-4" />
-                    {t('notificationChannels.outbox.retry', 'Retry')}
-                  </DropdownMenuItem>
-                )}
-              </Can>
-              <Can route="DELETE /api/v1/notification-outbox/{id}">
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive"
-                  onClick={() => handleDeleteClick(entry)}
-                  disabled={isDeleting}
-                >
-                  <Trash2 className="me-2 h-4 w-4" />
-                  {t('notificationChannels.outbox.delete', 'Delete')}
-                </DropdownMenuItem>
-              </Can>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            }
+          />
         )
       },
     },
@@ -436,25 +423,9 @@ export default function NotificationOutboxPage() {
     <>
       <Main>
         <PageStack>
-          {/* Header */}
-          <Button variant="ghost" size="sm" asChild className="-ms-2">
-            <Link href="/settings/integrations/notifications">
-              <ArrowLeft className="me-2 h-4 w-4" />
-              {t('notificationChannels.outbox.back', 'Back to channels')}
-            </Link>
-          </Button>
-          <PageHeader
-            title={t('notificationChannels.outbox.title', 'Notification queue')}
-            description={t(
-              'notificationChannels.outbox.description',
-              'Notifications waiting to be delivered, retried or given up on.'
-            )}
-          >
-            <Button variant="outline" size="sm" onClick={handleRefresh}>
-              <RefreshCw className="me-2 h-4 w-4" />
-              {t('notificationChannels.outbox.refresh', 'Refresh')}
-            </Button>
-          </PageHeader>
+          {/* The section's header stays as on Channels; the tabs show this
+              sub-page and lead back (no back-link row). */}
+          <NotificationSectionHeader />
 
           {/* Queue Health Status */}
           <QueueHealthStatus
@@ -463,70 +434,68 @@ export default function NotificationOutboxPage() {
             onViewFailed={handleViewFailed}
           />
 
-          {/* Only show entries section if there are actionable entries or user applied filter */}
-          {(hasActionableEntries || statusFilter !== 'all') && (
-            <>
-              <div>
-                <DataTable
-                  columns={columns}
-                  data={entries}
-                  getRowId={(e) => e.id}
-                  isLoading={entriesLoading}
-                  showSearch={false}
-                  toolbarStart={
-                    <Select
-                      value={statusFilter}
-                      onValueChange={(value) => {
-                        setStatusFilter(value as OutboxStatus | 'all')
-                        setPage(1)
-                      }}
-                    >
-                      <SelectTrigger
-                        className="h-9 w-[160px]"
-                        aria-label={t(
-                          'notificationChannels.outbox.filterByStatus',
-                          'Filter by status'
-                        )}
-                      >
-                        <SelectValue
-                          placeholder={t('notificationChannels.outbox.allStatuses', 'All statuses')}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">
-                          {t('notificationChannels.outbox.allStatuses', 'All statuses')}
-                        </SelectItem>
-                        <SelectItem value="pending">{statusLabel('pending')}</SelectItem>
-                        <SelectItem value="processing">{statusLabel('processing')}</SelectItem>
-                        <SelectItem value="failed">{statusLabel('failed')}</SelectItem>
-                        <SelectItem value="dead">{statusLabel('dead')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  }
-                  manualPagination
-                  rowCount={entriesData?.total ?? 0}
-                  pagination={pagination}
-                  onPaginationChange={setPagination}
-                  pageSize={pagination.pageSize}
-                  emptyMessage={t('notificationChannels.outbox.emptyMessage', 'No entries found')}
-                  emptyDescription={
-                    statusFilter !== 'all'
-                      ? t(
-                          'notificationChannels.outbox.emptyFiltered',
-                          'No {status} entries in the queue',
-                          {
-                            status: statusLabel(statusFilter).toLocaleLowerCase(locale),
-                          }
-                        )
-                      : t(
-                          'notificationChannels.outbox.emptyQueue',
-                          'The notification queue is empty'
-                        )
-                  }
+          {/* The entries table is always there, with the queue's filter and
+              refresh in its toolbar, as on the other notification tabs. */}
+          <div>
+            <DataTable
+              columns={columns}
+              data={entries}
+              getRowId={(e) => e.id}
+              isLoading={entriesLoading}
+              pinActions
+              showSearch={false}
+              toolbarEnd={
+                <RefreshButton
+                  onClick={() => void handleRefresh()}
+                  loading={statsLoading || entriesLoading}
                 />
-              </div>
-            </>
-          )}
+              }
+              toolbarStart={
+                <Select
+                  value={statusFilter}
+                  onValueChange={(value) => {
+                    setStatusFilter(value as OutboxStatus | 'all')
+                    setPage(1)
+                  }}
+                >
+                  <SelectTrigger
+                    className="w-[160px]"
+                    aria-label={t('notificationChannels.outbox.filterByStatus', 'Filter by status')}
+                  >
+                    <SelectValue
+                      placeholder={t('notificationChannels.outbox.allStatuses', 'All statuses')}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">
+                      {t('notificationChannels.outbox.allStatuses', 'All statuses')}
+                    </SelectItem>
+                    <SelectItem value="pending">{statusLabel('pending')}</SelectItem>
+                    <SelectItem value="processing">{statusLabel('processing')}</SelectItem>
+                    <SelectItem value="failed">{statusLabel('failed')}</SelectItem>
+                    <SelectItem value="dead">{statusLabel('dead')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              }
+              manualPagination
+              rowCount={entriesData?.total ?? 0}
+              pagination={pagination}
+              onPaginationChange={setPagination}
+              pageSize={pagination.pageSize}
+              emptyMessage={t('notificationChannels.outbox.emptyMessage', 'No entries found')}
+              emptyDescription={
+                statusFilter !== 'all'
+                  ? t(
+                      'notificationChannels.outbox.emptyFiltered',
+                      'No {status} entries in the queue',
+                      {
+                        status: statusLabel(statusFilter).toLocaleLowerCase(locale),
+                      }
+                    )
+                  : t('notificationChannels.outbox.emptyQueue', 'The notification queue is empty')
+              }
+            />
+          </div>
 
           {/* Delete Confirmation Dialog */}
           <ConfirmDialog

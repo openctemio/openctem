@@ -3,33 +3,42 @@
 import * as React from 'react'
 import { Lock, type LucideIcon } from 'lucide-react'
 import Link from '@/components/link'
+import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { foldToFit } from '@/lib/fit-row'
 import { safeInternalHref } from '@/lib/safe-href'
 
 /**
  * The active-filter row under a list toolbar (research/267, research/266 §5),
- * passed as `ListToolbar`'s / `DataTable`'s `below`. One line with fixed
- * places:
+ * passed as `ListToolbar`'s / `DataTable`'s `below`. Exactly one line, of one
+ * height, with fixed places:
  *
- *   [locked chip] [chip] [chip] [+N more] [+ Add filter] [Clear filters] ...... [count]
+ *   [locked chip] [chip] [chip] [+N more] ...... [trailing] [Clear filters]
  *
- * - `leading`: what the list always hides (`LockedChip`), first, never folded.
+ * - `leading`: what the list always hides (`LockedChip`), first, never folded;
+ *   at most half the row (its text shortens, in full in its title).
  * - `chips`: the removable filter chips, one element each (keyed). The ones
  *   that do not fit fold into "+N more", a popover listing them, each still
- *   removable there.
- * - `trailing`: Add filter, then Clear filters; right after the visible chips.
- * - `end`: the result count, pinned to the far end so it never moves when a
- *   chip comes or goes.
+ *   removable there. Never a second line.
+ * - `trailing`: the list's own actions, if it has any, then Clear filters
+ *   (`onClearAll`), drawn by the row so it sits in the same place, with the
+ *   same look, on every list: pinned to the row's end, so nothing to its
+ *   right can move it, and a chip coming or going never moves them.
+ *
+ * The row carries no count: a list says its count once, in its title row
+ * (`ListCount`).
+ *
+ * On a phone (under 768px) nothing folds and nothing scrolls: the chips wrap
+ * onto as many lines as they need, so no chip is hidden past an edge or behind
+ * "+N more"; a leading chip wider than the row shortens its text (ellipsis,
+ * full text in its title) and keeps its icon and actions.
  *
  * Nothing in the row shrinks under its content, so no element is ever drawn
- * over its neighbour. When the leading chip, the trailing actions, the count
- * and at least "+N more" do not fit on one line (a phone), the leading chip
- * takes a line of its own above the rest (`data-stacked`), where it truncates
- * its text only if even that line is too narrow.
+ * over its neighbour: what does not fit folds into "+N more".
  *
  * Widths are measured on the row (ResizeObserver on the row and on each fixed
  * block); each chip's width is cached by its key while it is shown, so
@@ -40,7 +49,12 @@ export interface FilterChipsRowProps {
   chips: React.ReactElement[]
   leading?: React.ReactNode
   trailing?: React.ReactNode
-  end?: React.ReactNode
+  /**
+   * Remove every filter the viewer set. Pass it while two or more can be
+   * removed (one chip has its own X); the row draws "Clear filters" after
+   * `trailing`.
+   */
+  onClearAll?: () => void
   /** Accessible name of the chip list, e.g. "Active filters". */
   label?: string
   className?: string
@@ -56,9 +70,7 @@ export interface ChipsRowWidths {
   total: number
   /** Natural width of the leading block (0 when there is none). */
   lead: number
-  /** Width of the trailing actions (0 when there are none). */
-  trail: number
-  /** Width of the count (0 when there is none). */
+  /** Width of the end block: count, list actions, Clear (0 when empty). */
   end: number
   /** Width of each chip, in order. */
   chips: number[]
@@ -67,33 +79,17 @@ export interface ChipsRowWidths {
 export interface ChipsRowFit {
   /** How many chips show; the rest fold into "+N more". */
   fit: number
-  /** The leading block takes its own line above the chips. */
-  stacked: boolean
 }
 
 /**
  * How the row lays out at these widths. Pure, so the folding rules are tested
  * without a layout engine.
  */
-export function fitChipsRow({ total, lead, trail, end, chips }: ChipsRowWidths): ChipsRowFit {
-  const n = chips.length
-  const chipsWidth = chips.reduce((s, x) => s + x, 0) + GAP * Math.max(0, n - 1)
-  // Room left for the chips block on a line that also holds `blocks`, each
-  // separated from the chips block by one gap.
-  const room = (blocks: number[]) => {
-    const present = blocks.filter((w) => w > 0)
-    return total - present.reduce((s, w) => s + w + BLOCK_GAP, 0)
-  }
-  const fold = (avail: number) => foldToFit(avail, chips, GAP, MORE_WIDTH)
-
-  if (lead > 0) {
-    const oneLine = room([lead, trail, end])
-    // With no chips there is no chips block, and so one gap fewer.
-    const fits = n === 0 ? oneLine + BLOCK_GAP >= 0 : oneLine >= Math.min(chipsWidth, MORE_WIDTH)
-    if (fits) return { fit: fold(oneLine), stacked: false }
-    return { fit: fold(room([trail, end])), stacked: true }
-  }
-  return { fit: fold(room([trail, end])), stacked: false }
+export function fitChipsRow({ total, lead, end, chips }: ChipsRowWidths): ChipsRowFit {
+  // Room left for the chips block beside the leading block and the end
+  // block, each separated from it by one gap.
+  const room = total - [lead, end].filter((w) => w > 0).reduce((s, w) => s + w + BLOCK_GAP, 0)
+  return { fit: foldToFit(room, chips, GAP, MORE_WIDTH) }
 }
 
 function keyOf(el: React.ReactElement, i: number): string {
@@ -103,8 +99,8 @@ function keyOf(el: React.ReactElement, i: number): string {
 export function FilterChipsRow({
   chips,
   leading,
-  trailing,
-  end,
+  trailing: trailingProp,
+  onClearAll,
   label,
   className,
   'data-testid': testId,
@@ -113,32 +109,43 @@ export function FilterChipsRow({
   const rowRef = React.useRef<HTMLDivElement>(null)
   const listRef = React.useRef<HTMLUListElement>(null)
   const leadRef = React.useRef<HTMLDivElement>(null)
-  const trailRef = React.useRef<HTMLDivElement>(null)
   const endRef = React.useRef<HTMLDivElement>(null)
   const widths = React.useRef(new Map<string, number>())
-  const [layout, setLayout] = React.useState<ChipsRowFit>({ fit: chips.length, stacked: false })
+  const trailing =
+    trailingProp || onClearAll ? (
+      <>
+        {trailingProp}
+        {onClearAll ? (
+          <Button variant="ghost" size="sm" data-slot="filter-chips-clear" onClick={onClearAll}>
+            {t('common.filterChips.clear', 'Clear filters')}
+          </Button>
+        ) : null}
+      </>
+    ) : null
+  const [fit, setFit] = React.useState(chips.length)
   const [tick, setTick] = React.useState(0)
   const keys = chips.map(keyOf)
   const hasLead = !!leading
-  const hasTrail = !!trailing
-  const hasEnd = !!end
+  const hasEnd = !!trailing
+  // A phone wraps the chips onto more lines instead of folding them.
+  const scroll = useIsMobile()
 
   // Re-measure when the row or a fixed block changes size (the leading chip's
   // count arrives after its own request, without re-rendering this row).
   React.useEffect(() => {
     if (typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(() => setTick((n) => n + 1))
-    for (const el of [rowRef.current, leadRef.current, trailRef.current, endRef.current]) {
+    for (const el of [rowRef.current, leadRef.current, endRef.current]) {
       if (el) ro.observe(el)
     }
     return () => ro.disconnect()
-  }, [hasLead, hasTrail, hasEnd])
+  }, [hasLead, hasEnd])
 
   React.useLayoutEffect(() => {
     const row = rowRef.current
     if (!row) return
     const set = (next: ChipsRowFit) => {
-      if (next.fit !== layout.fit || next.stacked !== layout.stacked) setLayout(next)
+      if (next.fit !== fit) setFit(next.fit)
     }
     // Cache the width of every chip on screen.
     Array.from(listRef.current?.children ?? []).forEach((li) => {
@@ -147,27 +154,31 @@ export function FilterChipsRow({
       if (k && w > 0) widths.current.set(k, w)
     })
     const total = row.clientWidth
-    if (total === 0) return set({ fit: chips.length, stacked: false })
-    // A chip never measured yet: show them all once to measure.
-    if (keys.some((k) => !widths.current.has(k))) {
-      return set({ fit: chips.length, stacked: layout.stacked })
-    }
+    if (total === 0) return set({ fit: chips.length })
+    // A phone: every chip shows, the leading chip first, wrapping.
+    if (scroll) return set({ fit: chips.length })
+    // A chip never measured yet: show them all once to measure (the row
+    // clips, so this never takes a second line).
+    if (keys.some((k) => !widths.current.has(k))) return set({ fit: chips.length })
     set(
       fitChipsRow({
         total,
-        // The leading block is `w-max`: its natural width, whatever line it is on.
+        // The leading block is `w-max` up to half the row: the same width
+        // whatever the chips.
         lead: leadRef.current?.offsetWidth ?? 0,
-        trail: trailRef.current?.offsetWidth ?? 0,
         end: endRef.current?.offsetWidth ?? 0,
         chips: keys.map((k) => widths.current.get(k) ?? 0),
       })
     )
     // Runs after every render that changes the chips (a new array each
-    // render); it only sets state when the layout changes, and the layout
-    // does not change the widths it reads, so it settles.
-  }, [keys, tick, layout, chips.length])
+    // render); it only sets state when the fit changes, and the fit does not
+    // change the widths it reads, so it settles.
+  }, [keys, tick, fit, chips.length, scroll])
 
-  const { fit, stacked } = layout
+  // Nothing but (maybe) the leading chip: the toolbar hides the row while
+  // that chip renders nothing (ListToolbar's `below`), so no empty line shows.
+  const bare = chips.length === 0 && !trailing
+  if (bare && !leading) return null
   const shown = chips.slice(0, fit)
   const hidden = chips.slice(fit)
 
@@ -176,28 +187,49 @@ export function FilterChipsRow({
       ref={rowRef}
       data-slot="filter-chips-row"
       data-testid={testId}
-      data-stacked={stacked ? '' : undefined}
+      data-bare={bare ? '' : undefined}
       className={cn(
-        'flex w-full min-w-0 items-center gap-2 overflow-hidden',
-        stacked ? 'flex-wrap' : 'flex-nowrap',
+        // One line of one height: it never wraps and never grows. On a phone
+        // the chips wrap onto more lines instead (none is hidden).
+        'flex h-control w-full min-w-0 flex-nowrap items-center gap-2 overflow-clip max-md:h-auto max-md:min-h-control-touch',
         className
       )}
     >
-      {leading ? (
-        <div
-          data-slot="filter-chips-leading"
-          className={cn('flex min-w-0 max-w-full', stacked ? 'basis-full' : 'shrink-0')}
-        >
-          <div ref={leadRef} className="flex w-max max-w-full min-w-0 items-center gap-2">
-            {leading}
+      {/* The strip: on a phone the leading chip and the chips wrap together;
+          elsewhere it draws no box and the row folds. */}
+      <div
+        data-slot="filter-chips-strip"
+        data-wrap={scroll ? '' : undefined}
+        className={
+          scroll ? 'flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5 py-1' : 'contents'
+        }
+      >
+        {leading ? (
+          <div
+            data-slot="filter-chips-leading"
+            className={cn(
+              'flex',
+              // In the phone strip it keeps its width up to the strip's, then
+              // its text shortens (never cut at either edge).
+              scroll ? 'max-w-full min-w-0 shrink-0' : 'max-w-[50%] min-w-0 shrink-0'
+            )}
+          >
+            <div
+              ref={leadRef}
+              data-slot="filter-chips-lead"
+              className="flex w-max max-w-full min-w-0 items-center gap-2"
+            >
+              {leading}
+            </div>
           </div>
-        </div>
-      ) : null}
-      {chips.length > 0 ? (
+        ) : null}
         <ul
           ref={listRef}
           aria-label={label ?? t('common.filterChips.label', 'Active filters')}
-          className="flex shrink-0 flex-nowrap items-center gap-1.5 empty:hidden"
+          className={cn(
+            'flex items-center gap-1.5 empty:hidden',
+            scroll ? 'min-w-0 flex-wrap' : 'shrink-0 flex-nowrap'
+          )}
         >
           {shown.map((chip, i) => (
             <li key={keys[i]} data-chip-key={keys[i]} className="flex shrink-0">
@@ -205,7 +237,7 @@ export function FilterChipsRow({
             </li>
           ))}
         </ul>
-      ) : null}
+      </div>
       {hidden.length > 0 ? (
         <Popover>
           <PopoverTrigger asChild>
@@ -217,7 +249,7 @@ export function FilterChipsRow({
               {t('common.filterChips.more', '+{count} more', { count: hidden.length })}
             </button>
           </PopoverTrigger>
-          <PopoverContent align="start" className="w-auto max-w-sm p-2">
+          <PopoverContent className="w-auto max-w-sm p-2">
             <ul
               aria-label={t('common.filterChips.moreLabel', 'More filters')}
               className="flex flex-col items-start gap-1.5"
@@ -233,20 +265,13 @@ export function FilterChipsRow({
       ) : null}
       {trailing ? (
         <div
-          ref={trailRef}
-          data-slot="filter-chips-trailing"
-          className="flex shrink-0 items-center gap-2"
-        >
-          {trailing}
-        </div>
-      ) : null}
-      {end ? (
-        <div
           ref={endRef}
           data-slot="filter-chips-end"
-          className="ms-auto flex shrink-0 items-center text-xs tabular-nums text-muted-foreground"
+          className="ms-auto flex shrink-0 items-center gap-2"
         >
-          {end}
+          <div data-slot="filter-chips-trailing" className="flex items-center gap-2">
+            {trailing}
+          </div>
         </div>
       ) : null}
     </div>
@@ -284,7 +309,15 @@ export function LockedChip({
   const body = (
     <span className="inline-flex min-w-0 items-center gap-1.5" tabIndex={hint ? 0 : undefined}>
       {Icon ? <Icon className="size-3.5 shrink-0" aria-hidden="true" /> : null}
-      <span className="truncate">{children}</span>
+      {/* A one-line pill: a long label may end in an ellipsis, whole in its
+          title (and explained by the hint). */}
+      <span
+        className="truncate"
+        data-cut-tooltip=""
+        title={typeof children === 'string' ? children : undefined}
+      >
+        {children}
+      </span>
     </span>
   )
   return (

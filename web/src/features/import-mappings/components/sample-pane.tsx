@@ -1,6 +1,9 @@
 'use client'
 
+import { useRef } from 'react'
+import { Upload } from 'lucide-react'
 import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -58,28 +61,50 @@ export function SamplePane({
 }: SamplePaneProps) {
   const { t } = useTranslation()
   const delimiter = draft.csv?.delimiter ?? 'auto'
+  const inputRef = useRef<HTMLInputElement>(null)
 
   return (
     <div className="grid gap-4">
       <div className="grid gap-1.5">
-        <Label htmlFor="im-sample">{t('importMappings.sample.file', 'Sample file')}</Label>
-        <Input
-          id="im-sample"
-          type="file"
-          accept=".csv,.tsv,.json,.jsonl,.ndjson,.xml,.txt,text/csv,application/json,application/xml,text/xml"
-          disabled={readOnly}
-          onChange={(e) => {
-            const f = e.target.files?.[0] ?? null
-            if (f && f.size > MAX_SAMPLE_BYTES) {
-              toast.error(t('importMappings.sample.tooLarge', 'The sample is larger than 5 MiB'))
-              e.target.value = ''
-              return
-            }
-            onFile(f)
-            const guess = f ? sourceFromFileName(f.name) : undefined
-            if (autoSource && guess && guess !== draft.source) onChange(withSource(draft, guess))
-          }}
-        />
+        {/* The pane's title already says "Sample": the button names the
+            action and the file name sits beside it, in the page's language
+            (a bare file input shows the browser's own words). */}
+        <div className="flex min-w-0 items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={readOnly}
+            onClick={() => inputRef.current?.click()}
+          >
+            <Upload aria-hidden />
+            {t('importMappings.sample.choose', 'Choose a file')}
+          </Button>
+          {/* Wraps rather than end in an ellipsis, as the shared file picker. */}
+          <span className="min-w-0 text-sm text-muted-foreground [overflow-wrap:anywhere]">
+            {file ? file.name : t('importMappings.sample.none', 'No file chosen')}
+          </span>
+          <input
+            ref={inputRef}
+            id="im-sample"
+            type="file"
+            className="sr-only"
+            tabIndex={-1}
+            aria-label={t('importMappings.sample.file', 'Sample file')}
+            accept=".csv,.tsv,.json,.jsonl,.ndjson,.xml,.txt,text/csv,application/json,application/xml,text/xml"
+            disabled={readOnly}
+            onChange={(e) => {
+              const f = e.target.files?.[0] ?? null
+              if (f && f.size > MAX_SAMPLE_BYTES) {
+                toast.error(t('importMappings.sample.tooLarge', 'The sample is larger than 5 MiB'))
+                e.target.value = ''
+                return
+              }
+              onFile(f)
+              const guess = f ? sourceFromFileName(f.name) : undefined
+              if (autoSource && guess && guess !== draft.source) onChange(withSource(draft, guess))
+            }}
+          />
+        </div>
         <p className="text-xs text-muted-foreground">
           {file
             ? t(

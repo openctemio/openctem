@@ -14,16 +14,17 @@ import { useUrlParams } from '@/hooks/use-url-param'
 import { safeHref } from '@/lib/safe-href'
 import {
   QUICK_VIEW_LABELS,
-  quickViewHref,
+  quickViewLink,
   quickViewLabelKey,
   type QuickViewKey,
 } from '@/features/findings/lib/quick-views'
 import { useNavPins, type NavPin } from '@/features/nav-pins/api/use-nav-pins'
 import { PinAction } from '@/features/nav-pins/components/pin-action'
 import type { NavGroup, NavItem } from '../types'
-import { NavClusterLabel } from './nav-group'
+import { NAV_BUTTON_CLASS, NavClusterLabel } from './nav-group'
 import { NavCount } from './nav-count'
 import { SidebarLink } from './sidebar-link'
+import { formatNumber } from '@/lib/app-locale'
 
 /** Every page the sidebar links to, by path, with its title and icon. */
 export function pagesOf(
@@ -67,7 +68,7 @@ export function pinnedRows(
       if (!page || !href) continue
       rows.push({ pin: p, label: page.title, href, icon: page.icon ?? Pin })
     } else if (p.kind === 'quick_view' && p.params) {
-      const href = safeHref(quickViewHref(p.params, includeInformational))
+      const href = safeHref(quickViewLink({ key: p.ref, params: p.params }, includeInformational))
       if (!href) continue
       rows.push({ pin: p, label: quickViewLabel(p.ref), href, icon: Eye, count: p.count })
     } else if (p.kind === 'saved_view' && p.name) {
@@ -113,6 +114,7 @@ export function NavPinned({ groups }: { groups: NavGroup[] }) {
                   isActive={filled}
                   data-current={active && !filled ? true : undefined}
                   tooltip={r.label}
+                  className={NAV_BUTTON_CLASS}
                 >
                   <SidebarLink
                     href={r.href}
@@ -124,7 +126,7 @@ export function NavPinned({ groups }: { groups: NavGroup[] }) {
                       {r.label}
                     </span>
                     {typeof r.count === 'number' && r.count > 0 && (
-                      <NavCount>{r.count.toLocaleString()}</NavCount>
+                      <NavCount>{formatNumber(r.count)}</NavCount>
                     )}
                   </SidebarLink>
                 </SidebarMenuButton>
@@ -134,7 +136,6 @@ export function NavPinned({ groups }: { groups: NavGroup[] }) {
           })}
         </SidebarMenu>
       </SidebarGroup>
-      <NavClusterLabel />
     </>
   )
 }

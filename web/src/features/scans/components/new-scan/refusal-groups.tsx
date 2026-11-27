@@ -45,6 +45,7 @@ import {
   type RefusalGroup,
 } from '../../lib/refusal-groups'
 import { intensityForTier, type ProbeTier } from '../../lib/scan-intensity'
+import { formatNumber } from '@/lib/app-locale'
 
 /** Examples shown before "Show all". */
 export const GROUP_EXAMPLES = 5
@@ -131,7 +132,7 @@ export function ReadinessLine({
       <span className="font-medium">
         {total === 1
           ? t('scans.readiness.targetsOne')
-          : t('scans.readiness.targetsMany', undefined, { count: total.toLocaleString() })}
+          : t('scans.readiness.targetsMany', undefined, { count: formatNumber(total) })}
       </span>
       {groupCount > 0 && (
         <span className="font-medium">
@@ -436,13 +437,7 @@ function GroupSection({
                 permission={Permission.ScanZonesWrite}
                 fallback={
                   zonesHref ? (
-                    <Button
-                      asChild
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 max-sm:min-h-11"
-                    >
+                    <Button asChild type="button" size="sm" variant="outline">
                       <Link href={zonesHref}>
                         {t('scans.groups.setUpZone', 'Set up a scan zone')}
                       </Link>
@@ -454,7 +449,7 @@ function GroupSection({
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="h-8 max-sm:min-h-11"
+
                   onClick={() => setZoneOpen(true)}
                 >
                   {t('scans.groups.addZone', 'Add scan zone')}
@@ -462,13 +457,7 @@ function GroupSection({
               </Can>
             )}
             {group.kind === 'scope' && scopeHref && (
-              <Button
-                asChild
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-8 max-sm:min-h-11"
-              >
+              <Button asChild type="button" size="sm" variant="outline">
                 <Link href={scopeHref}>{t('scans.groups.openScope', 'Open Scoping')}</Link>
               </Button>
             )}

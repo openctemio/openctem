@@ -121,7 +121,8 @@ export function OrganizationSummary({
           ) : (
             <ul className="space-y-0.5">
               {org.owner_emails.slice(0, 3).map((e) => (
-                <li key={e} className="truncate">
+                // An address is read whole: it wraps at any character.
+                <li key={e} data-token className="[overflow-wrap:anywhere]">
                   {e}
                 </li>
               ))}
@@ -193,14 +194,11 @@ export function OrganizationSummary({
         <Card className="gap-2 py-4">
           <CardContent className="px-4">
             <DetailFieldGrid>
-              <DetailField label={t('admin.org.summary.slug', 'Slug')}>
-                <code className="text-sm">{org.slug}</code>
+              <DetailField label={t('admin.org.summary.slug', 'Short name')}>
+                <code className="text-code break-all">{org.slug}</code>
               </DetailField>
               <DetailField label={t('admin.org.summary.created', 'Created')}>
                 <RelativeTime date={org.created_at} />
-              </DetailField>
-              <DetailField label={t('admin.org.summary.id', 'ID')} full>
-                <code className="text-xs break-all select-all">{org.id}</code>
               </DetailField>
             </DetailFieldGrid>
           </CardContent>

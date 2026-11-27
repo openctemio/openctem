@@ -18,7 +18,7 @@
  * - Exact matches take precedence over wildcards
  */
 
-import { Permission } from '@/lib/permissions'
+import { Permission } from '@/lib/permissions/constants'
 import { Module } from './modules.generated'
 
 export interface RoutePermissionConfig {
@@ -609,17 +609,15 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   // Settings - Organization (Core feature, no module required)
   // Team management is always available, controlled by RBAC only
   // ========================================
-  // Organization › General and Security › Authentication. Viewing needs
+  // Organization › General and Sign-in and oversight › Sign-in. Viewing needs
   // team:update; saving the security settings is owner-only in the API and
-  // the page.
+  // the page. Sign-in also holds the verified domains, trusted organizations
+  // (owners and admins read, owners change) and the SSO changes an owner
+  // decides (RequireTeamOwner in the API; admins see an "owners only" note).
   '/settings/general': {
     permission: Permission.TeamUpdate,
   },
-  '/settings/authentication': {
-    permission: Permission.TeamUpdate,
-  },
-  // Owner only in the API (RequireTeamOwner); admins see an "owners only" note.
-  '/settings/sso-approvals': {
+  '/settings/sign-in': {
     permission: Permission.TeamUpdate,
   },
   // Owners and admins see support access; granting is owner only (api RFC-063).
@@ -630,24 +628,16 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/security': {
     permission: Permission.TeamUpdate,
   },
-  // Owners and admins read domain policies; changes are owner only (api RFC-104).
-  '/settings/domains': {
-    permission: Permission.TeamUpdate,
-  },
-  // Owners and admins read trusts; changes are owner only (api RFC-058).
-  '/settings/trusted-organizations': {
-    permission: Permission.TeamUpdate,
-  },
   '/settings/modules': {
     permission: Permission.TeamUpdate,
   },
-  // Usage & limits: owners and admins (GET /organization/limits needs admin).
+  // Usage and limits: owners and admins (GET /organization/limits needs admin).
   '/settings/limits': {
     permission: Permission.TeamUpdate,
   },
-  // The user's own notification settings live at /account/notifications
-  // (/settings/notifications 308s there) and carry no entry: /account pages are
-  // personal and open to every signed-in user. The org-level channels
+  // The user's own notification settings live at /settings/me/notifications
+  // (/settings/notifications 308s there) and carry no entry: "Your membership" pages are
+  // the person's own and open to every member. The org-level channels
   // (Slack/Teams/webhook) live under /settings/integrations/notifications and
   // stay gated by the integrations entries below.
   '/settings/sla-policies': {
@@ -769,8 +759,9 @@ export const routePermissions: Record<string, RoutePermissionConfig> = {
   '/settings/emerging-threats': {
     permission: Permission.TeamUpdate,
   },
-  // Finding approvals: settings:read to see, settings:write (+ step-up) to save.
-  '/settings/finding-approvals': {
+  // Approvals (finding approvals): settings:read to see, settings:write
+  // (+ step-up) to save. Scan approval keeps its own route and gate.
+  '/settings/approvals': {
     permission: Permission.SettingsRead,
   },
   // Finding lifecycle (RFC-110): findings:read to see, findings:lifecycles:write

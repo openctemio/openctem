@@ -21,10 +21,12 @@ import { PriorityClassBadge } from '../priority-class-badge'
 import { ScoreBreakdown } from './priority-explanation-card'
 import { useFindingPriorityExplanation } from '../../api/use-finding-priority-explanation'
 import { PRIORITY_CLASS_CONFIG, type FindingDetail, type PriorityClass } from '../../types'
+import { findingStatusesInCategory } from '../../types/finding.types'
 import { PriorityClassSla, usePrioritySlaBasis } from '@/features/sla/components/priority-class-sla'
 import { riskSignals, type RiskSignal, type SignalGroup } from '../../lib/finding-signals'
 import { assetDetailHref, isLinkableAssetId } from '../../lib/asset-link'
 import { useTranslation } from '@/context/i18n-provider'
+import { priorityReasonText } from '../../lib/priority-reason'
 
 /**
  * The API caps a finding at P2 while its asset's attribution is not
@@ -36,6 +38,9 @@ export const ATTRIBUTION_CAP_PHRASE = 'capped at P2 until ownership is confirmed
 export function isAttributionCapped(reason: string | null | undefined): boolean {
   return !!reason && reason.includes(ATTRIBUTION_CAP_PHRASE)
 }
+
+/** A closed finding has no deadline: the SLA sentence and its basis are left out. */
+const CLOSED = new Set<string>(findingStatusesInCategory('closed'))
 
 const GROUPS: { key: SignalGroup; labelKey: string; label: string; icon: React.ElementType }[] = [
   {
@@ -63,11 +68,6 @@ const EFFECT_WORD: Record<RiskSignal['effect'], { key: string; fallback: string 
   raises: { key: 'findings.whyItMatters.raises', fallback: 'raises priority' },
   lowers: { key: 'findings.whyItMatters.lowers', fallback: 'lowers priority' },
   neutral: { key: 'findings.whyItMatters.context', fallback: 'context' },
-}
-
-function sentence(s: string): string {
-  const t = s.trim()
-  return t ? t.charAt(0).toUpperCase() + t.slice(1) : t
 }
 
 export function SignalChip({ signal }: { signal: RiskSignal }) {
@@ -138,10 +138,17 @@ export interface FindingWhyItMattersProps {
   finding: FindingDetail
   /** `compact` for the drawer: one flat list of chips, no group labels. */
   compact?: boolean
+  /** The page: a block of the tab panel (no card, section title). The drawer keeps the card. */
+  flat?: boolean
   className?: string
 }
 
-export function FindingWhyItMatters({ finding, compact, className }: FindingWhyItMattersProps) {
+export function FindingWhyItMatters({
+  finding,
+  compact,
+  flat,
+  className,
+}: FindingWhyItMattersProps) {
   const { t } = useTranslation()
   const [scoreOpen, setScoreOpen] = useState(false)
   const signals = riskSignals(finding, t)
@@ -151,27 +158,30 @@ export function FindingWhyItMatters({ finding, compact, className }: FindingWhyI
   const cfg = pc ? PRIORITY_CLASS_CONFIG[pc] : undefined
   const reason = finding.priorityClassReason
   const slaAsset = isLinkableAssetId(finding.assets[0]?.id) ? finding.assets[0].id : undefined
+  const closed = CLOSED.has(finding.status)
 
   return (
     <section
       aria-labelledby={`why-${finding.id}`}
       data-slot="finding-why"
-      className={cn('rounded-lg border bg-card p-4', className)}
+      className={cn(!flat && 'rounded-lg border bg-card p-4', className)}
     >
-      <h2 id={`why-${finding.id}`} className="text-sm font-semibold">
+      <h2 id={`why-${finding.id}`} className={flat ? 'text-section' : 'text-sm font-semibold'}>
         {t('findings.whyItMatters.heading', 'Why it matters')}
       </h2>
 
       {pc && cfg && (
         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
           <PriorityClassBadge priorityClass={pc} showWord showTooltip={false} />
-          <PriorityClassSla
-            priorityClass={pc}
-            assetId={slaAsset}
-            severity={finding.severity}
-            variant="sentence"
-            className="text-sm text-muted-foreground"
-          />
+          {!closed && (
+            <PriorityClassSla
+              priorityClass={pc}
+              assetId={slaAsset}
+              severity={finding.severity}
+              variant="sentence"
+              className="text-sm text-muted-foreground"
+            />
+          )}
           {finding.priorityClassOverride && (
             <Badge variant="outline" className="text-xs">
               {t('findings.whyItMatters.setManually', 'Set manually')}
@@ -179,29 +189,36 @@ export function FindingWhyItMatters({ finding, compact, className }: FindingWhyI
           )}
         </div>
       )}
-      {reason && <p className="mt-1.5 text-sm text-muted-foreground">{sentence(reason)}.</p>}
-      {pc && <SlaBasis priorityClass={pc} assetId={slaAsset} severity={finding.severity} />}
+      {reason && (
+        <p className="mt-1.5 text-sm text-muted-foreground">{priorityReasonText(reason, t)}</p>
+      )}
+      {pc && !closed && (
+        <SlaBasis priorityClass={pc} assetId={slaAsset} severity={finding.severity} />
+      )}
       {isAttributionCapped(reason) && (
         <div
           role="note"
           aria-label={t('findings.whyItMatters.ownershipNote', 'Ownership not confirmed')}
-          className="mt-2 flex flex-wrap items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-sm"
+          className="mt-2 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-2 text-sm"
         >
           <ShieldQuestion className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
-          <span className="min-w-0 flex-1">
-            {t(
-              'findings.whyItMatters.ownershipText',
-              "This asset has not been confirmed as your organisation's, so the finding is held at P2."
+          {/* The text takes the note's full width; the link sits under it. */}
+          <div className="min-w-0 flex-1">
+            <p>
+              {t(
+                'findings.whyItMatters.ownershipText',
+                "This asset has not been confirmed as your organisation's, so the finding is held at P2."
+              )}
+            </p>
+            {isLinkableAssetId(finding.assets[0]?.id) && (
+              <Link
+                href={assetDetailHref(finding.assets[0].id)}
+                className="mt-1 inline-block font-medium underline underline-offset-2"
+              >
+                {t('findings.whyItMatters.verifyOwnership', 'Verify ownership')}
+              </Link>
             )}
-          </span>
-          {isLinkableAssetId(finding.assets[0]?.id) && (
-            <Link
-              href={assetDetailHref(finding.assets[0].id)}
-              className="font-medium underline underline-offset-2"
-            >
-              {t('findings.whyItMatters.verifyOwnership', 'Verify ownership')}
-            </Link>
-          )}
+          </div>
         </div>
       )}
 

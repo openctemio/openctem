@@ -44,7 +44,7 @@ export function StepRunsAfter({
           type="button"
           variant="outline"
           size="sm"
-          className="h-9 w-full justify-between font-normal"
+          className="w-full justify-between font-normal"
           aria-label={t('scans.workflowForm.runsAfter.aria', undefined, {
             name: step.name || step.step_key,
           })}
@@ -53,7 +53,7 @@ export function StepRunsAfter({
           <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
+      <DropdownMenuContent>
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
           {t('scans.workflowForm.runsAfter.label')}
         </DropdownMenuLabel>

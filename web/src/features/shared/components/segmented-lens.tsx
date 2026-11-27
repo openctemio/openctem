@@ -2,10 +2,11 @@
 
 import * as React from 'react'
 import { cn } from '@/lib/utils'
+import { formatNumber } from '@/lib/app-locale'
 
 /**
  * A lens: a small segmented control that switches what a list is about
- * ("Open · Fixed · Dispositioned · All") without being a filter facet. One
+ * ("Open · Fixed · Dismissed · All") without being a filter facet. One
  * value is always selected. It is a radio group: arrow keys move and select,
  * Home/End jump, only the selected segment is in the tab order.
  *
@@ -32,9 +33,11 @@ export interface SegmentedLensProps<V extends string> {
   className?: string
   /** Read only: shows the value, nothing can be chosen. */
   disabled?: boolean
+  /** `toolbar`: the list toolbar's control height (36 px on a phone, 32 px from sm), so the lens lines up with the controls beside it. */
+  size?: 'default' | 'toolbar'
 }
 
-const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
+const COMPACT: Intl.NumberFormatOptions = { notation: 'compact', maximumFractionDigits: 1 }
 
 export function SegmentedLens<V extends string>({
   label,
@@ -44,6 +47,7 @@ export function SegmentedLens<V extends string>({
   countNoun = 'items',
   className,
   disabled = false,
+  size = 'default',
 }: SegmentedLensProps<V>) {
   const refs = React.useRef<(HTMLButtonElement | null)[]>([])
   const index = Math.max(
@@ -89,7 +93,8 @@ export function SegmentedLens<V extends string>({
       data-testid="segmented-lens"
       onKeyDown={onKeyDown}
       className={cn(
-        'inline-flex h-9 items-center rounded-md border bg-muted/40 p-0.5 pointer-coarse:h-auto',
+        'inline-flex items-center rounded-md border bg-muted/40 p-0.5 pointer-coarse:h-auto',
+        size === 'toolbar' ? 'h-9 sm:h-8' : 'h-9',
         className
       )}
     >
@@ -110,7 +115,8 @@ export function SegmentedLens<V extends string>({
             data-testid={`lens-${o.value}`}
             onClick={() => onChange(o.value)}
             className={cn(
-              'inline-flex h-8 cursor-pointer items-center disabled:cursor-not-allowed disabled:opacity-60 pointer-coarse:h-11 gap-1.5 rounded-sm px-2.5 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'inline-flex cursor-pointer items-center disabled:cursor-not-allowed disabled:opacity-60 pointer-coarse:h-11 gap-1.5 rounded-sm px-2.5 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              size === 'toolbar' ? 'h-8 sm:h-6.5' : 'h-8',
               selected
                 ? 'bg-background text-foreground shadow-sm'
                 : 'text-muted-foreground hover:text-foreground'
@@ -122,7 +128,7 @@ export function SegmentedLens<V extends string>({
                 className="tabular-nums text-muted-foreground"
                 aria-label={`${o.count} ${countNoun}`}
               >
-                {compact.format(o.count)}
+                {formatNumber(o.count, COMPACT)}
               </span>
             )}
           </button>

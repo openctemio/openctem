@@ -239,6 +239,28 @@ type Breakdown struct {
 	Total             int     `json:"total"`
 }
 
+// Points is the sum of the four parts before the confidence multiplier.
+func (b Breakdown) Points() int { return b.Exploitation + b.Severity + b.Exposure + b.Freshness }
+
+// total is the score the parts give: their points times the confidence,
+// rounded, at most 100. Score sets it and Explains checks a stored
+// breakdown against it, so a total and its parts cannot drift apart.
+func (b Breakdown) total() int {
+	return min(100, int(math.Round(float64(b.Points())*b.Confidence)))
+}
+
+// Explains reports whether the breakdown is the score ets: no part is
+// negative, the confidence is in (0, 1], the parts give its total and the
+// total is ets. A breakdown that was never recorded (empty: confidence 0)
+// or that disagrees with the stored score does not explain it; the API then
+// sends no parts rather than parts that contradict the score.
+func (b Breakdown) Explains(ets int) bool {
+	if b.Exploitation < 0 || b.Severity < 0 || b.Exposure < 0 || b.Freshness < 0 {
+		return false
+	}
+	return b.Confidence > 0 && b.Confidence <= 1 && b.Total == ets && b.total() == ets
+}
+
 // Freshness window of the triggering event.
 const FreshFor = 72 * time.Hour
 
@@ -349,8 +371,7 @@ func Score(v Vuln, assets []Asset, now time.Time) (Breakdown, Tier) {
 		b := base
 		b.Exposure = exposurePoints(group)
 		b.Confidence = conf
-		raw := float64(b.Exploitation+b.Severity+b.Exposure+b.Freshness) * conf
-		b.Total = min(100, int(math.Round(raw)))
+		b.Total = b.total()
 		return b
 	}
 	var best Breakdown
@@ -438,6 +459,27 @@ func RecommendedAction(tier Tier, b Breakdown) string {
 		return ActionPatchNow
 	}
 	return ActionPatchWithinSLA
+}
+
+// ActionFor is RecommendedAction for a stored alert. When the alert's
+// breakdown does not explain its score (ScoreParts), the exploitation
+// points come from the vulnerability itself, so the advice follows the
+// evidence rather than an empty breakdown.
+func ActionFor(a *Alert, v Vuln) string {
+	if b, ok := a.ScoreParts(); ok {
+		return RecommendedAction(a.Tier, b)
+	}
+	ep, _ := exploitationPoints(v)
+	return RecommendedAction(a.Tier, Breakdown{Exploitation: ep})
+}
+
+// ScoreParts is the alert's breakdown when it explains the alert's score
+// (Explains); false otherwise.
+func (a *Alert) ScoreParts() (Breakdown, bool) {
+	if a.Breakdown.Explains(a.ETS) {
+		return a.Breakdown, true
+	}
+	return Breakdown{}, false
 }
 
 // Alert is one organization's alert for one vulnerability.

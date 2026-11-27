@@ -24,11 +24,20 @@ import { cn } from '@/lib/utils'
  */
 export function MetaLine({
   items,
+  oneLine = false,
   className,
   ...props
 }: Omit<React.ComponentProps<'p'>, 'children'> & {
   /** Null and false items are skipped. */
   items: React.ReactNode[]
+  /**
+   * Keep the line on one line (a phone card's "what it is" line). Every item
+   * but the last keeps its full width and never wraps; the last one gives way
+   * and ends in an ellipsis, with its text in a tooltip when it is a string.
+   * Without it the line wraps item by item. Never pass `flex-nowrap` instead:
+   * the items would then be squeezed and their words broken letter by letter.
+   */
+  oneLine?: boolean
 }) {
   const shown = items.filter((i) => i !== null && i !== undefined && i !== false && i !== '')
   if (shown.length === 0) return null
@@ -36,20 +45,38 @@ export function MetaLine({
     <p
       {...props}
       data-slot="meta-line"
+      data-one-line={oneLine || undefined}
       className={cn(
         // Children inherit the size: a nested RelativeTime or badge text cannot
         // come out larger than the line it sits in.
-        'flex min-w-0 flex-wrap items-baseline gap-x-3 text-meta text-muted-foreground',
+        'flex min-w-0 items-baseline gap-x-3 text-meta text-muted-foreground',
+        oneLine ? 'flex-nowrap overflow-hidden' : 'flex-wrap',
         className
       )}
     >
-      {shown.map((item, i) => (
-        <React.Fragment key={i}>
-          {i > 0 && <span className="sr-only">, </span>}
-          {/* An item wraps as a unit when it fits a line, and by words if not. */}
-          <span className="min-w-0 [overflow-wrap:anywhere]">{item}</span>
-        </React.Fragment>
-      ))}
+      {shown.map((item, i) => {
+        const last = i === shown.length - 1
+        return (
+          <React.Fragment key={i}>
+            {i > 0 && <span className="sr-only">, </span>}
+            {oneLine ? (
+              <span
+                data-slot="meta-line-item"
+                title={last && typeof item === 'string' ? item : undefined}
+                className={cn('whitespace-nowrap', last ? 'min-w-0 truncate' : 'shrink-0')}
+              >
+                {item}
+              </span>
+            ) : (
+              // An item wraps as a unit when it fits a line, and by words if
+              // not; only a word longer than the whole line breaks inside.
+              <span data-slot="meta-line-item" className="min-w-0 [overflow-wrap:anywhere]">
+                {item}
+              </span>
+            )}
+          </React.Fragment>
+        )
+      })}
     </p>
   )
 }

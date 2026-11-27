@@ -12,6 +12,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import type { Severity } from '@/features/shared/types'
 import type { QueryBreakdown, QueryStats, QueryTaskPreview } from '../api/use-task-query'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 interface OwnerNames {
   user: (id?: string) => string | undefined
@@ -21,7 +22,7 @@ interface OwnerNames {
 function formatDate(iso?: string): string | null {
   if (!iso) return null
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString()
+  return Number.isNaN(d.getTime()) ? null : localeFormatDate(d)
 }
 
 function Breakdown({

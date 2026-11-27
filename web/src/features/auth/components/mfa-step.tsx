@@ -14,8 +14,9 @@
 'use client'
 
 import { useEffect, useRef, useState, useTransition } from 'react'
-import { ArrowLeft, Loader2, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
 
+import { EntryHeader } from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
@@ -51,6 +52,17 @@ interface MfaStepProps {
   orgs?: string[]
   /** Label of the back button (default: back to sign in). */
   backLabel?: string
+  /**
+   * Level of the step's title: 1 where the step is the page's only title (the
+   * sign-in card hides its own while a step shows), 2 under a page title.
+   */
+  headingLevel?: 1 | 2
+  /**
+   * The page above already shows the setup title and why it is needed: the
+   * enroll step then shows only how to scan the code and the organizations
+   * that require it, so the title does not appear twice.
+   */
+  pageTitled?: boolean
 }
 
 // The challenge expired, was used up, or the cookie is gone: only a fresh
@@ -87,11 +99,31 @@ function isCompleted(result: LoginResult): boolean {
   return result.success || (result.pendingDeletion?.length ?? 0) > 0
 }
 
-export function MfaStep({ purpose, onDone, onCancel, orgs, backLabel }: MfaStepProps) {
+export function MfaStep({
+  purpose,
+  onDone,
+  onCancel,
+  orgs,
+  backLabel,
+  headingLevel = 2,
+  pageTitled = false,
+}: MfaStepProps) {
   return purpose === 'enroll' ? (
-    <EnrollStep onDone={onDone} onCancel={onCancel} orgs={orgs} backLabel={backLabel} />
+    <EnrollStep
+      onDone={onDone}
+      onCancel={onCancel}
+      orgs={orgs}
+      backLabel={backLabel}
+      headingLevel={headingLevel}
+      pageTitled={pageTitled}
+    />
   ) : (
-    <VerifyStep onDone={onDone} onCancel={onCancel} backLabel={backLabel} />
+    <VerifyStep
+      onDone={onDone}
+      onCancel={onCancel}
+      backLabel={backLabel}
+      headingLevel={headingLevel}
+    />
   )
 }
 
@@ -101,7 +133,7 @@ function RequiredBy({ orgs }: { orgs?: string[] }) {
   if (!orgs || orgs.length === 0) return null
   const [first, ...rest] = orgs
   return (
-    <p className="text-sm font-medium">
+    <p className="text-dense text-foreground font-medium">
       {rest.length === 0
         ? t('auth.mfa.requiredBy', undefined, { org: first })
         : t('auth.mfa.requiredByMore', undefined, { org: first, count: rest.length })}
@@ -115,8 +147,6 @@ function BackButton({ onCancel, label }: { onCancel: () => void; label?: string 
     <Button
       type="button"
       variant="ghost"
-      size="sm"
-      className="justify-self-start px-0"
       onClick={async () => {
         await cancelMfaAction()
         onCancel()
@@ -128,7 +158,12 @@ function BackButton({ onCancel, label }: { onCancel: () => void; label?: string 
   )
 }
 
-function VerifyStep({ onDone, onCancel, backLabel }: Omit<MfaStepProps, 'purpose' | 'orgs'>) {
+function VerifyStep({
+  onDone,
+  onCancel,
+  backLabel,
+  headingLevel = 2,
+}: Omit<MfaStepProps, 'purpose' | 'orgs'>) {
   const { t } = useTranslation()
   const [useRecovery, setUseRecovery] = useState(false)
   const [value, setValue] = useState('')
@@ -167,19 +202,19 @@ function VerifyStep({ onDone, onCancel, backLabel }: Omit<MfaStepProps, 'purpose
     <form
       method="post"
       onSubmit={submit}
-      className="grid gap-3"
+      data-entry-step="verify"
+      className="flex flex-col gap-3.5"
       aria-label={t('auth.mfa.verifyFormLabel', 'Two-factor verification')}
     >
-      <div className="space-y-1">
-        <h2 className="text-base font-semibold">
-          {t('auth.mfa.title', 'Two-factor authentication')}
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          {useRecovery
+      <EntryHeader
+        level={headingLevel}
+        title={t('auth.mfa.title', 'Two-factor authentication')}
+        description={
+          useRecovery
             ? t('auth.mfa.recoveryHint', 'Enter one of your recovery codes. Each code works once.')
-            : t('auth.mfa.codeHint', 'Enter the 6-digit code from your authenticator app.')}
-        </p>
-      </div>
+            : t('auth.mfa.codeHint', 'Enter the 6-digit code from your authenticator app.')
+        }
+      />
 
       <VerificationCodeInput
         key={useRecovery ? 'recovery' : 'totp'}
@@ -200,20 +235,14 @@ function VerifyStep({ onDone, onCancel, backLabel }: Omit<MfaStepProps, 'purpose
         error={error}
       />
 
-      <Button type="submit" disabled={!canSubmit || isPending}>
-        {isPending ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <ShieldCheck className="h-4 w-4" />
-        )}
+      <Button type="submit" variant="signal" disabled={!canSubmit || isPending}>
+        {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
         {t('auth.mfa.verify', 'Verify')}
       </Button>
 
       <Button
         type="button"
-        variant="link"
-        size="sm"
-        className="h-auto px-0"
+        variant="outline"
         onClick={() => {
           setUseRecovery((v) => !v)
           setValue('')
@@ -230,7 +259,14 @@ function VerifyStep({ onDone, onCancel, backLabel }: Omit<MfaStepProps, 'purpose
   )
 }
 
-function EnrollStep({ onDone, onCancel, orgs, backLabel }: Omit<MfaStepProps, 'purpose'>) {
+function EnrollStep({
+  onDone,
+  onCancel,
+  orgs,
+  backLabel,
+  headingLevel = 2,
+  pageTitled = false,
+}: Omit<MfaStepProps, 'purpose'>) {
   const { t } = useTranslation()
   // Read through a ref so the start-once effect below does not depend on t.
   const startFailedRef = useRef(
@@ -286,23 +322,25 @@ function EnrollStep({ onDone, onCancel, orgs, backLabel }: Omit<MfaStepProps, 'p
 
   function confirm(e: React.FormEvent) {
     e.preventDefault()
+    if (code.length !== TOTP_CODE_LENGTH) {
+      // Say what is missing instead of greying the button out at rest.
+      setError(t('auth.mfa.codeIncomplete', 'Enter the 6-digit code from your authenticator app.'))
+      return
+    }
     sendCode(code)
   }
 
   if (finished) {
     return (
-      <div className="grid gap-4">
-        <div className="space-y-1">
-          <h2 className="text-base font-semibold">
-            {t('auth.mfa.saveCodesTitle', 'Save your recovery codes')}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {t(
-              'auth.mfa.saveCodesBody',
-              'Two-factor authentication is on. If you lose your authenticator, a recovery code is the only way back into your account.'
-            )}
-          </p>
-        </div>
+      <div data-entry-step="recovery-codes" className="flex flex-col gap-3.5">
+        <EntryHeader
+          level={headingLevel}
+          title={t('auth.mfa.saveCodesTitle', 'Save your recovery codes')}
+          description={t(
+            'auth.mfa.saveCodesBody',
+            'Two-factor authentication is on. If you lose your authenticator, a recovery code is the only way back into your account.'
+          )}
+        />
         <RecoveryCodesPanel
           codes={finished.recoveryCodes ?? []}
           accountLabel={finished.user?.email}
@@ -319,6 +357,7 @@ function EnrollStep({ onDone, onCancel, orgs, backLabel }: Omit<MfaStepProps, 'p
         </div>
         <Button
           type="button"
+          variant="signal"
           disabled={!saved || isPending}
           onClick={() =>
             startTransition(async () => {
@@ -344,21 +383,37 @@ function EnrollStep({ onDone, onCancel, orgs, backLabel }: Omit<MfaStepProps, 'p
     <form
       method="post"
       onSubmit={confirm}
-      className="grid gap-4"
+      data-entry-step="enroll"
+      className="flex flex-col gap-3.5"
       aria-label={t('auth.mfa.enrollTitle', 'Set up two-factor authentication')}
     >
-      <div className="space-y-1">
-        <h2 className="text-base font-semibold">
-          {t('auth.mfa.enrollTitle', 'Set up two-factor authentication')}
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          {t(
-            'auth.mfa.enrollBody',
-            'Your organization requires two-factor authentication. Scan the QR code with an authenticator app, then enter the 6-digit code it shows.'
-          )}
-        </p>
-        <RequiredBy orgs={orgs} />
-      </div>
+      {pageTitled ? (
+        <div className="text-body text-muted-foreground space-y-1">
+          <p>
+            {t(
+              'auth.mfa.enrollScan',
+              'Scan the QR code with an authenticator app, then enter the 6-digit code it shows.'
+            )}
+          </p>
+          <RequiredBy orgs={orgs} />
+        </div>
+      ) : (
+        <EntryHeader
+          level={headingLevel}
+          title={t('auth.mfa.enrollTitle', 'Set up two-factor authentication')}
+          description={
+            <>
+              <p>
+                {t(
+                  'auth.mfa.enrollBody',
+                  'Your organization requires two-factor authentication. Scan the QR code with an authenticator app, then enter the 6-digit code it shows.'
+                )}
+              </p>
+              <RequiredBy orgs={orgs} />
+            </>
+          }
+        />
+      )}
 
       {setup ? (
         <div className="flex flex-col items-center gap-3">
@@ -379,12 +434,8 @@ function EnrollStep({ onDone, onCancel, orgs, backLabel }: Omit<MfaStepProps, 'p
         error={error}
       />
 
-      <Button type="submit" disabled={!setup || code.length !== TOTP_CODE_LENGTH || isPending}>
-        {isPending ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <ShieldCheck className="h-4 w-4" />
-        )}
+      <Button type="submit" variant="signal" disabled={!setup || isPending}>
+        {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
         {t('auth.mfa.turnOn', 'Turn on and continue')}
       </Button>
 

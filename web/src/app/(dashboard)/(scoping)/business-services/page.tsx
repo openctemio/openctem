@@ -351,6 +351,10 @@ export default function BusinessServicesPage() {
         cell: ({ row }) => (
           <Can permission={[Permission.BusinessServicesRead, Permission.BusinessServicesWrite]}>
             <DataTableRowActions
+              title={row.original.name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                name: row.original.name,
+              })}
               actions={[
                 {
                   label: t('businessContext.services.action.linked', 'Linked assets'),
@@ -471,7 +475,7 @@ export default function BusinessServicesPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('businessContext.services.title', 'Business services')}
+          title={t('nav.item.business-context', 'Business context')}
           description={t(
             'businessContext.services.description',
             'Business services and their compliance, data handling and availability requirements.'
@@ -489,7 +493,7 @@ export default function BusinessServicesPage() {
           label={t('businessContext.sectionsLabel', 'Business context sections')}
         />
 
-        <MetricStrip loading={isLoading} items={metrics} />
+        <MetricStrip loading={isLoading} items={metrics} listFirst />
 
         {isLoading ? (
           <div className="space-y-2 rounded-xl border p-3">

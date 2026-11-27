@@ -50,6 +50,15 @@ export function MappingListView() {
   const { data, error, isLoading, mutate } = useMappingProfiles()
   const profiles = data?.data ?? []
 
+  const newButton = (
+    <Can permission={Permission.IntegrationsManage}>
+      <Button onClick={() => setCreateOpen(true)}>
+        <Plus className="me-2 h-4 w-4" aria-hidden />
+        {t('ticketMapping.list.new', 'New mapping')}
+      </Button>
+    </Can>
+  )
+
   return (
     <Main>
       <PageStack>
@@ -60,12 +69,8 @@ export function MappingListView() {
             'Which {product} attribute goes to which Jira field, which Jira field comes back, and how statuses map, per project and issue type.'
           )}
         >
-          <Can permission={Permission.IntegrationsManage}>
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="me-2 h-4 w-4" aria-hidden />
-              {t('ticketMapping.list.new', 'New mapping')}
-            </Button>
-          </Can>
+          {/* The create button stays in the header; the empty state only explains. */}
+          {newButton}
         </PageHeader>
 
         <div>
@@ -89,13 +94,6 @@ export function MappingListView() {
                 'ticketMapping.list.emptyDescription',
                 'Without a mapping, tickets use the built-in fields: summary, description, priority from severity and labels.'
               )}
-              action={
-                <Can permission={Permission.IntegrationsManage}>
-                  <Button onClick={() => setCreateOpen(true)}>
-                    {t('ticketMapping.list.new', 'New mapping')}
-                  </Button>
-                </Can>
-              }
             />
           ) : (
             <div className="grid gap-3">
@@ -110,8 +108,14 @@ export function MappingListView() {
                         {p.name}
                       </Link>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span>{p.project_key}</span>
-                        <span>{p.issue_type || p.issue_type_id}</span>
+                        <span>
+                          {t('ticketMapping.list.project', 'Project {key}', { key: p.project_key })}
+                        </span>
+                        <span>
+                          {t('ticketMapping.list.issueType', 'Type {type}', {
+                            type: p.issue_type || p.issue_type_id,
+                          })}
+                        </span>
                         <Badge variant="secondary">
                           {p.object_kind === 'task'
                             ? t('ticketMapping.kind.taskShort', 'Tasks')

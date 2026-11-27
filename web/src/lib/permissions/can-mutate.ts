@@ -10,14 +10,10 @@
  */
 import { useMemo } from 'react'
 import routePermissions from '@/config/api-route-permissions.json'
-import { isRoleAtLeast, type RoleString } from './constants'
+import { passesRouteGate, type RouteGate } from './route-gate'
 import { usePermissions } from './hooks'
 
-export interface RouteGate {
-  permissions?: string[]
-  any_of?: string[][]
-  min_role?: string
-}
+export { passesRouteGate, type RouteGate }
 
 const ROUTE_GATES = routePermissions as Record<string, RouteGate>
 
@@ -26,27 +22,6 @@ export type ApiRouteKey = keyof typeof routePermissions
 
 export function routeGate(key: ApiRouteKey): RouteGate {
   return ROUTE_GATES[key] ?? {}
-}
-
-/**
- * Whether a caller with these permissions and tenant role passes the route's
- * gate. An unknown role never passes a role gate.
- */
-export function passesRouteGate(
-  gate: RouteGate,
-  permissions: readonly string[],
-  role: string | undefined
-): boolean {
-  if (gate.min_role) {
-    if (!role || !isRoleAtLeast(role, gate.min_role as RoleString)) return false
-  }
-  for (const p of gate.permissions ?? []) {
-    if (!permissions.includes(p)) return false
-  }
-  for (const group of gate.any_of ?? []) {
-    if (!group.some((p) => permissions.includes(p))) return false
-  }
-  return true
 }
 
 /** True when the current user may call every listed mutating route. */

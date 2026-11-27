@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState } from '@/features/shared'
+import { BreakText } from '@/features/shared/components/break-text'
 import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { TonePill } from '@/features/shared/components/tone-pill'
 import { AdminApiError } from '@console/lib/admin-api/client'
@@ -178,7 +179,7 @@ function SourcesForm({
 
   return (
     <>
-      <CardContent className="space-y-5 text-sm">
+      <CardContent className="space-y-5 text-body">
         {settings.locked_by_environment && (
           <LockedByEnvironment envVar={settings.env_vars.join(', ')} />
         )}
@@ -205,7 +206,7 @@ function SourcesForm({
             className="font-mono"
             placeholder="https://"
           />
-          <p className="text-xs text-muted-foreground">
+          <p className="text-cap text-muted-foreground">
             {relay
               ? t(
                   'admin.feedSources.baseHintRelay',
@@ -222,7 +223,7 @@ function SourcesForm({
           <h3 id={`${id}-mirrors`} className="font-medium">
             {t('admin.feedSources.mirrorsTitle', 'Mirrors')}
           </h3>
-          <p className="text-xs text-muted-foreground" data-relay={relay ? 'on' : 'off'}>
+          <p className="text-cap text-muted-foreground" data-relay={relay ? 'on' : 'off'}>
             {relay
               ? t(
                   'admin.feedSources.mirrorsRelay',
@@ -279,7 +280,7 @@ function SourcesForm({
           )}
         </section>
 
-        <p className="text-xs text-muted-foreground">{sourceText}</p>
+        <p className="text-cap text-muted-foreground">{sourceText}</p>
 
         <section className="space-y-2" aria-labelledby={`${id}-trust`}>
           <h3 id={`${id}-trust`} className="font-medium">
@@ -294,7 +295,7 @@ function SourcesForm({
                 ? t('admin.feedSources.rootOfficial', 'Official root')
                 : t('admin.feedSources.rootCustom', 'Custom root (set on the server)')}
               {settings.root_key_id && (
-                <span className="block break-all font-mono text-xs text-muted-foreground">
+                <span className="block break-all font-mono text-code text-muted-foreground">
                   {settings.root_key_id}
                 </span>
               )}
@@ -308,7 +309,7 @@ function SourcesForm({
                 : t('admin.feedSources.bundleDirNo', 'Set on the server: no')}
             </dd>
           </dl>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-cap text-muted-foreground">
             {t(
               'admin.feedSources.trustHint',
               'These two are changed only on the server. Every downloaded file is checked against the signing root, so a wrong address can stop the feed but never change what is imported.'
@@ -332,7 +333,7 @@ function SourcesForm({
                 {t('admin.feedSources.testButton', 'Test fetch')}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-cap text-muted-foreground">
               {relay
                 ? t(
                     'admin.feedSources.testRelay',
@@ -362,7 +363,9 @@ function SourcesForm({
                             : t('admin.feedSources.probe.failed', 'Failed')
                         }
                       />
-                      <span className="min-w-0 break-all font-mono text-xs">{r.origin}</span>
+                      <span className="min-w-0 break-words text-code">
+                        <BreakText>{r.origin}</BreakText>
+                      </span>
                     </div>
                     <p className="text-muted-foreground">
                       {r.ok

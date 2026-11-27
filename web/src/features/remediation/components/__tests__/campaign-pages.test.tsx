@@ -34,19 +34,18 @@ vi.mock('@/features/remediation-hub/api/use-owner-names', () => ({
   useOwnerNames: () => ownerNames,
 }))
 vi.mock('@/features/remediation-hub/components/hub-page', () => ({
+  // The frame draws the section title ("Remediation") on every tab.
   HubPage: ({
-    title,
     description,
     actions,
     children,
   }: {
-    title: string
     description: string
     actions?: React.ReactNode
     children: React.ReactNode
   }) => (
     <main>
-      <h1>{title}</h1>
+      <h1>Remediation</h1>
       <p>{description}</p>
       {actions}
       {children}
@@ -118,7 +117,7 @@ describe('CampaignList', () => {
     ]
     state.counts = { all: 2, draft: 1, active: 1, completed: 0, canceled: 0 }
     render(<CampaignList />)
-    expect(screen.getByRole('heading', { name: 'Campaigns' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Remediation' })).toBeInTheDocument()
     expect(screen.getAllByText('Active').length).toBeGreaterThan(0)
     // A draft reads "Draft", never "Open".
     expect(screen.getAllByText('Draft').length).toBeGreaterThan(0)
@@ -128,6 +127,13 @@ describe('CampaignList', () => {
     ).toBeGreaterThan(0)
     expect(screen.getAllByText(/overdue/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/2 hidden/).length).toBeGreaterThan(0)
+    // The due date is the short date and a small mark, never one long "date, overdue" string.
+    const due = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-slot="campaign-due"]')
+    ).find((el) => /overdue/.test(el.textContent ?? ''))!
+    expect(due).toBeDefined()
+    expect(due.textContent).toMatch(/^Jan 1, 2020\d+\+? d overdue$/)
+    expect(due.title).toMatch(/^Jan 1, 2020, \d+\+? d overdue$/)
     expect(screen.getAllByText('Sam, Ops').length).toBeGreaterThan(0)
     // The status is a filter token (no second tab row); its counts come from
     // the server, not from the page.
@@ -235,7 +241,7 @@ describe('CampaignDetail', () => {
       },
     ]
     renderDetail(campaign())
-    const list = screen.getByRole('list', { name: 'Tasks of this campaign' })
+    const list = screen.getByRole('table')
     expect(within(list).getByText('Upgrade openssl')).toBeInTheDocument()
     expect(within(list).getByText('Verifying')).toBeInTheDocument()
     expect(

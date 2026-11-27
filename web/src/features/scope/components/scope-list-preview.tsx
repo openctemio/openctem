@@ -93,7 +93,7 @@ export function ScopeListPreview({ parsed, onRemove, onRemoveInvalid }: ScopeLis
               type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0"
+              className="shrink-0"
               onClick={() => onRemove(row)}
               aria-label={t('scope.list.remove', 'Remove {value}', { value: row.pattern })}
             >

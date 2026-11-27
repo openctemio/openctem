@@ -34,6 +34,7 @@ import {
   type TargetKind,
 } from '../../lib/target-format'
 import { SplitRangeButton } from '../new-scan/invalid-targets-note'
+import { formatNumber } from '@/lib/app-locale'
 
 const EXAMPLES = ['example.com', '*.example.com', '203.0.113.0/24', 'https://app.example.com']
 
@@ -76,16 +77,15 @@ function InvalidRow({
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(entry.input)
   const reason = targetReasonText(t, entry)
+  const save = () => {
+    setEditing(false)
+    if (text.trim() && text.trim() !== entry.input) onReplace(text.trim())
+  }
   if (editing) {
     return (
-      <form
-        className="flex h-full items-center gap-1.5 px-1"
-        onSubmit={(e) => {
-          e.preventDefault()
-          setEditing(false)
-          if (text.trim() && text.trim() !== entry.input) onReplace(text.trim())
-        }}
-      >
+      // Not a form of its own: the field sits inside dialogs that are forms
+      // (Quick scan), where a nested form's submit would also submit the dialog.
+      <div className="flex h-full items-center gap-1.5 px-1">
         <Input
           autoFocus
           value={text}
@@ -94,17 +94,20 @@ function InvalidRow({
             if (e.key === 'Escape') {
               e.stopPropagation()
               setEditing(false)
+            } else if (e.key === 'Enter') {
+              e.preventDefault()
+              save()
             }
           }}
           aria-label={t('scans.paste.edit', undefined, { name: entry.input })}
-          className="h-9 min-w-0 flex-1 font-mono text-sm"
+          className="min-w-0 flex-1 font-mono text-sm"
           autoCapitalize="none"
           spellCheck={false}
         />
-        <Button type="submit" size="sm" className="h-9">
+        <Button type="button" size="sm" onClick={save}>
           {t('scans.paste.save')}
         </Button>
-      </form>
+      </div>
     )
   }
   return (
@@ -123,7 +126,7 @@ function InvalidRow({
         type="button"
         variant="ghost"
         size="icon"
-        className="h-9 w-9 shrink-0 max-sm:h-11 max-sm:w-11"
+        className="shrink-0"
         onClick={() => setEditing(true)}
         aria-label={t('scans.paste.edit', undefined, { name: entry.input })}
       >
@@ -133,7 +136,7 @@ function InvalidRow({
         type="button"
         variant="ghost"
         size="icon"
-        className="h-9 w-9 shrink-0 max-sm:h-11 max-sm:w-11"
+        className="shrink-0"
         onClick={onRemove}
         aria-label={t('scans.paste.removeEntry', undefined, { name: entry.input })}
       >
@@ -193,7 +196,7 @@ export function PasteSource({
         tone: 'error',
         text: t('scans.paste.fileTooMany', undefined, {
           name: file.name,
-          max: MAX_TARGET_FILE_ENTRIES.toLocaleString(),
+          max: formatNumber(MAX_TARGET_FILE_ENTRIES),
         }),
       })
       return
@@ -220,7 +223,7 @@ export function PasteSource({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-9 px-2 text-xs max-sm:min-h-11"
+              className="px-2 text-xs max-sm:min-h-11"
               onClick={() => onChange([...parsed.targets, ...parsed.invalid.map((i) => i.input)])}
             >
               <Sparkles className="me-1 h-3 w-3" aria-hidden />
@@ -231,7 +234,7 @@ export function PasteSource({
             type="button"
             variant="outline"
             size="sm"
-            className="h-9 max-sm:min-h-11"
+            className="max-sm:min-h-11"
             onClick={() => fileRef.current?.click()}
             aria-describedby={fileHintId}
           >
@@ -312,7 +315,7 @@ export function PasteSource({
               type="button"
               variant="ghost"
               size="sm"
-              className="h-8 px-2 text-xs max-sm:min-h-11"
+              className="px-2 text-xs max-sm:min-h-11"
               onClick={() =>
                 onChange(
                   withoutTargets(

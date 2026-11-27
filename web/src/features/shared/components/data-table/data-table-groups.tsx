@@ -263,7 +263,14 @@ export function GroupHeaderContent<TData>({
             onCheckedChange={(value) => {
               for (const r of rows) r.toggleSelected(!!value)
             }}
-            aria-label={`Select the ${rows.length} rows of ${label}`}
+            aria-label={t(
+              'components.shared.group.selectRows',
+              'Select the {count, plural, one {# row} other {# rows}} of {label}',
+              {
+                count: rows.length,
+                label,
+              }
+            )}
           />
         )}
         <div id={headerId} className="min-w-0 flex-1">

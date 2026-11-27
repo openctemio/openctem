@@ -16,11 +16,10 @@ import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
+import { SettingsBlock, SettingsSaveBar, SettingsSection } from '@/features/shared'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { ScanApprovalMode, ScanApprovalPolicy } from '../api/use-scan-policy'
 import { ReasonAndCodeFields, useReasonAndCode } from './step-up-code-hint'
@@ -137,12 +136,8 @@ export function ScanPolicyForm({
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-          <CardDescription>{description}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
+      <SettingsSection framed id={`${id}-policy`} title={title} description={description}>
+        <SettingsBlock>
           <RadioGroup
             value={choice}
             onValueChange={setChoice}
@@ -156,7 +151,7 @@ export function ScanPolicyForm({
                   <span className="font-medium">
                     {t('admin.scanPolicy.inherit', 'Follow the platform default')}
                   </span>
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-cap text-muted-foreground text-pretty">
                     {t('admin.scanPolicy.inheritNow', 'Now: {policy}.', {
                       policy: text.policy(platformDefault ?? 'tenant_controlled').label,
                     })}
@@ -169,30 +164,30 @@ export function ScanPolicyForm({
                 <RadioGroupItem value={p} id={`${id}-${p}`} className="mt-1" />
                 <Label htmlFor={`${id}-${p}`} className="grid gap-1 font-normal">
                   <span className="font-medium">{text.policy(p).label}</span>
-                  <span className="text-sm text-muted-foreground">{text.policy(p).hint}</span>
+                  <span className="text-cap text-muted-foreground text-pretty">
+                    {text.policy(p).hint}
+                  </span>
                 </Label>
               </div>
             ))}
           </RadioGroup>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-cap text-muted-foreground text-pretty">
             {t(
               'admin.scanPolicy.alwaysOn',
               'In every mode, widening scope still needs re-authentication, ownership proof for platform sensors, and passes the platform deny list; every administrator of the organization is told and the change is audited.'
             )}
           </p>
-          {canEdit ? (
-            <SettingsSaveBar
-              className="basis-full"
-              dirty={dirty}
-              saving={busy}
-              onSave={() => setOpen(true)}
-              onDiscard={reset}
-            />
-          ) : (
-            <RoleRequiredNotice needed="super_admin" />
-          )}
-        </CardContent>
-      </Card>
+          {!canEdit && <RoleRequiredNotice needed="super_admin" />}
+        </SettingsBlock>
+      </SettingsSection>
+      {canEdit && (
+        <SettingsSaveBar
+          dirty={dirty}
+          saving={busy}
+          onSave={() => setOpen(true)}
+          onDiscard={reset}
+        />
+      )}
 
       <ConfirmDialog
         open={open}

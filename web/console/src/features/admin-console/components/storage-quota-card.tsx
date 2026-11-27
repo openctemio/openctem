@@ -2,12 +2,10 @@
 
 import { useCallback, useEffect, useId, useState } from 'react'
 import { toast } from 'sonner'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
+import { SettingsRow, SettingsSaveBar, SettingsSection } from '@/features/shared'
 import { ErrorState } from '@/features/shared'
 import { saveStorageQuota, useStorageQuota } from '../api/use-platform-settings'
 import { SettingChangedLine, handleSaveConflict } from './console-setting-parts'
@@ -73,62 +71,53 @@ export function StorageQuotaCard({ canEdit }: { canEdit: boolean }) {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t('admin.quota.title', 'Default storage quota')}</CardTitle>
-        <CardDescription>
-          {t(
-            'admin.quota.description',
-            "How much uploaded evidence and attachments one organization may keep, in MiB. An organization's own storage limit (its Limits tab) wins. 0 means no quota."
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid max-w-xs gap-1.5">
-          <Label htmlFor={id}>{t('admin.quota.label', 'MiB per organization')}</Label>
-          <Input
-            id={id}
-            inputMode="numeric"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            disabled={!canEdit}
-            aria-invalid={!valid}
-          />
-          {!valid && (
-            <p className="text-sm text-destructive">
-              {t('admin.quota.invalid', 'A whole number from 0 to {max}.', { max: data.max_mb })}
-            </p>
-          )}
-        </div>
-        <p className="text-xs text-muted-foreground">
+    <SettingsSection
+      framed
+      id="storage-quota"
+      title={t('admin.quota.title', 'Default storage quota')}
+      description={t(
+        'admin.quota.description',
+        "How much uploaded evidence and attachments one organization may keep, in MiB. An organization's own storage limit (its Limits tab) wins. 0 means no quota."
+      )}
+      meta={
+        <>
           {data.source === 'console'
             ? t(
                 'admin.quota.sourceConsole',
-                'Set in this console. The server default ({env}) is {mb} MiB.',
-                {
-                  env: data.env_var,
-                  mb: data.environment_mb,
-                }
+                'Set in this console. The server default is {mb} MiB.',
+                { mb: data.environment_mb }
               )
             : t(
                 'admin.quota.sourceEnv',
-                'From the server default ({env}) until you save a value here.',
-                {
-                  env: data.env_var,
-                }
-              )}
-        </p>
-        <SettingChangedLine change={data} />
-        {canEdit && (
-          <SettingsSaveBar
-            className="basis-full"
-            dirty={dirty}
-            saving={busy}
-            onSave={() => void save()}
-            onDiscard={reset}
-          />
-        )}
-      </CardContent>
-    </Card>
+                'From the server default until you save a value here.'
+              )}{' '}
+          <SettingChangedLine change={data} />
+        </>
+      }
+    >
+      <SettingsRow
+        label={<label htmlFor={id}>{t('admin.quota.label', 'MiB per organization')}</label>}
+        hint={
+          !valid && (
+            <span role="alert" className="text-destructive">
+              {t('admin.quota.invalid', 'A whole number from 0 to {max}.', { max: data.max_mb })}
+            </span>
+          )
+        }
+      >
+        <Input
+          id={id}
+          inputMode="numeric"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          disabled={!canEdit}
+          aria-invalid={!valid}
+          className="w-28"
+        />
+      </SettingsRow>
+      {canEdit && (
+        <SettingsSaveBar dirty={dirty} saving={busy} onSave={() => void save()} onDiscard={reset} />
+      )}
+    </SettingsSection>
   )
 }

@@ -1,6 +1,6 @@
 /**
  * The findings state lens (research 24 §2.2, owner decision C2): Open ·
- * Fixed · Dispositioned · All, Open by default. It is one URL param, `state`,
+ * Fixed · Dismissed · All, Open by default. It is one URL param, `state`,
  * which the API compiles to a status set, so the list, the metric strip, the
  * groups and the export all show the same findings. A disposition (false
  * positive, accepted risk, duplicate) is never counted as fixed.
@@ -20,13 +20,14 @@ export const FINDING_LENSES: { value: FindingLens; label: string; description: s
   { value: 'fixed', label: 'Fixed', description: 'Resolved and verified fixes' },
   {
     value: 'dispositioned',
-    label: 'Dispositioned',
-    description: 'False positives, accepted risks and duplicates (never counted as fixed)',
+    label: 'Dismissed',
+    description:
+      'False positives, accepted risks and duplicates: closed without a fix, never counted as fixed',
   },
   {
     value: 'closed',
     label: 'Closed',
-    description: 'Fixed and dispositioned together',
+    description: 'Fixed and dismissed together',
   },
   { value: 'all', label: 'All', description: 'Every finding' },
 ]

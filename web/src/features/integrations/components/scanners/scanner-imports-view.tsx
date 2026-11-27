@@ -35,6 +35,7 @@ import { StatusBadge, getConfigString } from './shared'
 import { ImportResultsDialog } from '@/features/findings/components/import-results-dialog'
 import { toast } from 'sonner'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDateTime } from '@/lib/app-locale'
 
 /** POST /findings/imports requires all three (api routes/finding_import.go). */
 const IMPORT_PERMISSIONS = [
@@ -102,7 +103,7 @@ export function PausedScannerCard({
               <span className="text-muted-foreground flex items-center gap-1 text-xs">
                 <Clock className="h-3 w-3" />
                 {t('tenableSc.imports.lastSync', undefined, {
-                  time: new Date(integration.last_sync_at).toLocaleString(),
+                  time: formatDateTime(new Date(integration.last_sync_at)),
                 })}
               </span>
             )}
@@ -219,14 +220,6 @@ export function ScannerImportsView() {
               icon={ShieldCheck}
               title="Import scan results"
               description="Upload a .nessus export: hosts become assets and vulnerabilities become findings."
-              action={
-                <Can permission={IMPORT_PERMISSIONS} requireAll mode="hide">
-                  <Button size="sm" onClick={() => setImportOpen(true)}>
-                    <Upload className="me-2 h-4 w-4" />
-                    Import .nessus
-                  </Button>
-                </Can>
-              }
             />
           ) : (
             <>

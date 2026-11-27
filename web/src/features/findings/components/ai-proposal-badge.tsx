@@ -13,13 +13,24 @@ import type { ApiApproval } from '../types'
 export function AIProposalBadge({
   approval,
   withHint = false,
+  truncate = false,
 }: {
   approval: Pick<ApiApproval, 'requested_by_actor' | 'requested_via'>
   withHint?: boolean
+  /** One-line places: the label may end in an ellipsis (whole label on hover). */
+  truncate?: boolean
 }) {
   const via = approval.requested_via
   if (via) {
-    return <AIBadge source="ai_application" client={via} verb="proposed" withHint={withHint} />
+    return (
+      <AIBadge
+        source="ai_application"
+        client={via}
+        verb="proposed"
+        withHint={withHint}
+        truncate={truncate}
+      />
+    )
   }
   const actor = approval.requested_by_actor
   if (actor !== 'ai_triage' && actor !== 'ai_agent') return null
@@ -28,6 +39,7 @@ export function AIProposalBadge({
       source={actor === 'ai_agent' ? 'ai_agent' : 'ai_builtin'}
       verb="proposed"
       withHint={withHint}
+      truncate={truncate}
     />
   )
 }

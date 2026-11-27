@@ -115,7 +115,7 @@ export function SSOEnforcementCard({ org, canManage, onChanged }: SSOEnforcement
                   {readiness.owner_second_factor
                     ? t(
                         'admin.ssoEnforcementCard.ownerFactorDone',
-                        'An owner has two-factor authentication, so owner break-glass works.'
+                        'An owner has two-factor authentication, so emergency sign-in for owners works.'
                       )
                     : t(
                         'admin.ssoEnforcementCard.ownerFactorMissing',

@@ -147,7 +147,7 @@ describe('manifest text', () => {
     expect(concurrencyText(next, t)).toBe(
       'giới hạn của người vận hành 4, số slot tính theo CPU và bộ nhớ'
     )
-    expect(manifestSourceLabel('heartbeat', t)).toBe('suy ra từ heartbeat')
+    expect(manifestSourceLabel('heartbeat', t)).toBe('suy ra từ tín hiệu kết nối')
     expect(ignoredReasonLabel('limit', t)).toBe('vượt quá giới hạn')
     expect(ignoredReasonLabel('something-new', t)).toBe('something-new')
   })

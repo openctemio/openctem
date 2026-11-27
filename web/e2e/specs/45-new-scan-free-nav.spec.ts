@@ -39,14 +39,9 @@ async function openNewScan(page: Page): Promise<Locator> {
   return dialog
 }
 
-/** A step button: the desktop stepper, or the phone step list (opened first). */
-async function openStep(dialog: Locator, width: number, name: RegExp) {
-  if (width < 640) {
-    await dialog.getByTestId('stepper-phone').click()
-    await dialog.locator('#scan-stepper-list').getByRole('button', { name }).click()
-  } else {
-    await dialog.getByRole('navigation', { name: 'Steps' }).getByRole('button', { name }).click()
-  }
+/** A step button of the step strip (one strip at every width). */
+async function openStep(dialog: Locator, _width: number, name: RegExp) {
+  await dialog.getByRole('navigation', { name: 'Steps' }).getByRole('button', { name }).click()
 }
 
 for (const width of [390, 1440]) {
@@ -96,14 +91,13 @@ for (const width of [390, 1440]) {
       await panel.getByTestId('bulk-add').click()
       await expect(dialog.getByTestId('kind-counts')).toContainText('4 typed targets')
 
-      // The summary says it on every step.
-      if (width < 1024) {
-        await expect(dialog.getByTestId('summary-bar')).toContainText('4 targets')
-      } else {
-        await expect(dialog.getByRole('complementary', { name: 'Summary' })).toContainText(
-          '4 targets'
-        )
-      }
+      // The summary says it on every step: one line in the footer at every width, which
+      // opens the whole summary.
+      const summaryLine = dialog.getByTestId('summary-bar')
+      await expect(summaryLine).toContainText('4 targets')
+      await summaryLine.click()
+      await expect(dialog.getByRole('region', { name: 'Summary' })).toContainText('4 targets')
+      await summaryLine.click()
 
       // Nothing stops Next; the footer stays one row.
       const next = dialog.getByTestId('wizard-next')

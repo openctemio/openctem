@@ -1,9 +1,8 @@
 'use client'
 
-import { Main } from '@/components/layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { ErrorState, SettingsPage } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useEmailSettings } from '@console/features/admin-console/api/use-email-settings'
 import { useEmailRelay } from '@console/features/admin-console/api/use-platform-settings'
@@ -21,45 +20,37 @@ export default function EmailSettingsPage() {
   const me = useAdmin()
   const { data, error, isLoading, mutate } = useEmailSettings()
   const relay = useEmailRelay()
+  const canEdit = adminHas(me, 'platform.settings.email.write')
 
   return (
-    <Main>
-      <PageStack>
-        <PageHeader
-          title={t('admin.email.pageTitle', 'E-mail')}
-          description={t('admin.email.pageDescription', 'How this deployment sends e-mail.')}
+    <SettingsPage
+      title={t('admin.email.pageTitle', 'E-mail')}
+      description={t('admin.email.pageDescription', 'How this deployment sends e-mail.')}
+      state={error ? 'error' : isLoading || !data ? 'loading' : 'ready'}
+      error={error}
+      onRetry={() => void mutate()}
+      readOnly={
+        !canEdit && t('admin.email.superAdminOnly', 'Only a super admin can change these settings.')
+      }
+    >
+      {data && (
+        <EmailSettingsForm settings={data} canEdit={canEdit} onSaved={() => void mutate()} />
+      )}
+      {relay.error ? (
+        <ErrorState
+          title={t('admin.emailRelay.errorSubject', 'the organization mail setting')}
+          error={relay.error}
+          onRetry={() => void relay.mutate()}
         />
-        {error ? (
-          <ErrorState
-            title={t('admin.email.errorSubject', 'the e-mail settings')}
-            error={error}
-            onRetry={() => void mutate()}
-          />
-        ) : isLoading || !data ? (
-          <Skeleton className="h-96 w-full" />
-        ) : (
-          <EmailSettingsForm
-            settings={data}
-            canEdit={adminHas(me, 'platform.settings.email.write')}
-            onSaved={() => void mutate()}
-          />
-        )}
-        {relay.error ? (
-          <ErrorState
-            title={t('admin.emailRelay.errorSubject', 'the organization mail setting')}
-            error={relay.error}
-            onRetry={() => void relay.mutate()}
-          />
-        ) : relay.isLoading || !relay.data ? (
-          <Skeleton className="h-64 w-full" />
-        ) : (
-          <EmailRelayForm
-            settings={relay.data}
-            canEdit={adminHas(me, 'platform.settings.email.write')}
-            onSaved={() => void relay.mutate()}
-          />
-        )}
-      </PageStack>
-    </Main>
+      ) : relay.isLoading || !relay.data ? (
+        <Skeleton className="h-64 w-full" />
+      ) : (
+        <EmailRelayForm
+          settings={relay.data}
+          canEdit={canEdit}
+          onSaved={() => void relay.mutate()}
+        />
+      )}
+    </SettingsPage>
   )
 }

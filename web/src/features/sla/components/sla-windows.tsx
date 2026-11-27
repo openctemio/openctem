@@ -10,7 +10,12 @@ import { useTranslation } from '@/context/i18n-provider'
 
 import { useAssetSlaPolicyApi, type SlaPolicy } from '../api/use-sla-policies-api'
 import { DEFAULT_KEV_CAP_DAYS, NO_SLA } from '../schemas/sla-policy-schema'
-import { SEVERITY_LABELS, SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
+import {
+  SEVERITY_LABEL_KEYS,
+  SEVERITY_LABELS,
+  SEVERITY_LEVELS,
+  type SeverityLevel,
+} from '@/lib/severity'
 
 /** The windows a policy (or the platform default) sets, in days. */
 export type SlaWindowValues = Pick<
@@ -66,11 +71,16 @@ export function SlaWindows({ policy }: { policy: SlaWindowValues }) {
   const kevCap = policy.kev_cap_days ?? DEFAULT_KEV_CAP_DAYS
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex flex-wrap items-center gap-3" aria-label="Priority-class windows">
+      <div
+        className="flex flex-wrap items-center gap-3"
+        aria-label={t('settings.slaPolicies.windows.priority', 'Priority-class windows')}
+      >
         {PRIORITY_WINDOWS.map((w) => (
           <div key={w.key} className="flex items-center gap-1 text-sm tabular-nums">
             <span className="text-muted-foreground">{w.label}</span>
-            <span className="font-medium">{policy[w.key]}d</span>
+            <span className="font-medium">
+              {t('settings.slaPolicies.kevCapDays', '{days}d', { days: policy[w.key] })}
+            </span>
           </div>
         ))}
         <div
@@ -91,16 +101,23 @@ export function SlaWindows({ policy }: { policy: SlaWindowValues }) {
           </span>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-3" aria-label="Severity windows">
+      <div
+        className="flex flex-wrap items-center gap-3"
+        aria-label={t('settings.slaPolicies.windows.severity', 'Severity windows')}
+      >
         {SEVERITY_WINDOWS.map((w) => (
           <div
             key={w.key}
             className="flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground"
-            title={w.label}
+            title={t(SEVERITY_LABEL_KEYS[w.dot], w.label)}
           >
             <span className={cn('h-2 w-2 rounded-full', SEVERITY_DOT_COLORS[w.dot])} />
-            <span>{w.short}</span>
-            <span>{formatSlaWindow(policy[w.key])}</span>
+            <span>{t(SEVERITY_LABEL_KEYS[w.dot], w.label)}</span>
+            <span>
+              {policy[w.key] === NO_SLA
+                ? t('settings.slaPolicies.windows.noSla', 'no SLA')
+                : t('settings.slaPolicies.kevCapDays', '{days}d', { days: policy[w.key] })}
+            </span>
           </div>
         ))}
       </div>

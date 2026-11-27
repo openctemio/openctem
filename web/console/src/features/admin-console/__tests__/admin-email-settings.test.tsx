@@ -40,10 +40,13 @@ async function saveWithCode() {
 describe('EmailSettingsForm', () => {
   it('never shows the stored password and keeps it when untouched', async () => {
     render(<EmailSettingsForm settings={stored} canEdit onSaved={() => {}} />)
+    // A stored password is a status with Replace, never an input holding it.
+    expect(screen.getByText('Stored, never shown')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Replace Password' }))
     const pw = screen.getByLabelText('Password') as HTMLInputElement
     expect(pw.value).toBe('')
     expect(pw.type).toBe('password')
-    expect(pw.placeholder).toMatch(/Stored/)
+    await userEvent.click(screen.getByRole('button', { name: 'Keep the stored one' }))
 
     await userEvent.clear(screen.getByLabelText('SMTP server'))
     await userEvent.type(screen.getByLabelText('SMTP server'), 'smtp2.example.com')
@@ -56,6 +59,7 @@ describe('EmailSettingsForm', () => {
 
   it('sends a new password, or an empty one to remove it', async () => {
     const { unmount } = render(<EmailSettingsForm settings={stored} canEdit onSaved={() => {}} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Replace Password' }))
     await userEvent.type(screen.getByLabelText('Password'), 'n3w-pass')
     await saveWithCode()
     await waitFor(() => expect(saveEmailSettings).toHaveBeenCalled())
@@ -64,7 +68,8 @@ describe('EmailSettingsForm', () => {
 
     vi.mocked(saveEmailSettings).mockClear()
     render(<EmailSettingsForm settings={stored} canEdit onSaved={() => {}} />)
-    await userEvent.click(screen.getByLabelText('Remove the stored password'))
+    await userEvent.click(screen.getByRole('button', { name: 'Remove Password' }))
+    expect(screen.getByText('Removed when you save')).toBeInTheDocument()
     await saveWithCode()
     await waitFor(() => expect(saveEmailSettings).toHaveBeenCalled())
     expect(vi.mocked(saveEmailSettings).mock.calls[0][0]).toMatchObject({ password: '' })
@@ -73,13 +78,13 @@ describe('EmailSettingsForm', () => {
   it('is read-only for an administrator who is not a super admin', () => {
     render(<EmailSettingsForm settings={stored} canEdit={false} onSaved={() => {}} />)
     expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Send a test e-mail' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Send test' })).toBeNull()
     expect(screen.getByLabelText('SMTP server')).toBeDisabled()
   })
 
   it('sends the test e-mail', async () => {
     render(<EmailSettingsForm settings={stored} canEdit onSaved={() => {}} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Send a test e-mail' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Send test' }))
     await waitFor(() => expect(sendTestEmail).toHaveBeenCalledTimes(1))
   })
 
@@ -116,7 +121,7 @@ describe('EmailSettingsForm', () => {
       new AdminApiError('x', 502, 'EMAIL_TEST_FAILED', { reason: 'unknown_authority' })
     )
     render(<EmailSettingsForm settings={stored} canEdit onSaved={() => {}} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Send a test e-mail' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Send test' }))
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/certificate is not trusted/))
     )

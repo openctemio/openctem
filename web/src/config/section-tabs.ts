@@ -40,7 +40,7 @@ import {
 } from 'lucide-react'
 import type { ElementType } from 'react'
 import type { SectionTab } from '@/features/shared/components/section-tabs'
-import { Permission } from '@/lib/permissions'
+import { Permission } from '@/lib/permissions/constants'
 
 /**
  * Exposures: the attack-surface exposure events (Overview) and four views of

@@ -17,6 +17,7 @@
  */
 
 import * as React from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { AlertTriangle } from 'lucide-react'
 
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -37,6 +38,14 @@ export interface TruncatedTextProps {
    * the end of a path or URL (where two values usually differ) stays visible.
    */
   middle?: number
+  /**
+   * A second value that belongs to this one (the path or URL on an asset): not
+   * drawn on the line, but read in the accessible name and shown under the
+   * value in the tooltip. Escaped like the value.
+   */
+  detail?: string | null
+  /** What the detail is, for screen readers ("Location"). */
+  detailLabel?: string
 }
 
 export function TruncatedText({
@@ -45,13 +54,18 @@ export function TruncatedText({
   className,
   label,
   middle,
+  detail,
+  detailLabel,
 }: TruncatedTextProps) {
+  const { t } = useTranslation()
   const raw = value ?? ''
   if (raw.trim() === '') {
     return <span className={cn('text-muted-foreground', className)}>{fallback}</span>
   }
   const shown = toDisplayText(raw)
-  const hidden = hasHiddenCharacters(raw)
+  const extra = (detail ?? '').trim() ? toDisplayText(detail ?? '') : ''
+  const hidden = hasHiddenCharacters(raw) || (extra !== '' && hasHiddenCharacters(detail ?? ''))
+  const name = label ? `${label}: ${shown}` : shown
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -59,7 +73,9 @@ export function TruncatedText({
           tabIndex={0}
           dir="auto"
           data-slot="truncated-text"
-          aria-label={label ? `${label}: ${shown}` : shown}
+          // Cut on purpose: the full value is the tooltip and the accessible name.
+          data-cut-tooltip=""
+          aria-label={extra ? `${name}, ${detailLabel ? `${detailLabel}: ` : ''}${extra}` : name}
           className={cn(
             'block min-w-0 truncate rounded-sm [unicode-bidi:isolate] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             className
@@ -74,11 +90,19 @@ export function TruncatedText({
           {middle ? middleEllipsis(shown, middle) : shown}
         </span>
       </TooltipTrigger>
-      <TooltipContent className="max-w-[min(32rem,90vw)] whitespace-pre-wrap break-all text-start [unicode-bidi:isolate]">
+      <TooltipContent className="max-w-[min(32rem,90vw)] whitespace-pre-wrap break-words text-start [unicode-bidi:isolate]">
         <span dir="auto">{shown}</span>
+        {extra && (
+          <span dir="auto" className="mt-1 block font-mono opacity-80">
+            {extra}
+          </span>
+        )}
         {hidden && (
           <span className="mt-1 block opacity-80">
-            Contains control or direction characters, shown as escapes.
+            {t(
+              'components.shared.truncated.hidden',
+              'Contains control or direction characters, shown as escapes.'
+            )}
           </span>
         )}
       </TooltipContent>

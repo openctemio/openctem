@@ -19,7 +19,7 @@
   "limits.console.defaults.saved": "Đã lưu giới hạn mặc định",
   "limits.console.defaults.start": "Bắt đầu với",
   "limits.console.defaults.superOnly": "Chỉ super admin mới có thể thay đổi.",
-  "limits.console.defaults.title": "Giới hạn của tổ chức tự đăng ký",
+  "limits.console.defaults.title": "Mặc định cho tổ chức tự đăng ký",
   "limits.console.expires": "Hết hạn (không bắt buộc)",
   "limits.console.expiryPast": "Chọn một ngày trong tương lai.",
   "limits.console.invalidValue": "Dùng số nguyên từ 0 trở lên, hoặc để trống để không giới hạn.",

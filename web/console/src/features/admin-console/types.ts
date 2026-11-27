@@ -4,6 +4,7 @@
  */
 
 import type { SetupLinkOutcome } from '@/features/shared/components/one-time-setup-link'
+import { roleNameParts } from './lib/role-name'
 
 export type AdminRole = 'super_admin' | 'ops_admin' | 'readonly'
 
@@ -253,13 +254,6 @@ export interface AdminCreatedOrganizationUser extends SetupLinkOutcome {
   role: string
 }
 
-/** English names of the console roles (i18n keys admin.role.<role>). */
-export const ADMIN_ROLE_LABELS: Record<AdminRole, string> = {
-  super_admin: 'Super admin',
-  ops_admin: 'Operations admin',
-  readonly: 'Read-only admin',
-}
-
 /**
  * The base tier that held each platform permission before platform roles. Only
  * used for an identity that carries no permission list; the API always sends
@@ -348,14 +342,14 @@ export function elevationChoices(admin: AdminIdentity): string[] {
  */
 export function actingRoleLabel(admin: AdminIdentity): { key: string; fallback: string } {
   if (admin.elevated_as) {
-    return { key: `admin.platformRole.${admin.elevated_as}`, fallback: admin.elevated_as }
+    return roleNameParts(admin.elevated_as)
   }
   if (adminCanElevate(admin)) {
     return { key: 'admin.shell.actingReadOnly', fallback: 'Read-only until you elevate' }
   }
   const held = PLATFORM_ROLE_KEYS.find((k) => admin.roles?.includes(k))
-  if (held) return { key: `admin.platformRole.${held}`, fallback: held }
-  return { key: `admin.role.${admin.role}`, fallback: ADMIN_ROLE_LABELS[admin.role] }
+  if (held) return roleNameParts(held)
+  return roleNameParts(admin.role)
 }
 
 /** super_admin > ops_admin > readonly. */

@@ -1,8 +1,7 @@
 'use client'
 
-import { Main } from '@/components/layout'
 import { useTranslation } from '@/context/i18n-provider'
-import { PageHeader, PageStack } from '@/features/shared'
+import { SettingsPage } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { ScanIdentificationCard } from '@console/features/admin-console/components/scan-identification-card'
 import { adminHas } from '@console/features/admin-console/types'
@@ -15,18 +14,20 @@ import { adminHas } from '@console/features/admin-console/types'
 export default function ScanIdentificationPage() {
   const { t } = useTranslation()
   const me = useAdmin()
+  const canEdit = adminHas(me, 'platform.settings.general.write')
   return (
-    <Main>
-      <PageStack>
-        <PageHeader
-          title={t('admin.scanIdent.pageTitle', 'Scan identification')}
-          description={t(
-            'admin.scanIdent.pageDesc',
-            'The User-Agent and headers every scan sends, so scanned systems recognize scan traffic from this platform.'
-          )}
-        />
-        <ScanIdentificationCard canEdit={adminHas(me, 'platform.settings.general.write')} />
-      </PageStack>
-    </Main>
+    <SettingsPage
+      title={t('admin.scanIdent.pageTitle', 'Scan identification')}
+      description={t(
+        'admin.scanIdent.pageDesc',
+        'The User-Agent and headers every scan sends, so scanned systems recognize scan traffic from this platform.'
+      )}
+      readOnly={
+        !canEdit &&
+        t('admin.settings.superAdminOnly', 'Only a super admin can change this setting.')
+      }
+    >
+      <ScanIdentificationCard canEdit={canEdit} />
+    </SettingsPage>
   )
 }

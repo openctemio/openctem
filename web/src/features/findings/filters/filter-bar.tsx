@@ -1,24 +1,22 @@
 'use client'
 
-import { useCallback, useMemo, useState, type ReactElement, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, type ReactElement, type ReactNode } from 'react'
 import { AlertCircle, X } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
 import { useTranslation } from '@/context/i18n-provider'
 import { toDisplayText } from '@/lib/untrusted-text'
-import { AddFilterPopover } from './add-filter-popover'
-import { FilterChip } from './filter-chip'
-import { AdvancedChip, FQ_PARAM, FilterQueryEditor, QueryModeToggle } from './filter-query-mode'
+import { FilterChip, type FilterChipEdit } from './filter-chip'
+import { AdvancedChip, FQ_PARAM } from './filter-query-mode'
 import {
+  paramFor,
   readFilters,
-  viewFields,
   viewFilters,
-  withFilter,
+  withFilterReplaced,
   withoutParam,
   type FieldContract,
   type FilterContract,
-  type FilterOp,
 } from './model'
 
 interface FilterBarProps {
@@ -26,56 +24,69 @@ interface FilterBarProps {
   search: URLSearchParams
   /** The contract to read chips with (the loaded one plus the page-owned fields). */
   contract: FilterContract
-  /** The picker's contract: only the loaded one, so it never offers the fallback subset. */
-  pickerContract: FilterContract | undefined
-  contractLoading: boolean
-  contractFailed: boolean
   /** Params something else draws (the context chips). */
   skip: ReadonlySet<string>
   /** The open saved view's filter: its chips are locked. */
   viewFilter?: Record<string, unknown>
-  canReadAssets: boolean
   /** The context chips (an asset, a scan...), drawn first. */
   leading?: ReactNode
-  onPickerOpenChange: (open: boolean) => void
   /** Navigate to a new query (the page replaces the URL). */
   onSearchChange: (next: URLSearchParams) => void
-  /** The open saved view differs from what is stored: Clear becomes "Reset to view". */
-  viewChanged?: boolean
-  /** Go back to the open saved view as stored. */
-  onResetToView?: () => void
-  /** "1,284 findings", pinned at the end of the row. */
-  resultLabel?: string
-  /** The list's total, for the text mode's status line. */
-  resultCount?: number | null
+  /**
+   * The search field is in Query mode: the text owns the filter, so the
+   * chips, Add filter and Clear step aside (the context chips stay). An open
+   * view's conditions are in the text too.
+   */
+  queryActive?: boolean
+  /** Open the search field's Query mode (the Advanced chip's text). */
+  onOpenQuery?: () => void
+  /**
+   * Lets a chip's text open its filter's editor (operator and values): the
+   * loaded contract, and a signal to load it while an editor is open. Chips
+   * of the open saved view and unknown filters are never editable.
+   */
+  edit?: Omit<FilterChipEdit, 'onApply'>
 }
 
 /**
- * Every active filter as a chip, then Add filter. Chips from the open saved
+ * Every active filter as a chip (Add filter sits on the toolbar row, see
+ * `AddFilterPopover`). Chips from the open saved
  * view come first and are locked; a param no registry field knows is shown as
  * an unknown filter to remove, never silently ignored.
  */
 export function FilterBar({
   search,
   contract,
-  pickerContract,
-  contractLoading,
-  contractFailed,
   skip,
   viewFilter,
-  canReadAssets,
   leading,
-  onPickerOpenChange,
   onSearchChange,
-  viewChanged,
-  onResetToView,
-  resultLabel,
-  resultCount,
+  queryActive,
+  onOpenQuery,
+  edit,
 }: FilterBarProps) {
   const { t } = useTranslation()
-  const [textMode, setTextMode] = useState(false)
-  const toggleText = useCallback(() => setTextMode((v) => !v), [])
   const fq = search.get(FQ_PARAM)
+
+  // An edited filter may move to another param ("is" to "is not"), which
+  // draws a new chip: focus goes to that chip's text once the URL has it.
+  const focusParam = useRef<string | null>(null)
+  useEffect(() => {
+    const param = focusParam.current
+    if (!param || !search.has(param)) return
+    focusParam.current = null
+    if (!/^[\w.-]+$/.test(param)) return
+    document
+      .querySelector<HTMLElement>(`[data-slot="filter-chip-edit"][data-filter-param="${param}"]`)
+      ?.focus()
+  }, [search])
+  const chipEdit: FilterChipEdit | undefined = edit && {
+    ...edit,
+    onApply: (filter, field, op, values) => {
+      focusParam.current = paramFor(field, op) ?? null
+      onSearchChange(withFilterReplaced(search, filter.param, field, op, values))
+    },
+  }
   const fieldOf = (name: string): FieldContract | undefined =>
     contract.fields.find((f) => f.name === name)
 
@@ -84,35 +95,44 @@ export function FilterBar({
     [search, contract, skip]
   )
   const fromView = useMemo(() => viewFilters(viewFilter, contract), [viewFilter, contract])
-  const lockedFields = useMemo(() => viewFields(viewFilter), [viewFilter])
 
-  const chips: ReactElement[] = [
-    ...(fq
-      ? [
-          <AdvancedChip
-            key="advanced"
-            text={fq}
-            onOpen={() => setTextMode(true)}
-            onRemove={() => onSearchChange(withoutParam(search, FQ_PARAM))}
-          />,
-        ]
-      : []),
+  // The open view's own conditions: locked. Conditions chips cannot show
+  // (an OR, a group) are one chip that opens Query mode, where the field
+  // holds the view's whole text.
+  const viewChips: ReactElement[] = [
     ...(fromView.complex
       ? [
-          <span
+          <button
             key="view-complex"
+            type="button"
             data-testid="filter-chip"
+            data-slot="filter-chip-view-advanced"
             data-locked="true"
-            className="inline-flex items-center rounded-full border bg-muted/50 px-2 py-0.5 text-xs"
+            title={t('findings.filter.viewConditions', 'Conditions from the saved view')}
+            onClick={() => onOpenQuery?.()}
+            className="inline-flex items-center rounded-full border bg-muted/50 px-2 py-0.5 text-xs hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
-            {t('findings.filter.viewConditions', 'Conditions from the saved view')}
-          </span>,
+            {t('findings.filter.viewAdvanced', 'Advanced filter')}
+          </button>,
         ]
       : []),
     ...fromView.filters.flatMap((f) => {
       const field = fieldOf(f.field)
       return field ? [<FilterChip key={`view-${f.param}`} filter={f} field={field} />] : []
     }),
+  ]
+  const chips: ReactElement[] = [
+    ...(fq
+      ? [
+          <AdvancedChip
+            key="advanced"
+            text={fq}
+            onOpen={() => onOpenQuery?.()}
+            onRemove={() => onSearchChange(withoutParam(search, FQ_PARAM))}
+          />,
+        ]
+      : []),
+    ...viewChips,
     ...filters.flatMap((f) => {
       const field = fieldOf(f.field)
       return field
@@ -121,6 +141,7 @@ export function FilterBar({
               key={f.param}
               filter={f}
               field={field}
+              edit={chipEdit}
               onRemove={(x) => onSearchChange(withoutParam(search, x.param))}
             />,
           ]
@@ -159,63 +180,22 @@ export function FilterBar({
     onSearchChange(next)
   }
 
-  const row = (
+  if (queryActive) {
+    // The text is the whole filter, an open view's own conditions included
+    // (the field prints them): no chip repeats it.
+    return leading ? (
+      <FilterChipsRow data-testid="findings-filter-bar" leading={leading} chips={[]} />
+    ) : null
+  }
+  return (
     <FilterChipsRow
       data-testid="findings-filter-bar"
       leading={leading}
       chips={chips}
-      trailing={
-        <>
-          <QueryModeToggle active={textMode} onToggle={toggleText} />
-          <AddFilterPopover
-            contract={pickerContract}
-            contractLoading={contractLoading}
-            contractFailed={contractFailed}
-            canReadAssets={canReadAssets}
-            lockedFields={lockedFields}
-            onOpenChange={onPickerOpenChange}
-            onApply={(field: FieldContract, op: FilterOp, values: string[]) =>
-              onSearchChange(withFilter(search, field, op, values))
-            }
-          />
-          {viewChanged && onResetToView ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-muted-foreground"
-              onClick={onResetToView}
-            >
-              {t('findings.filter.resetToView', 'Reset to view')}
-            </Button>
-          ) : filters.length + unknown.length + (fq ? 1 : 0) > 1 ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-muted-foreground"
-              onClick={clearAll}
-            >
-              {t('findings.filter.clearAll', 'Clear filters')}
-            </Button>
-          ) : null}
-        </>
-      }
-      end={resultLabel ? <span role="status">{resultLabel}</span> : undefined}
+      // Going back to the view is the title row's Reset; the row ends with
+      // Clear filters only.
+      onClearAll={filters.length + unknown.length + (fq ? 1 : 0) > 1 ? clearAll : undefined}
     />
-  )
-  if (!textMode) return row
-  return (
-    <div className="space-y-2">
-      <FilterQueryEditor
-        search={search}
-        skip={skip}
-        resultCount={resultCount}
-        onSearchChange={(next) => {
-          onSearchChange(next)
-          setTextMode(false)
-        }}
-      />
-      {row}
-    </div>
   )
 }
 

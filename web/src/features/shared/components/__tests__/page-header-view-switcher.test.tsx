@@ -39,6 +39,25 @@ describe('PageHeader view switcher slot', () => {
     ).toBeTruthy()
   })
 
+  it('keeps the switcher and the actions in one group that wraps whole from sm', () => {
+    render(
+      <TooltipProvider>
+        <PageHeader
+          title="Vulnerabilities"
+          viewSwitcher={<ViewSwitcher options={options} value="a" onChange={() => {}} />}
+        >
+          <button>Open list</button>
+        </PageHeader>
+      </TooltipProvider>
+    )
+    const slot = document.querySelector('[data-slot="page-header-view-switcher"]') as HTMLElement
+    const group = slot.parentElement as HTMLElement
+    expect(group).toHaveAttribute('data-slot', 'page-header-end')
+    // The switcher is never left alone on a row: the group wraps as one piece.
+    expect(group).toHaveClass('sm:flex', 'sm:ml-auto', 'max-sm:contents')
+    expect(group).toContainElement(screen.getByText('Open list'))
+  })
+
   it('leaves the header unchanged without a switcher', () => {
     render(
       <PageHeader title="Scans">

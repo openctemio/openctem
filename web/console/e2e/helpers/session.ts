@@ -47,11 +47,15 @@ async function session(page: Page) {
  * Elevates the saved session through the API (the same route the Elevate
  * dialog calls, with a fresh authenticator code in the step-up header), so the
  * page checks see every page's content. The dialog itself is checked in
- * elevation.spec.ts. Returns once the session is elevated.
+ * elevation.spec.ts. Returns once the session is elevated. `baseURL` is for a
+ * browser outside the test runner (the global setup), whose contexts get none.
  */
-export async function ensureElevated(browser: Browser) {
+export async function ensureElevated(browser: Browser, baseURL?: string) {
   const c = credentials()
-  const context = await browser.newContext({ storageState: STATE_FILE })
+  const context = await browser.newContext({
+    storageState: STATE_FILE,
+    ...(baseURL ? { baseURL } : {}),
+  })
   try {
     const page = await context.newPage()
     await page.goto('/')

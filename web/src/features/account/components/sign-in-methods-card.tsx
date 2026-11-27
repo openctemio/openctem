@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { KeyRound, Link2, Loader2 } from 'lucide-react'
+import { KeyRound, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { IconGithub, IconGoogle, IconMicrosoft } from '@/assets/brand-icons'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { SettingsSection } from '@/features/shared'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StepUpDialog, stepUpProofErrorMessage, type StepUpProofInput } from '@/components/security'
 import { useTranslation } from '@/context/i18n-provider'
@@ -152,97 +152,91 @@ export function SignInMethodsCard() {
   }
 
   return (
-    <Card id="sign-in-methods" className="scroll-mt-4" data-testid="sign-in-methods-card">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Link2 className="h-5 w-5" />
-          {t('account.signInMethods.title', 'Connected sign-in methods')}
-        </CardTitle>
-        <CardDescription>
-          {t(
-            'account.signInMethods.description',
-            'Sign in with Google, GitHub or Microsoft as well as your password. Your two-factor authentication still applies. Linking or unlinking asks you to confirm it is you.'
+    <SettingsSection
+      framed
+      id="sign-in-methods"
+      testId="sign-in-methods-card"
+      className="scroll-mt-4"
+      title={t('account.signInMethods.title', 'Connected sign-in methods')}
+      description={t(
+        'account.signInMethods.description',
+        'Sign in with Google, GitHub or Microsoft as well as your password. Your two-factor authentication still applies. Linking or unlinking asks you to confirm it is you.'
+      )}
+    >
+      {isLoading ? (
+        <div className="space-y-3">
+          <Skeleton className="h-14 w-full" />
+          <Skeleton className="h-14 w-full" />
+        </div>
+      ) : (
+        <ul>
+          {methods?.password && (
+            <SignInMethodRow
+              icon={<KeyRound className="text-muted-foreground" />}
+              title={t('account.signInMethods.password', 'Password')}
+              action={
+                <Badge variant="secondary">{t('account.signInMethods.inUse', 'In use')}</Badge>
+              }
+            />
           )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-14 w-full" />
-            <Skeleton className="h-14 w-full" />
-          </div>
-        ) : (
-          <ul className="divide-y rounded-md border">
-            {methods?.password && (
+          {shown.map((provider) => {
+            const Icon = PROVIDER_ICON[provider]
+            const linked = social.find((m) => m.provider === provider)
+            const lines = [
+              linked
+                ? t('account.signInMethods.linkedOn', 'Linked {date}', {
+                    date: formatDateSafe(linked.created_at),
+                  })
+                : t('account.signInMethods.notLinked', 'Not linked'),
+            ]
+            if (linked && !linked.unlinkable) {
+              lines.push(
+                t(
+                  'account.signInMethods.onlyMethod',
+                  'This is your only way to sign in, so it cannot be removed.'
+                )
+              )
+            }
+            return (
               <SignInMethodRow
-                icon={<KeyRound className="text-muted-foreground" />}
-                title={t('account.signInMethods.password', 'Password')}
+                key={provider}
+                testId={`sign-in-method-${provider}`}
+                icon={<Icon />}
+                title={PROVIDER_NAME[provider]}
+                lines={lines}
                 action={
-                  <Badge variant="secondary">{t('account.signInMethods.inUse', 'In use')}</Badge>
+                  linked ? (
+                    <Button
+                      variant="ghost"
+                      className="shrink-0 text-destructive hover:text-destructive"
+                      disabled={!linked.unlinkable}
+                      onClick={() => setToUnlink(linked)}
+                      aria-label={t('account.signInMethods.unlinkProvider', 'Unlink {provider}', {
+                        provider: PROVIDER_NAME[provider],
+                      })}
+                    >
+                      {t('account.signInMethods.unlink', 'Unlink')}
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      className="shrink-0"
+                      disabled={linking !== null}
+                      onClick={() => setToLink(provider)}
+                      aria-label={t('account.signInMethods.linkProvider', 'Link {provider}', {
+                        provider: PROVIDER_NAME[provider],
+                      })}
+                    >
+                      {linking === provider && <Loader2 className="h-4 w-4 animate-spin" />}
+                      {t('account.signInMethods.link', 'Link')}
+                    </Button>
+                  )
                 }
               />
-            )}
-            {shown.map((provider) => {
-              const Icon = PROVIDER_ICON[provider]
-              const linked = social.find((m) => m.provider === provider)
-              const lines = [
-                linked
-                  ? t('account.signInMethods.linkedOn', 'Linked {date}', {
-                      date: formatDateSafe(linked.created_at),
-                    })
-                  : t('account.signInMethods.notLinked', 'Not linked'),
-              ]
-              if (linked && !linked.unlinkable) {
-                lines.push(
-                  t(
-                    'account.signInMethods.onlyMethod',
-                    'This is your only way to sign in, so it cannot be removed.'
-                  )
-                )
-              }
-              return (
-                <SignInMethodRow
-                  key={provider}
-                  testId={`sign-in-method-${provider}`}
-                  icon={<Icon />}
-                  title={PROVIDER_NAME[provider]}
-                  lines={lines}
-                  action={
-                    linked ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="shrink-0 text-destructive hover:text-destructive"
-                        disabled={!linked.unlinkable}
-                        onClick={() => setToUnlink(linked)}
-                        aria-label={t('account.signInMethods.unlinkProvider', 'Unlink {provider}', {
-                          provider: PROVIDER_NAME[provider],
-                        })}
-                      >
-                        {t('account.signInMethods.unlink', 'Unlink')}
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="shrink-0"
-                        disabled={linking !== null}
-                        onClick={() => setToLink(provider)}
-                        aria-label={t('account.signInMethods.linkProvider', 'Link {provider}', {
-                          provider: PROVIDER_NAME[provider],
-                        })}
-                      >
-                        {linking === provider && <Loader2 className="h-4 w-4 animate-spin" />}
-                        {t('account.signInMethods.link', 'Link')}
-                      </Button>
-                    )
-                  }
-                />
-              )
-            })}
-          </ul>
-        )}
-      </CardContent>
+            )
+          })}
+        </ul>
+      )}
 
       <StepUpDialog
         open={!!toLink}
@@ -279,6 +273,6 @@ export function SignInMethodsCard() {
         )}
         notice={noProofNotice(() => setToUnlink(null))}
       />
-    </Card>
+    </SettingsSection>
   )
 }

@@ -60,7 +60,11 @@ export function KeyboardShortcutsDialog({
                       className="flex items-center justify-between gap-4 px-3 py-2 text-sm"
                     >
                       <span>{t(`help.shortcut.${s.id}`, s.label)}</span>
-                      <ShortcutKeys keys={s.keys} />
+                      <ShortcutKeys
+                        keys={s.keys}
+                        sequence={s.sequence}
+                        thenLabel={t('help.shortcutThen', 'then')}
+                      />
                     </li>
                   ))}
                 </ul>

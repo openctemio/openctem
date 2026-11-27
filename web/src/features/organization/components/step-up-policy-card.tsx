@@ -14,8 +14,6 @@
  * - routine: one finding's status.
  */
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -24,6 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useTranslation } from '@/context/i18n-provider'
+import { SettingsBlock, SettingsRow, SettingsSection } from '@/features/shared'
 import type { StepUpPolicy, StepUpRule, StepUpWindow } from '../types/settings.types'
 
 export type StepUpTier = keyof StepUpPolicy
@@ -84,55 +83,58 @@ export interface StepUpPolicyCardProps {
 export function StepUpPolicyCard({ policy, onChange, disabled }: StepUpPolicyCardProps) {
   const { t } = useTranslation()
   return (
-    <Card id="re-verification">
-      <CardHeader>
-        <CardTitle>{t('org.auth.stepUp.title', 'Re-verification')}</CardTitle>
-        <CardDescription>
-          {t(
-            'org.auth.stepUp.desc',
-            'How often people confirm their identity again (authenticator code, password or a new sign-in) before an action. One confirmation counts for every tier until its own time runs out.'
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {(['critical', 'sensitive', 'routine'] as StepUpTier[]).map((tier) => {
-          const id = `step-up-${tier}`
-          return (
-            <div key={tier} className="grid gap-2 sm:grid-cols-[1fr_14rem] sm:items-start">
-              <div className="space-y-1">
-                <Label htmlFor={id}>{t(`org.auth.stepUp.${tier}`)}</Label>
-                <p className="text-sm text-muted-foreground">{t(`org.auth.stepUp.${tier}Hint`)}</p>
-              </div>
-              <Select
-                value={choiceOf(policy[tier])}
-                onValueChange={(v) => onChange({ ...policy, [tier]: ruleOf(v as StepUpChoice) })}
-                disabled={disabled}
+    <SettingsSection
+      framed
+      id="re-verification"
+      title={t('org.auth.stepUp.title', 'Re-verification')}
+      description={t(
+        'org.auth.stepUp.desc',
+        'How often people confirm their identity again (authenticator code, password or a new sign-in) before an action. One confirmation counts for every tier until its own time runs out.'
+      )}
+    >
+      {/* Least to most protected, as on the board. */}
+      {(['routine', 'sensitive', 'critical'] as StepUpTier[]).map((tier) => {
+        const id = `step-up-${tier}`
+        return (
+          <SettingsRow
+            key={tier}
+            wide
+            label={<label htmlFor={id}>{t(`org.auth.stepUp.${tier}`)}</label>}
+            hint={t(`org.auth.stepUp.${tier}Hint`)}
+            hintId={`${id}-hint`}
+          >
+            <Select
+              value={choiceOf(policy[tier])}
+              onValueChange={(v) => onChange({ ...policy, [tier]: ruleOf(v as StepUpChoice) })}
+              disabled={disabled}
+            >
+              <SelectTrigger
+                id={id}
+                data-testid={id}
+                aria-describedby={`${id}-hint`}
+                className="w-full"
               >
-                <SelectTrigger id={id} data-testid={id} className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STEP_UP_CHOICES.map((choice) => (
-                    <SelectItem
-                      key={choice}
-                      value={choice}
-                      disabled={!isChoiceAllowed(tier, choice)}
-                    >
-                      {t(`org.auth.stepUp.choice.${choice}`)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )
-        })}
-        <p className="text-sm text-muted-foreground" data-testid="step-up-floor">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STEP_UP_CHOICES.map((choice) => (
+                  <SelectItem key={choice} value={choice} disabled={!isChoiceAllowed(tier, choice)}>
+                    {t(`org.auth.stepUp.choice.${choice}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingsRow>
+        )
+      })}
+      <SettingsBlock>
+        <p className="text-cap text-muted-foreground" data-testid="step-up-floor">
           {t(
             'org.auth.stepUp.floor',
             'Critical actions cannot be set to longer than 10 minutes or turned off: they protect who controls the organization.'
           )}
         </p>
-      </CardContent>
-    </Card>
+      </SettingsBlock>
+    </SettingsSection>
   )
 }

@@ -93,6 +93,12 @@ vi.mock('../../types', () => ({
   },
 }))
 
+// The caller's organization role (the "nobody else can approve" hint).
+let mockOwner = false
+vi.mock('@/lib/permissions', () => ({
+  usePermissions: () => ({ isOwner: () => mockOwner }),
+}))
+
 // Mock sonner toast
 vi.mock('sonner', () => ({
   toast: {
@@ -130,6 +136,8 @@ describe('ApprovalDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockPolicy = undefined
+    mockOwner = false
+    window.localStorage.clear()
   })
 
   // ============================================
@@ -152,10 +160,10 @@ describe('ApprovalDialog', () => {
       )
       // The title and description say it is a decision, not a request.
       expect(screen.getByRole('heading', { name: 'Mark as false positive' })).toBeInTheDocument()
-      expect(screen.queryByText('Request Status Approval')).not.toBeInTheDocument()
+      expect(screen.queryByText('Request status approval')).not.toBeInTheDocument()
       expect(screen.queryByText(/needs approval/)).not.toBeInTheDocument()
       await chooseReason(user, 'Test or example code')
-      await user.type(screen.getByLabelText('Justification'), 'fixture')
+      await user.type(screen.getByLabelText(/^Note/), 'fixture')
       await user.click(screen.getByText('Review'))
       await user.click(screen.getByRole('button', { name: 'Mark as false positive' }))
       expect(mockRequestApproval).toHaveBeenCalledWith(
@@ -209,8 +217,8 @@ describe('ApprovalDialog', () => {
       render(<ApprovalDialog {...defaultProps} targetStatus="accepted" />)
       expect(screen.getByRole('status')).toHaveTextContent(/the risk is accepted at once/)
       expect(screen.getByRole('heading', { name: 'Accept the risk' })).toBeInTheDocument()
-      expect(screen.queryByText('Request Status Approval')).not.toBeInTheDocument()
-      await user.type(screen.getByLabelText('Justification'), 'Compensating control')
+      expect(screen.queryByText('Request status approval')).not.toBeInTheDocument()
+      await user.type(screen.getByLabelText(/^Note/), 'Compensating control')
       await chooseReason(user, 'Compensating control')
       await user.click(screen.getByText('Review'))
       expect(screen.getByRole('heading', { name: 'Confirm risk acceptance' })).toBeInTheDocument()
@@ -243,7 +251,7 @@ describe('ApprovalDialog', () => {
       }
       render(<ApprovalDialog {...defaultProps} targetStatus="accepted" />)
       expect(screen.queryByRole('status')).not.toBeInTheDocument()
-      expect(screen.getByRole('heading', { name: 'Request Status Approval' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Request status approval' })).toBeInTheDocument()
     })
   })
 
@@ -255,13 +263,13 @@ describe('ApprovalDialog', () => {
     it('renders dialog when open is true', () => {
       render(<ApprovalDialog {...defaultProps} />)
 
-      expect(screen.getByText('Request Status Approval')).toBeInTheDocument()
+      expect(screen.getByText('Request status approval')).toBeInTheDocument()
     })
 
     it('does not render dialog content when open is false', () => {
       render(<ApprovalDialog {...defaultProps} open={false} />)
 
-      expect(screen.queryByText('Request Status Approval')).not.toBeInTheDocument()
+      expect(screen.queryByText('Request status approval')).not.toBeInTheDocument()
     })
 
     it('shows the target status label in the description', () => {
@@ -275,7 +283,7 @@ describe('ApprovalDialog', () => {
     it('shows justification textarea', () => {
       render(<ApprovalDialog {...defaultProps} />)
 
-      expect(screen.getByLabelText('Justification')).toBeInTheDocument()
+      expect(screen.getByLabelText(/^Note/)).toBeInTheDocument()
     })
 
     it('shows character count', () => {
@@ -308,7 +316,7 @@ describe('ApprovalDialog', () => {
       const user = userEvent.setup()
       render(<ApprovalDialog {...defaultProps} />)
 
-      const textarea = screen.getByLabelText('Justification')
+      const textarea = screen.getByLabelText(/^Note/)
       await user.type(textarea, '   ')
 
       const reviewButton = screen.getByText('Review')
@@ -319,7 +327,7 @@ describe('ApprovalDialog', () => {
       const user = userEvent.setup()
       render(<ApprovalDialog {...defaultProps} />)
 
-      await user.type(screen.getByLabelText('Justification'), 'This is a valid justification')
+      await user.type(screen.getByLabelText(/^Note/), 'This is a valid justification')
       expect(screen.getByText('Review')).toBeDisabled()
 
       await chooseReason(user, 'Scanner was wrong')
@@ -357,7 +365,7 @@ describe('ApprovalDialog', () => {
       const user = userEvent.setup()
       render(<ApprovalDialog {...defaultProps} />)
 
-      const textarea = screen.getByLabelText('Justification')
+      const textarea = screen.getByLabelText(/^Note/)
       await user.type(textarea, 'Hello')
 
       expect(screen.getByText('5/2000 characters')).toBeInTheDocument()
@@ -368,7 +376,7 @@ describe('ApprovalDialog', () => {
       const user = userEvent.setup()
       render(<ApprovalDialog {...defaultProps} />)
 
-      const textarea = screen.getByLabelText('Justification')
+      const textarea = screen.getByLabelText(/^Note/)
       await user.type(textarea, 'This is a justified reason')
       await chooseReason(user, 'Test or example code')
 
@@ -376,8 +384,8 @@ describe('ApprovalDialog', () => {
       const reviewButton = screen.getByText('Review')
       await user.click(reviewButton)
 
-      // Step 2: Click Submit for Approval on confirmation step
-      const submitButton = screen.getByText('Submit for Approval')
+      // Step 2: Click Submit for approval on confirmation step
+      const submitButton = screen.getByText('Submit for approval')
       await user.click(submitButton)
 
       expect(mockRequestApproval).toHaveBeenCalledWith({
@@ -396,10 +404,10 @@ describe('ApprovalDialog', () => {
       expect(expiry.required).toBe(true)
       expect(expiry.max).not.toBe('')
 
-      await user.type(screen.getByLabelText('Justification'), 'Compensating control')
+      await user.type(screen.getByLabelText(/^Note/), 'Compensating control')
       await chooseReason(user, 'Compensating control')
       await user.click(screen.getByText('Review'))
-      await user.click(screen.getByText('Submit for Approval'))
+      await user.click(screen.getByText('Submit for approval'))
 
       const body = mockRequestApproval.mock.calls[0][0]
       expect(body.requested_status).toBe('accepted')
@@ -463,6 +471,7 @@ describe('ApprovalDialog approval policy', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockPolicy = undefined
+    mockOwner = false
   })
 
   it('explains the tier, the reasons and who approves', () => {
@@ -472,7 +481,7 @@ describe('ApprovalDialog approval policy', () => {
     expect(banner).toHaveTextContent('Two approvers: 2 approval(s) needed')
     expect(banner).toHaveTextContent('Why: critical severity, known exploited (KEV).')
     expect(banner).toHaveTextContent('Set by the platform default.')
-    expect(banner).toHaveTextContent('5 approvers, 2 in the security pool')
+    expect(banner).toHaveTextContent('5 approvers, 2 in the security reviewer group')
     expect(banner).toHaveTextContent('Approvers confirm their identity before they decide.')
     expect(banner).toHaveTextContent('at most 30 days')
     expect(screen.queryByTestId('approval-evaluation-unsatisfiable')).not.toBeInTheDocument()
@@ -491,7 +500,7 @@ describe('ApprovalDialog approval policy', () => {
     mockPolicy = { evaluation: { ...evaluation, kind: 'false_positive', max_acceptance_days: 0 } }
     render(<ApprovalDialog {...defaultProps} />)
     await chooseReason(user, 'Test or example code')
-    await user.click(screen.getByLabelText('Justification'))
+    await user.click(screen.getByLabelText(/^Note/))
     await user.paste('too short')
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Write at least 20 characters for this approval.'
@@ -510,5 +519,111 @@ describe('ApprovalDialog approval policy', () => {
     expect(screen.getByTestId('approval-evaluation-unsatisfiable')).toHaveTextContent(
       'does not have enough eligible approvers'
     )
+  })
+
+  // ============================================
+  // WHEN THE NOTE IS REQUIRED (decided alone on a non-serious finding only)
+  // ============================================
+
+  describe('note rule', () => {
+    it('lets a person who decides alone on a non-serious finding send without a note', async () => {
+      mockPolicy = { single_person: true, can_decide_alone: true, material: false }
+      const user = userEvent.setup()
+      mockRequestApproval.mockResolvedValue({ single_person: true })
+      render(<ApprovalDialog {...defaultProps} />)
+      expect(screen.getByLabelText('Note (optional)')).toBeInTheDocument()
+      await chooseReason(user, 'Scanner was wrong')
+      const review = screen.getByRole('button', { name: 'Review' })
+      expect(review).toBeEnabled()
+      await user.click(review)
+      expect(screen.queryByText('Note:')).toBeNull()
+      await user.click(screen.getByRole('button', { name: 'Mark as false positive' }))
+      expect(mockRequestApproval).toHaveBeenCalledWith(
+        expect.objectContaining({ closure_reason: 'detection_error', justification: '' })
+      )
+    })
+
+    it('requires a note on a serious finding even when the person decides alone', async () => {
+      mockPolicy = { single_person: true, can_decide_alone: true, material: true }
+      const user = userEvent.setup()
+      render(<ApprovalDialog {...defaultProps} />)
+      expect(screen.getByLabelText('Note')).toBeInTheDocument()
+      await chooseReason(user, 'Scanner was wrong')
+      expect(screen.getByRole('button', { name: 'Review' })).toBeDisabled()
+    })
+
+    it('requires a note whenever a second person approves', async () => {
+      mockPolicy = { single_person: false, can_decide_alone: false, material: false }
+      const user = userEvent.setup()
+      render(<ApprovalDialog {...defaultProps} />)
+      await chooseReason(user, 'Scanner was wrong')
+      expect(screen.getByRole('button', { name: 'Review' })).toBeDisabled()
+      await user.type(screen.getByLabelText('Note'), 'Checked the banner')
+      expect(screen.getByRole('button', { name: 'Review' })).toBeEnabled()
+    })
+
+    it('requires a note while the policy is still loading', () => {
+      render(<ApprovalDialog {...defaultProps} />)
+      expect(screen.getByLabelText('Note')).toBeInTheDocument()
+    })
+  })
+
+  describe('last reason and nobody else', () => {
+    it('starts with the reason picked last time for the status', async () => {
+      window.localStorage.setItem(
+        'openctem.findings.dismiss.lastReason',
+        JSON.stringify({ false_positive: 'detection_error' })
+      )
+      render(<ApprovalDialog {...defaultProps} />)
+      expect(await screen.findByRole('combobox')).toHaveTextContent('Scanner was wrong')
+    })
+
+    it('ignores a stored reason that the status does not offer', () => {
+      window.localStorage.setItem(
+        'openctem.findings.dismiss.lastReason',
+        JSON.stringify({ false_positive: 'not-a-reason' })
+      )
+      render(<ApprovalDialog {...defaultProps} />)
+      expect(screen.getByRole('combobox')).toHaveTextContent('Choose a reason')
+    })
+
+    const nobody = {
+      single_person: false,
+      can_decide_alone: false,
+      material: true,
+      evaluation: {
+        kind: 'false_positive',
+        tier: 'peer',
+        floor: 'single',
+        risk_class: 'high',
+        approvals_required: 1,
+        reasons: ['fp_level', 'no_eligible_approver'],
+        security_pool: false,
+        security_pool_fallback: false,
+        step_up: false,
+        eligible_approvers: 0,
+        eligible_security_pool: 0,
+        satisfiable: false,
+        min_note_length: 0,
+        decide_within_days: 7,
+      },
+    }
+
+    it('tells an owner they can approve it themselves when nobody else can', () => {
+      mockPolicy = nobody
+      mockOwner = true
+      render(<ApprovalDialog {...defaultProps} />)
+      expect(screen.getByTestId('approval-dialog-nobody-else')).toHaveTextContent(
+        /approve it yourself once it is sent/
+      )
+    })
+
+    it('tells a member to ask an owner when nobody else can approve', () => {
+      mockPolicy = nobody
+      render(<ApprovalDialog {...defaultProps} />)
+      expect(screen.getByTestId('approval-dialog-nobody-else')).toHaveTextContent(
+        /Ask an owner to give someone the approve permission/
+      )
+    })
   })
 })

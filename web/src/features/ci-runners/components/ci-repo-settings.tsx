@@ -86,6 +86,7 @@ import {
   type PolicyModes,
 } from '../lib/gate-settings'
 import type { CIGatePolicy } from '../types'
+import { formatDate, formatNumber } from '@/lib/app-locale'
 
 type TFn = ReturnType<typeof useTranslation>['t']
 
@@ -235,6 +236,7 @@ export function GateFieldRow({
           </Button>
           {own && (
             <Button
+              iconOnlyBelow="sm"
               size="sm"
               variant="ghost"
               onClick={onReset}
@@ -686,10 +688,10 @@ function GateBaselineSection({
             {b.branch || '—'}
           </DetailField>
           <DetailField label={t('scans.ci.baseline.findings', 'Findings in the baseline')}>
-            {(b.findings_count ?? 0).toLocaleString()}
+            {formatNumber(b.findings_count ?? 0)}
           </DetailField>
           <DetailField label={t('scans.ci.baseline.due', 'Blocks again')}>
-            {due ? due.toLocaleDateString() : t('scans.ci.gateValue.noEnd', 'No end')}
+            {due ? formatDate(due) : t('scans.ci.gateValue.noEnd', 'No end')}
           </DetailField>
         </DetailFieldGrid>
       )}
@@ -788,7 +790,7 @@ export function CIRepositorySettingsTab({ repositoryAssetId }: { repositoryAsset
           {t(
             'scans.ci.repoSettings.expired',
             'This repository’s override ended on {date}; it follows the inherited values until it is changed or removed.',
-            { date: new Date(repo.expires_at).toLocaleDateString() }
+            { date: formatDate(new Date(repo.expires_at)) }
           )}
         </DetailCallout>
       )}
@@ -828,7 +830,7 @@ export function CIRepositorySettingsTab({ repositoryAssetId }: { repositoryAsset
             <p className="text-xs text-muted-foreground">
               {repo.expires_at
                 ? t('scans.ci.repoSettings.endsOn', 'Ends on {date}', {
-                    date: new Date(repo.expires_at).toLocaleDateString(),
+                    date: formatDate(new Date(repo.expires_at)),
                   })
                 : t('scans.ci.repoSettings.noEnd', 'No end date')}
               {repo.updated_at && (

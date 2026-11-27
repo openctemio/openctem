@@ -999,13 +999,12 @@ function StageRow({
           ? t(s.flag_key)
           : t('dashboardKit.stage.actHere', 'Act here')
         : null
-    const aria = t('dashboardKit.flow.stageAria', '{stage}: {value} {metric}, {state}', {
-      stage: name,
-      value,
-      metric,
-      state,
-    })
-    return { s, i, name, value, metric, state, act, aria }
+    // The figure's link reads "{stage}: {value} {metric}, {state}": the
+    // words around the visible figure are screen reader text, so the visible
+    // label is part of the name in order (label in name).
+    const before = t('dashboardKit.flow.stageNameBefore', '{stage}:', { stage: name })
+    const after = t('dashboardKit.flow.stageNameAfter', ', {state}', { state })
+    return { s, i, name, value, metric, state, act, before, after }
   })
   if (narrow) {
     return (
@@ -1019,19 +1018,24 @@ function StageRow({
         <ol className="grid gap-0.5">
           {items.map((x) => (
             <li key={x.s.key} aria-current={x.act ? 'step' : undefined} data-state={x.s.state}>
+              {/* The row's words are its name, in reading order. */}
               <FlowLink
                 to={x.s.drill}
-                label={x.aria}
                 className="grid min-h-11 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-md px-2 py-1 hover:bg-muted/60 focus-visible:bg-muted/60"
               >
                 <StageStateIcon state={x.s.state} className="size-4" />
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">{x.name}</span>
+                  <span className="block truncate text-sm font-medium">{x.name}</span>{' '}
                   <span className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                     {x.state}
-                    {x.act && <ActHere label={x.act} className="py-0" />}
+                    {x.act && (
+                      <>
+                        {' '}
+                        <ActHere label={x.act} className="py-0" />
+                      </>
+                    )}
                   </span>
-                </span>
+                </span>{' '}
                 <span className="text-right">
                   <span
                     className={cn(
@@ -1042,7 +1046,10 @@ function StageRow({
                     {x.value}
                   </span>
                   {x.metric && (
-                    <span className="block text-xs text-muted-foreground">{x.metric}</span>
+                    <>
+                      {' '}
+                      <span className="block text-xs text-muted-foreground">{x.metric}</span>
+                    </>
                   )}
                 </span>
               </FlowLink>
@@ -1063,7 +1070,10 @@ function StageRow({
       {items.map((x) => (
         <li
           key={x.s.key}
-          className="relative grid content-start justify-items-center gap-0.5 text-center text-xs"
+          // min-w-0: a grid item is otherwise as wide as its longest word
+          // run, and a long stage name (vi "Xác định phạm vi" at 1024px) ran
+          // over its neighbour. The name wraps between words instead.
+          className="relative grid min-w-0 content-start justify-items-center gap-0.5 text-center text-xs"
           aria-current={x.act ? 'step' : undefined}
           data-state={x.s.state}
         >
@@ -1073,17 +1083,23 @@ function StageRow({
           >
             <StageStateIcon state={x.s.state} className="size-4" />
           </span>
-          <span className="truncate">{x.name}</span>
+          <span className="max-w-full text-balance">{x.name}</span>
           <FlowLink
             to={x.s.drill}
-            label={x.aria}
             className={cn(
               'inline-grid min-h-11 min-w-11 content-center justify-items-center rounded-md px-1 hover:underline',
               x.s.value == null && 'text-muted-foreground'
             )}
           >
+            <span className="sr-only">{`${x.before} `}</span>
             <span className="text-sm font-semibold tabular-nums leading-tight">{x.value}</span>
-            {x.metric && <span className="text-xs text-muted-foreground">{x.metric}</span>}
+            {x.metric && (
+              <>
+                {' '}
+                <span className="text-xs text-muted-foreground">{x.metric}</span>
+              </>
+            )}
+            <span className="sr-only">{x.after}</span>
           </FlowLink>
           {x.act && <ActHere label={x.act} />}
         </li>

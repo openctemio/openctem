@@ -125,7 +125,7 @@ export function SlaWhyThisDate({
         <HelpCircle className="size-3.5" aria-hidden />
         {t('findings.slaWhy.trigger', 'Why this date')}
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-80 space-y-2 text-sm">
+      <PopoverContent className="w-80 space-y-2 text-sm">
         <p className="font-medium">{t('findings.slaWhy.title', 'Why this date')}</p>
         <ul className="text-muted-foreground list-disc space-y-1 ps-4">
           {lines.map((l) => (

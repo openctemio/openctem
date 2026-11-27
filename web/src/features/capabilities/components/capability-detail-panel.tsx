@@ -3,6 +3,7 @@
 import { capabilitySwatch } from '@/lib/capability-colors'
 import { TAG_SWATCH_CLASS } from '@/lib/tag-colors'
 import { memo } from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { Globe, Sparkles, Wrench, Bot, ExternalLink } from 'lucide-react'
 import Link from '@/components/link'
 
@@ -72,6 +73,7 @@ export const CapabilityDetailPanel = memo(function CapabilityDetailPanel({
   open,
   onOpenChange,
 }: CapabilityDetailPanelProps) {
+  const { t } = useTranslation()
   // Fetch usage stats with full details (includes names)
   const { data: usageStats, isLoading } = useCapabilityUsageStats(open ? capability?.id : null)
 
@@ -103,7 +105,9 @@ export const CapabilityDetailPanel = memo(function CapabilityDetailPanel({
                 ) : (
                   <Sparkles className="h-3 w-3" />
                 )}
-                {capability.is_builtin ? 'Platform' : 'Custom'}
+                {capability.is_builtin
+                  ? t('scans.capabilities.type.platform', 'Platform')
+                  : t('scans.capabilities.type.custom', 'Custom')}
               </Badge>
             </>
           }
@@ -117,20 +121,26 @@ export const CapabilityDetailPanel = memo(function CapabilityDetailPanel({
       }
     >
       <div className="space-y-5">
-        <DetailStatGrid aria-label="Usage">
-          <DetailStat label="Tools" value={stats?.tool_count ?? 0} />
-          <DetailStat label="Sensors" value={stats?.sensor_count ?? 0} />
+        <DetailStatGrid aria-label={t('scans.capabilities.detail.usage', 'Usage')}>
+          <DetailStat
+            label={t('scans.capabilities.detail.tools', 'Tools')}
+            value={stats?.tool_count ?? 0}
+          />
+          <DetailStat
+            label={t('scans.capabilities.detail.sensors', 'Sensors')}
+            value={stats?.sensor_count ?? 0}
+          />
         </DetailStatGrid>
 
         <DetailSections>
           {capability.description && (
-            <DetailSection title="Description">
+            <DetailSection title={t('scans.capabilities.detail.description', 'Description')}>
               <p className="text-sm text-muted-foreground">{capability.description}</p>
             </DetailSection>
           )}
 
           <DetailSection
-            title="Tools"
+            title={t('scans.capabilities.detail.tools', 'Tools')}
             icon={Wrench}
             count={stats?.tool_count || undefined}
             actions={
@@ -139,7 +149,7 @@ export const CapabilityDetailPanel = memo(function CapabilityDetailPanel({
                   href="/settings/scanning/tools"
                   className="flex items-center gap-1 text-xs text-primary hover:underline"
                 >
-                  View all
+                  {t('scans.capabilities.detail.viewAll', 'View all')}
                   <ExternalLink className="h-3 w-3" />
                 </Link>
               ) : undefined
@@ -148,13 +158,13 @@ export const CapabilityDetailPanel = memo(function CapabilityDetailPanel({
             <NameList
               names={usageStats?.tool_names}
               icon={Wrench}
-              empty="No tools are using this capability."
+              empty={t('scans.capabilities.detail.noTools', 'No tools are using this capability.')}
               loading={isLoadingNames}
             />
           </DetailSection>
 
           <DetailSection
-            title="Sensors"
+            title={t('scans.capabilities.detail.sensors', 'Sensors')}
             icon={Bot}
             count={stats?.sensor_count || undefined}
             actions={
@@ -163,7 +173,7 @@ export const CapabilityDetailPanel = memo(function CapabilityDetailPanel({
                   href="/sensors"
                   className="flex items-center gap-1 text-xs text-primary hover:underline"
                 >
-                  View all
+                  {t('scans.capabilities.detail.viewAll', 'View all')}
                   <ExternalLink className="h-3 w-3" />
                 </Link>
               ) : undefined
@@ -172,23 +182,28 @@ export const CapabilityDetailPanel = memo(function CapabilityDetailPanel({
             <NameList
               names={usageStats?.sensor_names}
               icon={Bot}
-              empty="No sensors have this capability assigned."
+              empty={t(
+                'scans.capabilities.detail.noSensors',
+                'No sensors have this capability assigned.'
+              )}
               loading={isLoadingNames}
             />
           </DetailSection>
 
-          <DetailSection title="Details">
+          <DetailSection title={t('scans.capabilities.detail.details', 'Details')}>
             <DetailFieldGrid>
-              <DetailField label="Code name">
+              <DetailField label={t('scans.capabilities.detail.codeName', 'Code name')}>
                 <span className="font-mono text-xs break-all">{capability.name}</span>
               </DetailField>
-              <DetailField label="Category">
+              <DetailField label={t('scans.capabilities.col.category', 'Category')}>
                 <span className="capitalize">{capability.category || '-'}</span>
               </DetailField>
-              <DetailField label="Type">
-                {capability.is_builtin ? 'Platform' : 'Custom'}
+              <DetailField label={t('scans.capabilities.col.type', 'Type')}>
+                {capability.is_builtin
+                  ? t('scans.capabilities.type.platform', 'Platform')
+                  : t('scans.capabilities.type.custom', 'Custom')}
               </DetailField>
-              <DetailField label="Color">
+              <DetailField label={t('scans.capabilities.detail.color', 'Color')}>
                 <span className="inline-flex items-center gap-2 capitalize">
                   {/* The capability's own accent colour, chosen by its author. */}
                   <span
@@ -198,14 +213,17 @@ export const CapabilityDetailPanel = memo(function CapabilityDetailPanel({
                   {capabilitySwatch(capability.color)}
                 </span>
               </DetailField>
-              <DetailField label="Icon">
+              <DetailField label={t('scans.capabilities.detail.icon', 'Icon')}>
                 <span className="inline-flex items-center gap-2">
                   <DynamicIcon name={capability.icon} className="h-4 w-4" />
                   {capability.icon}
                 </span>
               </DetailField>
-              <DetailField label="ID" full>
-                <DetailCopyId id={capability.id} label="Capability ID" />
+              <DetailField label={t('scans.capabilities.detail.id', 'ID')} full>
+                <DetailCopyId
+                  id={capability.id}
+                  label={t('scans.capabilities.detail.idLabel', 'Capability ID')}
+                />
               </DetailField>
             </DetailFieldGrid>
           </DetailSection>

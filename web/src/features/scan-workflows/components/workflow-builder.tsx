@@ -24,6 +24,7 @@ import {
   applyEdgeChanges,
   useReactFlow,
   useUpdateNodeInternals,
+  useNodesInitialized,
   ReactFlowProvider,
   MarkerType,
 } from '@xyflow/react'
@@ -35,11 +36,13 @@ import type { ScanWorkflowStep, UIPosition } from '@/lib/api'
 import { makeIsValidConnection } from '@/components/flow/connection-rules'
 import { useTranslation } from '@/context/i18n-provider'
 import { DataFlowEdge } from './data-flow-edge'
+import { spreadOverlapping } from '../lib/node-spacing'
 import {
   EMPTY_TABLE,
   capabilityForStep,
   checkStepConnection,
   describeEdge,
+  portTypeLabel,
   stepEdges,
   type CapabilityTable,
 } from '../lib/capability-graph'
@@ -106,6 +109,13 @@ const END_NODE_ID = '__end__'
 const NODE_WIDTH = 200
 const NODE_HEIGHT = 80
 const HORIZONTAL_GAP = 80
+/**
+ * How the canvas fits its steps: a small margin (the tool list already takes
+ * a side of the frame, so a wide margin left the steps unreadably small at
+ * 1024 px) and never larger than life (a single step is not blown up).
+ */
+const FIT_OPTIONS = { padding: 0.1, maxZoom: 1 }
+
 const VERTICAL_GAP = 40
 const START_X = 50
 const START_Y = 100
@@ -297,7 +307,9 @@ function WorkflowBuilderInner({
   const { t } = useTranslation()
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, getNodes, fitView } = useReactFlow()
+  const nodesInitialized = useNodesInitialized()
+  const spreadFor = useRef('')
   const updateNodeInternals = useUpdateNodeInternals()
 
   // Calculate default End node position based on steps (fallback if no saved position)
@@ -354,6 +366,18 @@ function WorkflowBuilderInner({
   const initialNodes = useMemo(() => {
     return buildAllNodes([], startEndPositions.start, startEndPositions.end)
   }, [buildAllNodes, startEndPositions])
+
+  // Port type names in the reader's language (the chips' titles).
+  const portLabels = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.keys(capabilityTable.portLabels).map((k) => [
+          k,
+          portTypeLabel(capabilityTable, k, t),
+        ])
+      ),
+    [capabilityTable, t]
+  )
 
   const initialEdges = useMemo(
     () => stepsToEdges(steps, capabilityTable, t),
@@ -417,11 +441,14 @@ function WorkflowBuilderInner({
             categoryColor: (step as ScanWorkflowStep & { category_color?: string }).category_color,
             availableTools: availableTools,
             availableSteps: availableStepsForThis,
-            capabilityName: capability?.name,
+            // The catalog's names are English: the dictionary names them.
+            capabilityName: capability
+              ? t(`assetCoverage.capability.${capability.key}`, capability.name)
+              : undefined,
             capabilityTier: capability?.tier,
             inPorts: capability?.inPorts,
             outPorts: capability?.outPorts,
-            portLabels: capabilityTable.portLabels,
+            portLabels: portLabels,
             issues,
             warnings,
             ...(issues.length > 0 ? { isValid: false, validationMessage: undefined } : {}),
@@ -466,6 +493,7 @@ function WorkflowBuilderInner({
     steps,
     availableTools,
     capabilityTable,
+    portLabels,
     issuesByStep,
     warningsByStep,
     readOnly,
@@ -477,6 +505,82 @@ function WorkflowBuilderInner({
     updateNodeInternals,
     t,
   ])
+
+  // Set once the person pans or zooms: from then on the view is theirs.
+  const viewMoved = useRef(false)
+
+  // Step cards are taller than the layout assumes (tool, timeout and
+  // capability rows): once they are measured, move overlapping cards down so
+  // none is drawn over another, then fit the view to them. Once per set of
+  // steps; a drag after that is the person's choice. The fit runs even when
+  // nothing moved: steps that load after the canvas first drew were never
+  // measured by its first fit, which then zoomed in on the start node and
+  // left the steps past the edge (1440 px, 2026-11-26).
+  useEffect(() => {
+    if (!nodesInitialized) return
+    const key = steps
+      .map((s) => s.id)
+      .sort()
+      .join(',')
+    if (!key || spreadFor.current === key) return
+    spreadFor.current = key
+    const moved = spreadOverlapping(
+      getNodes()
+        .filter((n) => n.type === 'scanner' && n.measured?.width && n.measured?.height)
+        .map((n) => ({
+          id: n.id,
+          x: n.position.x,
+          y: n.position.y,
+          width: n.measured!.width!,
+          height: n.measured!.height!,
+        })),
+      VERTICAL_GAP
+    )
+    if (moved.size) {
+      setNodes((current) =>
+        current.map((n) =>
+          moved.has(n.id) ? { ...n, position: { x: n.position.x, y: moved.get(n.id)! } } : n
+        )
+      )
+    }
+    if (!viewMoved.current) requestAnimationFrame(() => void fitView(FIT_OPTIONS))
+  }, [nodesInitialized, steps, getNodes, setNodes, fitView])
+
+  // The canvas fits its steps whenever its frame changes size (the tool
+  // list loads beside it, the window or the sidebar changes) until the
+  // person pans or zooms: fitting once on load left steps past the edge
+  // when the frame narrowed afterwards.
+  useEffect(() => {
+    const el = reactFlowWrapper.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    let frame = 0
+    const ro = new ResizeObserver(() => {
+      if (viewMoved.current) return
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => void fitView(FIT_OPTIONS))
+    })
+    ro.observe(el)
+    return () => {
+      cancelAnimationFrame(frame)
+      ro.disconnect()
+    }
+  }, [fitView])
+  // A step card that changes size after the first fit (its text in another
+  // language, its tool list arriving) refits the view, until the person
+  // pans or zooms: a card grown after the fit ran past the tool list (1920
+  // px vi, 2026-11-26).
+  const sizeFitFrame = useRef(0)
+  const fitOnResize = useCallback(() => {
+    if (viewMoved.current) return
+    cancelAnimationFrame(sizeFitFrame.current)
+    sizeFitFrame.current = requestAnimationFrame(() => void fitView(FIT_OPTIONS))
+  }, [fitView])
+  useEffect(() => () => cancelAnimationFrame(sizeFitFrame.current), [])
+
+  // A move with an event is the person's (a fit has none).
+  const onMoveStart = useCallback((event: MouseEvent | TouchEvent | null) => {
+    if (event) viewMoved.current = true
+  }, [])
 
   // Define node types
   const nodeTypes: NodeTypes = useMemo(
@@ -502,6 +606,11 @@ function WorkflowBuilderInner({
       })
 
       setNodes((nds) => applyNodeChanges(filteredChanges, nds) as WorkflowNode[])
+      // Once the person picks or drags a step, the view is theirs: a card
+      // that grows while they edit it does not move the canvas.
+      if (filteredChanges.some((c) => c.type === 'select' || (c.type === 'position' && c.dragging)))
+        viewMoved.current = true
+      else if (filteredChanges.some((c) => c.type === 'dimensions')) fitOnResize()
 
       // Handle position changes
       filteredChanges.forEach((change) => {
@@ -541,6 +650,7 @@ function WorkflowBuilderInner({
       onEndPositionChange,
       onNodeDelete,
       readOnly,
+      fitOnResize,
     ]
   )
 
@@ -796,7 +906,8 @@ function WorkflowBuilderInner({
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
-        fitViewOptions={{ padding: 0.3 }}
+        fitViewOptions={FIT_OPTIONS}
+        onMoveStart={onMoveStart}
         minZoom={0.1}
         maxZoom={2}
         className="bg-background"
@@ -815,7 +926,9 @@ function WorkflowBuilderInner({
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#d1d5db" />
         <Controls showInteractive={!readOnly} />
-        <MiniMap nodeColor={nodeColor} zoomable pannable />
+        {/* Below 1536 px the canvas beside its tool list is too narrow: the
+            minimap covered the steps it maps (1440 px, 2026-11-26). */}
+        <MiniMap nodeColor={nodeColor} zoomable pannable className="max-2xl:hidden" />
       </ReactFlow>
     </div>
   )

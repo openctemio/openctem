@@ -4,6 +4,7 @@ import { KevBadge as KevMark } from '@/components/ui/kev-badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
 import type { CISAKEVData } from '../types'
+import { formatDate } from '@/lib/app-locale'
 
 interface KEVBadgeProps {
   kev?: CISAKEVData
@@ -27,15 +28,15 @@ export function KEVBadge({ kev, className }: KEVBadgeProps) {
           </p>
           <p>
             {t('findings.kev.added', 'Added: {date}', {
-              date: new Date(kev.date_added).toLocaleDateString(),
+              date: formatDate(new Date(kev.date_added)),
             })}
           </p>
           <p>
             {t('findings.kev.due', 'Due: {date}', {
-              date: new Date(kev.due_date).toLocaleDateString(),
+              date: formatDate(new Date(kev.due_date)),
             })}
             {kev.is_past_due && (
-              <span className="ms-1 font-bold">{t('findings.kev.pastDue', '(past due)')}</span>
+              <span className="ms-1 font-semibold">{t('findings.kev.pastDue', '(past due)')}</span>
             )}
           </p>
           {ransomware && (

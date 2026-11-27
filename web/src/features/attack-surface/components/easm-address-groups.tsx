@@ -53,6 +53,7 @@ import {
   undoDeclinedNetwork,
 } from '../api/address-decisions-api'
 import { refreshEASMSuggestions } from '../hooks/use-easm-suggestions'
+import { BreakText } from '@/features/shared/components/break-text'
 
 type TFn = ReturnType<typeof useTranslation>['t']
 
@@ -695,8 +696,8 @@ export function AddressGroupsCard({
                 key={i}
                 className={
                   plan && (plan.sharedAddrs.includes(i) || groupOf.get(i)?.shared)
-                    ? 'break-all text-warning'
-                    : 'break-all'
+                    ? 'break-words text-warning'
+                    : 'break-words'
                 }
               >
                 {i}
@@ -986,7 +987,9 @@ function GroupRow({
         />
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="break-all text-sm font-medium">{title}</span>
+            <span className="break-words text-sm font-medium">
+              <BreakText>{title}</BreakText>
+            </span>
             <span className="text-xs text-muted-foreground">
               {plural(t, `${K}.count`, count, '1 address', '{count} addresses')}
             </span>

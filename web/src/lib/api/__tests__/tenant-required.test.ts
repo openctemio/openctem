@@ -16,15 +16,15 @@ describe('401 TENANT_REQUIRED', () => {
     expect(isTenantRequired(undefined)).toBe(false)
   })
 
-  it('routes to /welcome once, however many requests are refused', () => {
+  it('routes to /account/organizations once, however many requests are refused', () => {
     const assign = vi.fn()
     expect(routeToWelcomeOnce({ pathname: '/findings', assign })).toBe(true)
     expect(routeToWelcomeOnce({ pathname: '/findings', assign })).toBe(false)
     expect(assign).toHaveBeenCalledTimes(1)
-    expect(assign).toHaveBeenCalledWith('/welcome')
+    expect(assign).toHaveBeenCalledWith('/account/organizations')
   })
 
-  it.each(['/welcome', '/account', '/account/security'])(
+  it.each(['/account/organizations', '/account', '/account/security'])(
     'never redirects from the account space (%s)',
     (pathname) => {
       const assign = vi.fn()

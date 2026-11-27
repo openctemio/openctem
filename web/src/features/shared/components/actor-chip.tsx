@@ -16,12 +16,15 @@
 import useSWR from 'swr'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useTranslation } from '@/context/i18n-provider'
+import { EmptyCell } from './empty-cell'
 import { useTenant } from '@/context/tenant-provider'
 import type { MemberListResponse } from '@/features/organization/types/member.types'
 import { fetcher } from '@/lib/api/client'
 import { tenantEndpoints } from '@/lib/api/endpoints'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
+import { breakAtSeparators } from './break-text'
+import { formatDateTime } from '@/lib/app-locale'
 
 export interface ActorRef {
   kind?: 'user' | 'system' | string
@@ -163,7 +166,13 @@ export function ActorChip({ actor, at, className, compact }: ActorChipProps) {
   const needsLookup = ref?.kind === 'user' && !ref.name && !ref.former_member
   const lookup = useMemberName(ref?.id, needsLookup)
 
-  if (!ref) return <span className={cn('text-sm text-muted-foreground', className)}>-</span>
+  if (!ref)
+    return (
+      <EmptyCell
+        className={cn('text-sm', className)}
+        title={t('common.nobodyRecorded', 'Nobody recorded')}
+      />
+    )
 
   let label: string
   let system = false
@@ -185,19 +194,25 @@ export function ActorChip({ actor, at, className, compact }: ActorChipProps) {
     label = t('actor.former', 'Former member')
   }
 
-  const title = at ? `${label}, ${new Date(at).toLocaleString()}` : label
+  const title = at ? `${label}, ${formatDateTime(new Date(at))}` : label
   return (
     <span
       className={cn('inline-flex min-w-0 items-center gap-1.5 text-sm', className)}
       title={title}
+      // The name wraps to two lines at most; past that it ends in an ellipsis
+      // with the full name as the title.
+      data-cut-tooltip=""
       data-actor-kind={system ? 'system' : 'user'}
     >
       {!compact && (
         <Avatar className="h-5 w-5 shrink-0">
+          {/* i18n-ok: OC is the product's two-letter mark, not prose */}
           <AvatarFallback className="text-[10px]">{system ? 'OC' : initials(label)}</AvatarFallback>
         </Avatar>
       )}
-      <span className={cn('truncate', system && 'text-muted-foreground')}>{label}</span>
+      <span className={cn('line-clamp-2 min-w-0 break-words', system && 'text-muted-foreground')}>
+        {breakAtSeparators(label)}
+      </span>
     </span>
   )
 }

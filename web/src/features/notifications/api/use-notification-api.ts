@@ -35,6 +35,10 @@ export interface UserNotification {
   actor_id?: string
   is_read: boolean
   created_at: string
+  /** Stable code of title and body, rendered from the serverText catalog (absent on older notices). */
+  message_code?: string
+  /** Typed values of message_code. */
+  message_params?: Record<string, unknown>
 }
 
 export interface NotificationListResponse {

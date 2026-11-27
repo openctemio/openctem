@@ -20,7 +20,7 @@ import type { EpssPoint } from '../types/list'
 export function EpssSparkline({ points }: { points: EpssPoint[] | undefined }) {
   const series = useMemo(() => epssSeries(points), [points])
   if (series.length < 2) return null
-  return <Sparkline points={series} unit="percent" ends={false} className="w-16" height={16} />
+  return <Sparkline points={series} unit="percent" ends={false} className="w-12" height={16} />
 }
 
 /** The vulnerability page's card: the chart, or why there is none. */

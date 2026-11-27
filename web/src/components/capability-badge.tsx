@@ -92,9 +92,12 @@ function CapabilityBadgeComponent({
   size = 'default',
   className,
 }: CapabilityBadgeProps) {
+  const { t } = useTranslation()
   const { getDisplayName, getColor, getIcon } = useCapabilityMetadata()
 
-  const displayName = getDisplayName(name)
+  // A capability contract the workflow catalog names in both languages
+  // ("discover.subdomains"), else the registry's name, else the key in words.
+  const displayName = t(`workflowStages.capability.${name}`, getDisplayName(name))
   const color = getColor(name)
   const iconName = getIcon(name)
 

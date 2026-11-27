@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { DashboardView } from '../components/dashboard-view'
 import type { DashboardData } from '../api/widget-data'
 
@@ -96,10 +96,22 @@ describe('DashboardView', () => {
     expect(cell.style.getPropertyValue('--span')).toBe('span 4 / span 4')
     expect(cell.style.getPropertyValue('--span-sm')).toBe('span 2 / span 2')
     expect(cell.className).toContain('xl:[grid-column:var(--span)]')
-    // The stored height applies from 640px; on a phone rows fit their content.
+    // The stored height places the widget from 640px; on a phone rows fit their content.
     expect(cell.style.gridRow).toBe('')
     expect(cell.className).toContain('sm:[grid-row:var(--row-span)]')
     expect((cell.parentElement as HTMLElement).style.gridAutoRows).toBe('')
+  })
+
+  it('sets no row floor: a widget is as tall as its content at every width', () => {
+    // A 128 px floor per stored row left the CTEM loop (stored two rows tall)
+    // 120 px of empty card under its tiles.
+    const loop = { ...stat('w_loop', 'ctem.loop'), w: 12, h: 2 }
+    const { container } = render(
+      <DashboardView dashboard={{ layout: [loop], columns: 4 }} data={undefined} loading={false} />
+    )
+    const grid = container.querySelector('[data-columns]') as HTMLElement
+    expect(grid.className).not.toMatch(/grid-auto-rows|auto-rows-/)
+    expect(grid.style.getPropertyValue('--row')).toBe('')
   })
 })
 
@@ -291,11 +303,88 @@ describe('DashboardView module awareness', () => {
     expect(screen.getByText('4')).toBeInTheDocument()
   })
 
-  it('still shows a widget that is unsupported for another reason', () => {
-    render(
+  it('hides a widget the viewer may not read (no lock card on the page)', () => {
+    const { container } = render(
       <DashboardView dashboard={{ layout, columns: 2 }} data={data('forbidden')} loading={false} />
     )
+    expect(screen.queryByText('Emerging threats affecting you')).toBeNull()
+    expect(screen.queryByText(/permission to read this data/)).toBeNull()
+    expect(container.querySelector('[data-widget-index="0"]')).toBeNull()
+    expect(screen.getByText('KEV on your assets')).toBeInTheDocument()
+  })
+
+  it('still shows a widget that is unsupported for another reason', () => {
+    render(
+      <DashboardView
+        dashboard={{ layout, columns: 2 }}
+        data={data('legacy_tile')}
+        loading={false}
+      />
+    )
     expect(screen.getByText('Emerging threats affecting you')).toBeInTheDocument()
-    expect(screen.getByText(/permission to read this data/)).toBeInTheDocument()
+  })
+
+  it('says so when every widget is hidden, instead of a blank page', () => {
+    render(
+      <DashboardView
+        dashboard={{ layout: [layout[0]], columns: 2 }}
+        data={data('forbidden')}
+        loading={false}
+      />
+    )
+    expect(screen.getByText(/Nothing on this dashboard is available to you/)).toBeInTheDocument()
+  })
+})
+
+describe('DashboardView on a phone', () => {
+  const many = Array.from({ length: 8 }, (_, i) => stat(`w_${i}`, 'intel.kev_open'))
+  const filled = {
+    dashboard_id: 'd',
+    scope: 'personal',
+    restricted: false,
+    facts_built_at: 'x',
+    computed_at: new Date().toISOString(),
+    stale: false,
+    widgets: many.map((_, i) => ({
+      id: `w_${i}`,
+      index: i,
+      widget_type: 'metric',
+      state: 'ready',
+      shape: 'scalar',
+      metric: 'intel.kev_open',
+      scalar: { value: i },
+    })),
+  } as unknown as DashboardData
+
+  it('folds the widgets after the first five behind one button that names how many', () => {
+    const { container } = render(
+      <DashboardView dashboard={{ layout: many, columns: 2 }} data={filled} loading={false} />
+    )
+    const folded = () =>
+      Array.from(container.querySelectorAll('[data-widget-index]')).filter((el) =>
+        el.className.includes('max-sm:hidden')
+      ).length
+    expect(folded()).toBe(3)
+    const more = screen.getByRole('button', { name: 'More widgets on this dashboard (3)' })
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    // Only on a phone: from 640px every widget shows and the button is hidden.
+    expect(more.className).toContain('sm:hidden')
+    fireEvent.click(more)
+    expect(folded()).toBe(0)
+    expect(screen.getByRole('button', { name: 'Show fewer widgets' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    )
+  })
+
+  it('has no fold button when five widgets or fewer show', () => {
+    render(
+      <DashboardView
+        dashboard={{ layout: many.slice(0, 5), columns: 2 }}
+        data={filled}
+        loading={false}
+      />
+    )
+    expect(screen.queryByRole('button', { name: /More widgets/ })).toBeNull()
   })
 })

@@ -8,6 +8,11 @@ const state = vi.hoisted(() => ({
   assetLoading: false,
   error: undefined as unknown,
   mutate: vi.fn(),
+  tab: undefined as string | undefined,
+  relationshipsOn: true,
+  relatedTotal: 0,
+  webItems: [] as unknown[],
+  primary: false,
 }))
 
 vi.mock('next/navigation', () => ({
@@ -25,21 +30,33 @@ vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   usePermissions: () => ({ can: () => state.canRead }),
 }))
-vi.mock('@/features/assets', () => ({
+vi.mock('@/features/assets/hooks/use-assets', () => ({
   useAssetPage: () => ({
     asset: state.asset,
     isLoading: state.assetLoading,
     error: state.error,
     mutate: state.mutate,
   }),
-  AssetAttributeSourcesSection: () => null,
-  AssetFreshnessSection: () => null,
-  AssetCoverageSection: () => null,
-  AssetAttributionSection: () => null,
-  AssetLineageSection: () => null,
-  AssetIdentitySections: () => null,
-  AssetTimeline: () => null,
 }))
+vi.mock('@/features/assets/components/asset-attribute-sources-section', () => ({
+  AssetAttributeSourcesSection: () => null,
+}))
+vi.mock('@/features/assets/components/asset-freshness-section', () => ({
+  AssetFreshnessSection: () => null,
+}))
+vi.mock('@/features/assets/components/asset-coverage-section', () => ({
+  AssetCoverageSection: () => null,
+}))
+vi.mock('@/features/assets/components/asset-attribution-section', () => ({
+  AssetAttributionSection: () => null,
+}))
+vi.mock('@/features/assets/components/asset-lineage-section', () => ({
+  AssetLineageSection: () => null,
+}))
+vi.mock('@/features/assets/components/asset-identity-sections', () => ({
+  AssetIdentitySections: () => null,
+}))
+vi.mock('@/features/assets/components/asset-timeline', () => ({ AssetTimeline: () => null }))
 vi.mock('@/features/exploration/components/asset-next-steps', () => ({
   AssetNextSteps: () => null,
 }))
@@ -50,15 +67,92 @@ vi.mock('@/features/assets/components/resolved-ports-section', () => ({
   hasResolvedPorts: (type: string) => type === 'domain' || type === 'subdomain',
   ResolvedPortsSection: () => <section>resolved-ports</section>,
 }))
-vi.mock('@/features/asset-lifecycle', () => ({
+vi.mock('@/features/asset-lifecycle/components/asset-status-badge', () => ({
   AssetStatusBadge: () => null,
+}))
+vi.mock('@/features/asset-lifecycle/components/asset-liveness-badge', () => ({
   AssetLivenessBadge: () => null,
 }))
-vi.mock('@/features/scan-windows', () => ({ AssetScanWindowCard: () => null }))
-vi.mock('@/features/attack-surface', () => ({ AssetWebEvidenceCard: () => null }))
+vi.mock('@/features/scan-windows/components/asset-scan-window-card', () => ({
+  AssetScanWindowCard: () => null,
+}))
+vi.mock('@/features/attack-surface/components/asset-web-evidence-card', () => ({
+  AssetWebEvidenceCard: () => null,
+}))
 vi.mock('@/features/repositories/components/repository-workspace', () => ({
   RepositoryWorkspace: () => null,
 }))
+vi.mock('@/features/assets/components/asset-owners-tab', () => ({
+  AssetOwnersTab: () => <section>owners-tab</section>,
+}))
+vi.mock('@/features/assets/components/asset-relationships-tab', () => ({
+  AssetRelationshipsTab: () => <section>relationships-tab</section>,
+}))
+vi.mock('@/features/assets/components/asset-findings', () => ({
+  AssetFindings: ({ findingCount }: { findingCount: number }) => (
+    <section>findings-tab {findingCount}</section>
+  ),
+}))
+vi.mock('@/features/assets/components/technologies/asset-technologies-tab', () => ({
+  AssetTechnologiesTab: () => <section>technologies-tab</section>,
+}))
+vi.mock('@/features/assets/components/key-facts', () => ({
+  KeyFactsSection: () => <section>key-facts</section>,
+}))
+vi.mock('@/features/assets/components/asset-overview-sections', () => ({
+  RiskSummarySection: ({ onViewFindings }: { onViewFindings?: () => void }) => (
+    <section>
+      risk-summary
+      <button type="button" onClick={onViewFindings}>
+        View findings
+      </button>
+    </section>
+  ),
+}))
+vi.mock('@/features/assets/components/asset-page-actions', () => ({
+  useAssetPageActions: () => ({
+    primary: state.primary ? <button type="button">Scan now</button> : null,
+    menu: state.primary ? [{ id: 'edit', label: 'Edit', onSelect: () => {} }] : [],
+    dialogs: null,
+  }),
+  useAssetScanGate: () => ({ canScan: state.primary, canExclude: false, refresh: () => {} }),
+}))
+vi.mock('@/features/assets/hooks/use-related-assets', () => ({
+  useRelatedAssets: (id: string | null) => ({
+    total: id ? state.relatedTotal : 0,
+    isLoading: false,
+  }),
+}))
+vi.mock('@/features/attack-surface/hooks/use-web-evidence', () => ({
+  useWebEvidence: () => ({ items: state.webItems, isLoading: false }),
+}))
+vi.mock('@/features/integrations/api/use-tenant-modules', () => ({
+  useModuleEnabled: (id: string) => id === 'relationships' && state.relationshipsOn,
+}))
+vi.mock('@/features/web-surface/components/origin-web-section', () => ({
+  isWebOriginType: (type?: string, subType?: string | null) =>
+    type === 'http_service' || type === 'website' || (type === 'service' && subType === 'http'),
+  OriginWebSection: () => <section>origin-web</section>,
+}))
+vi.mock('@/features/web-surface/components/origin-paths-tab', () => ({
+  OriginPathsTab: ({ canCrawl }: { canCrawl: boolean }) => (
+    <section>{canCrawl ? 'origin-paths-crawl' : 'origin-paths'}</section>
+  ),
+}))
+vi.mock('@/features/shared/components/settle-group', () => ({
+  SettleGroup: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useSettleSignal: () => {},
+}))
+vi.mock('@/features/shared/components/detail-sheet-layout', async (orig) => {
+  const React = await import('react')
+  return {
+    ...(await orig<typeof import('@/features/shared/components/detail-sheet-layout')>()),
+    useDetailTab: (_param: string, values: readonly string[]) => {
+      const [raw, setRaw] = React.useState(state.tab ?? values[0])
+      return [values.includes(raw) ? raw : values[0], setRaw]
+    },
+  }
+})
 
 import AssetDetailPage from './page'
 
@@ -69,7 +163,29 @@ beforeEach(() => {
   state.assetLoading = false
   state.error = undefined
   state.mutate.mockReset()
+  state.tab = undefined
+  state.relationshipsOn = true
+  state.relatedTotal = 0
+  state.webItems = []
+  state.primary = false
 })
+
+const BASE = {
+  id: 'a1',
+  name: 'www.example.com',
+  status: 'active',
+  riskScore: 0,
+  riskScored: false,
+  findingCount: 0,
+  scope: 'external',
+  exposure: 'public',
+  criticality: 'high',
+  tags: [],
+}
+
+function tabNames() {
+  return screen.getAllByRole('tab').map((el) => el.textContent)
+}
 
 describe('/assets/[id]', () => {
   it('shows a skeleton, not "not found", while the tenant loads', () => {
@@ -134,11 +250,138 @@ describe('/assets/[id]', () => {
       tags: [],
     }
     state.asset = { ...base, type: 'subdomain' }
+    state.tab = 'ports'
     const { unmount } = render(<AssetDetailPage />)
     expect(screen.getByText('resolved-ports')).toBeInTheDocument()
     unmount()
     state.asset = { ...base, name: '203.0.113.10', type: 'ip_address' }
     render(<AssetDetailPage />)
     expect(screen.queryByText('resolved-ports')).toBeNull()
+    expect(screen.queryByRole('tab', { name: /Ports and services/ })).toBeNull()
+  })
+
+  it('follows the detail layout: one h1, properties, the tab strip with counts', () => {
+    state.asset = { ...BASE, type: 'subdomain', findingCount: 4, description: 'Front door' }
+    state.relatedTotal = 3
+    render(<AssetDetailPage />)
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('www.example.com')
+    expect(tabNames()).toEqual([
+      'Overview',
+      'Findings4',
+      'Relationships3',
+      'How we found this',
+      'Ports and services',
+      'Owners and access',
+      'Activity',
+    ])
+    const props = screen.getByRole('group', { name: 'Properties' })
+    expect(props).toHaveTextContent('Risk score')
+    expect(props).toHaveTextContent('4 open findings')
+    expect(props).toHaveTextContent('Front door')
+    expect(screen.getByRole('button', { name: 'More actions' })).toBeInTheDocument()
+  })
+
+  it('shows the risk score as its value only, and no filler block in Overview', () => {
+    state.asset = { ...BASE, type: 'subdomain', riskScore: 82, riskScored: true }
+    render(<AssetDetailPage />)
+    const props = screen.getByRole('group', { name: 'Properties' })
+    expect(props).toHaveTextContent('82')
+    expect(props).not.toHaveTextContent('Risk: 82')
+    expect(screen.queryByText('Looking for richer details?')).toBeNull()
+    // The way to the list stays in More.
+    expect(screen.getByRole('button', { name: 'More actions' })).toBeInTheDocument()
+  })
+
+  it('opens Owners and access and Relationships on their components', async () => {
+    state.asset = { ...BASE, type: 'domain' }
+    state.tab = 'owners'
+    const { unmount } = render(<AssetDetailPage />)
+    expect(await screen.findByText('owners-tab')).toBeInTheDocument()
+    unmount()
+    state.tab = 'relationships'
+    render(<AssetDetailPage />)
+    expect(await screen.findByText('relationships-tab')).toBeInTheDocument()
+  })
+
+  it('has no Relationships tab when the relationships module is off', () => {
+    state.asset = { ...BASE, type: 'domain' }
+    state.relationshipsOn = false
+    state.tab = 'relationships'
+    render(<AssetDetailPage />)
+    expect(screen.queryByRole('tab', { name: /Relationships/ })).toBeNull()
+    expect(screen.queryByText('relationships-tab')).toBeNull()
+    expect(screen.getByRole('tab', { name: /Overview/ })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('shows the Web tab for a web origin, or when a sensor kept web evidence', () => {
+    state.asset = { ...BASE, type: 'http_service' }
+    const { unmount } = render(<AssetDetailPage />)
+    expect(screen.getByRole('tab', { name: /Web/ })).toBeInTheDocument()
+    unmount()
+    state.asset = { ...BASE, name: '203.0.113.10', type: 'ip_address' }
+    const second = render(<AssetDetailPage />)
+    expect(screen.queryByRole('tab', { name: /^Web$/ })).toBeNull()
+    second.unmount()
+    state.webItems = [{ id: 'w1' }]
+    state.tab = 'web'
+    render(<AssetDetailPage />)
+    expect(screen.getByRole('tab', { name: /Web/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByText('origin-web')).toBeNull()
+  })
+
+  it('has a Paths tab for a web origin only, with Crawl following the scan gate', async () => {
+    state.asset = { ...BASE, type: 'service', subType: 'http' }
+    state.tab = 'paths'
+    state.primary = true
+    const { unmount } = render(<AssetDetailPage />)
+    expect(screen.getByRole('tab', { name: /Paths/ })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText('origin-paths-crawl')).toBeInTheDocument()
+    unmount()
+    state.asset = { ...BASE, name: '203.0.113.10', type: 'ip_address' }
+    render(<AssetDetailPage />)
+    expect(screen.queryByRole('tab', { name: /Paths/ })).toBeNull()
+  })
+
+  it('has a Technologies tab with its count only when probes found any', async () => {
+    state.asset = { ...BASE, type: 'subdomain' }
+    const { unmount } = render(<AssetDetailPage />)
+    expect(screen.queryByRole('tab', { name: /Technologies/ })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Findings' })).toBeInTheDocument()
+    unmount()
+    state.asset = {
+      ...BASE,
+      type: 'subdomain',
+      technologies: [
+        { name: 'nginx', version: '1.25', category: 'web_server' },
+        { name: 'react', category: 'framework' },
+      ],
+    }
+    state.tab = 'technologies'
+    render(<AssetDetailPage />)
+    expect(screen.getByRole('tab', { name: 'Technologies2' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
+    expect(await screen.findByText('technologies-tab')).toBeInTheDocument()
+  })
+
+  it('shows key facts and the risk summary in Overview; View findings opens the Findings tab', async () => {
+    state.asset = { ...BASE, type: 'subdomain', findingCount: 2 }
+    render(<AssetDetailPage />)
+    expect(screen.getByText('key-facts')).toBeInTheDocument()
+    expect(screen.getByText(/risk-summary/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'View findings' }))
+    expect(await screen.findByText('findings-tab 2')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Findings2' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it("puts the actions' main button in the header and the rest before the links in More", () => {
+    state.asset = { ...BASE, type: 'subdomain' }
+    state.primary = true
+    const { container } = render(<AssetDetailPage />)
+    const header = container.querySelector('[data-slot="page-header"]') as HTMLElement
+    expect(header).toContainElement(screen.getByRole('button', { name: 'Scan now' }))
+    expect(screen.getByRole('button', { name: 'More actions' })).toBeInTheDocument()
   })
 })

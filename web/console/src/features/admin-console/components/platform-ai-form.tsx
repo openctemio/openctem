@@ -4,9 +4,7 @@ import { useCallback, useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -14,9 +12,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
+import {
+  SettingsBlock,
+  SettingsField,
+  SettingsFieldGrid,
+  SettingsRow,
+  SettingsSaveBar,
+  SettingsSection,
+  SettingsSwitchRow,
+} from '@/features/shared'
 import { saveOrgAIPolicy, savePlatformAI, testPlatformAI } from '../api/use-platform-settings'
 import type { PlatformAISettings } from '../types'
 import {
@@ -65,6 +70,10 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
   const [policyConfirmOpen, setPolicyConfirmOpen] = useState(false)
   const [testing, setTesting] = useState(false)
 
+  // The provider the form starts from: the saved one, or the first offered
+  // when none is saved yet. Compared against it, a fresh form is not dirty.
+  const initialProvider = settings.provider || settings.providers[0] || ''
+
   // The saved values: on load, after a save and on Discard.
   const reset = useCallback(() => {
     setEnabled(settings.enabled)
@@ -88,7 +97,7 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
     .filter(Boolean)
   const dirty =
     enabled !== settings.enabled ||
-    provider !== settings.provider ||
+    provider !== initialProvider ||
     model.trim() !== settings.model ||
     (compat && (baseUrl.trim() !== settings.base_url || allowPrivate !== settings.allow_private)) ||
     models.join(',') !== settings.allowed_models.join(',') ||
@@ -167,64 +176,62 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('admin.ai.title', 'Platform AI provider')}</CardTitle>
-          <CardDescription>
-            {t(
-              'admin.ai.description',
-              'Organizations in platform AI mode send findings for AI triage to this provider with this key. It is a cost and a processor of their data, so it is off until you turn it on. Organizations can always use their own key instead.'
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {locked && (
+      <SettingsSection
+        framed
+        id="platform-ai"
+        title={t('admin.ai.title', 'Platform AI provider')}
+        description={t(
+          'admin.ai.description',
+          'Organizations in platform AI mode send findings for AI triage to this provider with this key. It is a cost and a processor of their data, so it is off until you turn it on. Organizations can always use their own key instead.'
+        )}
+        meta={<SettingChangedLine change={settings} />}
+      >
+        {locked && (
+          <SettingsBlock>
             <LockedByEnvironment envVar="ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY" />
+          </SettingsBlock>
+        )}
+        <SettingsSwitchRow
+          id={`${id}-enabled`}
+          label={t('admin.ai.enabled', 'Offer platform AI')}
+          hint={t(
+            'admin.ai.enabledHelp',
+            'Off: organizations in platform mode cannot run AI triage.'
           )}
-          <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
-            <Label htmlFor={`${id}-enabled`} className="grid gap-1 font-normal">
-              <span className="font-medium">{t('admin.ai.enabled', 'Offer platform AI')}</span>
-              <span className="text-sm text-muted-foreground">
-                {t(
-                  'admin.ai.enabledHelp',
-                  'Off: organizations in platform mode cannot run AI triage.'
-                )}
-              </span>
-            </Label>
-            <Switch
-              id={`${id}-enabled`}
-              checked={enabled}
-              onCheckedChange={setEnabled}
-              disabled={!editable}
-            />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-1.5">
-              <Label htmlFor={`${id}-provider`}>{t('admin.ai.provider', 'Provider')}</Label>
-              <Select value={provider} onValueChange={setProvider} disabled={!editable}>
-                <SelectTrigger id={`${id}-provider`}>
-                  <SelectValue placeholder={t('admin.ai.providerPick', 'Choose a provider')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {settings.providers.map((p) => (
-                    <SelectItem key={p} value={p}>
-                      {PROVIDER_LABEL[p] ? t(...PROVIDER_LABEL[p]) : p}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor={`${id}-model`}>{t('admin.ai.model', 'Model')}</Label>
-              <Input
-                id={`${id}-model`}
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                disabled={!editable}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </div>
+          checked={enabled}
+          onCheckedChange={setEnabled}
+          disabled={!editable}
+        />
+        <SettingsBlock>
+          <SettingsFieldGrid>
+            <SettingsField id={`${id}-provider`} label={t('admin.ai.provider', 'Provider')}>
+              {(control) => (
+                <Select value={provider} onValueChange={setProvider} disabled={!editable}>
+                  <SelectTrigger {...control}>
+                    <SelectValue placeholder={t('admin.ai.providerPick', 'Choose a provider')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {settings.providers.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {PROVIDER_LABEL[p] ? t(...PROVIDER_LABEL[p]) : p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </SettingsField>
+            <SettingsField id={`${id}-model`} label={t('admin.ai.model', 'Model')}>
+              {(control) => (
+                <Input
+                  {...control}
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  disabled={!editable}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              )}
+            </SettingsField>
             <SecretField
               label={t('admin.ai.key', 'API key')}
               isSet={settings.key_set && !providerChanged}
@@ -251,70 +258,49 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
               }
             />
             {compat && (
-              <div className="grid gap-1.5 sm:col-span-2">
-                <Label htmlFor={`${id}-base-url`}>{t('admin.ai.baseUrl', 'Base URL')}</Label>
+              <SettingsField
+                id={`${id}-base-url`}
+                label={t('admin.ai.baseUrl', 'Base URL')}
+                hint={t(
+                  'admin.ai.baseUrlHelp',
+                  "The server's API root, for example https://llm.example.com/v1. Works with Azure OpenAI, vLLM, Ollama, LiteLLM, OpenRouter and gateways."
+                )}
+              >
+                {(control) => (
+                  <Input
+                    {...control}
+                    type="url"
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    disabled={!editable}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                )}
+              </SettingsField>
+            )}
+            <SettingsField
+              id={`${id}-allowed-models`}
+              label={t('admin.ai.allowedModels', 'Allowed models')}
+              hint={t(
+                'admin.ai.allowedModelsHelp',
+                'Comma-separated. When set, the model above must be one of them. Leave empty to allow any.'
+              )}
+            >
+              {(control) => (
                 <Input
-                  id={`${id}-base-url`}
-                  type="url"
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
+                  {...control}
+                  value={allowedModels}
+                  onChange={(e) => setAllowedModels(e.target.value)}
                   disabled={!editable}
                   autoComplete="off"
                   spellCheck={false}
-                  aria-describedby={`${id}-base-url-help`}
                 />
-                <p id={`${id}-base-url-help`} className="text-sm text-muted-foreground">
-                  {t(
-                    'admin.ai.baseUrlHelp',
-                    "The server's API root, for example https://llm.example.com/v1. Works with Azure OpenAI, vLLM, Ollama, LiteLLM, OpenRouter and gateways."
-                  )}
-                </p>
-              </div>
-            )}
-            <div className="grid gap-1.5 sm:col-span-2">
-              <Label htmlFor={`${id}-allowed-models`}>
-                {t('admin.ai.allowedModels', 'Allowed models')}
-              </Label>
-              <Input
-                id={`${id}-allowed-models`}
-                value={allowedModels}
-                onChange={(e) => setAllowedModels(e.target.value)}
-                disabled={!editable}
-                autoComplete="off"
-                spellCheck={false}
-                aria-describedby={`${id}-allowed-models-help`}
-              />
-              <p id={`${id}-allowed-models-help`} className="text-sm text-muted-foreground">
-                {t(
-                  'admin.ai.allowedModelsHelp',
-                  'Comma-separated. When set, the model above must be one of them. Leave empty to allow any.'
-                )}
-              </p>
-            </div>
-          </div>
-          {compat && (
-            <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
-              <Label htmlFor={`${id}-allow-private`} className="grid gap-1 font-normal">
-                <span className="font-medium">
-                  {t('admin.ai.allowPrivate', 'Allow private addresses')}
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  {t(
-                    'admin.ai.allowPrivateHelp',
-                    "Lets the base URL be on a private network (10.x, 172.16-31.x, 192.168.x) and use http, for a self-hosted model. Loopback, link-local and cloud-metadata addresses stay blocked. Organizations' own providers never get this."
-                  )}
-                </span>
-              </Label>
-              <Switch
-                id={`${id}-allow-private`}
-                checked={allowPrivate}
-                onCheckedChange={setAllowPrivate}
-                disabled={!editable}
-              />
-            </div>
-          )}
+              )}
+            </SettingsField>
+          </SettingsFieldGrid>
           {incomplete && (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="text-dense text-destructive" role="alert">
               {compat
                 ? t(
                     'admin.ai.incompleteCompat',
@@ -326,83 +312,78 @@ export function PlatformAIForm({ settings, canEdit, onSaved }: PlatformAIFormPro
                   )}
             </p>
           )}
-          <SettingChangedLine change={settings} />
-          {canEdit && !locked && (
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              <Button
-                variant="outline"
-                onClick={() => void test()}
-                disabled={
-                  testing ||
-                  dirty ||
-                  !(settings.key_set || settings.provider === 'openai_compatible')
-                }
-              >
-                {testing && <Loader2 className="me-1.5 size-4 animate-spin" />}
-                {t('admin.ai.test', 'Test the key')}
-              </Button>
-              <SettingsSaveBar
-                className="basis-full"
-                dirty={dirty}
-                saveDisabled={incomplete}
-                onSave={() => setConfirmOpen(true)}
-                onDiscard={reset}
-              />
-            </div>
-          )}
-          {!canEdit && (
-            <p className="text-sm text-muted-foreground">
-              {t('admin.settings.superAdminOnly', 'Only a super admin can change this setting.')}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('admin.ai.policyTitle', "Organizations' own AI providers")}</CardTitle>
-          <CardDescription>
-            {t(
-              'admin.ai.policyDescription',
-              'Let organizations send their findings to their own AI provider with their own key (Settings > AI > Own provider). Their addresses must be public https; the private-address toggle above never applies to them.'
+        </SettingsBlock>
+        {compat && (
+          <SettingsSwitchRow
+            id={`${id}-allow-private`}
+            label={t('admin.ai.allowPrivate', 'Allow private addresses')}
+            hint={t(
+              'admin.ai.allowPrivateHelp',
+              "Lets the base URL be on a private network (10.x, 172.16-31.x, 192.168.x) and use http, for a self-hosted model. Loopback, link-local and cloud-metadata addresses stay blocked. Organizations' own providers never get this."
             )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
-            <Label htmlFor={`${id}-allow-org`} className="grid gap-1 font-normal">
-              <span className="font-medium">
-                {t('admin.ai.policyAllow', 'Allow organizations to use their own provider')}
-              </span>
-              <span className="text-sm text-muted-foreground">
-                {t(
-                  'admin.ai.policyAllowHelp',
-                  'Off: every organization on its own provider stops at its next call. It never falls back to the platform key.'
-                )}
-              </span>
-            </Label>
-            <Switch
-              id={`${id}-allow-org`}
-              checked={allowOrg}
-              onCheckedChange={setAllowOrg}
-              disabled={!canEdit}
-            />
-          </div>
-          {canEdit ? (
-            <div className="flex justify-end">
-              <Button
-                onClick={() => setPolicyConfirmOpen(true)}
-                disabled={allowOrg === settings.allow_org_provider}
-              >
-                {t('admin.ai.policySave', 'Save policy')}
+            checked={allowPrivate}
+            onCheckedChange={setAllowPrivate}
+            disabled={!editable}
+          />
+        )}
+        {/* Shown only when there is a saved key to test and nothing unsaved. */}
+        {canEdit &&
+          !locked &&
+          !dirty &&
+          (settings.key_set || settings.provider === 'openai_compatible') && (
+            <SettingsRow
+              label={t('admin.ai.test', 'Test the key')}
+              hint={t(
+                'admin.ai.testHint',
+                'Asks the provider whether it accepts the saved key. Save your changes first.'
+              )}
+            >
+              <Button variant="outline" onClick={() => void test()} disabled={testing}>
+                {testing && <Loader2 className="animate-spin" aria-hidden />}
+                {t('admin.ai.testButton', 'Test')}
               </Button>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {t('admin.settings.superAdminOnly', 'Only a super admin can change this setting.')}
-            </p>
+            </SettingsRow>
           )}
-        </CardContent>
-      </Card>
+      </SettingsSection>
+      {canEdit && !locked && (
+        <SettingsSaveBar
+          dirty={dirty}
+          saveDisabled={incomplete}
+          onSave={() => setConfirmOpen(true)}
+          onDiscard={reset}
+        />
+      )}
+      <SettingsSection
+        framed
+        id="org-ai-providers"
+        title={t('admin.ai.policyTitle', "Organizations' own AI providers")}
+        description={t(
+          'admin.ai.policyDescription',
+          'Let organizations send their findings to their own AI provider with their own key (Settings > AI > Own provider). Their addresses must be public https; the private-address toggle above never applies to them.'
+        )}
+      >
+        <SettingsSwitchRow
+          id={`${id}-allow-org`}
+          label={t('admin.ai.policyAllow', 'Allow organizations to use their own provider')}
+          hint={t(
+            'admin.ai.policyAllowHelp',
+            'Off: every organization on its own provider stops at its next call. It never falls back to the platform key.'
+          )}
+          checked={allowOrg}
+          onCheckedChange={setAllowOrg}
+          disabled={!canEdit}
+        />
+        {canEdit && allowOrg !== settings.allow_org_provider && (
+          <SettingsBlock className="flex-row justify-end">
+            <Button variant="ghost" onClick={() => setAllowOrg(settings.allow_org_provider)}>
+              {t('settings.saveBar.discard', 'Discard')}
+            </Button>
+            <Button onClick={() => setPolicyConfirmOpen(true)}>
+              {t('admin.ai.policySave', 'Save policy')}
+            </Button>
+          </SettingsBlock>
+        )}
+      </SettingsSection>
       <ReasonConfirmDialog
         open={policyConfirmOpen}
         onOpenChange={setPolicyConfirmOpen}

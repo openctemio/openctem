@@ -2,6 +2,7 @@
 
 import { Fragment, type ReactNode } from 'react'
 
+import { TEXT_LINK_CLASS } from '@/components/ui/text-link'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -20,7 +21,7 @@ interface LegalNoticeProps {
   className?: string
 }
 
-const linkClass = 'hover:text-primary underline underline-offset-4'
+const linkClass = TEXT_LINK_CLASS.inline
 
 const FALLBACKS = {
   signIn: {
@@ -44,19 +45,21 @@ export function LegalNotice({ kind, termsUrl = '', privacyUrl = '', className }:
   const links: Record<string, ReactNode> = {
     '{terms}': termsUrl ? (
       <a href={termsUrl} target="_blank" rel="noopener noreferrer" className={linkClass}>
-        {t('auth.legal.terms', 'Terms of Service')}
+        {t('auth.legal.terms', 'Terms of service')}
       </a>
     ) : null,
     '{privacy}': privacyUrl ? (
       <a href={privacyUrl} target="_blank" rel="noopener noreferrer" className={linkClass}>
-        {t('auth.legal.privacy', 'Privacy Policy')}
+        {t('auth.legal.privacy', 'Privacy policy')}
       </a>
     ) : null,
   }
   const text = t(`auth.legal.${kind}.${which}`, FALLBACKS[kind][which])
 
   return (
-    <p className={cn('text-muted-foreground px-8 text-center text-sm', className)}>
+    // data-slot: the entry frame hides its own footer links while this line
+    // shows them, so the same two links never appear twice on one screen.
+    <p data-slot="legal-notice" className={cn('text-cap text-muted-foreground', className)}>
       {text.split(/(\{terms\}|\{privacy\})/).map((part, i) => (
         <Fragment key={i}>{part in links ? links[part] : part}</Fragment>
       ))}

@@ -33,18 +33,22 @@ export function QueueFrame({
   children: ReactNode
 }) {
   const { t, locale } = useTranslation()
+  // The count is the list title row's; this line says only when the queue
+  // holds more than is on screen.
   const note =
     total > shown
       ? t('myWork.topOf', 'Top {shown} of {total}', {
           shown,
           total: formatCount(total, locale),
         })
-      : t('myWork.results', '{count} results', { count: total })
+      : null
   return (
     <section aria-label={label} className="min-w-0 overflow-hidden rounded-lg border bg-card">
       <div className="flex min-w-0 flex-wrap items-center gap-2 border-b px-4 py-2.5">
-        <div className="flex min-w-0 flex-1 basis-64 flex-wrap items-center gap-1.5">{toolbar}</div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        {/* The chips give way first, so the queue's action keeps the line's
+            end on a phone instead of a line of its own. */}
+        <div className="flex min-w-0 flex-1 basis-40 flex-wrap items-center gap-1.5">{toolbar}</div>
+        <div className="ms-auto flex shrink-0 flex-wrap items-center gap-2">
           <span className="text-meta text-muted-foreground tabular-nums" aria-live="polite">
             {note}
           </span>

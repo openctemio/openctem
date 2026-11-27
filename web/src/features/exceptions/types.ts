@@ -122,9 +122,9 @@ const plain: Translate = (_key, fallback = '') => fallback
 
 /** English fallbacks of exceptions.type.<type>; render with suppressionTypeLabel. */
 export const SUPPRESSION_TYPE_LABELS: Record<SuppressionType, string> = {
-  false_positive: 'False Positive',
-  accepted_risk: 'Accepted Risk',
-  wont_fix: "Won't Fix",
+  false_positive: 'False positive',
+  accepted_risk: 'Accepted risk',
+  wont_fix: "Won't fix",
 }
 
 /** English fallbacks of exceptions.status.<status>; render with suppressionStatusLabel. */

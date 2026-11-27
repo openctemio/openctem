@@ -366,8 +366,8 @@ function ItemActions({ record, item }: { record: FindingEvidenceItem; item: Evid
       <Button
         type="button"
         variant="ghost"
-        size="sm"
-        className="h-7 w-7 p-0"
+        size="icon-sm"
+        className="p-0"
         onClick={download}
         aria-label={t('findings.evidenceItems.downloadAria', 'Download the evidence (masked)')}
         title={t('findings.evidenceItems.downloadTitle', 'Download (masked)')}
@@ -694,7 +694,7 @@ function SecretChip({ placeholder }: { placeholder: string }) {
         className="inline-flex items-center gap-1 rounded border border-warning/50 bg-warning/10 px-1 align-baseline"
         data-testid="evidence-secret-revealed"
       >
-        <span className="break-all">{toDisplayText(value, 8192)}</span>
+        <span className="break-words">{toDisplayText(value, 8192)}</span>
         <button
           type="button"
           onClick={() => void onCopy()}

@@ -172,7 +172,7 @@ describe('SoftwareUpdatesPanel', () => {
     const onChanged = vi.fn()
     importReleaseFeed.mockResolvedValue(status())
     render(<SoftwareUpdatesPanel status={status()} canImport onChanged={onChanged} />)
-    const input = screen.getByLabelText('Release feed file (JSON, up to 256 KiB)')
+    const input = screen.getByLabelText('Release information file (up to 256 KiB)')
     const feed = { schema: 'openctem.io/release-bundle/v1', keyset: {}, feed: {} }
     await user.upload(
       input,

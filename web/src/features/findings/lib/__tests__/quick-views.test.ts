@@ -6,6 +6,7 @@ import {
   informationalHidden,
   knownQuickViews,
   quickViewHref,
+  quickViewLink,
   quickViewIsActive,
   withInformational,
   type QuickView,
@@ -31,6 +32,12 @@ describe('quickViewHref', () => {
     expect(quickViewHref(TRIAGE.params)).toBe('/findings?status=new&state=all')
     expect(quickViewHref(PENDING.params)).toBe('/findings?pending_approval=true&state=all')
     expect(quickViewHref(ACCEPTED.params)).toContain('state=all')
+  })
+
+  it('leads Pending approval to the approvals inbox and every other view to the list', () => {
+    expect(quickViewLink(PENDING)).toBe('/findings/approvals')
+    expect(quickViewLink(ACTIVE)).toBe('/findings?state=open')
+    expect(quickViewLink(TRIAGE)).toBe('/findings?status=new&state=all')
   })
 
   it('keeps a comma list of values intact', () => {
@@ -79,6 +86,9 @@ describe('quickViewIsActive', () => {
     ],
     ['closed', 'state=closed', CLOSED, true],
     ['closed is not Active', 'state=closed', ACTIVE, false],
+    // The practice is the list's scope, not a filter of the view.
+    ['a practice keeps the view: Active', 'practice=compliance', ACTIVE, true],
+    ['a practice keeps the view: Needs triage', 'practice=aspm&status=new&state=all', TRIAGE, true],
   ]
   for (const [name, search, v, want] of cases) {
     it(name, () => expect(quickViewIsActive(search, v)).toBe(want))

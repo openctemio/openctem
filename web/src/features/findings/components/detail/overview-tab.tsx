@@ -68,10 +68,13 @@ import { HUMAN_SOURCES, findingDescription } from '../../lib/finding-detail'
 import { FindingCodeLocation, codeLocationOf } from './finding-code-location'
 import { FindingIssueGroupSection } from './finding-issue-group-section'
 import { FindingIdentitySection } from './finding-identity-section'
+import { formatDate, formatDateTime } from '@/lib/app-locale'
 import { FindingAIReviewSection } from './finding-ai-review-section'
 
 interface OverviewTabProps {
   finding: FindingDetail
+  /** `false` when the page shows the scanner output elsewhere (its first tab). */
+  scannerOutput?: boolean
 }
 
 /** The latest completed AI triage of the finding (its own endpoint). */
@@ -88,8 +91,8 @@ function Mono({ children }: { children: React.ReactNode }) {
   return <span className="font-mono text-[13px] break-all">{children}</span>
 }
 
-export function OverviewTab({ finding }: OverviewTabProps) {
-  const { t, locale } = useTranslation()
+export function OverviewTab({ finding, scannerOutput = true }: OverviewTabProps) {
+  const { t } = useTranslation()
   const isHuman = HUMAN_SOURCES.has(finding.source)
 
   // Read from the AI triage endpoint, not from the first page of activities:
@@ -112,8 +115,6 @@ export function OverviewTab({ finding }: OverviewTabProps) {
   // controls in its own section: the description does not repeat them.
   const check = complianceCheckOf(finding)
   const descText = check && desc.text ? complianceDescriptionText(desc.text, check) : desc.text
-  const actualFromOutput =
-    !!check?.actualValue && check.actualValue === finding.scannerOutput?.text.trim()
   const adv = finding.advisory
   const hasContext =
     finding.confidence !== undefined ||
@@ -164,9 +165,7 @@ export function OverviewTab({ finding }: OverviewTabProps) {
 
       <FindingIssueGroupSection findingId={finding.id} />
 
-      {finding.scannerOutput && !actualFromOutput && (
-        <ScannerOutputSection output={finding.scannerOutput} />
-      )}
+      {scannerOutput && <FindingScannerOutput finding={finding} />}
 
       {finding.toolName === VERSION_MATCH_TOOL && (
         <VersionMatchPanel metadata={finding.metadata} locations={finding.locations} />
@@ -190,7 +189,7 @@ export function OverviewTab({ finding }: OverviewTabProps) {
             {extraAssets.map((a) => (
               <li key={a.id} className="flex items-center gap-2 text-sm">
                 <Badge variant="outline" className="text-xs">
-                  {findingAssetTypeLabel(a.type)}
+                  {findingAssetTypeLabel(a.type, t)}
                 </Badge>
                 {isLinkableAssetId(a.id) ? (
                   <Link
@@ -303,7 +302,7 @@ export function OverviewTab({ finding }: OverviewTabProps) {
                 <FindingLastSeenIn findingId={finding.id} />
               </DetailField>
               <DetailField label={t('findings.overviewTab.recorded', 'Recorded')}>
-                {new Date(finding.createdAt).toLocaleString(locale, {
+                {formatDateTime(new Date(finding.createdAt), {
                   dateStyle: 'medium',
                   timeStyle: 'short',
                 })}
@@ -319,12 +318,23 @@ export function OverviewTab({ finding }: OverviewTabProps) {
   )
 }
 
-function formatDay(iso: string, locale: string): string {
-  return new Date(iso).toLocaleDateString(locale, {
+function formatDay(iso: string, _locale: string): string {
+  return formatDate(new Date(iso), {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
   })
+}
+
+/**
+ * The scanner output of a finding, when it has one that its configuration
+ * check section does not already show as the actual value.
+ */
+export function FindingScannerOutput({ finding }: { finding: FindingDetail }) {
+  const check = complianceCheckOf(finding)
+  if (!finding.scannerOutput) return null
+  if (!!check?.actualValue && check.actualValue === finding.scannerOutput.text.trim()) return null
+  return <ScannerOutputSection output={finding.scannerOutput} />
 }
 
 /**
@@ -515,7 +525,7 @@ function IdentifiersSection({ finding }: { finding: FindingDetail }) {
         <DetailField label="OWASP">{finding.owasp}</DetailField>
         <DetailField label={t('findings.overviewTab.published', 'Published')}>
           {adv?.publishedAt
-            ? new Date(adv.publishedAt).toLocaleDateString(locale, {
+            ? formatDate(new Date(adv.publishedAt), {
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric',
@@ -573,7 +583,7 @@ function AIFalsePositiveLikelihood({ data }: { data: AITriageSummaryData }) {
 
 /** The latest completed AI triage. */
 function AITriageSummary({ data }: { data: AITriageSummaryData }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   return (
     <DetailSection
       title={t('findings.overviewTab.aiAnalysis', 'AI analysis')}
@@ -581,7 +591,7 @@ function AITriageSummary({ data }: { data: AITriageSummaryData }) {
       actions={
         <span className="flex items-center gap-2 text-xs text-muted-foreground">
           <AIBadge source="ai_builtin" />
-          {new Date(data.createdAt).toLocaleDateString(locale, {
+          {formatDate(new Date(data.createdAt), {
             month: 'short',
             day: 'numeric',
             hour: '2-digit',

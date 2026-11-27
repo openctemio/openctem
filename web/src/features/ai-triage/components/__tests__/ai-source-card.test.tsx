@@ -52,7 +52,7 @@ describe('AI source', () => {
     expect(screen.queryByLabelText('API key')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('radio', { name: /Own provider/ }))
     expect(screen.getByLabelText('API key')).toHaveAttribute('type', 'password')
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Save changes/ })).toBeDisabled()
   })
 
   it('shows a saved key only as set, last four and date, never the key', () => {
@@ -84,10 +84,11 @@ describe('AI source', () => {
         onSaved={onSaved}
       />
     )
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    // Nothing changed yet: no save bar, no idle Save.
+    expect(screen.queryByRole('button', { name: /Save changes/ })).toBeNull()
     await userEvent.type(screen.getByLabelText('Model'), 'llama3')
     await userEvent.type(screen.getByLabelText('Base URL'), 'https://llm.example.com/v1')
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(screen.getByRole('button', { name: /Save changes/ }))
     await waitFor(() =>
       expect(update).toHaveBeenCalledWith({
         source: 'own',
@@ -114,7 +115,7 @@ describe('AI source', () => {
       />
     )
     await userEvent.type(screen.getByLabelText('API key'), 'sk-fake-secret-0123456789')
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await userEvent.click(screen.getByRole('button', { name: /Save changes/ }))
     await waitFor(() =>
       expect(update).toHaveBeenCalledWith(
         expect.objectContaining({ api_key: 'sk-fake-secret-0123456789' })
@@ -167,7 +168,7 @@ describe('AI source', () => {
     await userEvent.click(screen.getByRole('combobox', { name: 'Provider' }))
     await userEvent.click(await screen.findByRole('option', { name: 'Google Gemini' }))
     expect(screen.getByText(/saved key belongs to the previous provider/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Save changes/ })).toBeDisabled()
   })
 
   it('disables Own provider when the platform forbids it, and warns when it was in use', () => {
@@ -194,7 +195,7 @@ describe('AI source', () => {
         onSaved={vi.fn()}
       />
     )
-    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Save changes/ })).not.toBeInTheDocument()
     expect(screen.getByLabelText('API key')).toBeDisabled()
   })
 })

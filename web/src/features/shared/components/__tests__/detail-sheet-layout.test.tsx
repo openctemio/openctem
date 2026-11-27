@@ -13,6 +13,18 @@ import {
   type DetailMenuItem,
 } from '../detail-sheet-layout'
 
+// The phone drawer loads on demand in the app; these tests render it at once.
+vi.mock('next/dynamic', async () => {
+  const phone = await import('../detail-sheet-phone')
+  const actual = await vi.importActual<typeof import('next/dynamic')>('next/dynamic')
+  return {
+    default: (loader: () => Promise<unknown>, options?: object) =>
+      String(loader).includes('detail-sheet-phone')
+        ? phone.PhoneDrawer
+        : actual.default(loader as never, options as never),
+  }
+})
+
 function renderSheet(props: Partial<React.ComponentProps<typeof DetailHeader>> = {}) {
   const onClose = vi.fn()
   render(
@@ -46,10 +58,20 @@ describe('DetailHeader full page link', () => {
   })
 
   it('also lists it in the more menu', async () => {
-    renderSheet({ fullPageHref: '/assets/abc' })
+    renderSheet({
+      fullPageHref: '/assets/abc',
+      menu: [{ label: 'Rotate key', onSelect: vi.fn() }],
+    })
     await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
     const item = await screen.findByRole('menuitem', { name: 'Open full page' })
     expect(item).toHaveAttribute('href', '/assets/abc')
+  })
+
+  it('has no menu of its own when the link is the only entry', () => {
+    renderSheet({ fullPageHref: '/assets/abc' })
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Open full page' })).toBeNull()
+    expect(screen.getAllByRole('link', { name: 'Open full page' })).toHaveLength(1)
   })
 
   it('has no link without fullPageHref', () => {
@@ -85,9 +107,34 @@ describe('DetailSheet + DetailHeader', () => {
     expect(line.className).not.toContain('truncate')
   })
 
-  it('renders the action row', () => {
+  it('ends the meta line with the actions, never a row of their own', () => {
+    renderSheet({ meta: ['Scanner', '10.0.0.5'], actions: <button>Edit</button> })
+    const line = document.querySelector('[data-slot="detail-header-line"]') as HTMLElement
+    expect(within(line).getByText('Scanner')).toBeInTheDocument()
+    expect(within(line).getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+  })
+
+  it('moves the badges under the title beside the actions when there is no meta line', () => {
+    renderSheet({ badges: <span>Active</span>, actions: <button>Edit</button> })
+    const line = document.querySelector('[data-slot="detail-header-line"]') as HTMLElement
+    expect(within(line).getByText('Active')).toBeInTheDocument()
+    expect(within(line).getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+  })
+
+  it('puts the actions beside the header icons when there is nothing under the title', () => {
     renderSheet({ actions: <button>Edit</button> })
-    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument()
+    expect(document.querySelector('[data-slot="detail-header-line"]')).toBeNull()
+    const header = document.querySelector('[data-slot="detail-header"]') as HTMLElement
+    const close = within(header).getByRole('button', { name: 'Close' })
+    expect(close.parentElement).toContainElement(
+      within(header).getByRole('button', { name: 'Edit' })
+    )
+  })
+
+  it('keeps the meta line under the title without actions', () => {
+    renderSheet({ badges: <span>Active</span>, meta: ['Scanner'] })
+    expect(document.querySelector('[data-slot="detail-header-line"]')).toBeNull()
+    expect(screen.getByText('Active')).toBeInTheDocument()
   })
 
   it('closes from the close button', async () => {
@@ -117,7 +164,10 @@ describe('DetailSheet + DetailHeader', () => {
     ]
     renderSheet({ menu })
     await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
-    expect(await screen.findByRole('menuitem', { name: 'Delete' })).toHaveClass('text-destructive')
+    expect(await screen.findByRole('menuitem', { name: 'Delete' })).toHaveAttribute(
+      'data-variant',
+      'destructive'
+    )
     expect(screen.getByRole('separator')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('menuitem', { name: 'Rotate key' }))
     expect(rotate).toHaveBeenCalled()

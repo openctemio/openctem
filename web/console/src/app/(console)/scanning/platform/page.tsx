@@ -99,7 +99,7 @@ function NotAvailablePanel() {
   return (
     <Card data-testid="shared-sensors-unavailable">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
+        <CardTitle role="heading" aria-level={2} className="flex items-center gap-2 text-base">
           <Info className="size-4 text-muted-foreground" aria-hidden />
           {t(
             'admin.scanning.unavailable.title',
@@ -124,6 +124,38 @@ function NotAvailablePanel() {
   )
 }
 
+/**
+ * The page while the release keeps shared sensors closed: two tabs, one job
+ * each. Policy holds the notice and the domain-proof policy; Blocked names
+ * (`?tab=blocked`) opens on its exceptions list, then the blocked-names
+ * policy. A list never sits under the policy cards, where their lines would
+ * stand between the page's title and the list's first row.
+ */
+function ClosedLayout({ s }: { s: Scanning }) {
+  const { t } = useTranslation()
+  const [rawTab, setTab] = useUrlFilter('tab', 'policy')
+  const tab = rawTab === 'blocked' ? 'blocked' : 'policy'
+  return (
+    <Tabs value={tab} onValueChange={setTab}>
+      <TabsList>
+        <TabsTrigger value="policy">{t('admin.scanning.tab.policy', 'Policy')}</TabsTrigger>
+        <TabsTrigger value="blocked">
+          {t('admin.scanning.tab.blocked', 'Blocked names')}
+        </TabsTrigger>
+      </TabsList>
+      <TabsContent value="policy">
+        <PageStack>
+          <NotAvailablePanel />
+          <ProofPolicy s={s} />
+        </PageStack>
+      </TabsContent>
+      <TabsContent value="blocked">
+        <ScopeBlockedNamesPanel canEdit={s.canEditNames} />
+      </TabsContent>
+    </Tabs>
+  )
+}
+
 function SharedTabs({ s }: { s: Scanning }) {
   const { t } = useTranslation()
   const [rawTab, setTab] = useUrlFilter('tab', 'policy')
@@ -131,7 +163,8 @@ function SharedTabs({ s }: { s: Scanning }) {
   const { shared, zones, anomaly, egress, canEdit } = s
   return (
     <Tabs value={tab} onValueChange={setTab}>
-      <TabsList className="h-auto flex-wrap justify-start">
+      {/* One swipeable row on a phone (the kit's tab strip), never wrapped. */}
+      <TabsList>
         <TabsTrigger value="policy">{t('admin.scanning.tab.policy', 'Policy')}</TabsTrigger>
         <TabsTrigger value="blocked">
           {t('admin.scanning.tab.blocked', 'Blocked names')}
@@ -309,12 +342,12 @@ export default function PlatformScanningPage() {
             'Rules for the scans that run on the platform sensors and, when enabled, the shared sensor fleet.'
           )}
         />
-        {notAvailable ? (
-          <>
-            <NotAvailablePanel />
-            <ProofPolicy s={s} />
-            <ScopeBlockedNamesPanel canEdit={s.canEditNames} />
-          </>
+        {/* Until the setting is read the page does not know its layout: one
+            placeholder, so neither the tabs nor a table flash and move. */}
+        {!s.shared.data && !s.shared.error ? (
+          <Skeleton className="h-56 w-full" />
+        ) : notAvailable ? (
+          <ClosedLayout s={s} />
         ) : (
           <SharedTabs s={s} />
         )}

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 import { ConnectionsList } from '../components/connections-list'
 import { normalizePublisherHost } from '../lib/use-mcp-labels'
@@ -36,7 +37,7 @@ describe('ConnectionsList', () => {
       />
     )
     expect(screen.queryByText('No connected applications')).not.toBeInTheDocument()
-    expect(screen.getByText('Failed to load connected applications')).toBeInTheDocument()
+    expect(screen.getByText("Couldn't load connected applications")).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(onRetry).toHaveBeenCalled()
   })
@@ -58,10 +59,12 @@ describe('ConnectionsList', () => {
     // The owner column is the organization view only.
     expect(screen.queryByText('Alice')).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: /Disconnect/ }))
+    // One row menu, as on the other lists.
+    await userEvent.click(screen.getByRole('button', { name: 'Actions for Desk Assistant' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Disconnect/ }))
     expect(onRevoke).not.toHaveBeenCalled()
-    const buttons = await screen.findAllByRole('button', { name: /Disconnect/ })
-    fireEvent.click(buttons[buttons.length - 1])
+    const dialog = await screen.findByRole('alertdialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /Disconnect/ }))
     await waitFor(() => expect(onRevoke).toHaveBeenCalledWith('g1'))
   })
 
@@ -95,10 +98,37 @@ describe('ConnectionsList', () => {
         emptyDescription="none"
       />
     )
-    // One badge and one button: the scoped connection has neither.
+    // One badge and one menu item: the scoped connection has neither.
     expect(screen.getAllByText('All organization data')).toHaveLength(1)
-    fireEvent.click(screen.getByRole('button', { name: 'Limit to own data' }))
+    const menus = screen.getAllByRole('button', { name: 'Actions for Desk Assistant' })
+    await userEvent.click(menus[1])
+    expect(screen.queryByRole('menuitem', { name: 'Limit to own data' })).toBeNull()
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(menus[0])
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Limit to own data' }))
     await waitFor(() => expect(onScope).toHaveBeenCalledWith('g1'))
+  })
+
+  it('shows 20 rows, then more on request', async () => {
+    const many = Array.from({ length: 23 }, (_, i) => ({
+      ...conn,
+      id: `g${i}`,
+      client_name: `App ${i}`,
+    }))
+    render(
+      <ConnectionsList
+        connections={many}
+        isLoading={false}
+        onRevoke={vi.fn()}
+        emptyTitle="none"
+        emptyDescription="none"
+      />
+    )
+    expect(screen.getAllByRole('listitem')).toHaveLength(20)
+    expect(screen.getByText('20 of 23')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Show 3 more' }))
+    expect(screen.getAllByRole('listitem')).toHaveLength(23)
+    expect(screen.queryByRole('button', { name: /Show \d+ more/ })).toBeNull()
   })
 
   it('shows the empty state', () => {

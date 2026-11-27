@@ -33,7 +33,7 @@ import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { useToolAvailability, useToolsWithConfig } from '@/lib/api/tool-hooks'
 import {
-  TOOL_STATUS_META,
+  toolStatusLabel,
   availabilityByName,
   toolUnavailableReason,
 } from '@/features/tools/lib/availability'
@@ -129,6 +129,14 @@ interface NodePaletteProps {
   position?: 'left' | 'right'
 }
 
+/** Catalog key of a category display name: "IaC Security" -> iac_security. */
+function categoryKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+}
+
 export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProps) {
   const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = useState('')
@@ -220,8 +228,8 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
     return (
       <div
         className={cn(
-          'w-60 bg-muted/30 h-full flex flex-col items-center justify-center',
-          position === 'left' ? 'border-r' : 'border-l'
+          'flex flex-col bg-muted/30 max-md:h-2/5 max-md:w-full max-md:border-t md:h-full md:w-60 items-center justify-center',
+          position === 'left' ? 'md:border-r' : 'md:border-l'
         )}
       >
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -235,8 +243,8 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
     return (
       <div
         className={cn(
-          'w-60 bg-muted/30 h-full flex flex-col items-center justify-center p-4',
-          position === 'left' ? 'border-r' : 'border-l'
+          'flex flex-col bg-muted/30 max-md:h-2/5 max-md:w-full max-md:border-t md:h-full md:w-60 items-center justify-center p-4',
+          position === 'left' ? 'md:border-r' : 'md:border-l'
         )}
       >
         <AlertCircle className="h-6 w-6 text-destructive" />
@@ -250,8 +258,8 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
   return (
     <div
       className={cn(
-        'w-60 bg-muted/30 h-full flex flex-col',
-        position === 'left' ? 'border-r' : 'border-l'
+        'flex flex-col bg-muted/30 max-md:h-2/5 max-md:w-full max-md:border-t md:h-full md:w-60',
+        position === 'left' ? 'md:border-r' : 'md:border-l'
       )}
     >
       {/* Header */}
@@ -264,7 +272,7 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
             aria-label={t('workflowStages.palette.search')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-8 ps-8 text-xs"
+            className="ps-8 text-xs"
           />
         </div>
         <p className="text-[10px] text-muted-foreground mt-2">
@@ -294,15 +302,21 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                 {/* Category Header */}
                 <button
                   onClick={() => toggleCategory(category)}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/50 text-sm font-medium"
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/50 text-start text-sm font-medium"
                 >
                   {isExpanded ? (
-                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   ) : (
-                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   )}
-                  <span className="truncate">{category}</span>
-                  <span className="ms-auto text-xs text-muted-foreground">{tools.length}</span>
+                  {/* A category's name wraps rather than end in an ellipsis
+                      ("Infrastructure code sec…" lost its meaning). */}
+                  <span className="min-w-0 break-words">
+                    {t(`workflowStages.palette.category.${categoryKey(category)}`, category)}
+                  </span>
+                  <span className="ms-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+                    {tools.length}
+                  </span>
                 </button>
 
                 {/* Tools in Category */}
@@ -315,7 +329,8 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                       const isAvailable = toolWithConfig.is_available === true
                       const avail = availability.get(tool.name)
                       const unavailableReason =
-                        toolUnavailableReason(avail) ?? t('workflowStages.palette.noOnlineSensor')
+                        toolUnavailableReason(avail, t) ??
+                        t('workflowStages.palette.noOnlineSensor')
                       const logoSrc = safeImageSrc(tool.logo_url)
 
                       return (
@@ -400,7 +415,7 @@ export function NodePalette({ onDragStart, position = 'right' }: NodePaletteProp
                                   state="down"
                                   label={
                                     avail
-                                      ? TOOL_STATUS_META[avail.status].label
+                                      ? toolStatusLabel(avail.status, t)
                                       : t('workflowStages.palette.noSensor')
                                   }
                                 />

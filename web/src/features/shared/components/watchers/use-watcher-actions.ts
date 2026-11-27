@@ -19,10 +19,11 @@ import { useParticipants, type Watcher, type WorkItemKind } from '../../api/use-
 /** Long enough to notice a mis-tap and reach Undo (research/213: at least 8 s). */
 export const UNDO_TOAST_MS = 10_000
 
-export function useWatcherActions(kind: WorkItemKind, itemId: string) {
+export function useWatcherActions(kind: WorkItemKind, itemId: string, enabled = true) {
   const { t } = useTranslation()
   const p = useParticipants(kind, itemId, {
     errorMessage: t('findings.people.updateFailed', 'Could not update watchers'),
+    enabled,
   })
   const { setWatching: put, addWatchers, removeWatcher } = p
   const undoLabel = t('findings.people.undo', 'Undo')

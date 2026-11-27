@@ -72,7 +72,7 @@ describe('AI assistants settings page', () => {
     expect(screen.queryByText('status strip')).toBeNull()
     expect(
       screen.getByRole('link', { name: /See and disconnect your connected applications/ })
-    ).toHaveAttribute('href', '/account/connected-apps')
+    ).toHaveAttribute('href', '/settings/me/connected-apps')
     expect(screen.getByText(/oct_YOUR_KEY_HERE/)).toBeInTheDocument()
   })
 

@@ -33,6 +33,7 @@ import {
   FlaskConical,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { BusinessUnitField } from '../business-unit-field'
 import type { CreateGroupFormData } from './types'
 import type { Environment, Criticality } from '@/features/shared/types'
@@ -44,31 +45,31 @@ interface BasicInfoStepProps {
 
 const ENVIRONMENTS: {
   value: Environment
-  label: string
+  labelKey: string
   icon: typeof Server
   color: string
 }[] = [
   {
     value: 'production',
-    label: 'Production',
+    labelKey: 'assetGroups.environment.production',
     icon: Server,
     color: 'text-foreground border-border bg-muted',
   },
   {
     value: 'staging',
-    label: 'Staging',
+    labelKey: 'assetGroups.environment.staging',
     icon: FlaskConical,
     color: 'text-foreground border-border bg-muted',
   },
   {
     value: 'development',
-    label: 'Development',
+    labelKey: 'assetGroups.environment.development',
     icon: Code,
     color: 'text-foreground border-border bg-muted',
   },
   {
     value: 'testing',
-    label: 'Testing',
+    labelKey: 'assetGroups.environment.testing',
     icon: TestTube,
     color: 'text-foreground border-border bg-muted',
   },
@@ -76,40 +77,40 @@ const ENVIRONMENTS: {
 
 const CRITICALITIES: {
   value: Criticality
-  label: string
-  description: string
+  labelKey: string
+  descriptionKey: string
   icon: typeof AlertTriangle
   color: string
   bgColor: string
 }[] = [
   {
     value: 'critical',
-    label: 'Critical',
-    description: 'Business critical systems - immediate response required',
+    labelKey: 'assetGroups.basic.crit.critical',
+    descriptionKey: 'assetGroups.basic.crit.criticalDesc',
     icon: AlertTriangle,
     color: 'text-foreground',
     bgColor: 'border-primary bg-primary/5',
   },
   {
     value: 'high',
-    label: 'High',
-    description: 'Important business functions - prioritized attention',
+    labelKey: 'assetGroups.basic.crit.high',
+    descriptionKey: 'assetGroups.basic.crit.highDesc',
     icon: AlertCircle,
     color: 'text-foreground',
     bgColor: 'border-primary bg-primary/5',
   },
   {
     value: 'medium',
-    label: 'Medium',
-    description: 'Standard business operations - normal priority',
+    labelKey: 'assetGroups.basic.crit.medium',
+    descriptionKey: 'assetGroups.basic.crit.mediumDesc',
     icon: Info,
     color: 'text-foreground',
     bgColor: 'border-primary bg-primary/5',
   },
   {
     value: 'low',
-    label: 'Low',
-    description: 'Non-essential systems - scheduled maintenance',
+    labelKey: 'assetGroups.basic.crit.low',
+    descriptionKey: 'assetGroups.basic.crit.lowDesc',
     icon: MinusCircle,
     color: 'text-foreground',
     bgColor: 'border-primary bg-primary/5',
@@ -134,6 +135,7 @@ const SUGGESTED_TAGS = [
 ]
 
 export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
+  const { t } = useTranslation()
   const [tagInput, setTagInput] = useState('')
   const [businessContextOpen, setBusinessContextOpen] = useState(true)
 
@@ -150,7 +152,7 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
 
   const handleRemoveTag = useCallback(
     (tagToRemove: string) => {
-      onChange({ tags: data.tags.filter((t) => t !== tagToRemove) })
+      onChange({ tags: data.tags.filter((x) => x !== tagToRemove) })
     },
     [data.tags, onChange]
   )
@@ -174,32 +176,35 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
             <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
               <Building2 className="h-4 w-4 text-primary" />
             </div>
-            Group Identity
+            {t('assetGroups.basic.identity', 'Group identity')}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Group Name */}
           <div className="space-y-2">
             <Label htmlFor="name" className="text-sm">
-              Group Name <span className="text-destructive">*</span>
+              {t('assetGroups.basic.name', 'Group name')}{' '}
+              <span className="text-destructive">*</span>
             </Label>
             <Input
               id="name"
-              placeholder="e.g., Payment Gateway Services"
+              placeholder={t('assetGroups.basic.namePlaceholder', 'e.g., Payment Gateway Services')}
               value={data.name}
               onChange={(e) => onChange({ name: e.target.value })}
-              className="h-10"
             />
           </div>
 
           {/* Description */}
           <div className="space-y-2">
             <Label htmlFor="description" className="text-sm">
-              Description
+              {t('assetGroups.basic.description', 'Description')}
             </Label>
             <Textarea
               id="description"
-              placeholder="Describe the purpose and scope of this asset group..."
+              placeholder={t(
+                'assetGroups.basic.descriptionPlaceholder',
+                'Describe the purpose and scope of this asset group...'
+              )}
               value={data.description}
               onChange={(e) => onChange({ description: e.target.value })}
               rows={2}
@@ -213,7 +218,8 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium">
-            Environment <span className="text-destructive">*</span>
+            {t('assetGroups.bulk.environment', 'Environment')}{' '}
+            <span className="text-destructive">*</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -234,7 +240,7 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
                   )}
                 >
                   <Icon className={cn('h-5 w-5', isSelected && 'text-foreground')} />
-                  <span className="text-xs font-medium">{env.label}</span>
+                  <span className="text-xs font-medium">{t(env.labelKey)}</span>
                 </button>
               )
             })}
@@ -246,7 +252,8 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium">
-            Criticality <span className="text-destructive">*</span>
+            {t('assetGroups.bulk.criticality', 'Criticality')}{' '}
+            <span className="text-destructive">*</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -281,10 +288,10 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
                         isSelected ? crit.color : 'text-foreground'
                       )}
                     >
-                      {crit.label}
+                      {t(crit.labelKey)}
                     </div>
-                    <div className="text-xs text-muted-foreground line-clamp-1">
-                      {crit.description}
+                    <div className="text-xs text-muted-foreground break-words">
+                      {t(crit.descriptionKey)}
                     </div>
                   </div>
                   {isSelected && (
@@ -307,9 +314,9 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
                   <div className="h-8 w-8 rounded-lg bg-muted flex items-center justify-center">
                     <Building2 className="h-4 w-4 text-muted-foreground" />
                   </div>
-                  Business Context
+                  {t('assetGroups.basic.businessContext', 'Business context')}
                   <Badge variant="outline" className="ms-2 text-xs font-normal">
-                    Optional
+                    {t('assetGroups.basic.optional', 'Optional')}
                   </Badge>
                 </div>
                 <ChevronDown
@@ -327,7 +334,7 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
               <div className="space-y-2">
                 <Label htmlFor="businessUnit" className="text-sm flex items-center gap-2">
                   <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                  Business Unit
+                  {t('assetGroups.detail.info.businessUnit', 'Business unit')}
                 </Label>
                 <BusinessUnitField
                   value={data.businessUnit}
@@ -341,11 +348,11 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
                 <div className="space-y-2">
                   <Label htmlFor="owner" className="text-sm flex items-center gap-2">
                     <User className="h-3.5 w-3.5 text-muted-foreground" />
-                    Owner
+                    {t('assetGroups.detail.owner', 'Owner')}
                   </Label>
                   <Input
                     id="owner"
-                    placeholder="e.g., Nguyen Van A"
+                    placeholder={t('assetGroups.basic.ownerPlaceholder', 'e.g., Nguyen Van A')}
                     value={data.owner}
                     onChange={(e) => onChange({ owner: e.target.value })}
                   />
@@ -353,12 +360,15 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
                 <div className="space-y-2">
                   <Label htmlFor="ownerEmail" className="text-sm flex items-center gap-2">
                     <Mail className="h-3.5 w-3.5 text-muted-foreground" />
-                    Owner Email
+                    {t('assetGroups.basic.ownerEmail', 'Owner email')}
                   </Label>
                   <Input
                     id="ownerEmail"
                     type="email"
-                    placeholder="e.g., a.nguyen@company.vn"
+                    placeholder={t(
+                      'assetGroups.basic.ownerEmailPlaceholder',
+                      'e.g., a.nguyen@example.com.vn'
+                    )}
                     value={data.ownerEmail}
                     onChange={(e) => onChange({ ownerEmail: e.target.value })}
                   />
@@ -369,7 +379,7 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
               <div className="space-y-2">
                 <Label className="text-sm flex items-center gap-2">
                   <Tags className="h-3.5 w-3.5 text-muted-foreground" />
-                  Tags
+                  {t('assetGroups.detail.tags', 'Tags')}
                 </Label>
                 {data.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 p-2 bg-muted/30 rounded-lg">
@@ -388,14 +398,19 @@ export function BasicInfoStep({ data, onChange }: BasicInfoStepProps) {
                   </div>
                 )}
                 <Input
-                  placeholder="Type a tag and press Enter..."
+                  placeholder={t(
+                    'assetGroups.basic.tagPlaceholder',
+                    'Type a tag and press Enter...'
+                  )}
                   value={tagInput}
                   onChange={(e) => setTagInput(e.target.value)}
                   onKeyDown={handleTagKeyDown}
                 />
                 <div className="flex flex-wrap gap-1">
-                  <span className="text-xs text-muted-foreground me-1 py-0.5">Quick add:</span>
-                  {SUGGESTED_TAGS.filter((t) => !data.tags.includes(t))
+                  <span className="text-xs text-muted-foreground me-1 py-0.5">
+                    {t('assetGroups.basic.quickAdd', 'Quick add:')}
+                  </span>
+                  {SUGGESTED_TAGS.filter((x) => !data.tags.includes(x))
                     .slice(0, 6)
                     .map((tag) => (
                       <Badge

@@ -8,12 +8,14 @@
  * shown as text.
  */
 
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { useCallback, useMemo, useState } from 'react'
 import { AssetPeekLink } from '@/features/assets/components/asset-peek'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Check, Copy, Download, ShieldX } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { ToolbarAction } from '@/features/shared/components/toolbar-action'
 import {
   DataTable,
   EmptyState,
@@ -49,7 +51,7 @@ import {
   type CertificateStatus,
 } from '../lib/certificates'
 
-const PAGE_SIZES = [20, 50, 100]
+const PAGE_SIZES = [25, 50, 100]
 
 /** The full sha256 fingerprint, shortened for the cell and copyable. */
 export function CopyableFingerprint({ value }: { value: string }) {
@@ -73,7 +75,7 @@ export function CopyableFingerprint({ value }: { value: string }) {
         type="button"
         variant="ghost"
         size="icon"
-        className="h-6 w-6"
+
         aria-label={t('attackSurface.certificates.copyFingerprint', 'Copy fingerprint')}
         onClick={copy}
       >
@@ -107,12 +109,54 @@ export function CertificateStatusPill({ row }: { row: CertificateRow }) {
   )
 }
 
+/**
+ * A certificate on a phone. Fixed slots, one fact per line: the subject (the
+ * asset link), its kind, the issuer, the expiry date with its status, and the
+ * fingerprint with its copy button.
+ */
+export function CertificatePhoneCard({ row }: { row: CertificateRow }) {
+  const { t } = useTranslation()
+  const kind = row.is_self_signed
+    ? t('attackSurface.certificates.selfSigned', 'Self-signed')
+    : row.is_wildcard
+      ? t('attackSurface.certificates.wildcard', 'Wildcard')
+      : undefined
+  const issuer = [row.issuer_cn, row.issuer_org].filter(Boolean).join(', ') || '-'
+  return (
+    <div data-slot="certificate-card" className="min-w-0 space-y-1 px-3 py-3">
+      <div className="break-words font-medium">
+        <AssetPeekLink assetId={row.asset_id}>{row.subject_cn || row.name}</AssetPeekLink>
+      </div>
+      {kind && <p className="text-meta">{kind}</p>}
+      <p className="text-meta break-words">
+        {t('attackSurface.certificates.card.issuer', 'Issuer {issuer}', { issuer })}
+      </p>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <span className="text-meta">
+          {t('attackSurface.certificates.card.expires', 'Expires on {date}', {
+            date: formatDateSafe(row.not_after),
+          })}
+        </span>
+        <CertificateStatusPill row={row} />
+      </div>
+      <CopyableFingerprint value={row.fingerprint_sha256} />
+    </div>
+  )
+}
+
+/**
+ * Table frame widths (px) under which a column folds away, so the table fits
+ * its frame (about 700 px at 1024 px: Issued to, Issuer and Expires on stay).
+ */
+export const CERTIFICATE_HIDE_BELOW = { issuedOn: 780, fingerprint: 900, detected: 1100 } as const
+
 function useColumns(): ColumnDef<CertificateRow>[] {
   const { t } = useTranslation()
   return useMemo<ColumnDef<CertificateRow>[]>(
     () => [
       {
         id: 'subject_cn',
+        meta: { kind: 'name' },
         header: t('attackSurface.certificates.col.issuedTo', 'Issued to'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -136,12 +180,14 @@ function useColumns(): ColumnDef<CertificateRow>[] {
       },
       {
         id: 'fingerprint',
+        meta: { kind: 'id', width: 184, hideBelow: CERTIFICATE_HIDE_BELOW.fingerprint },
         header: t('attackSurface.certificates.col.fingerprint', 'Fingerprint (SHA-256)'),
         enableSorting: false,
         cell: ({ row }) => <CopyableFingerprint value={row.original.fingerprint_sha256} />,
       },
       {
         id: 'issuer',
+        meta: { kind: 'text' },
         header: t('attackSurface.certificates.col.issuer', 'Issuer'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -155,16 +201,18 @@ function useColumns(): ColumnDef<CertificateRow>[] {
       },
       {
         id: 'not_before',
+        meta: { kind: 'date', width: 144, hideBelow: CERTIFICATE_HIDE_BELOW.issuedOn },
         header: t('attackSurface.certificates.col.issuedOn', 'Issued on'),
         enableSorting: false,
         cell: ({ row }) => formatDateSafe(row.original.not_before),
       },
       {
         id: 'not_after',
+        meta: { kind: 'date', width: 160 },
         header: t('attackSurface.certificates.col.expiresOn', 'Expires on'),
         enableSorting: false,
         cell: ({ row }) => (
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col items-end gap-1">
             <span>{formatDateSafe(row.original.not_after)}</span>
             <CertificateStatusPill row={row.original} />
           </div>
@@ -172,6 +220,7 @@ function useColumns(): ColumnDef<CertificateRow>[] {
       },
       {
         id: 'first_seen',
+        meta: { kind: 'datetime-recent', hideBelow: CERTIFICATE_HIDE_BELOW.detected },
         header: t('attackSurface.certificates.col.detected', 'Detected'),
         enableSorting: false,
         cell: ({ row }) => <RelativeTime date={row.original.first_seen} />,
@@ -194,7 +243,6 @@ export function EASMCertificates() {
     setPagination,
   } = useListParams({
     pageSizes: PAGE_SIZES,
-    defaultPageSize: 20,
     filters: { status: '' },
   })
   const statusParam = urlFilters.status
@@ -310,7 +358,19 @@ export function EASMCertificates() {
 
   return (
     <>
-      <MetricStrip loading={stats.isLoading && !s} items={metrics} />
+      <MetricStrip loading={stats.isLoading && !s} items={metrics} listFirst />
+      <ListTitleRow
+        title={t('attackSurface.certificates.viewAll', 'All certificates')}
+        count={
+          <ListCount
+            total={list.total}
+            loading={list.isLoading && list.rows.length === 0}
+            label={t('attackSurface.certificates.count', '{count} certificates', {
+              count: list.total,
+            })}
+          />
+        }
+      />
       <DataTable
         columns={columns}
         data={list.rows}
@@ -325,6 +385,7 @@ export function EASMCertificates() {
           ),
         }}
         showColumnToggle={false}
+        mobileRow={(row) => <CertificatePhoneCard row={row} />}
         toolbarStart={
           <FilterSelect<CertificateStatus>
             label={t('attackSurface.certificates.filter.status', 'Status')}
@@ -334,19 +395,18 @@ export function EASMCertificates() {
           />
         }
         toolbarEnd={
-          <Button variant="outline" size="sm" onClick={exportCsv} disabled={exporting}>
-            <Download className="me-2 h-4 w-4" aria-hidden />
-            {t('attackSurface.certificates.export', 'Export CSV')}
-          </Button>
+          <ToolbarAction
+            icon={Download}
+            label={t('attackSurface.certificates.export', 'Export CSV')}
+            onClick={exportCsv}
+            disabled={exporting}
+          />
         }
         toolbarBelow={
           chips.length > 0 ? (
             <FilterChipsRow
               label={t('attackSurface.certificates.activeFilters', 'Active filters')}
               chips={chips}
-              end={t('attackSurface.certificates.count', '{count} certificates', {
-                count: list.total,
-              })}
             />
           ) : undefined
         }

@@ -268,7 +268,7 @@ export function AssignmentRuleDetailSheet({
                   aria-label={t('org.ruleDetail.ruleName', 'Rule name')}
                   value={editForm.name}
                   onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                  className="h-8 text-base font-semibold"
+                  className="text-base font-semibold"
                 />
               ) : (
                 (rule?.name ?? t('org.ruleDetail.fallbackTitle', 'Assignment rule'))

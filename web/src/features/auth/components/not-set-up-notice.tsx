@@ -1,7 +1,7 @@
 'use client'
 
 import Link from '@/components/link'
-import { Building2 } from 'lucide-react'
+import { EntryActions, EntryBackLink, EntryCard, EntryHeader } from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAuthProviders } from '../api/use-auth-providers'
@@ -16,20 +16,15 @@ export function NotSetUpNotice() {
   const { t } = useTranslation()
   const { data: providers } = useAuthProviders()
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col items-center gap-4 text-center">
-      <div className="flex size-12 items-center justify-center rounded-full bg-muted">
-        <Building2 className="size-6 text-muted-foreground" aria-hidden />
-      </div>
-      <h1 className="text-xl font-semibold">
-        {t('auth.notSetUp.title', "Your organization isn't set up yet")}
-      </h1>
-      <p className="text-sm text-muted-foreground">
-        {t(
+    <EntryCard>
+      <EntryHeader
+        title={t('auth.notSetUp.title', "Your organization isn't set up yet")}
+        description={t(
           'auth.notSetUp.body',
           'This sign-in did not lead to an account on this installation, and accounts are not created automatically here.'
         )}
-      </p>
-      <ul className="w-full list-disc space-y-1.5 ps-5 text-start text-sm text-muted-foreground">
+      />
+      <ul className="text-body text-muted-foreground flex list-disc flex-col gap-1.5 ps-5">
         <li>
           {t(
             'auth.notSetUp.stepOtherMethod',
@@ -49,16 +44,14 @@ export function NotSetUpNotice() {
           )}
         </li>
       </ul>
-      <div className="flex flex-wrap justify-center gap-2">
+      <EntryActions>
         {providers?.request_access && (
-          <Button asChild>
+          <Button variant="signal" asChild>
             <Link href="/request-access">{t('auth.requestAccess.cta', 'Request access')}</Link>
           </Button>
         )}
-        <Button asChild variant="outline">
-          <Link href="/login">{t('auth.notSetUp.backToSignIn', 'Back to sign in')}</Link>
-        </Button>
-      </div>
-    </div>
+        <EntryBackLink />
+      </EntryActions>
+    </EntryCard>
   )
 }

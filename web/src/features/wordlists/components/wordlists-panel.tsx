@@ -6,7 +6,14 @@ import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -31,6 +38,7 @@ import {
 import type { Wordlist } from '../types'
 import { WordlistDialog } from './wordlist-dialog'
 import { WordlistPreviewCard } from './wordlist-preview'
+import { formatNumber } from '@/lib/app-locale'
 
 /** Settings, Scanning, Wordlists. Reading needs scans:content:read, changes scans:content:write. */
 export function WordlistsPanel() {
@@ -75,31 +83,31 @@ export function WordlistsPanel() {
   return (
     <PageStack data-testid="wordlists-panel">
       <Card>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 space-y-0">
-          <div className="space-y-1">
-            <CardTitle className="text-base">{t('wordlists.yours.title', 'Your lists')}</CardTitle>
-            <CardDescription>
-              {t(
-                'wordlists.yours.description',
-                'Every enabled list is tried under each of your domains, after the words learned from your own names and before the platform list.'
-              )}
-            </CardDescription>
-          </div>
-          <GatedButton
-            allowed={canWrite && !atLimit}
-            reason={
-              canWrite
-                ? t('wordlists.atLimit', 'An organization has at most {count} lists', {
-                    count: data?.limit ?? 0,
-                  })
-                : noWrite
-            }
-            size="sm"
-            onClick={() => setEditing('new')}
-          >
-            <Plus className="size-4" aria-hidden />
-            {t('wordlists.new', 'New list')}
-          </GatedButton>
+        <CardHeader>
+          <CardTitle className="text-base">{t('wordlists.yours.title', 'Your lists')}</CardTitle>
+          <CardDescription>
+            {t(
+              'wordlists.yours.description',
+              'Every enabled list is tried under each of your domains, after the words learned from your own names and before the platform list.'
+            )}
+          </CardDescription>
+          <CardAction>
+            <GatedButton
+              allowed={canWrite && !atLimit}
+              reason={
+                canWrite
+                  ? t('wordlists.atLimit', 'An organization has at most {count} lists', {
+                      count: data?.limit ?? 0,
+                    })
+                  : noWrite
+              }
+              size="sm"
+              onClick={() => setEditing('new')}
+            >
+              <Plus className="size-4" aria-hidden />
+              {t('wordlists.new', 'New list')}
+            </GatedButton>
+          </CardAction>
         </CardHeader>
         <CardContent>
           {lists.length === 0 ? (
@@ -140,9 +148,7 @@ export function WordlistsPanel() {
                         </div>
                       )}
                     </TableCell>
-                    <TableCell className="text-end tabular-nums">
-                      {w.lines.toLocaleString()}
-                    </TableCell>
+                    <TableCell className="text-end tabular-nums">{formatNumber(w.lines)}</TableCell>
                     <TableCell className="text-end">
                       <Badge variant="secondary" className="font-normal tabular-nums">
                         {t('wordlists.versionValue', 'v{version}', { version: w.version })}

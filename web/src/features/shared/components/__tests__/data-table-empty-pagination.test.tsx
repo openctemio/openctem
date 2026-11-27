@@ -34,10 +34,11 @@ describe('DataTable pagination on an empty list', () => {
     expect(screen.queryByText(/Showing 0/)).not.toBeInTheDocument()
   })
 
-  it('shows it, never "of 0", once there are rows', () => {
-    render(<DataTable columns={columns} data={[{ id: '1', name: 'a' }]} />)
-    expect(screen.getByText(/Showing 1 - 1 of 1/)).toBeInTheDocument()
-    expect(screen.getByText('Page 1 of 1')).toBeInTheDocument()
+  it('shows it, never "of 0", once there are more rows than one page holds', () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ id: String(i), name: `r${i}` }))
+    render(<DataTable columns={columns} data={many} />)
+    expect(screen.getByText(/Showing 1 to 25 of 30/)).toBeInTheDocument()
+    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument()
   })
 })
 

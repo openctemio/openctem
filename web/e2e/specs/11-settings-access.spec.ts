@@ -28,14 +28,15 @@ test(
     await expect(page.getByText(/SSO is configured by your platform administrator/)).toBeVisible({
       timeout: 30_000,
     })
-    expect(new URL(page.url()).pathname).toBe('/settings/authentication')
+    expect(new URL(page.url()).pathname).toBe('/settings/sign-in')
   }
 )
 
 test('domain proof opens in Scoping > Scope', { tag: ['@settings'] }, async ({ page }) => {
   // Domain verification for attack-surface management: the Domain proof route tab.
   await page.goto('/scope/domain-proof')
-  await expect(page.getByRole('heading', { name: 'Domain proof' })).toBeVisible({
+  // Every Scope tab keeps the section title; the tab names the page.
+  await expect(page.getByRole('heading', { name: 'Scope', level: 1 })).toBeVisible({
     timeout: 30_000,
   })
   // The breadcrumb also names the page; check the section tab.

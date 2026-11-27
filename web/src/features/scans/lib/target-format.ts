@@ -14,6 +14,7 @@
  */
 
 import type { Translate } from './translate'
+import { formatNumber } from '@/lib/app-locale'
 
 export type TargetKind =
   'domain' | 'wildcard' | 'ipv4' | 'ipv6' | 'cidr' | 'url' | 'host:port' | 'repo' | 'invalid'
@@ -113,8 +114,8 @@ function tooLarge(
   const maxBits = totalBits - maxHostBits
   const reasonVars = {
     cidr: value,
-    count: (BigInt(1) << BigInt(totalBits - prefix)).toLocaleString(),
-    max: (2 ** maxHostBits).toLocaleString(),
+    count: formatNumber(BigInt(1) << BigInt(totalBits - prefix)),
+    max: formatNumber(2 ** maxHostBits),
     prefix: `/${maxBits}`,
   }
   const pieces = 2 ** (maxBits - prefix)

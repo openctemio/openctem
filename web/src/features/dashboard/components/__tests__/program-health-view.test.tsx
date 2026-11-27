@@ -66,7 +66,7 @@ describe('ProgramHealthView', () => {
       },
     }
     render(<ProgramHealthView />)
-    expect(screen.getByText('P0 fixed within target')).toBeInTheDocument()
+    expect(screen.getByText('Highest priority (P0) fixed within target')).toBeInTheDocument()
     expect(screen.queryByText(/executive-summary/)).toBeNull()
     expect(screen.queryByText(/^(From|Source):/)).toBeNull()
   })

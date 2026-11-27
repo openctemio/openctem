@@ -27,6 +27,11 @@ vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: ReactNode }) => <>{children}</>,
   Permission: { MembersInvite: 'members:invite', MembersManage: 'members:manage' },
   usePermissions: () => ({
+    // The row menu hides route-gated items by these (an owner passes).
+    permissions: ['team:roles:assign', 'team:members:write'],
+    can: () => true,
+    isLoading: false,
+    tenantRole: 'owner',
     isOwner: () => true,
     isAtLeast: () => true,
     canAny: () => permState.canInvite,
@@ -56,6 +61,10 @@ vi.mock('@/features/organization/api/use-tenant-settings', () => ({
 }))
 vi.mock('@/features/organization/api/use-ownership-transfer', () => ({
   usePendingOwnershipTransfer: () => ({ transfer: undefined, mutate: vi.fn() }),
+}))
+// The page reads the join requests for its tab count (the card's own read, shared).
+vi.mock('@/features/organization/api/use-domain-signup', () => ({
+  useJoinRequests: () => ({ requests: [] }),
 }))
 vi.mock('@/features/organization/components/join-requests-card', () => ({
   JoinRequestsCard: () => null,
@@ -109,7 +118,7 @@ globalThis.ResizeObserver ??= class {
 
 describe('Members page role grant confirmation', () => {
   it('asks before adding a role and saves only after confirming', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(
       <I18nProvider locale="en">
         <UsersPage />

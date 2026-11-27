@@ -17,6 +17,7 @@ import { useAdmin } from '@console/features/admin-console/components/admin-conso
 import { AdminConfirmDialog } from '@console/features/admin-console/components/admin-confirm-dialog'
 import { PublishAnnouncementDialog } from '@console/features/admin-console/components/publish-announcement-dialog'
 import { type AdminAnnouncement, adminHas } from '@console/features/admin-console/types'
+import { formatDateTime } from '@/lib/app-locale'
 
 const STATE_TONE: Record<AdminAnnouncement['state'], PillTone> = {
   active: 'success',
@@ -25,7 +26,7 @@ const STATE_TONE: Record<AdminAnnouncement['state'], PillTone> = {
 }
 
 function when(iso?: string): string {
-  return iso ? new Date(iso).toLocaleString() : '-'
+  return iso ? formatDateTime(new Date(iso)) : '-'
 }
 
 export default function AdminAnnouncementsPage() {
@@ -46,7 +47,7 @@ export default function AdminAnnouncementsPage() {
       },
       {
         accessorKey: 'severity',
-        header: t('admin.ann.severity', 'Kind'),
+        header: t('admin.ann.severity', 'Type'),
         cell: ({ row }) => (
           <Badge variant={row.original.severity === 'info' ? 'secondary' : 'outline'}>
             {t(`admin.ann.sev.${row.original.severity}`, row.original.severity)}
@@ -74,6 +75,8 @@ export default function AdminAnnouncementsPage() {
       },
       {
         id: 'actions',
+        // Labelled buttons: as wide as they need (the 48 px actions column cut them).
+        meta: { kind: 'decisions' },
         header: '',
         cell: ({ row }) =>
           canWrite && row.original.state !== 'ended' ? (
@@ -116,11 +119,15 @@ export default function AdminAnnouncementsPage() {
             showColumnToggle={false}
             showSelectionCount={false}
             mobileCards
-            emptyMessage={t('admin.ann.empty', 'No announcement yet')}
+            emptyMessage={t('admin.ann.empty', 'No announcements')}
           />
         )}
         {ending && (
           <AdminConfirmDialog
+            reasonPlaceholder={t(
+              'admin.ann.reasonEnd',
+              'The maintenance finished early, change 2231'
+            )}
             open
             onOpenChange={(o) => !o && setEnding(null)}
             title={t('admin.ann.endTitle', 'Take this announcement down')}

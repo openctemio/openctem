@@ -6,10 +6,9 @@ import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { EmptyState } from '@/features/shared'
+import { EmptyState, SettingsSection } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatDateSafe, formatRelative } from '@/lib/format-date'
 
@@ -90,47 +89,47 @@ export function SessionsCard({ sessions, isLoading, onChanged, activeApiKeys }: 
   }
 
   return (
-    <Card id="sessions" className="scroll-mt-4">
-      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
-        <div className="space-y-1.5">
-          <CardTitle className="flex items-center gap-2">
-            <Monitor className="h-5 w-5" />
-            {t('account.sessions.title', 'Sessions')}
-          </CardTitle>
-          <CardDescription>
-            {t('account.sessions.description', 'Devices signed in to your account.')}
-          </CardDescription>
-        </div>
-        {others.length > 0 && (
-          <Button variant="outline" size="sm" onClick={() => setConfirmAll(true)}>
-            <LogOut className="h-4 w-4" />
-            {t('account.sessions.signOutOthers', 'Sign out all others')}
+    <SettingsSection
+      framed
+      id="sessions"
+      className="scroll-mt-4"
+      title={t('account.sessions.title', 'Sessions')}
+      description={t('account.sessions.description', 'Devices signed in to your account.')}
+      actions={
+        others.length > 0 && (
+          <Button variant="outline" onClick={() => setConfirmAll(true)}>
+            {/* No icon below 640px: the label then fits beside the title. */}
+            <LogOut aria-hidden className="max-sm:hidden" />
+            {t('account.sessions.signOutOthers', 'Sign out others')}
           </Button>
-        )}
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-full" />
-          </div>
-        ) : sessions.length === 0 ? (
-          <EmptyState
-            icon={Monitor}
-            title={t('account.sessions.empty', 'No active sessions')}
-            card={false}
-          />
-        ) : (
-          <ul className="divide-y rounded-md border">
-            {ordered.map((s) => {
-              const d = describeUserAgent(s.user_agent)
-              const Icon = DEVICE_ICON[d.kind]
-              return (
-                <li key={s.id} className="flex items-center justify-between gap-4 p-4">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <Icon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
-                    <div className="min-w-0 space-y-0.5">
-                      <div className="flex flex-wrap items-center gap-2">
+        )
+      }
+    >
+      {isLoading ? (
+        <div className="space-y-3">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
+        </div>
+      ) : sessions.length === 0 ? (
+        <EmptyState
+          icon={Monitor}
+          title={t('account.sessions.empty', 'No active sessions')}
+          card={false}
+        />
+      ) : (
+        <ul>
+          {ordered.map((s) => {
+            const d = describeUserAgent(s.user_agent)
+            const Icon = DEVICE_ICON[d.kind]
+            return (
+              <li key={s.id} className="border-t border-border-subtle py-3.5">
+                <div className="flex min-w-0 items-start gap-3">
+                  <Icon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1 space-y-0.5">
+                    {/* Sign out sits on the device line, so the details below keep
+                          the full width on a phone. */}
+                    <div className="flex items-start gap-2">
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                         <span className="font-medium">
                           {t('account.sessions.browserOn', '{browser} on {os}', {
                             browser:
@@ -149,39 +148,38 @@ export function SessionsCard({ sessions, isLoading, onChanged, activeApiKeys }: 
                           </Badge>
                         )}
                       </div>
-                      <p className="text-sm text-muted-foreground">
-                        {s.ip_address ? (
-                          <span className="font-mono">{s.ip_address}</span>
-                        ) : (
-                          t('account.sessions.unknownIp', 'Unknown IP')
-                        )}
-                        {', '}
-                        {t('account.sessions.signedIn', 'Signed in {date}', {
-                          date: formatDateSafe(s.created_at),
-                        })}
-                        {', '}
-                        {t('account.sessions.lastActive', 'Last active {when}', {
-                          when: formatRelative(s.last_activity_at),
-                        })}
-                      </p>
+                      {!s.is_current && (
+                        <Button
+                          variant="ghost"
+                          className="shrink-0 text-destructive hover:text-destructive"
+                          onClick={() => setToRevoke(s)}
+                        >
+                          {t('account.sessions.signOut', 'Sign out')}
+                        </Button>
+                      )}
                     </div>
+                    <p className="text-sm text-muted-foreground">
+                      {s.ip_address ? (
+                        <span className="font-mono">{s.ip_address}</span>
+                      ) : (
+                        t('account.sessions.unknownIp', 'Unknown IP')
+                      )}
+                      {', '}
+                      {t('account.sessions.signedIn', 'Signed in {date}', {
+                        date: formatDateSafe(s.created_at),
+                      })}
+                      {', '}
+                      {t('account.sessions.lastActive', 'Last active {when}', {
+                        when: formatRelative(s.last_activity_at),
+                      })}
+                    </p>
                   </div>
-                  {!s.is_current && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="shrink-0 text-destructive hover:text-destructive"
-                      onClick={() => setToRevoke(s)}
-                    >
-                      {t('account.sessions.signOut', 'Sign out')}
-                    </Button>
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </CardContent>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
 
       <ConfirmDialog
         open={!!toRevoke}
@@ -231,6 +229,6 @@ export function SessionsCard({ sessions, isLoading, onChanged, activeApiKeys }: 
           count={activeApiKeys}
         />
       </ConfirmDialog>
-    </Card>
+    </SettingsSection>
   )
 }

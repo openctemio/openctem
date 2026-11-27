@@ -17,8 +17,8 @@ import type { DashboardTemplate } from './templates'
  * Height band of a visualization: what it may share a row with.
  *  - figure: one number (stat, progress), in runs of four.
  *  - short: a bar list of a few rows (about 200px).
- *  - chart: a chart, matrix or list that fills its height (300-420px).
- *  - full: a strip, the hero diagram or a table; alone in its row.
+ *  - chart: a chart, matrix or a half-width list that fills its height (300-420px).
+ *  - full: a strip, the hero diagram, a full-width list or a table; alone in its row.
  */
 export type HeightBand = 'figure' | 'short' | 'chart' | 'full'
 
@@ -50,10 +50,13 @@ export const TEMPLATE_SIZES: Readonly<Record<string, ReadonlyArray<readonly [num
   heatmap: [[6, 2]],
   paths: [[6, 2]],
   posture: [[6, 2]],
-  list: [[12, 3]],
+  list: [
+    [6, 2],
+    [12, 3],
+  ],
   table: [[12, 4]],
   flow: [[12, 4]],
-  loop: [[12, 2]],
+  loop: [[12, 1]],
   intake: [[12, 3]],
 }
 
@@ -69,6 +72,7 @@ const BAND: Readonly<Record<string, HeightBand>> = {
   heatmap: 'chart',
   paths: 'chart',
   posture: 'chart',
+  list: 'chart',
 }
 
 export function heightBand(viz: string, w: number): HeightBand {
@@ -95,9 +99,20 @@ export const SAME_FIGURES: ReadonlyArray<readonly string[]> = [
   ['exposure.flow', 'ctem.loop'],
 ]
 
-/** Order of the sections a template reads in. */
+/**
+ * Order of the sections a template reads in. What to act on and the trends
+ * share a rank: a half-width list of fixes reads beside the chart of new
+ * versus fixed findings, and the attack paths may follow it.
+ */
 const SECTION_ORDER = ['headline', 'hero', 'act', 'trend', 'breakdown'] as const
 type Section = (typeof SECTION_ORDER)[number]
+const RANK: Readonly<Record<Section, number>> = {
+  headline: 0,
+  hero: 1,
+  act: 2,
+  trend: 2,
+  breakdown: 3,
+}
 
 /**
  * The section a widget belongs to: the headline figures; the hero visual
@@ -174,8 +189,10 @@ export function templateDefects(tpl: DashboardTemplate): string[] {
     out.push(`opens on ${all[0].id}, not the headline figures`)
   let last = 0
   for (const c of all) {
-    const at = SECTION_ORDER.indexOf(sectionOf(c.viz, c.w))
-    if (at < last) out.push(`${c.id} (${SECTION_ORDER[at]}) after a ${SECTION_ORDER[last]} widget`)
+    const section = sectionOf(c.viz, c.w)
+    const at = RANK[section]
+    if (at < last)
+      out.push(`${c.id} (${section}) after a ${SECTION_ORDER.find((s) => RANK[s] === last)} widget`)
     last = Math.max(last, at)
   }
 

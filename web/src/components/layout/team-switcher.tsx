@@ -29,11 +29,14 @@ import { useBootstrapContextSafe } from '@/context/bootstrap-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { DecorativeText } from '@/components/ui/decorative-text'
-import { SIDEBAR_CHIP_CLASS, SIDEBAR_CONTEXT_ROW_CLASS } from './sidebar-brand'
+import {
+  SIDEBAR_CHIP_CLASS,
+  SIDEBAR_CONTEXT_ROW_CLASS,
+  SIDEBAR_TRAILING_SLOT_CLASS,
+} from './sidebar-brand'
 import { toast } from 'sonner'
 import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 import { useCanCreateOrganization } from '@/features/auth/hooks/use-can-create-organization'
-import { useMemberStats } from '@/features/organization/api/use-members'
 import { useSettingsNav } from '@/hooks/use-settings-nav'
 import { useDisplayUser } from '@/hooks/use-display-user'
 import dynamic from 'next/dynamic'
@@ -42,7 +45,7 @@ import type { OrgCardOrganization } from './org-card'
 
 // The organization card (member counts, invitations, search) is the popover's
 // content: it loads when the popover first opens, not with every page.
-const OrgCard = dynamic(() => import('./org-card').then((m) => m.OrgCard), {
+const OrgCard = dynamic(() => import('./org-card').then((m) => m.OrgCardWithMembers), {
   ssr: false,
   loading: () => <div className="h-40" aria-hidden />,
 })
@@ -80,12 +83,6 @@ export function TeamSwitcher() {
     }
     return { membersLink: link('members'), apiKeysLink: link('api-keys') }
   }, [settingsNav])
-
-  // Member count: one cheap stats call, only once the card is open and only
-  // when the user may read members (the hook also checks the permission).
-  const { stats: memberStats, isLoading: memberStatsLoading } = useMemberStats(
-    isOpen && membersLink ? currentTenant?.id : undefined
-  )
 
   // The organizations to list. If the API returned none but we know the
   // current one (from the cookie), list that.
@@ -174,8 +171,6 @@ export function TeamSwitcher() {
   }, [closeAll, router])
 
   const currentName = currentTenant?.name || currentTenant?.slug || ''
-  // Something to do besides reading: another organization, or creating one.
-  const hasActions = tenants.length > 1 || canCreate
 
   // Loading state
   if (isLoading && organizations.length === 0) {
@@ -254,16 +249,29 @@ export function TeamSwitcher() {
                 />
               )}
 
-              <span className="min-w-0 flex-1 truncate text-start text-sm font-semibold group-data-[collapsible=icon]:hidden">
+              <span
+                className={cn(
+                  'min-w-0 flex-1 truncate text-start text-body font-semibold group-data-[collapsible=icon]:hidden',
+                  'in-data-[mobile=true]:text-base' // design-ok: drawer 16/24 600
+                )}
+              >
                 {currentName}
               </span>
-              {hasActions && (
+              {/* The row always opens the organization card: the chevron says
+                  so, with one organization too (hidden in the icon rail). */}
+              <span
+                className={cn(
+                  SIDEBAR_TRAILING_SLOT_CLASS,
+                  '-me-1.5 group-data-[collapsible=icon]:hidden'
+                )}
+                data-testid="team-switcher-chevron-slot"
+              >
                 <ChevronsUpDown
-                  className="size-4 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden"
+                  className="size-4 text-muted-foreground"
                   data-testid="team-switcher-chevron"
                   aria-hidden
                 />
-              )}
+              </span>
             </SidebarMenuButton>
           </PopoverTrigger>
 
@@ -272,7 +280,6 @@ export function TeamSwitcher() {
             align="start"
             side={isMobile ? 'bottom' : 'right'}
             sideOffset={isMobile ? 4 : 8}
-            collisionPadding={16}
             aria-label={t('org.details', 'Organization details')}
             // Copying over plain HTTP focuses a hidden textarea on <body>
             // (src/lib/clipboard.ts); that is not the user leaving the card.
@@ -288,8 +295,6 @@ export function TeamSwitcher() {
               }}
               organizations={organizations}
               membersLink={membersLink}
-              memberCount={memberStats?.total_members}
-              memberCountLoading={memberStatsLoading}
               apiKeysLink={apiKeysLink}
               canCreate={canCreate}
               email={user?.email}

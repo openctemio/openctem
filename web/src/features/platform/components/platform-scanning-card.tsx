@@ -73,8 +73,8 @@ function EgressList({ egress }: { egress: PlatformEgress[] }) {
                 <Button
                   type="button"
                   variant="ghost"
-                  size="sm"
-                  className="h-7 px-2"
+                  size="icon-sm"
+                  className="px-2"
                   onClick={() => copy(e.addresses)}
                   aria-label={t('sensors.shared.egress.copyAria', undefined, { region })}
                 >

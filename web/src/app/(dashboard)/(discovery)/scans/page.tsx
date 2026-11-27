@@ -1,40 +1,35 @@
 'use client'
 
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { IntensityBadge } from '@/features/scans/components/intensity-badge'
 import * as React from 'react'
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Main } from '@/components/layout'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { SensorOptInBanner } from '@/features/sensors/components/sensor-opt-in-banner'
 import { ScanWindowsBanner } from '@/features/scan-windows'
-import { ScanApprovalBadge } from '@/features/scans/components/approval/scan-approval-badge'
 import {
   MetricStrip,
   type MetricStripItem,
   PageStack,
   DataTable,
   DataTableColumnHeader,
-  BulkActionBar,
+  EmptyState,
   FacetPanel,
   FacetSection,
   FacetOption,
   FilterSheet,
-  MetaLine,
-  useFilterPanelOpen,
 } from '@/features/shared'
+import type { DataTableBulk } from '@/features/shared/components/data-table/data-table-selection'
+import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
+import { FilterSelect } from '@/features/shared/components/filter-select'
+import { NoAccessState } from '@/features/shared/components/no-access-state'
+import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import {
   ConfirmDialog,
   ConfirmSample,
@@ -55,11 +50,16 @@ import {
   Pencil,
   Tag,
   Loader2,
+  Radar,
+  RefreshCw,
+  SearchX,
 } from 'lucide-react'
+import { accessStateOf } from '@/lib/api/access-state'
+import { cn } from '@/lib/utils'
 import { useSearchQuery } from '@/hooks/use-search-query'
 import { useListParams } from '@/hooks/use-list-params'
 import { replaceUrlSearch, useUrlParams } from '@/hooks/use-url-param'
-import { Can, Permission } from '@/lib/permissions'
+import { Permission, usePermissions } from '@/lib/permissions'
 import {
   useScanConfigs,
   useScanConfigStats,
@@ -74,7 +74,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { scanEndpoints } from '@/lib/api/endpoints'
 // Note: useAssetGroups can be imported when CreateConfigDialog is implemented
 // import { useAssetGroups } from "@/lib/api/security-hooks";
-import { SCHEDULE_TYPE_LABELS, SCHEDULE_TYPES } from '@/lib/api/scan-types'
+import { SCHEDULE_TYPES } from '@/lib/api/scan-types'
 import type {
   ScanConfig,
   ScanConfigStatus,
@@ -96,11 +96,14 @@ import { ScanConfigDetailSheet } from '@/features/scans/components/scan-config-d
 import { LastRunCell } from '@/features/scans/components/last-run-cell'
 import { ManagedScansSection } from '@/features/scans/components/managed-scans-section'
 import { RunHistory } from '@/features/scans/components/run-history'
+import { AddFilterPanel } from '@/features/shared/components/add-filter-panel'
 import { ScanMobileCard } from '@/features/scans/components/scan-mobile-card'
+import { ScanNameCell } from '@/features/scans/components/scan-name-cell'
 import { ScheduleCell } from '@/features/scans/components/schedule-cell'
+import { scheduleTypeName } from '@/features/scans/lib/labels'
 import { isManagedScan, lastRunOf, scanTypeLabel } from '@/features/scans/lib/scan-status'
 import { useScanTrigger } from '@/features/scans/hooks/use-scan-trigger'
-import { ScanQueryBar } from '@/features/scans/components/scan-query-bar'
+import { ScanQueryChip, useScanQueryMode } from '@/features/scans/components/scan-query-bar'
 import {
   DEFAULT_SCAN_CONFIG_SORT,
   DEFAULT_SCAN_PAGE_SIZE,
@@ -118,64 +121,43 @@ type ConfigOriginFilter = ScanOrigin | 'all'
 type ConfigTypeFilter = ApiScanType | 'all'
 
 // The configuration's state, not a run state: an enabled scan runs on its
-// schedule (if it has one), a paused one only when someone runs it.
-const configStatusFilters: { value: ConfigStatusFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'active', label: 'Enabled' },
-  { value: 'paused', label: 'Schedule paused' },
-  { value: 'disabled', label: 'Disabled' },
+// schedule (if it has one), a paused one only when someone runs it. The
+// labels are the metric strip's.
+const CONFIG_STATES: { value: ScanConfigStatus; labelKey: string }[] = [
+  { value: 'active', labelKey: 'scans.configs.metricEnabled' },
+  { value: 'paused', labelKey: 'scans.configs.metricPaused' },
+  { value: 'disabled', labelKey: 'scans.configs.metricDisabled' },
 ]
 
-const configOriginFilters: { value: ConfigOriginFilter; labelKey: string }[] = [
-  { value: 'all', labelKey: 'scans.origin.all' },
+const CONFIG_ORIGINS: { value: ScanOrigin; labelKey: string }[] = [
   { value: 'user', labelKey: 'scans.origin.user' },
   { value: 'system', labelKey: 'scans.origin.system' },
 ]
 
-const configTypeFilters: { value: ConfigTypeFilter; label: string }[] = [
-  { value: 'all', label: 'All types' },
-  { value: 'workflow', label: 'Workflow' },
-  { value: 'single', label: 'Single scanner' },
+const CONFIG_TYPES: { value: ApiScanType; labelKey: string }[] = [
+  { value: 'workflow', labelKey: 'scans.scanType.workflow' },
+  { value: 'single', labelKey: 'scans.scanType.single' },
 ]
 
 type ConfigScheduleFilter = ScheduleType | 'all'
 
-const configScheduleFilters: { value: ConfigScheduleFilter; label: string }[] = [
-  { value: 'all', label: 'All schedules' },
-  ...SCHEDULE_TYPES.map((type) => ({
-    value: type as ScheduleType,
-    label: SCHEDULE_TYPE_LABELS[type],
-  })),
-]
-
-// Map API status to UI-friendly status for StatusBadge
-// ============================================
-// UTILS
-// ============================================
-
-// ============================================
-// SHARED LIST PIECES
-// ============================================
-
-const CONFIG_FILTERS_OPEN_KEY = 'openctem:scan-config-filters-open'
-
-/** Shaped like the DataTable it stands in for: toolbar, then rows. */
-function TableSkeleton() {
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <Skeleton className="h-9 w-24" />
-        <Skeleton className="h-9 w-72" />
-        <Skeleton className="ms-auto h-9 w-24" />
-      </div>
-      <div className="space-y-2 rounded-md border p-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-full" />
-        ))}
-      </div>
-    </div>
-  )
-}
+/**
+ * Column widths (px) and the table-frame width under which a column steps
+ * aside (it stays under Display > Columns): Intensity first, then Recent
+ * runs. The name, the type, the latest run, the run count and the schedule
+ * always show, and with the name's floor (200) they fit the frame of a 1280
+ * screen (954), so the row menu is on screen without scrolling sideways.
+ */
+const SCANS_WIDTH = { type: 160, intensity: 120, lastRun: 200, recentRuns: 136, schedule: 208 }
+// Frame widths (px) under which a column gives way, so the table fits its
+// frame instead of scrolling sideways: the run count, then the schedule (both
+// are on the scan's own page).
+const SCANS_HIDE_BELOW = {
+  intensity: 1220,
+  recentRuns: 1090,
+  runs: 950,
+  schedule: 860,
+} as const
 
 // ============================================
 // MAIN PAGE COMPONENT
@@ -215,82 +197,98 @@ interface ConfigActionsCellProps {
 
 function ConfigActionsCell({ config, onAction, triggering = false }: ConfigActionsCellProps) {
   const { t } = useTranslation()
+  const { can } = usePermissions()
   // A platform policy owns a managed scan: nothing to edit, run, pause or
   // delete here. View it, or clone it into a scan of your own.
   const managed = isManagedScan(config)
+  const canWrite = can(Permission.ScansWrite)
+  const items: ActionMenuEntry[] = [
+    {
+      id: 'view',
+      label: t('scans.row.view'),
+      icon: Eye,
+      href: `/scans/${config.id}`,
+    },
+    ...(!managed && canWrite
+      ? [
+          {
+            id: 'edit',
+            label: t('scans.row.edit'),
+            icon: Pencil,
+            onSelect: () => onAction('edit', config),
+          },
+        ]
+      : []),
+    // Trigger, clone, pause and resume all need scans:write.
+    ...(canWrite && !managed
+      ? [
+          {
+            id: 'run',
+            label: triggering ? t('scans.row.starting') : t('scans.row.run'),
+            icon: triggering ? Loader2 : Play,
+            disabledReason: triggering
+              ? t('scans.row.startingReason', 'This scan is already starting.')
+              : undefined,
+            onSelect: () => onAction('trigger', config),
+          },
+        ]
+      : []),
+    ...(canWrite
+      ? [
+          {
+            id: 'clone',
+            label: managed ? t('scans.managed.clone') : t('scans.row.clone'),
+            icon: Copy,
+            onSelect: () => onAction('clone', config),
+          },
+        ]
+      : []),
+    ...(canWrite && !managed && config.status === 'active'
+      ? [
+          {
+            id: 'pause',
+            section: 'state',
+            label: t('scans.row.pause'),
+            icon: Pause,
+            onSelect: () => onAction('pause', config),
+          },
+        ]
+      : []),
+    ...(canWrite && !managed && config.status === 'paused'
+      ? [
+          {
+            id: 'resume',
+            section: 'state',
+            label: t('scans.row.resume'),
+            icon: Play,
+            onSelect: () => onAction('activate', config),
+          },
+        ]
+      : []),
+    ...(!managed && can(Permission.ScansDelete)
+      ? [
+          {
+            id: 'delete',
+            label: t('scans.row.delete'),
+            icon: Trash2,
+            destructive: true,
+            onSelect: () => onAction('delete', config),
+          },
+        ]
+      : []),
+  ]
+  const label = t('common.actionMenu.label', 'Actions for {name}', { name: config.name })
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 w-8 p-0"
-          aria-label={t('scans.row.actions')}
-        >
-          <MoreHorizontal className="h-4 w-4" />
+    <ActionMenu
+      title={config.name}
+      label={label}
+      items={items}
+      trigger={
+        <Button variant="ghost" size="icon-sm" className="p-0" aria-label={label}>
+          <MoreHorizontal className="h-4 w-4" aria-hidden />
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem asChild>
-          <Link href={`/scans/${config.id}`} className="flex items-center">
-            <Eye className="me-2 h-4 w-4" />
-            {t('scans.row.view')}
-          </Link>
-        </DropdownMenuItem>
-        {!managed && (
-          <Can permission={Permission.ScansWrite}>
-            <DropdownMenuItem onClick={() => onAction('edit', config)}>
-              <Pencil className="me-2 h-4 w-4" />
-              {t('scans.row.edit')}
-            </DropdownMenuItem>
-          </Can>
-        )}
-        {/* Trigger, clone, pause and resume all need scans:write. */}
-        <Can permission={Permission.ScansWrite}>
-          {!managed && (
-            <DropdownMenuItem disabled={triggering} onClick={() => onAction('trigger', config)}>
-              {triggering ? (
-                <Loader2 className="me-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Play className="me-2 h-4 w-4" />
-              )}
-              {triggering ? t('scans.row.starting') : t('scans.row.run')}
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuItem onClick={() => onAction('clone', config)}>
-            <Copy className="me-2 h-4 w-4" />
-            {managed ? t('scans.managed.clone') : t('scans.row.clone')}
-          </DropdownMenuItem>
-          {!managed && (config.status === 'active' || config.status === 'paused') && (
-            <DropdownMenuSeparator />
-          )}
-          {!managed && config.status === 'active' && (
-            <DropdownMenuItem onClick={() => onAction('pause', config)}>
-              <Pause className="me-2 h-4 w-4" />
-              {t('scans.row.pause')}
-            </DropdownMenuItem>
-          )}
-          {!managed && config.status === 'paused' && (
-            <DropdownMenuItem onClick={() => onAction('activate', config)}>
-              <Play className="me-2 h-4 w-4" />
-              {t('scans.row.resume')}
-            </DropdownMenuItem>
-          )}
-        </Can>
-        {!managed && (
-          <Can permission={Permission.ScansDelete}>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              onClick={() => onAction('delete', config)}
-            >
-              <Trash2 className="me-2 h-4 w-4" />
-              {t('scans.row.delete')}
-            </DropdownMenuItem>
-          </Can>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      }
+    />
   )
 }
 
@@ -348,8 +346,10 @@ function ConfigurationsTab() {
     setSelectedIds([])
     setSelectionEpoch((e) => e + 1)
   }, [])
-  const [filtersOpen, setFiltersOpen] = useFilterPanelOpen(CONFIG_FILTERS_OPEN_KEY)
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
+  const { can } = usePermissions()
+  const canWrite = can(Permission.ScansWrite)
+  const canDelete = can(Permission.ScansDelete)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
   const [bulkDisableConfirmOpen, setBulkDisableConfirmOpen] = useState(false)
@@ -418,6 +418,7 @@ function ConfigurationsTab() {
   const {
     data: configsResponse,
     isLoading: isLoadingConfigs,
+    isValidating: isValidatingConfigs,
     error: configsError,
     mutate: retryConfigs,
   } = useScanConfigs(filters, swrConfig)
@@ -459,6 +460,9 @@ function ConfigurationsTab() {
       setPageParam(Math.max(1, totalPages))
     }
   }, [configsResponse, pageParam, totalPages, setPageParam])
+
+  // The search field's Query mode (the same filter as query text).
+  const queryMode = useScanQueryMode(urlParams, replaceUrlSearch, configsResponse?.total)
 
   // Narrowing the list starts again at page 1 (page 3 of the old result may
   // not exist in the new one). Skipped on mount so a shared link keeps its page.
@@ -637,83 +641,69 @@ function ConfigurationsTab() {
   // Table columns - memoized to prevent infinite re-renders
   const columns: ColumnDef<ScanConfig>[] = useMemo(
     () => [
-      {
-        id: 'select',
-        header: ({ table }) => (
-          <Checkbox
-            checked={
-              table.getIsAllPageRowsSelected() ||
-              (table.getIsSomePageRowsSelected() && 'indeterminate')
-            }
-            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-            aria-label={t('common.selectAll')}
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox
-            checked={row.getIsSelected()}
-            onCheckedChange={(value) => row.toggleSelected(!!value)}
-            aria-label={t('scans.card.select', undefined, { name: row.original.name })}
-          />
-        ),
-        enableSorting: false,
-        enableHiding: false,
-      },
+      // Rows are one line. The checkbox column is the table's own (`bulk`).
       {
         accessorKey: 'name',
-        meta: { label: t('scans.col.name') },
+        // The row's identity: frozen at the start while the table scrolls sideways.
+        meta: { kind: 'name', pin: 'start', minWidth: 200, label: t('scans.col.name') },
+        enableHiding: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('scans.col.name')} />
         ),
         cell: ({ row }) => (
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="font-medium">{row.original.name}</p>
-              <ScanApprovalBadge status={row.original.approval_status} />
-            </div>
-            {row.original.description && (
-              <p className="max-w-[300px] truncate text-xs text-muted-foreground">
-                {row.original.description}
-              </p>
-            )}
-          </div>
+          <ScanNameCell config={row.original} onOpen={() => setSelectedConfig(row.original)} />
         ),
       },
       {
         accessorKey: 'scan_type',
+        meta: { kind: 'text', width: SCANS_WIDTH.type, label: t('scans.col.type') },
         header: t('scans.col.type'),
         enableSorting: false,
         cell: ({ row }) => {
           // What the scan runs (the workflow's name, or a single check's
-          // tool), then its kind and intensity as separate elements on a
-          // wrapping line: a long label or chip wraps, never overlaps.
+          // tool), then its kind; the intensity has its own column.
           const { label, kind } = scanTypeLabel(row.original, t)
+          const kindLabel =
+            kind === 'workflow' ? t('scans.scanType.workflow') : t('scans.scanType.single')
           return (
-            <div className="min-w-0 max-w-[16rem]">
-              <span className="block truncate text-sm" title={label}>
-                {label}
-              </span>
-              <MetaLine
-                className="mt-0.5 items-center gap-y-1"
-                items={[
-                  kind === 'workflow' ? t('scans.scanType.workflow') : t('scans.scanType.single'),
-                  <IntensityBadge key="intensity" intensity={row.original.intensity} />,
-                ]}
-              />
+            <div
+              className="flex min-w-0 items-baseline gap-2 whitespace-nowrap"
+              title={`${label} (${kindLabel})`}
+            >
+              <span className="min-w-0 truncate text-sm">{label}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{kindLabel}</span>
             </div>
           )
         },
       },
       {
+        id: 'intensity',
+        accessorKey: 'intensity',
+        meta: {
+          kind: 'status',
+          width: SCANS_WIDTH.intensity,
+          hideBelow: SCANS_HIDE_BELOW.intensity,
+          label: t('scans.intensity.label'),
+        },
+        header: t('scans.intensity.label'),
+        enableSorting: false,
+        cell: ({ row }) => <IntensityBadge intensity={row.original.intensity} />,
+      },
+      {
         // The real latest run, never the configuration's enabled flag.
         id: 'last_run_at',
         accessorKey: 'last_run_at',
-        meta: { label: t('scans.col.lastRun') },
+        meta: {
+          kind: 'text',
+          width: SCANS_WIDTH.lastRun,
+          sortFirst: 'desc',
+          label: t('scans.col.lastRun'),
+        },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('scans.col.lastRun')} />
         ),
         cell: ({ row }) => (
-          <LastRunCell run={lastRunOf(row.original)} onOpen={setOpenRunId} showHint />
+          <LastRunCell run={lastRunOf(row.original)} onOpen={setOpenRunId} showHint inline />
         ),
       },
       {
@@ -721,6 +711,12 @@ function ConfigurationsTab() {
         // runs (coverage gaps on the target side) count as successes, blocked
         // and canceled runs are left out (lib/run-history.ts).
         id: 'recent_runs',
+        meta: {
+          kind: 'text',
+          width: SCANS_WIDTH.recentRuns,
+          hideBelow: SCANS_HIDE_BELOW.recentRuns,
+          label: t('scans.col.recentRuns'),
+        },
         header: t('scans.col.recentRuns'),
         enableSorting: false,
         cell: ({ row }) =>
@@ -732,7 +728,7 @@ function ConfigurationsTab() {
       },
       {
         accessorKey: 'total_runs',
-        meta: { label: t('scans.col.runs') },
+        meta: { kind: 'number', hideBelow: SCANS_HIDE_BELOW.runs, label: t('scans.col.runs') },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('scans.col.runs')} />
         ),
@@ -741,12 +737,19 @@ function ConfigurationsTab() {
       {
         // The schedule and its on/off switch; manual scans have neither.
         accessorKey: 'schedule_type',
+        meta: {
+          kind: 'text',
+          width: SCANS_WIDTH.schedule,
+          hideBelow: SCANS_HIDE_BELOW.schedule,
+          label: t('scans.col.schedule'),
+        },
         header: t('scans.col.schedule'),
         enableSorting: false,
-        cell: ({ row }) => <ScheduleCell config={row.original} onToggle={handleToggle} />,
+        cell: ({ row }) => <ScheduleCell config={row.original} onToggle={handleToggle} inline />,
       },
       {
         id: 'actions',
+        meta: { kind: 'actions' },
         enableHiding: false,
         cell: ({ row }) => (
           <ConfigActionsCell
@@ -770,16 +773,101 @@ function ConfigurationsTab() {
     showOneOff,
   ].filter(Boolean).length
 
-  const clearFilters = () => {
-    setStatusFilter('all')
-    setTypeFilter('all')
-    setScheduleFilter('all')
-    setOriginFilter('all')
-    setTagFilter('')
-    setOneOffParam('')
-    list.setFilter('fq', '')
-    setPageParam(1)
+  // One URL write for several params (two `setFilter` calls in a row would
+  // each start from the same URL, and the second would undo the first).
+  const patchUrl = (remove: string[]) => {
+    const next = new URLSearchParams(window.location.search)
+    for (const name of [...remove, 'page']) next.delete(name)
+    replaceUrlSearch(next)
   }
+  /** The filters that show as chips (Add filter and the query text). */
+  const CHIP_PARAMS = ['type', 'schedule', 'tag', 'one_off', 'fq']
+  const clearChipFilters = () => patchUrl(CHIP_PARAMS)
+  /** Everything that narrows the list: chips, the two selects and the search. */
+  const clearFilters = () => patchUrl([...CHIP_PARAMS, 'status', 'origin', 'q'])
+
+  const typeLabel = (v: ApiScanType) =>
+    t(CONFIG_TYPES.find((s) => s.value === v)?.labelKey ?? '', v)
+
+  // The active filters as chips ("Field: value"), each removable on its own.
+  // State and Origin are the toolbar's own selects, so they are not chips.
+  const chipList: { key: string; text: string; clear: () => void }[] = [
+    ...(typeFilter !== 'all'
+      ? [
+          {
+            key: 'type',
+            text: t('scans.filter.chip', '{field}: {value}', {
+              field: t('scans.filter.type', 'Scan type'),
+              value: typeLabel(typeFilter),
+            }),
+            clear: () => setTypeFilter('all'),
+          },
+        ]
+      : []),
+    ...(scheduleFilter !== 'all'
+      ? [
+          {
+            key: 'schedule',
+            text: t('scans.filter.chip', '{field}: {value}', {
+              field: t('scans.col.schedule'),
+              value: scheduleTypeName(t, scheduleFilter),
+            }),
+            clear: () => setScheduleFilter('all'),
+          },
+        ]
+      : []),
+    ...(tagFilter
+      ? [
+          {
+            key: 'tag',
+            text: t('scans.filter.chip', '{field}: {value}', {
+              field: t('scans.filter.tag', 'Tag'),
+              value: tagFilter,
+            }),
+            clear: () => setTagFilter(''),
+          },
+        ]
+      : []),
+    ...(showOneOff
+      ? [
+          {
+            key: 'one_off',
+            text: t('scans.filter.oneOffShown', 'One-off scans shown'),
+            clear: () => setOneOffParam(''),
+          },
+        ]
+      : []),
+  ]
+  const removableCount = chipList.length + (fqFilter ? 1 : 0)
+  // In Query mode the text owns the filter: the chips step aside.
+  const chipsRow =
+    !queryMode.active && removableCount > 0 ? (
+      <FilterChipsRow
+        data-testid="scans-filter-chips"
+        label={t('common.filterChips.label', 'Active filters')}
+        chips={[
+          ...chipList.map((c) => (
+            <RemovableFilterChip
+              key={c.key}
+              text={c.text}
+              onRemove={c.clear}
+              removeLabel={t('scans.filter.remove', 'Remove filter {filter}', { filter: c.text })}
+            />
+          )),
+          ...(fqFilter
+            ? [
+                <ScanQueryChip
+                  key="fq"
+                  search={urlParams}
+                  onOpen={() => queryMode.setActive(true)}
+                  onSearchChange={replaceUrlSearch}
+                />,
+              ]
+            : []),
+        ]}
+        onClearAll={removableCount > 1 ? clearChipFilters : undefined}
+      />
+    ) : undefined
 
   // A status metric toggles its filter; "All" clears it.
   const toggleStatus = (value: ConfigStatusFilter) =>
@@ -818,48 +906,61 @@ function ConfigurationsTab() {
 
   // Filters are single-valued in the API, so each section behaves like a radio
   // group: ticking an option replaces the previous one, unticking clears it.
-  const facetPanel = (
-    <FacetPanel activeCount={activeFiltersCount} onClearAll={clearFilters}>
-      <FacetSection title="State" selectedCount={statusFilter !== 'all' ? 1 : 0}>
-        {configStatusFilters
-          .filter((f) => f.value !== 'all')
-          .map((f) => (
+  // `withSelects`: the phone sheet also holds State and Origin (the toolbar's
+  // two selects), so every filter is in one place there; the Add filter
+  // popover holds only what the toolbar does not already show.
+  const facetPanel = (withSelects: boolean) => (
+    <FacetPanel
+      activeCount={withSelects ? activeFiltersCount : removableCount}
+      onClearAll={withSelects ? clearFilters : clearChipFilters}
+    >
+      {withSelects && (
+        <FacetSection
+          title={t('scans.filter.state', 'State')}
+          selectedCount={statusFilter !== 'all' ? 1 : 0}
+        >
+          {CONFIG_STATES.map((f) => (
             <FacetOption
               key={f.value}
-              label={f.label}
+              label={t(f.labelKey)}
               checked={statusFilter === f.value}
               onCheckedChange={(on) => setStatusFilter(on ? f.value : 'all')}
             />
           ))}
+        </FacetSection>
+      )}
+      <FacetSection
+        title={t('scans.filter.type', 'Scan type')}
+        selectedCount={typeFilter !== 'all' ? 1 : 0}
+      >
+        {CONFIG_TYPES.map((f) => (
+          <FacetOption
+            key={f.value}
+            label={t(f.labelKey)}
+            checked={typeFilter === f.value}
+            onCheckedChange={(on) => setTypeFilter(on ? f.value : 'all')}
+          />
+        ))}
       </FacetSection>
-      <FacetSection title="Scan type" selectedCount={typeFilter !== 'all' ? 1 : 0}>
-        {configTypeFilters
-          .filter((f) => f.value !== 'all')
-          .map((f) => (
-            <FacetOption
-              key={f.value}
-              label={f.label}
-              checked={typeFilter === f.value}
-              onCheckedChange={(on) => setTypeFilter(on ? f.value : 'all')}
-            />
-          ))}
+      <FacetSection
+        title={t('scans.col.schedule')}
+        selectedCount={scheduleFilter !== 'all' ? 1 : 0}
+      >
+        {SCHEDULE_TYPES.map((type) => (
+          <FacetOption
+            key={type}
+            label={scheduleTypeName(t, type)}
+            checked={scheduleFilter === type}
+            onCheckedChange={(on) => setScheduleFilter(on ? type : 'all')}
+          />
+        ))}
       </FacetSection>
-      <FacetSection title="Schedule" selectedCount={scheduleFilter !== 'all' ? 1 : 0}>
-        {configScheduleFilters
-          .filter((f) => f.value !== 'all')
-          .map((f) => (
-            <FacetOption
-              key={f.value}
-              label={f.label}
-              checked={scheduleFilter === f.value}
-              onCheckedChange={(on) => setScheduleFilter(on ? f.value : 'all')}
-            />
-          ))}
-      </FacetSection>
-      <FacetSection title={t('scans.origin.title')} selectedCount={originFilter !== 'all' ? 1 : 0}>
-        {configOriginFilters
-          .filter((f) => f.value !== 'all')
-          .map((f) => (
+      {withSelects && (
+        <FacetSection
+          title={t('scans.origin.title')}
+          selectedCount={originFilter !== 'all' ? 1 : 0}
+        >
+          {CONFIG_ORIGINS.map((f) => (
             <FacetOption
               key={f.value}
               label={t(f.labelKey)}
@@ -867,182 +968,297 @@ function ConfigurationsTab() {
               onCheckedChange={(on) => setOriginFilter(on ? f.value : 'all')}
             />
           ))}
-      </FacetSection>
-      <FacetSection title="One-off scans" selectedCount={showOneOff ? 1 : 0}>
+        </FacetSection>
+      )}
+      <FacetSection
+        title={t('scans.filter.oneOff', 'One-off scans')}
+        selectedCount={showOneOff ? 1 : 0}
+      >
         <FacetOption
-          label="Show one-off scans"
+          label={t('scans.filter.oneOffShow', 'Show one-off scans')}
           checked={showOneOff}
           onCheckedChange={(on) => setOneOffParam(on ? '1' : '')}
         />
       </FacetSection>
-      <FacetSection title="Tag" selectedCount={tagFilter ? 1 : 0}>
+      <FacetSection title={t('scans.filter.tag', 'Tag')} selectedCount={tagFilter ? 1 : 0}>
         <div className="relative pe-1 pt-1">
-          <Tag className="pointer-events-none absolute start-2.5 top-1/2 mt-0.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Tag
+            className="pointer-events-none absolute start-2.5 top-1/2 mt-0.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
           <Input
-            placeholder="Filter by tag…"
-            aria-label="Filter by tag"
+            placeholder={t('scans.filter.tagPlaceholder', 'Filter by tag…')}
+            aria-label={t('scans.filter.tagLabel', 'Filter by tag')}
             value={tagFilter}
             onChange={(e) => setTagFilter(e.target.value)}
-            className="h-8 ps-8 text-sm"
+            className="ps-8 text-sm"
           />
         </div>
       </FacetSection>
     </FacetPanel>
   )
 
+  // The toolbar row after the search: Add filter (it never changes size),
+  // then the list's two fixed selects, each in a box as wide as its longest
+  // value, so choosing a value moves nothing.
+  const toolbarStart = (
+    <>
+      <AddFilterPanel>{facetPanel(false)}</AddFilterPanel>
+      <FilterSelect<ConfigStatusFilter>
+        label={t('scans.filter.state', 'State')}
+        value={statusFilter}
+        clearable={false}
+        // The key folds away on a narrow toolbar: "All states" still says what it is.
+        foldLabel
+        options={[
+          { value: 'all', label: t('scans.filter.allStates', 'All states'), count: stats?.total },
+          ...CONFIG_STATES.map((s) => ({
+            value: s.value,
+            label: t(s.labelKey),
+            count: stats?.[s.value],
+          })),
+        ]}
+        onChange={(v) => setStatusFilter(v || 'all')}
+      />
+      <FilterSelect<ConfigOriginFilter>
+        label={t('scans.origin.title')}
+        value={originFilter}
+        clearable={false}
+        foldLabel
+        options={[
+          { value: 'all', label: t('scans.filter.allOrigins', 'All origins') },
+          ...CONFIG_ORIGINS.map((o) => ({ value: o.value, label: t(o.labelKey) })),
+        ]}
+        onChange={(v) => setOriginFilter(v || 'all')}
+      />
+    </>
+  )
+
+  const refreshing = isValidatingConfigs || isLoadingStats
+  const refreshButton = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => {
+            void retryConfigs()
+            void retryStats()
+          }}
+          disabled={refreshing}
+          aria-label={t('scans.configs.refresh', 'Refresh')}
+        >
+          <RefreshCw
+            className={cn('h-4 w-4', refreshing && 'animate-spin motion-reduce:animate-none')}
+            aria-hidden
+          />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{t('scans.configs.refresh', 'Refresh')}</TooltipContent>
+    </Tooltip>
+  )
+
+  // The bulk bar: two direct actions (Activate, Pause), the rest under More.
+  // Each shows only with its permission (the API checks again); with neither
+  // permission there is no checkbox column.
+  const scansBulk: DataTableBulk<ScanConfig> | undefined =
+    canWrite || canDelete
+      ? {
+          rowLabel: (c) => c.name,
+          checkboxLabel: (c) => t('scans.card.select', undefined, { name: c.name }),
+          actions: canWrite ? (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={isBulkOperating}
+                onClick={() => setBulkConfirm('activate')}
+              >
+                <Play aria-hidden />
+                {t('scans.bulk.activate')}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={isBulkOperating}
+                onClick={() => setBulkConfirm('pause')}
+              >
+                <Pause aria-hidden />
+                {t('scans.bulk.pause')}
+              </Button>
+            </>
+          ) : null,
+          more: [
+            ...(canWrite
+              ? [
+                  {
+                    id: 'disable',
+                    label: t('scans.bulk.disable'),
+                    icon: XCircle,
+                    disabledReason: isBulkOperating
+                      ? t('scans.bulk.busy', 'Wait for the current change to finish.')
+                      : undefined,
+                    onSelect: () => setBulkDisableConfirmOpen(true),
+                  },
+                ]
+              : []),
+            ...(canDelete
+              ? [
+                  {
+                    id: 'delete',
+                    label: t('scans.bulk.delete'),
+                    icon: Trash2,
+                    destructive: true,
+                    disabledReason: isBulkOperating
+                      ? t('scans.bulk.busy', 'Wait for the current change to finish.')
+                      : undefined,
+                    onSelect: () => setBulkDeleteConfirmOpen(true),
+                  },
+                ]
+              : []),
+          ],
+          onSelectionChange: (selection) =>
+            setSelectedIds(selection?.kind === 'ids' ? selection.rows.map((c) => c.id) : []),
+        }
+      : undefined
+
+  const narrowed = activeFiltersCount > 0 || searchQuery.trim() !== ''
+  const noAccess = accessStateOf(configsError) === 'no_access'
+
   return (
     <>
       {statsError && !stats ? (
-        <ErrorState
-          title={t('scans.configs.statsErrorTitle', 'scan counts')}
-          error={statsError}
-          onRetry={() => void retryStats()}
-        />
+        // On a phone the counts follow the list, like the strip they replace.
+        <div className="max-md:order-last">
+          <ErrorState
+            title={t('scans.configs.statsErrorTitle', 'scan counts')}
+            error={statsError}
+            onRetry={() => void retryStats()}
+          />
+        </div>
       ) : (
-        <MetricStrip loading={isLoadingStats} items={metrics} />
+        <MetricStrip loading={isLoadingStats} items={metrics} listFirst />
       )}
 
-      <div className="flex items-start gap-5">
-        {filtersOpen && (
-          <aside
-            id="scan-config-filters"
-            aria-label={t('scans.configs.filtersLabel', 'Scan configuration filters')}
-            className="sticky top-4 hidden h-[calc(100svh-7.5rem)] w-64 shrink-0 flex-col rounded-xl border bg-card p-4 shadow-sm lg:flex"
-          >
-            <div className="flex min-h-0 flex-1 flex-col">{facetPanel}</div>
-          </aside>
-        )}
-
-        <div className="min-w-0 flex-1">
-          <ScanQueryBar
-            search={urlParams}
-            resultCount={configsResponse?.total}
-            onSearchChange={replaceUrlSearch}
+      <ListTitleRow
+        title={t('scans.configs.viewAll', 'All scan configurations')}
+        count={
+          <ListCount
+            total={configsResponse?.total ?? 0}
+            loading={!configsResponse}
+            label={t(
+              'scans.configs.total',
+              '{count, plural, one {# scan configuration} other {# scan configurations}}',
+              { count: configsResponse?.total ?? 0 }
+            )}
           />
-          {isLoadingConfigs && !configsResponse ? (
-            <TableSkeleton />
-          ) : (
-            <DataTable
-              columns={columns}
-              data={configs}
-              error={configsError}
-              onRetry={() => void retryConfigs()}
-              errorTitle={t('scans.errorTitle', 'scans')}
-              showSearch={false}
-              search={{
-                value: searchQuery,
-                onChange: setSearchQuery,
-                placeholder: t('scans.configs.searchPlaceholder', 'Search configurations…'),
-                label: t('scans.configs.searchLabel', 'Search scan configurations'),
-              }}
-              filterToggle={{
-                open: filtersOpen,
-                onToggle: () => setFiltersOpen((o) => !o),
-                onOpenSheet: () => setFilterSheetOpen(true),
-                activeCount: activeFiltersCount,
-                controlsId: 'scan-config-filters',
-              }}
-              manualPagination
-              rowCount={configsResponse?.total ?? 0}
-              pagination={{ pageIndex: pageParam - 1, pageSize: perPage }}
-              onPaginationChange={list.setPagination}
-              pageSize={perPage}
-              pageSizeOptions={[...SCAN_PAGE_SIZES]}
-              paginationNoun="scans"
-              sorting={sorting}
-              onSortingChange={list.setSorting}
-              getRowId={(c) => c.id}
-              onRowClick={setSelectedConfig}
-              mobileRow={(config, selection) => (
-                <ScanMobileCard
+        }
+      />
+
+      {noAccess ? (
+        <NoAccessState title={t('scans.configs.subject', 'the scans list')} />
+      ) : (
+        <DataTable
+          columns={columns}
+          data={configs}
+          error={configsError}
+          onRetry={() => void retryConfigs()}
+          errorTitle={t('scans.errorTitle', 'scans')}
+          // The first read: skeleton rows under a toolbar that stays mounted.
+          isLoading={isLoadingConfigs && !configsResponse}
+          isRefreshing={isValidatingConfigs && !!configsResponse}
+          refreshingLabel={t('scans.configs.refreshing', 'Refreshing scans')}
+          // When the table scrolls sideways (768 to 1024 px) the row menu
+          // stays in view at the end of each row.
+          pinActions
+          showSearch={false}
+          search={{
+            value: searchQuery,
+            onChange: setSearchQuery,
+            placeholder: t('scans.configs.searchPlaceholder', 'Search configurations…'),
+            label: t('scans.configs.searchLabel', 'Search scan configurations'),
+            query: queryMode.query,
+          }}
+          // One filter entry per width: Add filter from 768, this button
+          // (joined to the search field) on a phone, where it opens the sheet.
+          filterToggle={{
+            open: false,
+            onToggle: () => setFilterSheetOpen(true),
+            onOpenSheet: () => setFilterSheetOpen(true),
+            activeCount: activeFiltersCount,
+            controlsId: 'scan-config-filters',
+            label: t('scans.configs.filtersLabel', 'Scan configuration filters'),
+            sheetOnly: true,
+          }}
+          toolbarStart={toolbarStart}
+          // Refresh ends the toolbar: never an icon alone on the title row.
+          toolbarEnd={refreshButton}
+          toolbarBelow={chipsRow}
+          manualPagination
+          rowCount={configsResponse?.total ?? 0}
+          pagination={{ pageIndex: pageParam - 1, pageSize: perPage }}
+          onPaginationChange={list.setPagination}
+          pageSize={perPage}
+          paginationNoun={t('scans.configs.noun', 'scans')}
+          sorting={sorting}
+          onSortingChange={list.setSorting}
+          getRowId={(c) => c.id}
+          onRowClick={setSelectedConfig}
+          mobileRow={(config, selection) => (
+            <ScanMobileCard
+              config={config}
+              selection={selection}
+              onOpen={setSelectedConfig}
+              onOpenRun={setOpenRunId}
+              actions={
+                <ConfigActionsCell
                   config={config}
-                  selection={selection}
-                  onOpen={setSelectedConfig}
-                  onOpenRun={setOpenRunId}
-                  actions={
-                    <ConfigActionsCell
-                      config={config}
-                      onAction={handleAction}
-                      triggering={isTriggering(config.id)}
-                    />
-                  }
+                  onAction={handleAction}
+                  triggering={isTriggering(config.id)}
                 />
-              )}
-              onSelectionChange={(rows) => setSelectedIds(rows.map((c) => c.id))}
-              resetSelectionKey={selectionEpoch}
-              showSelectionCount={false}
-              emptyMessage={
-                activeFiltersCount > 0 || searchQuery
-                  ? t('scans.list.emptyFiltered')
-                  : t('scans.list.empty')
-              }
-              emptyDescription={
-                activeFiltersCount > 0 || searchQuery
-                  ? t('scans.list.emptyFilteredHint')
-                  : t('scans.list.emptyHint')
               }
             />
           )}
-        </div>
-      </div>
+          // No bulk action for this user: no checkbox column either.
+          bulk={scansBulk}
+          resetSelectionKey={selectionEpoch}
+          showSelectionCount={false}
+          isFiltered={narrowed}
+          onClearFilters={clearFilters}
+          emptyState={{
+            nothingYet: (
+              <EmptyState
+                icon={Radar}
+                title={t('scans.list.empty')}
+                description={t('scans.list.emptyHint')}
+              />
+            ),
+            noMatch: (
+              <EmptyState
+                icon={SearchX}
+                title={t('scans.list.emptyFiltered')}
+                description={t('scans.list.emptyFilteredHint')}
+                action={
+                  <Button variant="outline" size="sm" onClick={clearFilters}>
+                    {t('common.table.clearFilters', 'Clear filters')}
+                  </Button>
+                }
+              />
+            ),
+          }}
+        />
+      )}
 
       {/* The scans the platform runs itself stay visible, read-only. With the
           origin filter on System the table already lists them. */}
       {originFilter === 'all' && <ManagedScansSection onOpenRun={setOpenRunId} />}
 
-      <BulkActionBar count={selectedIds.length} onClear={clearSelection}>
-        <Can permission={Permission.ScansWrite}>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={isBulkOperating}
-            onClick={() => setBulkConfirm('activate')}
-          >
-            <Play className="me-2 h-4 w-4" />
-            {t('scans.bulk.activate')}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={isBulkOperating}
-            onClick={() => setBulkConfirm('pause')}
-          >
-            <Pause className="me-2 h-4 w-4" />
-            {t('scans.bulk.pause')}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={isBulkOperating}
-            onClick={() => setBulkDisableConfirmOpen(true)}
-          >
-            <XCircle className="me-2 h-4 w-4" />
-            {t('scans.bulk.disable')}
-          </Button>
-        </Can>
-        <Can permission={Permission.ScansDelete}>
-          <Button
-            variant="destructive"
-            size="sm"
-            disabled={isBulkOperating}
-            onClick={() => setBulkDeleteConfirmOpen(true)}
-          >
-            {isBulkDeleting ? (
-              <Loader2 className="me-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="me-2 h-4 w-4" />
-            )}
-            {t('scans.bulk.delete')}
-          </Button>
-        </Can>
-      </BulkActionBar>
-
       <FilterSheet
         open={filterSheetOpen}
         onOpenChange={setFilterSheetOpen}
-        title="Scan configuration filters"
+        title={t('scans.configs.filtersLabel', 'Scan configuration filters')}
       >
-        {facetPanel}
+        {facetPanel(true)}
       </FilterSheet>
 
       {/* Config Details Sheet */}

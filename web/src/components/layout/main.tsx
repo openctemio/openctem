@@ -17,12 +17,15 @@
 import {
   createContext,
   forwardRef,
+  useCallback,
   useContext,
   useImperativeHandle,
   useRef,
+  useState,
   type HTMLAttributes,
   type Ref,
 } from 'react'
+import { usePageTopScrollPadding } from '@/hooks/use-page-top-scroll-padding'
 import { useScrollActivity } from '@/hooks/use-scroll-activity'
 import { cn } from '@/lib/utils'
 
@@ -54,7 +57,10 @@ export const Main = forwardRef<HTMLElement, MainProps>(
           // overflow-x: clip, not hidden — hidden forces overflow-y to auto,
           // which made <Main> a (never-scrolling) scroll container and broke
           // position: sticky for everything inside a page.
-          'px-4 py-6 overflow-x-clip sm:px-6',
+          // The bottom padding grows by the room a bulk-action bar takes
+          // while it shows (BulkActionBar sets --bulk-bar-space), so the last
+          // row and the pager scroll clear of it.
+          'px-4 pt-6 pb-[calc(1.5rem+var(--bulk-bar-space,0px))] overflow-x-clip sm:px-6',
           fixed && 'flex flex-col flex-grow overflow-hidden',
           !fluid && 'w-full mx-auto',
           className
@@ -77,7 +83,8 @@ Main.displayName = 'Main'
  * The layout-level `main` landmark and skip-link target (`#content`).
  * Every <Main> rendered inside it is a plain container.
  *
- * It is the app's page scroller: its scrollbar gutter is always reserved, so
+ * It is the app's page scroller: on a client navigation the new page starts
+ * at its top (`usePageTopScrollPadding`). Its scrollbar gutter is always reserved, so
  * content never shifts when a page grows long enough to scroll, and the thumb
  * shows only while scrolling (`scrollbar-auto-hide`).
  */
@@ -86,9 +93,23 @@ export const MainRegion = forwardRef<HTMLElement, HTMLAttributes<HTMLElement>>(
     const innerRef = useRef<HTMLElement>(null)
     useImperativeHandle(ref, () => innerRef.current as HTMLElement)
     useScrollActivity(innerRef)
+    const [scroller, setScroller] = useState<HTMLElement | null>(null)
+    const setMainRef = useCallback((node: HTMLElement | null) => {
+      innerRef.current = node
+      setScroller(node)
+    }, [])
+    usePageTopScrollPadding(scroller)
     return (
       <InsideMainLandmark.Provider value={true}>
-        <main ref={innerRef} id={id} className={cn('scrollbar-auto-hide', className)} {...props} />
+        <main
+          ref={setMainRef}
+          id={id}
+          // relative: the scroller contains the page's absolutely placed boxes
+          // (screen reader text, announcers), so they scroll with the page
+          // instead of making the shell column taller than the screen.
+          className={cn('scrollbar-auto-hide relative', className)}
+          {...props}
+        />
       </InsideMainLandmark.Provider>
     )
   }

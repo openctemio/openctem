@@ -110,7 +110,11 @@ export function CreateOrganizationDialog({
       }
       finish(org)
     } catch (err) {
-      setError(err instanceof AdminApiError ? err.message : 'Could not create the organization')
+      setError(
+        err instanceof AdminApiError
+          ? err.message
+          : t('admin.createOrganizationDialog.createFailed', 'Could not create the organization')
+      )
     } finally {
       setBusy(false)
     }
@@ -219,7 +223,7 @@ export function CreateOrganizationDialog({
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="org-slug">
-                    {t('admin.createOrganizationDialog.slug', 'Slug')}
+                    {t('admin.createOrganizationDialog.slug', 'Short name')}
                   </Label>
                   <Input
                     id="org-slug"
