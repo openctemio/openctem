@@ -1354,6 +1354,13 @@ valid UTF-8, no lone surrogates, depth ≤ 64, nothing after the value) and no
 unknown fields (`422`), and the v2 report rules: body major version equals
 the media type's, `tool.name` present, `metadata.id` a producer UUIDv7 (an idempotency key, never the report id; the report id comes from the URL path),
 ≤ 10,000 findings and assets per segment.
+A document the CTIS module's own validator refuses (`ctis.Report.Validate`)
+gets one item error per problem it lists (`internal/app/ingest/ctis_problems.go`):
+a JSON pointer built from the problem's location, field names and indices only
+(`/assets/29/technical/identity/kind`, `/tool/techniques/0`), and a code with
+its fixed detail (`required`, `too_many`, `invalid_value`). The validator's
+message can quote the document, so it stays in the server log; a location that
+is not a plain path gives an empty pointer.
 
 The digest without a signature detects corruption and buggy proxies; it is
 not authentication (anyone holding the key can compute it). RFC 9421
