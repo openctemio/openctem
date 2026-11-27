@@ -25,7 +25,6 @@ import { describe, expect, it } from 'vitest'
 const SRC_ROOT = path.resolve(__dirname, '../..')
 
 const NOT_YET_MIGRATED = new Set([
-  'app/(dashboard)/insights/executive/page.tsx',
   'components/layout/about-dialog.tsx',
   'components/layout/org-card.tsx',
   'features/assets/components/asset-attribution-section.tsx',
