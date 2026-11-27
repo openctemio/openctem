@@ -488,7 +488,14 @@ export async function probeRowMix(page: Page, opts: { fonts?: boolean } = {}): P
           const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
           for (let n = w.nextNode(); n; n = w.nextNode()) {
             const host = n.parentElement
-            if (host && (n.textContent ?? '').trim() && shown(host)) return host
+            if (!host || !(n.textContent ?? '').trim() || !shown(host)) continue
+            // A label folded away (font-size 0, as a phone page header draws
+            // its buttons as icons) draws nothing.
+            if (parseFloat(getComputedStyle(host).fontSize) === 0) continue
+            const range = document.createRange()
+            range.selectNodeContents(n)
+            if (range.getBoundingClientRect().width < 1) continue
+            return host
           }
           return null
         }
