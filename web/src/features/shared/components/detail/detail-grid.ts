@@ -34,9 +34,12 @@ export const DETAIL_MAIN =
 export const DETAIL_PANEL_FULL = 'xl:col-span-full'
 
 /**
- * A two-part page body (a summary beside a side card, as on a vulnerability's
- * page) under the same wide-screen rule: the side part is a 24rem column right
- * after the main part from a 1920 px screen, and the main part stops at 90rem.
+ * A page body of a main part (cards one under the other) beside a side card,
+ * as on a vulnerability's page (summary and status beside "Who found it").
+ * From a 1920 px screen the main part's cards stand side by side
+ * (`DETAIL_SPLIT_MAIN` becomes `contents`) and the side card is a 24rem
+ * column after them, so no card holds one sentence across 1400 px.
  */
 export const DETAIL_SPLIT =
-  'grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] min-[120rem]:grid-cols-[minmax(0,90rem)_24rem]'
+  'grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] min-[120rem]:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_24rem]'
+export const DETAIL_SPLIT_MAIN = 'grid min-w-0 content-start gap-4 min-[120rem]:contents'

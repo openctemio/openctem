@@ -430,8 +430,10 @@ reference.
    right of the rail. The tab strip and a full-width panel
    (`DETAIL_PANEL_FULL`, a wide table) span the whole width. A panel never
    adds its own `max-w-*` cap. A page whose body is a main part beside a
-   side card (a vulnerability's summary and "Who found it") uses
-   `DETAIL_SPLIT`, the same rule. Inside the panel:
+   side card (a vulnerability's summary and status beside "Who found it")
+   uses `DETAIL_SPLIT` / `DETAIL_SPLIT_MAIN`: from a 1920 px screen the
+   main part's cards stand side by side and the side card is a 24rem column
+   after them. Inside the panel:
    - a section's title row (`DetailSectionBlock`, `DetailSection`) is at
      most 40rem wide, so its controls (Checklist, Retest now, Add check, a
      link to the plan) sit near the title, never a page width away;
