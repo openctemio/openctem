@@ -35,6 +35,9 @@ export function SettingsAttention({ enabled }: { enabled: boolean }) {
   return (
     <SettingsSection
       framed
+      // Rows of a finding and its link: a reading width, also on the wide
+      // settings overview (the link stays next to what it opens).
+      className="max-w-settings"
       id="settings-attention"
       title={t('settings.attention.title', 'Needs attention')}
       description={
