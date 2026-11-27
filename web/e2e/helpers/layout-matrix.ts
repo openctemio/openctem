@@ -1675,6 +1675,9 @@ export async function findMatrixBreaks(
         const peers = ctrls.filter((o) => {
           if (o === c || !box!.contains(o)) return false
           const or = o.getBoundingClientRect()
+          // A text link drawn as a kit button (variant link) is a line of
+          // text, not a control of the row's height.
+          if (o.matches('[data-variant="link"]') || or.height < 24) return false
           // Beside it: the two share part of their height band.
           return Math.min(or.bottom, r.bottom) - Math.max(or.top, r.top) > 4
         })
@@ -1781,10 +1784,24 @@ export async function findMatrixBreaks(
           const host = n.parentElement
           if (!host || !(n.textContent ?? '').trim() || hidden(host)) continue
           if (host.closest('tr, [role=row], li') !== row || host.closest(CHIP)) continue
+          // What is drawn: a line clamp or a clipping box (up to the row)
+          // hides the lines past it.
+          let clipTop = -Infinity
+          let clipBottom = Infinity
+          for (let a: Element | null = host; a && a !== row; a = a.parentElement) {
+            if (getComputedStyle(a).overflowY !== 'visible') {
+              const ar = a.getBoundingClientRect()
+              clipTop = Math.max(clipTop, ar.top)
+              clipBottom = Math.min(clipBottom, ar.bottom)
+            }
+          }
           crowdRange.selectNodeContents(n)
           for (const b of Array.from(crowdRange.getClientRects())) {
             if (b.width < 1 || b.height < 1) continue
-            boxes.push({ top: b.top, bottom: b.bottom, what: `text "${short(n.textContent, 30)}"` })
+            const top = Math.max(b.top, clipTop)
+            const bottom = Math.min(b.bottom, clipBottom)
+            if (bottom - top < 1) continue
+            boxes.push({ top, bottom, what: `text "${short(n.textContent, 30)}"` })
           }
         }
         const inTop = rr.top + bw(row, 'Top')
