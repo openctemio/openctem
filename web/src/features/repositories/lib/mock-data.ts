@@ -33,7 +33,7 @@ interface FindingsSummaryUI {
  */
 export interface RepositoryView extends AssetWithRepository {
   // Legacy project fields for UI compatibility
-  scm_provider: SCMProvider
+  scm_provider: SCMProvider | null
   scm_organization?: string
   default_branch: string
   visibility: RepoVisibility
