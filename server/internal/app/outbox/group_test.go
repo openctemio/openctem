@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
+	"github.com/openctemio/openctem/server/internal/metrics"
 	"github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/server/pkg/domain/integration"
 	outboxdom "github.com/openctemio/openctem/server/pkg/domain/outbox"
@@ -538,5 +540,27 @@ func TestGroup_TenantAndChannelIsolation(t *testing.T) {
 		default:
 			t.Fatal("unknown tenant")
 		}
+	}
+}
+
+// A delivery handed to the channel's group message is not a dead letter:
+// prod logged "notification channel dead-lettered" (attempts 0, no error) for
+// every grouped "priority raised" event and counted it in the alert's metric.
+func TestGroup_GroupedIsNotADeadLetter(t *testing.T) {
+	tenant := shared.NewID()
+	g := newGroupHarness(stdChannel(tenant, "tg"))
+	before := testutil.ToFloat64(metrics.NotificationDeadLettersTotal.WithLabelValues(deadLetterChannel))
+	var entries []*outboxdom.Outbox
+	for range 3 {
+		entries = append(entries, raised(tenant, "high"))
+	}
+	g.process(t, entries...)
+	for _, e := range entries {
+		if d := e.Deliveries(); len(d) != 1 || d[0].Status != outboxdom.DeliveryGrouped {
+			t.Fatalf("deliveries %+v, want one grouped", d)
+		}
+	}
+	if got := testutil.ToFloat64(metrics.NotificationDeadLettersTotal.WithLabelValues(deadLetterChannel)) - before; got != 0 {
+		t.Fatalf("grouped deliveries counted %v dead letters, want 0", got)
 	}
 }
