@@ -117,100 +117,107 @@ function SourceRow({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        'flex flex-wrap items-center gap-2 rounded-md border bg-background px-2 py-1.5 text-sm',
+        // Two fixed parts, the same in every row: who (name and when it was
+        // last seen) and its controls. On a phone the controls sit on their
+        // own line under the name; a row never wraps by the length of its text.
+        'flex flex-col gap-2 rounded-md border bg-background px-2 py-1.5 text-sm sm:flex-row sm:items-center',
         (isDragging || grabbed) && 'ring-2 ring-primary',
         !rule.trusted && 'text-muted-foreground'
       )}
       data-testid={`source-row-${rule.source}`}
     >
-      {canEdit && (
-        <button
-          type="button"
-          ref={setActivatorNodeRef}
-          {...attributes}
-          {...listeners}
-          aria-roledescription={t('assetSources.sortable', 'sortable')}
-          aria-pressed={grabbed}
-          aria-label={t('assetSources.dragHandle', 'Reorder {name}', { name: label })}
-          onKeyDown={(e) => onHandleKeyDown(e, index)}
-          onBlur={onHandleBlur}
-          className="hidden h-control w-control cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex pointer-coarse:hidden"
-        >
-          <GripVertical className="h-4 w-4" />
-        </button>
-      )}
-      <Icon className="h-4 w-4 shrink-0" aria-hidden />
-      {/* At least 10rem for the source's name: on a phone its controls wrap
-          under it rather than cut it to "Conn…". */}
-      <span className="min-w-0 flex-1 basis-40 font-medium break-words">{label}</span>
-      <span className="text-xs text-muted-foreground">
-        {lastSeen
-          ? t('assetSources.lastSeen', 'Last seen {when}', { when: formatRelative(lastSeen) })
-          : t('assetSources.notSeen', 'Not seen yet')}
-      </span>
-      <label className="flex items-center gap-1 text-xs">
-        <Input
-          type="number"
-          min={0}
-          max={MAX_TTL_DAYS}
-          className={cn('w-20', !ttlOk && 'border-destructive')}
-          disabled={!canEdit}
-          aria-invalid={!ttlOk}
-          aria-label={t('assetSources.ttlFor', 'Days {name} counts', { name: label })}
-          value={Number.isFinite(rule.ttl_days) ? rule.ttl_days : ''}
-          onChange={(e) =>
-            onChange({ ...rule, ttl_days: e.target.value === '' ? NaN : Number(e.target.value) })
-          }
-        />
-        <span>{t('assetSources.days', 'days')}</span>
-      </label>
-      <Switch
-        checked={rule.trusted}
-        disabled={!canEdit}
-        aria-label={t('assetSources.trustFor', '{name} may update {scope}', {
-          name: label,
-          scope: scopeLabel,
-        })}
-        onCheckedChange={(v) => onChange({ ...rule, trusted: v === true })}
-      />
-      {canEdit && (
-        <span className="flex gap-0.5 sm:hidden pointer-coarse:flex">
-          <Button
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        {canEdit && (
+          <button
             type="button"
-            size="icon"
-            variant="ghost"
-
-            disabled={index === 0}
-            aria-label={t('assetSources.moveUp', 'Move {name} up', { name: label })}
-            onClick={() => onMove(index, index - 1)}
+            ref={setActivatorNodeRef}
+            {...attributes}
+            {...listeners}
+            aria-roledescription={t('assetSources.sortable', 'sortable')}
+            aria-pressed={grabbed}
+            aria-label={t('assetSources.dragHandle', 'Reorder {name}', { name: label })}
+            onKeyDown={(e) => onHandleKeyDown(e, index)}
+            onBlur={onHandleBlur}
+            className="hidden h-control w-control cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex pointer-coarse:hidden"
           >
-            <ArrowUp className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-
-            disabled={index === total - 1}
-            aria-label={t('assetSources.moveDown', 'Move {name} down', { name: label })}
-            onClick={() => onMove(index, index + 1)}
-          >
-            <ArrowDown className="h-3.5 w-3.5" />
-          </Button>
+            <GripVertical className="h-4 w-4" />
+          </button>
+        )}
+        <Icon className="h-4 w-4 shrink-0" aria-hidden />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="font-medium break-words">{label}</span>
+          <span className="text-xs text-muted-foreground">
+            {lastSeen
+              ? t('assetSources.lastSeen', 'Last seen {when}', { when: formatRelative(lastSeen) })
+              : t('assetSources.notSeen', 'Not seen yet')}
+          </span>
         </span>
-      )}
-      {canEdit && onRemove && (
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
+      </div>
+      <div className="flex shrink-0 items-center gap-2" data-testid="source-controls">
+        <label className="flex items-center gap-1 text-xs">
+          <Input
+            type="number"
+            min={0}
+            max={MAX_TTL_DAYS}
+            className={cn('w-20', !ttlOk && 'border-destructive')}
+            disabled={!canEdit}
+            aria-invalid={!ttlOk}
+            aria-label={t('assetSources.ttlFor', 'Days {name} counts', { name: label })}
+            value={Number.isFinite(rule.ttl_days) ? rule.ttl_days : ''}
+            onChange={(e) =>
+              onChange({ ...rule, ttl_days: e.target.value === '' ? NaN : Number(e.target.value) })
+            }
+          />
+          <span>{t('assetSources.days', 'days')}</span>
+        </label>
+        <Switch
+          checked={rule.trusted}
+          disabled={!canEdit}
+          aria-label={t('assetSources.trustFor', '{name} may update {scope}', {
+            name: label,
+            scope: scopeLabel,
+          })}
+          onCheckedChange={(v) => onChange({ ...rule, trusted: v === true })}
+        />
+        {canEdit && (
+          <span className="flex gap-0.5 sm:hidden pointer-coarse:flex">
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
 
-          aria-label={t('assetSources.remove', 'Stop ranking {name} separately', { name: label })}
-          onClick={onRemove}
-        >
-          <X className="h-3.5 w-3.5" />
-        </Button>
-      )}
+              disabled={index === 0}
+              aria-label={t('assetSources.moveUp', 'Move {name} up', { name: label })}
+              onClick={() => onMove(index, index - 1)}
+            >
+              <ArrowUp className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+
+              disabled={index === total - 1}
+              aria-label={t('assetSources.moveDown', 'Move {name} down', { name: label })}
+              onClick={() => onMove(index, index + 1)}
+            >
+              <ArrowDown className="h-3.5 w-3.5" />
+            </Button>
+          </span>
+        )}
+        {canEdit && onRemove && (
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+
+            aria-label={t('assetSources.remove', 'Stop ranking {name} separately', { name: label })}
+            onClick={onRemove}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
     </li>
   )
 }

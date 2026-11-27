@@ -11,8 +11,13 @@ import { describe, expect, it } from 'vitest'
  *
  * The scan reads every column whose id is `actions` (either quote), and
  * every column that says `kind: 'actions'`, and counts a `<Button>` that is
- * not an icon button and a `<Link>` / `<a>` with text in it. The browser
- * check that measures the result is the layout-break detector (spec 75).
+ * not an icon button, an icon-sized button that still shows a label (a label
+ * hidden only on phones, `max-sm:sr-only`, shows on a desktop: proxy pools
+ * "Reset health" sat over the enable switch), a `<Link>` / `<a>` with text
+ * in it, and more than one control (a switch beside a button). A component
+ * of the same file that the cell renders is read as part of the column. The
+ * browser check that measures the result is the layout-break detector
+ * (spec 75).
  */
 
 const WEB = path.resolve(__dirname, '../../../../../..')
@@ -40,19 +45,52 @@ export function actionColumns(src: string): string[] {
   return out
 }
 
+/** The text of an element body with `sr-only` pieces (hidden at every width) left out. */
+function visibleText(body: string): string[] {
+  const shown = body.replace(/<(\w+)[^>]*className="sr-only"[^>]*>[\s\S]*?<\/\1>/g, '')
+  // Split on tags instead of stripping them, so no half-removed tag can remain.
+  return shown.split(/<[^>]*>/)
+}
+
+function hasLabel(pieces: string[]): boolean {
+  return pieces.some((p) => /\{t\(/.test(p) || /^\s*[A-Za-z][^{]*$/m.test(p))
+}
+
 /** A labelled control in a column's source: a button that is not an icon button, or a link with text. */
 export function labelledControls(col: string): string[] {
   const found: string[] = []
-  for (const b of col.matchAll(/<Button\b((?:=>|[^>])*)>/g)) {
-    if (!/size=["{]['"]?icon/.test(b[1])) found.push('Button')
+  for (const b of col.matchAll(
+    /<Button\b((?:=>|[^>])*)>([\s\S]*?)<\/Button>|<Button\b((?:=>|[^>])*)\/>/g
+  )) {
+    const attrs = b[1] ?? b[3] ?? ''
+    const icon = /size=["{]['"]?icon/.test(attrs)
+    if (!icon) found.push('Button')
+    else if (b[2] !== undefined && !/\basChild\b/.test(attrs) && hasLabel(visibleText(b[2])))
+      found.push('icon Button with a label')
   }
   for (const l of col.matchAll(/<(Link|a)\b((?:=>|[^>])*)>([\s\S]*?)<\/\1>/g)) {
     // Text in the link: a translated label or plain words, not only an icon.
-    // Split on tags instead of stripping them, so no half-removed tag can remain.
-    const pieces = l[3].split(/<[^>]*>/)
-    if (pieces.some((p) => /\{t\(/.test(p) || /^\s*[A-Za-z][^{]*$/m.test(p))) found.push(l[1])
+    if (hasLabel(visibleText(l[3]))) found.push(l[1])
   }
+  // Two controls do not fit the menu-sized column either.
+  const controls = col.match(/<(Button|Switch|Checkbox|Link|a)\b/g) ?? []
+  const asChildLinks = (col.match(/<Button\b[^>]*\basChild\b/g) ?? []).length
+  if (controls.length - asChildLinks > 1) found.push(`${controls.length - asChildLinks} controls`)
   return found
+}
+
+/**
+ * The column with the bodies of the components of the same file it renders
+ * (`<RowActions ... />` defined as `function RowActions(`), one level deep:
+ * a labelled button inside one is as wide as one written in the cell.
+ */
+export function withLocalComponents(col: string, src: string): string {
+  let out = col
+  for (const name of new Set([...col.matchAll(/<([A-Z]\w+)\b/g)].map((m) => m[1]))) {
+    const def = src.match(new RegExp(`^(?:export )?function ${name}\\b[\\s\\S]*?^\\}`, 'm'))
+    if (def) out += '\n' + def[0]
+  }
+  return out
 }
 
 /** True when the column is wide enough by its own say: a decisions column or an explicit width. */
@@ -69,7 +107,8 @@ describe('actions column', () => {
         if (!/id: ['"]actions['"]/.test(src)) continue
         for (const col of actionColumns(src)) {
           if (declaresWidth(col)) continue
-          if (labelledControls(col).length) offenders.push(path.relative(WEB, f))
+          const found = labelledControls(withLocalComponents(col, src))
+          if (found.length) offenders.push(`${path.relative(WEB, f)}: ${found.join(', ')}`)
         }
       }
     }
@@ -90,5 +129,15 @@ describe('actions column', () => {
     expect(declaresWidth("meta: { kind: 'decisions' },")).toBe(true)
     expect(declaresWidth('meta: { width: 120 },')).toBe(true)
     expect(declaresWidth(manage)).toBe(false)
+  })
+
+  it('finds an icon button that shows a label, two controls, and a local row component', () => {
+    const labelled = `<Button variant="ghost" size="icon-sm" aria-label="Reset"><RotateCcw /><span className="max-sm:sr-only">{t('p.reset', 'Reset health')}</span></Button>`
+    const hidden = `<Button variant="ghost" size="icon-sm"><RotateCcw /><span className="sr-only">{t('p.reset', 'Reset')}</span></Button>`
+    expect(labelledControls(labelled)).toContain('icon Button with a label')
+    expect(labelledControls(hidden)).toEqual([])
+    expect(labelledControls(`<Switch checked />${hidden}`)).toEqual(['2 controls'])
+    const src = `function RowActions() {\n  return <Button variant="outline">{t('x.y', 'Retry')}</Button>\n}\n`
+    expect(labelledControls(withLocalComponents('<RowActions row={r} />', src))).toEqual(['Button'])
   })
 })

@@ -202,6 +202,8 @@ export function EndpointTable({ poolId, endpoints, canWrite }: EndpointTableProp
       },
       {
         id: 'actions',
+        // The enable switch and a labelled "Reset health": as wide as its controls.
+        meta: { kind: 'decisions' },
         header: () => <span className="sr-only">{t('proxyPools.col.actions', 'Actions')}</span>,
         cell: ({ row: { original: e } }) => (
           <div className="flex items-center justify-end gap-2">

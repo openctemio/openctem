@@ -9,6 +9,7 @@
  */
 
 import { useId, useMemo, useState } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
 import { toast } from 'sonner'
 import { Download, FileSignature, Loader2, Upload } from 'lucide-react'
 import { Main } from '@/components/layout'
@@ -17,20 +18,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { useTranslation } from '@/context/i18n-provider'
 import { SCOPE_SECTION_TABS } from '@/config/section-tabs'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { Permission, useHasPermission } from '@/lib/permissions'
 import {
+  DataTable,
   EmptyState,
   ErrorState,
   FilePicker,
@@ -228,6 +221,89 @@ export default function ScopeLettersPage() {
     }
   }
 
+  const columns = useMemo<ColumnDef<AuthorizationLetter>[]>(
+    () => [
+      {
+        id: 'title',
+        meta: { label: t('letters.form.title', 'Title') },
+        header: t('letters.form.title', 'Title'),
+        cell: ({ row: { original: l } }) => (
+          <span className="font-medium break-words">
+            {l.title}
+            {l.reference && (
+              <span className="text-muted-foreground block text-xs">{l.reference}</span>
+            )}
+          </span>
+        ),
+      },
+      {
+        id: 'issuer',
+        meta: { label: t('letters.col.issuer', 'Issued by') },
+        header: t('letters.col.issuer', 'Issued by'),
+        cell: ({ row: { original: l } }) => <span className="text-sm">{l.issuer || '—'}</span>,
+      },
+      {
+        id: 'valid',
+        meta: { label: t('letters.col.valid', 'Valid') },
+        header: t('letters.col.valid', 'Valid'),
+        cell: ({ row: { original: l } }) => (
+          <span className="text-xs whitespace-nowrap">
+            {formatDate(new Date(l.valid_from))} – {formatDate(new Date(l.valid_until))}
+          </span>
+        ),
+      },
+      {
+        id: 'status',
+        meta: { kind: 'status', label: t('letters.col.status', 'Status') },
+        header: t('letters.col.status', 'Status'),
+        cell: ({ row: { original: l } }) => <LetterStatus letter={l} />,
+      },
+      {
+        id: 'sha',
+        meta: { label: t('letters.col.sha', 'SHA-256') },
+        header: t('letters.col.sha', 'SHA-256'),
+        cell: ({ row: { original: l } }) => (
+          <span className="font-mono text-xs" title={l.file_sha256}>
+            {l.file_sha256.slice(0, 12)}…
+          </span>
+        ),
+      },
+      {
+        id: 'actions',
+        // Download and a labelled Revoke: as wide as its controls.
+        meta: { kind: 'decisions' },
+        header: () => <span className="sr-only">{t('letters.col.actions', 'Actions')}</span>,
+        cell: ({ row: { original: l } }) => (
+          <span className="flex items-center justify-end whitespace-nowrap">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => download(l)}
+              aria-label={t('letters.download', 'Download')}
+            >
+              <Download className="h-4 w-4" />
+            </Button>
+            {canRevoke && !l.revoked_at && (
+              <Button
+                variant="ghost"
+                size="sm"
+                // Set apart from Download so a tap meant for it cannot land here.
+                className="ms-3 text-destructive"
+                disabled={busy === l.id}
+                onClick={() => setPendingRevoke(l)}
+              >
+                {t('letters.revoke', 'Revoke')}
+              </Button>
+            )}
+          </span>
+        ),
+      },
+    ],
+    // download is recreated each render; it only reads `t`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [t, canRevoke, busy]
+  )
+
   return (
     <Main>
       <PageStack>
@@ -273,73 +349,19 @@ export default function ScopeLettersPage() {
               )}
             />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('letters.form.title', 'Title')}</TableHead>
-                  <TableHead>{t('letters.col.issuer', 'Issued by')}</TableHead>
-                  <TableHead>{t('letters.col.valid', 'Valid')}</TableHead>
-                  <TableHead>{t('letters.col.status', 'Status')}</TableHead>
-                  <TableHead>{t('letters.col.sha', 'SHA-256')}</TableHead>
-                  <TableHead className="text-right">
-                    {t('letters.col.actions', 'Actions')}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {/* Loading: placeholder rows, never headers over an empty body. */}
-                {!data &&
-                  [0, 1, 2].map((i) => (
-                    <TableRow key={`loading-${i}`} aria-hidden>
-                      <TableCell colSpan={6}>
-                        <Skeleton className="h-5 w-full" />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                {(data ?? []).map((l) => (
-                  <TableRow key={l.id}>
-                    <TableCell className="font-medium break-words">
-                      {l.title}
-                      {l.reference && (
-                        <span className="text-muted-foreground block text-xs">{l.reference}</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm">{l.issuer || '-'}</TableCell>
-                    <TableCell className="text-xs whitespace-nowrap">
-                      {formatDate(new Date(l.valid_from))} – {formatDate(new Date(l.valid_until))}
-                    </TableCell>
-                    <TableCell>
-                      <LetterStatus letter={l} />
-                    </TableCell>
-                    <TableCell className="font-mono text-xs" title={l.file_sha256}>
-                      {l.file_sha256.slice(0, 12)}…
-                    </TableCell>
-                    <TableCell className="text-right whitespace-nowrap">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => download(l)}
-                        aria-label={t('letters.download', 'Download')}
-                      >
-                        <Download className="h-4 w-4" />
-                      </Button>
-                      {canRevoke && !l.revoked_at && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          // Set apart from Download so a tap meant for it cannot land here.
-                          className="ms-3 text-destructive"
-                          disabled={busy === l.id}
-                          onClick={() => setPendingRevoke(l)}
-                        >
-                          {t('letters.revoke', 'Revoke')}
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            // The shared table: on a phone each letter is a card, never a
+            // table that scrolls sideways.
+            <DataTable
+              columns={columns}
+              data={data ?? []}
+              getRowId={(l) => l.id}
+              isLoading={isLoading}
+              showSearch={false}
+              showSelectionCount={false}
+              showPagination={(data ?? []).length > 20}
+              // The file hash stays one click away (Columns), not in every row.
+              initialColumnVisibility={{ sha: false }}
+            />
           )}
         </>
       </PageStack>

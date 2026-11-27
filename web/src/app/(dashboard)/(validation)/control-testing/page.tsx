@@ -347,6 +347,8 @@ function getControlColumns(t: TFn): ColumnDef<ControlTest>[] {
     },
     {
       id: 'actions',
+      // A labelled "Record result" button: as wide as its control.
+      meta: { kind: 'decisions' },
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => <RecordResultAction ct={row.original} />,
