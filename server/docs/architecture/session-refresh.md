@@ -21,7 +21,7 @@ sequenceDiagram
     N->>A: POST /api/v1/auth/refresh {tenant_id}, refresh_token cookie + CheckDoubleSubmit (crossSite, 20/min)
     A->>DB: JWT signature, lookup by SHA-256
     alt token already used
-        A->>A: rotationGraceSuccessor - grace 30 s, same successor, session, family, UA fingerprint
+        A->>A: rotationGraceSuccessor - grace 30 s (5 s on /auth/token), same successor, session, family, client fingerprint
         alt inside grace
             A-->>N: the same derived successor, no new row
         else
@@ -99,14 +99,22 @@ the request is a reuse and ends the session:
   unused, not revoked and not expired (once the successor rotates, the grace is gone);
 - the successor belongs to the same user, session and family;
 - the rotation happened at most the grace ago and the token was not revoked since
-  (signing out revokes every token of the session, used ones included);
-- the same client presents it: a hash of the user agent recorded at rotation
-  (`refresh_tokens.rotated_fingerprint`) matches, compared in constant time.
-  The console calls the API from its server and forwards the browser's
-  `User-Agent` on `/auth/refresh` and `/auth/token`, so "the same client" is the
-  same browser software. A user agent is not a secret: this check stops a
-  different kind of client (another browser, a script), not someone who copies
-  the victim's user agent. A grace hand-out is audited (`auth.refresh_grace`,
+  (signing out revokes every token of the session, used ones included). On
+  `/auth/token` (open or switch an organization, one click) the window is the
+  grace but at most 5 s (`ExchangeReuseGraceMax`); `/auth/refresh` keeps the
+  configured grace;
+- the same client presents it: a hash of the user agent **and the client
+  binding** recorded at rotation (`refresh_tokens.rotated_fingerprint`) matches,
+  compared in constant time. The client binding is a random 256-bit secret the
+  web server keeps per browser in its own HttpOnly cookie (`refresh_bind`, set
+  by `web/src/proxy.ts` on the first page response that lacks it) and forwards
+  as `X-Refresh-Client-Binding` on its calls to the API
+  (`web/src/lib/api/browser-context-headers.ts`). It never travels with the
+  refresh token, so a copy of the refresh token alone, plus a user agent anyone
+  can guess, does not collect the successor. A request without a binding (an API
+  client posting the token in the body, or a browser before its first page load
+  after the upgrade) gets no grace: every re-presented token ends the session. A
+  grace hand-out is audited (`auth.refresh_grace`,
   low severity, with the session and the flow) so a successor that left twice
   can be seen.
 
@@ -128,10 +136,13 @@ deleted an hour after use (`DeleteExpired`).
 ### Threat model
 
 - **Stolen refresh token used after the real client refreshed.** Outside the grace,
-  or from another user agent, it ends the session as before. Inside the grace and
-  with the same user agent, the thief receives the same successor as the real
-  client; both now hold one chain, and the next rotation by either makes the other's
-  copy a reuse, which ends the session. The window is bounded (2 min hard cap).
+  from another user agent, or without the browser's client binding, it ends the
+  session as before. A copied token (from a log, a proxy or a response body) plus
+  a guessed user agent is not enough inside the grace. Out of scope: an attacker
+  who holds the whole cookie jar of the browser (both cookies) inside the window
+  receives the same successor as the real client; both then hold one chain, and
+  the next rotation by either makes the other's copy a reuse, which ends the
+  session. The window is bounded (2 min hard cap, 5 s on `/auth/token`).
 - **Forked family.** Impossible: the grace never mints, and the rotation is a single
   transactional winner.
 - **Tenant isolation.** Refresh tokens are global to the user; the access token is

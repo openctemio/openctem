@@ -41,6 +41,7 @@ import { handleAuth } from '@/lib/middleware/auth'
 import { detectLocale } from '@/lib/middleware/i18n'
 import { cspForRequest, generateNonce } from '@/lib/middleware/csp'
 import { handleLegacyInvitationLink } from '@/lib/middleware/invitation-link'
+import { ensureRefreshBindingCookie } from '@/lib/refresh-binding'
 import { csrfRejection, ensureCsrfCookie } from '@/lib/server-auth-cookies'
 
 export function proxy(req: NextRequest) {
@@ -55,6 +56,7 @@ export function proxy(req: NextRequest) {
   const redirect = handleAuth(req)
   if (redirect) {
     ensureCsrfCookie(req, redirect)
+    ensureRefreshBindingCookie(req, redirect)
     return redirect
   }
 
@@ -69,6 +71,7 @@ export function proxy(req: NextRequest) {
   const response = NextResponse.next({ request: { headers } })
   response.headers.set('Content-Security-Policy', csp)
   ensureCsrfCookie(req, response)
+  ensureRefreshBindingCookie(req, response)
   return response
 }
 

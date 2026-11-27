@@ -1008,9 +1008,10 @@ func (s *AuthService) completeLogin(ctx context.Context, u *userdom.User, ipAddr
 type ExchangeTokenInput struct {
 	RefreshToken string `json:"refresh_token" validate:"required"`
 	TenantID     string `json:"tenant_id" validate:"required"`
-	// UserAgent identifies the client for the rotation grace (as for
-	// RefreshToken); empty means no grace.
-	UserAgent string `json:"-"`
+	// UserAgent and ClientBinding identify the client for the rotation grace
+	// (as for RefreshToken); either empty means no grace.
+	UserAgent     string `json:"-"`
+	ClientBinding string `json:"-"`
 }
 
 // ExchangeTokenResult represents the result of token exchange.
@@ -1249,17 +1250,17 @@ func (s *AuthService) IdentifyRefreshSession(ctx context.Context, refreshToken s
 // session, active account that may use the main site) and returns the stored
 // token, its session and the account. The caller spends the token.
 func (s *AuthService) refreshForMint(ctx context.Context, refreshToken string, flow string) (*sessiondom.RefreshToken, *sessiondom.Session, *userdom.User, error) {
-	stored, _, sess, u, err := s.refreshForMintWithGrace(ctx, refreshToken, flow, "", false)
+	stored, _, sess, u, err := s.refreshForMintWithGrace(ctx, refreshToken, flow, refreshClient{}, false)
 	return stored, sess, u, err
 }
 
 // refreshForMintWithGrace is refreshForMint with the rotation grace of
 // RefreshToken: when allowGrace is set, a token already rotated is accepted
 // only as the immediately previous token of its session, re-presented by the
-// same client (fingerprint) within RefreshReuseGrace while its successor is
+// same client (fingerprint) within the client's grace window while its successor is
 // still unused; the successor is returned and the caller hands it out again
 // instead of rotating. Every other reuse ends the session.
-func (s *AuthService) refreshForMintWithGrace(ctx context.Context, refreshToken, flow, fingerprint string, allowGrace bool) (
+func (s *AuthService) refreshForMintWithGrace(ctx context.Context, refreshToken, flow string, client refreshClient, allowGrace bool) (
 	*sessiondom.RefreshToken, *sessiondom.RefreshToken, *sessiondom.Session, *userdom.User, error,
 ) {
 	// Validate the refresh token JWT
@@ -1288,7 +1289,7 @@ func (s *AuthService) refreshForMintWithGrace(ctx context.Context, refreshToken,
 	var graceSuccessor *sessiondom.RefreshToken
 	if storedToken.IsUsed() {
 		if allowGrace {
-			graceSuccessor = s.rotationGraceSuccessor(ctx, storedToken, fingerprint)
+			graceSuccessor = s.rotationGraceSuccessor(ctx, storedToken, client)
 		}
 		if graceSuccessor == nil {
 			s.onRefreshTokenReuse(ctx, storedToken)
@@ -1380,8 +1381,8 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 		return nil, ErrTenantRequired
 	}
 
-	fingerprint := refreshClientFingerprint(input.UserAgent)
-	storedToken, graceSuccessor, sess, u, err := s.refreshForMintWithGrace(ctx, input.RefreshToken, "token_exchange", fingerprint, true)
+	client := s.exchangeClient(input.UserAgent, input.ClientBinding)
+	storedToken, graceSuccessor, sess, u, err := s.refreshForMintWithGrace(ctx, input.RefreshToken, "token_exchange", client, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1416,7 +1417,7 @@ func (s *AuthService) ExchangeToken(ctx context.Context, input ExchangeTokenInpu
 	// within the rotation grace (two tabs switching organizations at once, a
 	// tab that missed the rotation) gets the successor already issued, so the
 	// session stays one chain.
-	newRefreshTokenStr, graceSuccessor, err := s.rotateOrReuseSuccessor(ctx, storedToken, graceSuccessor, u, sess, fingerprint)
+	newRefreshTokenStr, graceSuccessor, err := s.rotateOrReuseSuccessor(ctx, storedToken, graceSuccessor, u, sess, client)
 	if err != nil {
 		return nil, err
 	}
@@ -1563,14 +1564,47 @@ func (s *AuthService) spendRefreshToken(ctx context.Context, stored *sessiondom.
 	return nil
 }
 
+// ExchangeReuseGraceMax caps the rotation grace of /auth/token
+// (ExchangeToken). An exchange is one click (open or switch an organization),
+// so a re-presented token only has to cover requests already in flight; the
+// window stays far shorter than the one of /auth/refresh, which also covers
+// a tab that missed a background rotation.
+const ExchangeReuseGraceMax = 5 * time.Second
+
+// refreshClient is the client presenting a refresh token for the rotation
+// grace: its fingerprint (refreshClientFingerprint) and how long after a
+// rotation the same client may present the replaced token again.
+type refreshClient struct {
+	fingerprint string
+	window      time.Duration
+}
+
+// refreshGraceClient builds the grace client of /auth/refresh: the configured
+// RefreshReuseGrace.
+func (s *AuthService) refreshGraceClient(userAgent, binding string) refreshClient {
+	return refreshClient{fingerprint: refreshClientFingerprint(userAgent, binding), window: s.config.RefreshReuseGrace}
+}
+
+// exchangeClient builds the grace client of /auth/token: RefreshReuseGrace,
+// at most ExchangeReuseGraceMax.
+func (s *AuthService) exchangeClient(userAgent, binding string) refreshClient {
+	return refreshClient{fingerprint: refreshClientFingerprint(userAgent, binding), window: min(s.config.RefreshReuseGrace, ExchangeReuseGraceMax)}
+}
+
 // refreshClientFingerprint is a hash of the client presenting a refresh
 // token, recorded on rotation and required to match for the rotation grace.
-// Empty when the client sent no user agent (the grace then never applies).
-func refreshClientFingerprint(userAgent string) string {
-	if userAgent == "" {
+// It covers the user agent and the client binding: a per-browser random
+// secret the web server keeps in its own HttpOnly cookie and forwards in
+// X-Refresh-Client-Binding, never sent with the refresh token itself. A copy
+// of the refresh token alone (and a user agent, which anyone can guess) is
+// therefore not enough to collect the successor inside the grace. Empty when
+// either part is missing: the grace then never applies and every re-presented
+// token ends the session, as for an API client posting the token in the body.
+func refreshClientFingerprint(userAgent, binding string) string {
+	if userAgent == "" || binding == "" {
 		return ""
 	}
-	return sessiondom.HashToken("refresh-client:" + userAgent)
+	return sessiondom.HashToken("refresh-client:v2:" + binding + "\x00" + userAgent)
 }
 
 // rotateRefreshToken spends storedToken and issues its successor in one
@@ -1581,7 +1615,7 @@ func refreshClientFingerprint(userAgent string) string {
 // successor back if the rotation grace allows it (returned as grace, with an
 // empty token), otherwise the session ends as for any reuse.
 func (s *AuthService) rotateRefreshToken(
-	ctx context.Context, storedToken *sessiondom.RefreshToken, u *userdom.User, sess *sessiondom.Session, fingerprint string,
+	ctx context.Context, storedToken *sessiondom.RefreshToken, u *userdom.User, sess *sessiondom.Session, client refreshClient,
 ) (token string, expiresAt time.Time, grace *sessiondom.RefreshToken, err error) {
 	issuedAt := time.Now().UTC().Truncate(time.Second)
 	expiresAt = issuedAt.Add(s.config.RefreshTokenDuration)
@@ -1593,7 +1627,7 @@ func (s *AuthService) rotateRefreshToken(
 	successor := sessiondom.ReconstituteRefreshToken(shared.NewID(), u.ID(), sess.ID(),
 		sessiondom.HashToken(token), storedToken.Family(), expiresAt, nil, nil, issuedAt)
 
-	won, err := s.refreshTokenRepo.RotateIfUnused(ctx, storedToken.ID(), fingerprint, successor)
+	won, err := s.refreshTokenRepo.RotateIfUnused(ctx, storedToken.ID(), client.fingerprint, successor)
 	if err != nil {
 		return "", time.Time{}, nil, fmt.Errorf("failed to rotate refresh token: %w", err)
 	}
@@ -1604,7 +1638,7 @@ func (s *AuthService) rotateRefreshToken(
 	// Lost the race: read the winner's rotation record.
 	current, err := s.refreshTokenRepo.GetByID(ctx, storedToken.ID())
 	if err == nil {
-		if successor := s.rotationGraceSuccessor(ctx, current, fingerprint); successor != nil {
+		if successor := s.rotationGraceSuccessor(ctx, current, client); successor != nil {
 			return "", time.Time{}, successor, nil
 		}
 	}
@@ -1614,14 +1648,14 @@ func (s *AuthService) rotateRefreshToken(
 
 // rotationGraceSuccessor returns the successor of a rotated refresh token
 // when presenting the rotated token again is still allowed: the grace is on,
-// the rotation happened at most RefreshReuseGrace ago, the token was not
+// the rotation happened at most the client's grace window ago, the token was not
 // revoked since, the same client (fingerprint, compared in constant time)
 // rotated it, and its successor is the live head of the same session and
 // family (not used, revoked or expired). Only the immediately previous token
 // qualifies: once the successor is rotated in turn, the grace is gone. Any
 // other case returns nil and the caller treats the request as a reuse.
-func (s *AuthService) rotationGraceSuccessor(ctx context.Context, rotated *sessiondom.RefreshToken, fingerprint string) *sessiondom.RefreshToken {
-	grace := s.config.RefreshReuseGrace
+func (s *AuthService) rotationGraceSuccessor(ctx context.Context, rotated *sessiondom.RefreshToken, client refreshClient) *sessiondom.RefreshToken {
+	grace, fingerprint := client.window, client.fingerprint
 	if grace <= 0 || rotated == nil || rotated.IsRevoked() || rotated.UsedAt() == nil || rotated.SuccessorID() == nil {
 		return nil
 	}
@@ -1664,10 +1698,10 @@ func (s *AuthService) rederiveSuccessor(rotated, successor *sessiondom.RefreshTo
 // re-derive ends the session as any reuse does. It returns the token string
 // and the successor it re-used (nil after a normal rotation).
 func (s *AuthService) rotateOrReuseSuccessor(
-	ctx context.Context, storedToken, graceSuccessor *sessiondom.RefreshToken, u *userdom.User, sess *sessiondom.Session, fingerprint string,
+	ctx context.Context, storedToken, graceSuccessor *sessiondom.RefreshToken, u *userdom.User, sess *sessiondom.Session, client refreshClient,
 ) (string, *sessiondom.RefreshToken, error) {
 	if graceSuccessor == nil {
-		token, _, lost, err := s.rotateRefreshToken(ctx, storedToken, u, sess, fingerprint)
+		token, _, lost, err := s.rotateRefreshToken(ctx, storedToken, u, sess, client)
 		if err != nil {
 			return "", nil, err
 		}
@@ -1735,6 +1769,9 @@ type RefreshTokenInput struct {
 	TenantID     string `json:"tenant_id" validate:"required"`
 	IPAddress    string `json:"-"`
 	UserAgent    string `json:"-"`
+	// ClientBinding is the browser's binding secret (X-Refresh-Client-Binding,
+	// see refreshClientFingerprint); empty means no grace.
+	ClientBinding string `json:"-"`
 }
 
 // RefreshTokenResult represents the result of token refresh.
@@ -1778,10 +1815,10 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	// the rotation grace: the same client re-presenting the token it just
 	// rotated (requests already in flight when the rotation answered) gets
 	// the successor that rotation issued. Anything else ends the session.
-	fingerprint := refreshClientFingerprint(input.UserAgent)
+	client := s.refreshGraceClient(input.UserAgent, input.ClientBinding)
 	var graceSuccessor *sessiondom.RefreshToken
 	if storedToken.IsUsed() {
-		graceSuccessor = s.rotationGraceSuccessor(ctx, storedToken, fingerprint)
+		graceSuccessor = s.rotationGraceSuccessor(ctx, storedToken, client)
 		if graceSuccessor == nil {
 			s.onRefreshTokenReuse(ctx, storedToken)
 			return nil, sessiondom.ErrRefreshTokenUsed
@@ -1878,7 +1915,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, input RefreshTokenInput)
 	var newRefreshTokenStr string
 	var refreshExpiresAt time.Time
 	if graceSuccessor == nil {
-		newRefreshTokenStr, refreshExpiresAt, graceSuccessor, err = s.rotateRefreshToken(ctx, storedToken, u, sess, fingerprint)
+		newRefreshTokenStr, refreshExpiresAt, graceSuccessor, err = s.rotateRefreshToken(ctx, storedToken, u, sess, client)
 		if err != nil {
 			return nil, err
 		}
