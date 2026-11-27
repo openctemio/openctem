@@ -65,7 +65,7 @@ type IntegrationService struct {
 	notificationExtRepo   integrationdom.NotificationExtensionRepository
 	notificationEventRepo outbox.EventRepository
 	scmFactory            *scm.ClientFactory
-	notificationFactory   *notifier.ClientFactory
+	notificationFactory   notificationClientFactory
 	productName           string // instance brand, in notification footers
 	encryptor             crypto.Encryptor
 	logger                *logger.Logger
@@ -115,8 +115,23 @@ type IntegrationService struct {
 // (docs/architecture/brand.md).
 func (s *IntegrationService) SetBrand(b brand.Brand) {
 	s.productName = b.DisplayName()
-	s.notificationFactory.SetBrand(b)
+	if f, ok := s.notificationFactory.(interface{ SetBrand(brand.Brand) }); ok {
+		f.SetBrand(b)
+	}
 }
+
+// notificationClientFactory builds the client of a notification channel
+// (*notifier.ClientFactory in production).
+type notificationClientFactory interface {
+	CreateClient(config notifier.Config) (notifier.Client, error)
+}
+
+// notificationTestTimeout bounds one connection test of a notification
+// channel, below the per-request timeout (SERVER_REQUEST_TIMEOUT, 30 s by
+// default): a relay or webhook that never answers is recorded as
+// unreachable on the integration and the request still gets its answer,
+// instead of a 504 with the integration saved and its state unknown.
+var notificationTestTimeout = 15 * time.Second
 
 func (s *IntegrationService) product() string {
 	if s.productName == "" {
@@ -1417,13 +1432,18 @@ func getBoolFromMap(m map[string]any, key string) bool {
 	return false
 }
 
+// errEmailCredentialsShape refuses e-mail credentials that are not the JSON
+// object of the relay settings (a bare address, for example). The decoder's
+// text is not shown: it says nothing a person can act on.
+var errEmailCredentialsShape = fmt.Errorf("%w: credentials of an e-mail channel must be a JSON object with smtp_host, smtp_port, from_email and to_emails (and username and password for an authenticated relay)", shared.ErrValidation)
+
 // setEmailCredentials parses email credentials JSON and splits into metadata and encrypted credentials.
 // Non-sensitive config (smtp_host, port, from_email, etc.) goes to metadata.
 // Sensitive data (username, password) goes to encrypted credentials.
 func (s *IntegrationService) setEmailCredentials(intg *integrationdom.Integration, credentialsJSON string, mayEnableOrgMail bool) error {
 	var emailCreds EmailCredentials
 	if err := json.Unmarshal([]byte(credentialsJSON), &emailCreds); err != nil {
-		return fmt.Errorf("parse email credentials: %w", err)
+		return errEmailCredentialsShape
 	}
 	if emailCreds.SkipVerify {
 		return errSMTPSkipVerify
@@ -1500,7 +1520,7 @@ func nextOrgMail(requested *bool, existing map[string]any, mayEnable bool) (bool
 func (s *IntegrationService) updateEmailCredentials(intg *integrationdom.Integration, credentialsJSON string, mayEnableOrgMail bool) error {
 	var emailCreds EmailCredentials
 	if err := json.Unmarshal([]byte(credentialsJSON), &emailCreds); err != nil {
-		return fmt.Errorf("parse email credentials: %w", err)
+		return errEmailCredentialsShape
 	}
 	if emailCreds.SkipVerify {
 		return errSMTPSkipVerify
@@ -2635,7 +2655,13 @@ func (s *IntegrationService) TestNotificationIntegration(ctx context.Context, id
 	// Test the connection
 	// Note: Test notifications are NOT recorded in notification_events (audit trail).
 	// They are only for verifying the connection works.
-	result, err := client.TestConnection(ctx)
+	testCtx, cancel := context.WithTimeout(ctx, notificationTestTimeout)
+	result, err := client.TestConnection(testCtx)
+	timedOut := testCtx.Err() != nil && ctx.Err() == nil
+	cancel()
+	if err == nil && timedOut && (result == nil || !result.Success) {
+		err = context.DeadlineExceeded // the service did not answer in time
+	}
 	if err != nil {
 		s.recordFailure(intg, err)
 		if updateErr := s.repo.Update(ctx, intg); updateErr != nil {
