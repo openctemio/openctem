@@ -184,29 +184,71 @@ func TestInvalidStoredValueFallsBack(t *testing.T) {
 func TestTestFetch(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _, _ := newSvc(Env{BaseURL: "https://env.example.org/releases", Mirrors: []string{"https://m.example.org/x"}})
-	if _, err := svc.Test(ctx, "", nil); !errors.Is(err, ErrNotConfigured) {
+	if _, err := svc.Test(ctx, nil, "", nil, "", ""); !errors.Is(err, ErrNoActor) {
+		t.Fatalf("no actor: %v", err)
+	}
+	if _, err := svc.Test(ctx, cst.SuperAdmin(t), "", nil, "", ""); !errors.Is(err, ErrNotConfigured) {
 		t.Fatalf("no prober: %v", err)
 	}
 	p := &fakeProber{}
 	svc.SetProber(p)
-	res, err := svc.Test(ctx, "", nil)
+	res, err := svc.Test(ctx, cst.SuperAdmin(t), "", nil, "192.0.2.1", "ua")
 	if err != nil || len(res) != 1 || p.base != "https://env.example.org/releases" || !slices.Equal(p.mirrors, []string{"https://m.example.org/x"}) {
 		t.Fatalf("in force: %+v %v %+v", res, err, p)
 	}
-	if _, err := svc.Test(ctx, "https://feed.example.org/r", []string{"https://n.example.org/y/"}); err != nil || p.base != "https://feed.example.org/r" || p.mirrors[0] != "https://n.example.org/y" {
+	if _, err := svc.Test(ctx, cst.SuperAdmin(t), "https://feed.example.org/r", []string{"https://n.example.org/y/"}, "192.0.2.1", "ua"); err != nil || p.base != "https://feed.example.org/r" || p.mirrors[0] != "https://n.example.org/y" {
 		t.Fatalf("given: %v %+v", err, p)
 	}
 	calls := p.calls
-	if _, err := svc.Test(ctx, "https://10.0.0.1/r", nil); !errors.Is(err, shared.ErrValidation) || p.calls != calls {
+	if _, err := svc.Test(ctx, cst.SuperAdmin(t), "https://10.0.0.1/r", nil, "192.0.2.1", "ua"); !errors.Is(err, shared.ErrValidation) || p.calls != calls {
 		t.Fatalf("internal address tested: %v", err)
 	}
 	svc.SetRelayMode(func(context.Context) bool { return true })
-	if _, err := svc.Test(ctx, "", nil); !errors.Is(err, ErrRelayMode) || p.calls != calls {
+	if _, err := svc.Test(ctx, cst.SuperAdmin(t), "", nil, "192.0.2.1", "ua"); !errors.Is(err, ErrRelayMode) || p.calls != calls {
 		t.Fatalf("relay mode: %v", err)
 	}
 	dirSvc, _, _, _ := newSvc(Env{BundleDirSet: true})
 	dirSvc.SetProber(p)
-	if _, err := dirSvc.Test(ctx, "", nil); !errors.Is(err, ErrBundleDir) || p.calls != calls {
+	if _, err := dirSvc.Test(ctx, cst.SuperAdmin(t), "", nil, "192.0.2.1", "ua"); !errors.Is(err, ErrBundleDir) || p.calls != calls {
 		t.Fatalf("bundle dir: %v", err)
 	}
+}
+
+// Every test fetch is audited (not a change: high, no notice) with the
+// addresses and the public outcome, and a refused one with its reason; the
+// precise cause never reaches the audit or the answer.
+func TestTestFetchAudited(t *testing.T) {
+	ctx := context.Background()
+	svc, _, audit, notifier := newSvc(Env{BaseURL: "https://env.example.org/releases"})
+	svc.SetProber(failingProber{})
+	res, err := svc.Test(ctx, cst.SuperAdmin(t), "https://probe.example.org/r", nil, "192.0.2.7", "ua")
+	if err != nil || len(res) != 1 || res[0].Error != vulnfeed.ProbeNotVerified {
+		t.Fatalf("test: %+v %v", res, err)
+	}
+	if _, err := svc.Test(ctx, cst.SuperAdmin(t), "https://10.0.0.1/r", nil, "192.0.2.7", "ua"); !errors.Is(err, shared.ErrValidation) {
+		t.Fatalf("internal: %v", err)
+	}
+	if len(audit.Entries) != 2 || audit.Entries[0].Action != ActionTested || audit.Entries[1].Action != ActionTested {
+		t.Fatalf("audit entries %+v", audit.Entries)
+	}
+	js := audit.JSON(t)
+	for _, want := range []string{`"release":"https://probe.example.org/r"`, `"error":"not_verified"`, `"refused":"invalid_address"`, `192.0.2.7`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("audit lacks %s: %s", want, js)
+		}
+	}
+	for _, leak := range []string{"http_error", "502"} {
+		if strings.Contains(js, leak) {
+			t.Errorf("audit leaks %s", leak)
+		}
+	}
+	if len(notifier.Subjects) != 0 {
+		t.Fatalf("a test fetch notified administrators")
+	}
+}
+
+type failingProber struct{}
+
+func (failingProber) Probe(_ context.Context, base string, _ []string) []vulnfeed.ProbeResult {
+	return []vulnfeed.ProbeResult{{Origin: base, Error: vulnfeed.ProbeNotVerified, Cause: vulnfeed.ProbeHTTPError, HTTPStatus: 502}}
 }
