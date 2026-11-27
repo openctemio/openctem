@@ -482,6 +482,12 @@ export function InventoryTable({
           // Drops last of the optional columns on a narrow frame (Columns
           // turns it back on; the row sheet lists the facts).
           dropOrder: DROP_ORDER.service,
+          // The cell folds its chips to the width it is given, so measuring it
+          // would size the column to its folded self: it keeps the room of the
+          // status, the port and "+N" (the width of its facts line).
+          minWidth: 268,
+          sizeReason:
+            'service facts fold into "+N" to the column width, so the content cannot size it',
           label: t('assets.facts.title', 'Service facts'),
         },
         enableSorting: false,
