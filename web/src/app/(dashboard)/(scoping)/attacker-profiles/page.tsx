@@ -216,20 +216,20 @@ export default function AttackerProfilesPage() {
           const items: string[] = []
           if (caps.network_access)
             items.push(
-              t('attackerProfiles.cap.net', 'net: {value}', {
+              t('attackerProfiles.cap.net', 'Network: {value}', {
                 value: t(`attackerProfiles.network.${caps.network_access}`, caps.network_access),
               })
             )
           if (caps.credential_level)
             items.push(
-              t('attackerProfiles.cap.cred', 'cred: {value}', {
+              t('attackerProfiles.cap.cred', 'Credentials: {value}', {
                 value: t(
                   `attackerProfiles.credential.${caps.credential_level}`,
                   caps.credential_level
                 ),
               })
             )
-          if (caps.persistence) items.push(t('attackerProfiles.cap.persistent', 'persistent'))
+          if (caps.persistence) items.push(t('attackerProfiles.cap.persistent', 'Keeps access'))
           if (Array.isArray(caps.tools)) {
             items.push(...caps.tools.slice(0, 2))
           }

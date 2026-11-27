@@ -49,6 +49,7 @@ import {
   type DiscoveryStatus,
 } from '../lib/discovery'
 import { AttackSurfaceSectionTabs } from './attack-surface-section-tabs'
+import { capabilityLabel } from '@/lib/capability-label'
 
 const STATUS_TONE: Record<DiscoveryStatus, PillTone> = {
   idle: 'muted',
@@ -111,11 +112,6 @@ function useStageText() {
 }
 
 /** A capability id with no catalog label reads as plain words, never the raw id. */
-function capabilityFallback(id: string): string {
-  const words = id.replace(/[._]+/g, ' ').trim()
-  return words ? words.charAt(0).toUpperCase() + words.slice(1) : id
-}
-
 interface StageCardProps {
   index: number
   row: DiscoveryStageRow
@@ -214,12 +210,7 @@ function StageCard({ index, row, canRun, blockedReason, busy, onRun }: StageCard
             .filter((c) => c.pairs > 0)
             .map((c) => (
               <li key={c.capability} className="flex items-center justify-between gap-2">
-                <span className="truncate">
-                  {t(
-                    `attackSurface.discovery.capability.${c.capability}`,
-                    capabilityFallback(c.capability)
-                  )}
-                </span>
+                <span className="truncate">{capabilityLabel(c.capability, t)}</span>
                 <span className="shrink-0 text-muted-foreground">
                   {t('attackSurface.discovery.capabilityCounts', '{covered} of {pairs} covered', {
                     covered: c.covered,
