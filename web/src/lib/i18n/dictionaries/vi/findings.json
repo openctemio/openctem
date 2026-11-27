@@ -1369,6 +1369,7 @@
   "findings.list.refreshing": "Đang làm mới các phát hiện",
   "findings.list.selectAll": "Chọn tất cả các dòng trên trang này",
   "findings.list.selectRow": "Chọn phát hiện {title}",
+  "findings.list.signalsMore": "và {signals}",
   "findings.list.unnamedAsset": "Tài sản chưa đặt tên",
   "findings.manualEvidence.addEvidence": "Thêm bằng chứng",
   "findings.manualEvidence.addFailed": "Không thể thêm bằng chứng",

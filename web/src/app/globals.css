@@ -71,8 +71,18 @@
      runs 1500 px across a 2560 px window. Zero specificity: any max-w-*
      utility on the element wins. A truncated or one-line clamped line keeps the room
      its row gives it (the ellipsis shows where it must). Tables, lists and
-     the page frame are not touched. */
-  :where(p:not(.truncate, .line-clamp-1)),
+     the page frame are not touched. Nor is the text of a notice (an Alert,
+     a banner with role alert): a notice is as wide as its box, so
+     a capped line inside a full-width box would leave three short lines and
+     an empty right half; its one or two sentences use the box's width. */
+  :where(
+    p:not(
+        .truncate,
+        .line-clamp-1,
+        [data-slot='alert'] *,
+        [role='alert'] *
+      )
+  ),
   /* Muted text is help text (a hint under a label, a card's note); a muted
      flex or grid box is a layout row, not prose, and is left alone. */
   :where(
@@ -84,12 +94,13 @@
         td,
         th,
         a,
-        button
+        button,
+        [data-slot='alert'] *,
+        [role='alert'] *
       )
   ),
   :where(
     [data-slot='card-description'],
-    [data-slot='alert-description'],
     [data-slot='dialog-description'],
     [data-slot='sheet-description']
   ) {

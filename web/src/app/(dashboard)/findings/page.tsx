@@ -522,18 +522,19 @@ const FINDINGS_PRIORITY_WIDTH = 76
 
 /**
  * Column priority (the table's frame width below which a column drops), so the
- * title never gets narrower than 240: Severity below a 1524 px screen, Signals
+ * title never gets narrower than 248: Severity below a 1524 px screen, Signals
  * and EPSS below 1364, Due / SLA below 1204, with the 256 px sidebar open
  * (the frame is the screen less the sidebar, the page padding and the
  * scrollbar gutter: 326 px). The frame decides, so a collapsed sidebar or the
  * filter panel open move the points with it. A point is never below the sum
  * of the widths shown at it (each width holds its cell padding): checkbox 40,
- * Priority 76, Title 240, Location 160, Status 120 and the row menu 48 are
- * always there (684); with Due / SLA (140) 824, with Signals (140) 964, with
- * Severity (128) 1092; the rest is the title's. Below 684 the shared table
- * narrows Location toward its floor (112) before it scrolls sideways: the
- * floors add up to 636, under the 650 px frame of a 768 px tablet, so the
- * row menu is never cut there (a 280 title floor cut it by 12 px).
+ * Priority 76, Title 248, Location 144, Status 120 and the row menu 48 are
+ * always there (676); with Due / SLA (140) 816, with Signals (160) 976, with
+ * Severity (128) 1104; the rest is the title's (Location grows to 176 at most,
+ * so spare width goes to the title, not to the location). Below 676 the
+ * shared table narrows Location toward its floor (112) before it scrolls
+ * sideways: the floors add up to 644, under the 650 px frame of a 768 px
+ * tablet, so the row menu is never cut there.
  */
 const FINDINGS_HIDE_BELOW = { severity: 1198, signals: 1038, slaStatus: 878 } as const
 
@@ -1728,7 +1729,7 @@ function FindingsContent() {
         accessorKey: 'title',
         meta: {
           kind: 'name',
-          minWidth: 240,
+          minWidth: 248,
           pin: 'start',
           label: t('findings.columns.title', 'Title'),
           primary: true,
@@ -1787,12 +1788,13 @@ function FindingsContent() {
         id: 'asset',
         meta: {
           kind: 'asset',
-          // 160, down to 112 on a narrow frame; with spare width it grows to
-          // 280 before the title (floor 240) takes the rest, so a location is
-          // not cut beside an empty title column (fit-columns.ts).
-          width: 160,
+          // 144, down to 112 on a narrow frame; with spare width it grows to
+          // 176 only, then the title (floor 248) takes the rest: the title is
+          // the meaning of the row, the location a host name that truncates
+          // with its full value in the tooltip (fit-columns.ts).
+          width: 144,
           minWidth: 112,
-          maxWidth: 280,
+          maxWidth: 176,
           label: t('findings.list.location'),
         },
         enableSorting: false,
@@ -1827,7 +1829,8 @@ function FindingsContent() {
         id: 'signals',
         meta: {
           kind: 'signals',
-          width: 140,
+          // EPSS bar, KEV and "+1" on one line (exploit-signals.tsx `cell`).
+          width: 160,
           hideBelow: FINDINGS_HIDE_BELOW.signals,
           label: t('findings.columns.exploitSignals', 'Signals and EPSS'),
         },

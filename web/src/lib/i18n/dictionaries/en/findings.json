@@ -1369,6 +1369,7 @@
   "findings.list.refreshing": "Refreshing findings",
   "findings.list.selectAll": "Select all rows on this page",
   "findings.list.selectRow": "Select finding {title}",
+  "findings.list.signalsMore": "and {signals}",
   "findings.list.unnamedAsset": "Unnamed asset",
   "findings.manualEvidence.addEvidence": "Add evidence",
   "findings.manualEvidence.addFailed": "Failed to add evidence",
