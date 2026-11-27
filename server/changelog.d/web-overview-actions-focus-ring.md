@@ -6,4 +6,5 @@
 - Filter tokens ("Target: All", "Status: All") hug what they show: no empty room before or after the chevron. The fixed scopes of the findings list keep one width, as before.
 - Selects are one line, as high as the controls beside them: a long value ends in an ellipsis with its full text on hover (the notification history's channel picker no longer grows three lines tall; its provider shows in the list).
 - The repository Findings filters use the standard control size beside the search.
+- Table rows keep 4 px above and below their content (compact rows excepted), so a cell of two lines no longer touches the row's lines.
 - Docs: web/docs/ui-style-contract.md
