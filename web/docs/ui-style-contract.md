@@ -1575,6 +1575,10 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   never mid-row (`floatingAction`), and no control is drawn past the window
   or the page column outside a box made to scroll sideways (`pastEdge`; a
   table scroller, the page tab strip, a canvas, or `data-scroll-x`).
+- Controls side by side in one row (a toolbar, a header, a button group)
+  share one height, one centre line and one text size (buttons with
+  buttons, fields with fields: a phone field keeps 16 px text). The layout
+  matrix's `sizeMismatch` runs the page-rhythm row probe at every width.
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a
   fixed column count without breakpoints.
 - `e2e/specs/75a-layout-breaks-lists.spec.ts` (and 75b settings, 75c shell, 75d detail) check the lists and their overlays at

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { findMatrixBreaks } from '../helpers/layout-matrix'
+import { probeRowMix } from '../helpers/page-anatomy'
 
 /**
  * Self-test of the layout matrix's control-shape detectors
@@ -10,7 +11,10 @@ import { findMatrixBreaks } from '../helpers/layout-matrix'
  *     standing in the middle of the row;
  *   - tallControl: a channel select whose value wrapped onto three lines beside
  *     32 px buttons;
- *   - pastEdge: a toolbar's "Refresh" and "Display" cut at the window's edge.
+ *   - pastEdge: a toolbar's "Refresh" and "Display" cut at the window's edge;
+ *   - sizeMismatch (probeRowMix with fonts): a repository's Findings toolbar
+ *     whose filter triggers were taller, or set in another size, than the
+ *     search beside them ("các button cái to cái nhỏ").
  * Each flags its defect and stays quiet for the right layout.
  */
 
@@ -153,5 +157,48 @@ test.describe('layout matrix detector: control past the edge', { tag: ['@shell']
         <td style="min-width:900px">Name</td><td><button>Open</button></td></tr></table></div>`)
     )
     expect(found.pastEdge).toEqual([])
+  })
+})
+
+const row = (a: string, b: string) => `<main style="width:900px">
+  <div data-slot="list-toolbar" style="display:flex;gap:8px;align-items:center">
+    <input placeholder="Search" style="height:32px;font-size:14px;box-sizing:border-box">
+    <button data-slot="button" style="${a}">All severities</button>
+    <button data-slot="button" style="${b}">All statuses</button>
+  </div></main>`
+
+test.describe('layout matrix detector: sizes in one row', { tag: ['@shell'] }, () => {
+  const size = (p: Parameters<typeof probeRowMix>[0]) => probeRowMix(p, { fonts: true })
+  const doc32 = 'height:32px;font-size:14px'
+
+  test('flags a control taller than its neighbours', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.setContent(doc(row(doc32, 'height:44px;font-size:14px')))
+    expect((await size(page)).length).toBe(1)
+  })
+
+  test('flags buttons of one height in different text sizes', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.setContent(doc(row(doc32, 'height:32px;font-size:12px')))
+    const mixed = await size(page)
+    expect(mixed.length).toBe(1)
+    expect(mixed[0].controls.map((c) => c.font)).toContain(12)
+  })
+
+  test('is quiet for one height and one text size', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.setContent(doc(row(doc32, doc32)))
+    expect(await size(page)).toEqual([])
+  })
+
+  test('compares a field apart from buttons (16 px field text on a phone)', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.setContent(
+      doc(`<main style="width:380px"><div data-slot="list-toolbar" style="display:flex;gap:8px">
+        <input style="height:36px;font-size:16px;box-sizing:border-box;width:160px">
+        <button data-slot="button" style="height:36px;font-size:13px">Filters</button>
+        <button data-slot="button" style="height:36px;font-size:13px">Display</button></div></main>`)
+    )
+    expect(await size(page)).toEqual([])
   })
 })
