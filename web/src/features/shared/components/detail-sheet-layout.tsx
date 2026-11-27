@@ -79,14 +79,22 @@ import { MetaLine } from './text-layout'
 // DetailSheet — the drawer itself
 // ============================================================================
 
-/** Drawer width from `sm` up. `xl` (36rem) is the sensor drawer's. */
-export type DetailSheetWidth = 'md' | 'lg' | 'xl' | '2xl'
+/**
+ * Drawer width from `sm` up. `xl` (36rem) is the sensor drawer's. The two
+ * larger ones grow on wide screens, so a drawer is not a narrow column at the
+ * edge of a 1920 or 2560 px window: `xl` to 42rem from 1536 px and 48rem from
+ * 1920 px, `2xl` to 48rem and 56rem. `wide` is for a sheet whose body is a
+ * list of rows (a CI run's findings): 42rem, then 56rem from 1280 px and
+ * 72rem from 1536 px. `md` and `lg` (short forms) stay fixed.
+ */
+export type DetailSheetWidth = 'md' | 'lg' | 'xl' | '2xl' | 'wide'
 
-const WIDTH: Record<DetailSheetWidth, string> = {
+export const DETAIL_SHEET_WIDTH: Record<DetailSheetWidth, string> = {
   md: 'sm:max-w-md',
   lg: 'sm:max-w-lg',
-  xl: 'sm:max-w-xl',
-  '2xl': 'sm:max-w-2xl',
+  xl: 'sm:max-w-xl 2xl:max-w-2xl min-[1920px]:max-w-3xl',
+  '2xl': 'sm:max-w-2xl 2xl:max-w-3xl min-[1920px]:max-w-4xl',
+  wide: 'sm:max-w-2xl xl:max-w-4xl 2xl:max-w-6xl',
 }
 
 export interface DetailSheetProps {
@@ -331,7 +339,7 @@ export function DetailSheet({
         data-slot="detail-sheet"
         className={cn(
           'flex w-full flex-col gap-0 overflow-hidden supports-[overflow:clip]:overflow-clip p-0 outline-none [&>button]:hidden',
-          WIDTH[width],
+          DETAIL_SHEET_WIDTH[width],
           className
         )}
         onOpenAutoFocus={onOpenAutoFocus}

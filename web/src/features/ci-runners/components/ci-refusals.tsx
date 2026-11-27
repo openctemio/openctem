@@ -6,7 +6,7 @@
  * each, so whoever sets up a pipeline sees why it does not report.
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { ArrowRight, ShieldX } from 'lucide-react'
 import Link from '@/components/link'
 import { ErrorState, RelativeTime } from '@/features/shared'
@@ -17,6 +17,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useTrustRefusals } from '../api/use-ci'
 import { PROVIDER_LABEL, isKnownRefusal } from '../lib/ci'
 import { refusalFixes, type RefusalFix } from '../lib/connect'
+import { groupRefusals, REFUSAL_GROUPS_PAGE } from '../lib/refusal-groups'
 import type { CITokenRefusal } from '../types'
 
 type TFn = ReturnType<typeof useTranslation>['t']
@@ -69,9 +70,12 @@ export function fixLabel(fix: RefusalFix, t: TFn): string {
 export function RefusalDetail({
   refusal,
   onFix,
+  count = 1,
 }: {
   refusal: CITokenRefusal
   onFix?: (fix: RefusalFix) => void
+  /** How many identical jobs this refusal stands for (a group). */
+  count?: number
 }) {
   const { t } = useTranslation()
   const fixButtons = onFix ? refusalFixes(refusal) : []
@@ -88,7 +92,17 @@ export function RefusalDetail({
         {refusal.provider && (
           <Badge variant="secondary">{PROVIDER_LABEL[refusal.provider] ?? refusal.provider}</Badge>
         )}
-        {refusal.at && <RelativeTime date={refusal.at} className="text-muted-foreground" />}
+        {count > 1 && (
+          <Badge variant="outline" data-testid="ci-refusal-count">
+            {t('scans.ci.refusals.times', '{count} jobs', { count })}
+          </Badge>
+        )}
+        {refusal.at && (
+          <span className="text-muted-foreground">
+            {count > 1 && `${t('scans.ci.refusals.lastSeen', 'last')} `}
+            <RelativeTime date={refusal.at} />
+          </span>
+        )}
       </div>
       {(refusal.ref || refusal.event) && (
         <div className="break-words text-muted-foreground">
@@ -130,7 +144,66 @@ export function RefusalDetail({
   )
 }
 
-/** How many refusals the Trusted pipelines section shows before "Show all". */
+/**
+ * Refused jobs, identical ones (same repository, ref, rule and fix) folded
+ * into one row with their count and the last time seen. The first `page`
+ * groups show; "Show more" adds a page at a time, so a pipeline refused on
+ * every push never becomes an endless list.
+ */
+export function RefusalGroupList({
+  refusals,
+  onFix,
+  canFix,
+  page = REFUSAL_GROUPS_PAGE,
+  testId,
+}: {
+  refusals: CITokenRefusal[]
+  onFix?: (refusal: CITokenRefusal, fix: RefusalFix) => void
+  /** Whether a configuration exists for the fix to edit (all, when left out). */
+  canFix?: (refusal: CITokenRefusal) => boolean
+  page?: number
+  testId?: string
+}) {
+  const { t } = useTranslation()
+  const groups = useMemo(() => groupRefusals(refusals), [refusals])
+  const [limit, setLimit] = useState(page)
+  const shown = groups.slice(0, limit)
+  const rest = groups.length - shown.length
+  return (
+    <>
+      <ul className="divide-y rounded-lg border" data-testid={testId}>
+        {shown.map((g) => (
+          <li key={g.key} className="p-3" data-testid="ci-refusal">
+            <RefusalDetail
+              refusal={g.refusal}
+              count={g.count}
+              onFix={
+                onFix && (!canFix || canFix(g.refusal)) ? (f) => onFix(g.refusal, f) : undefined
+              }
+            />
+          </li>
+        ))}
+      </ul>
+      {(rest > 0 || limit > page) && (
+        <div className="flex justify-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setLimit((l) => (rest > 0 ? l + page : page))}
+          >
+            {rest > 0
+              ? t('scans.ci.refusals.showMore', 'Show {count} more', {
+                  count: Math.min(rest, page),
+                })
+              : t('scans.ci.refusals.showFewer', 'Show fewer')}
+          </Button>
+        </div>
+      )}
+    </>
+  )
+}
+
+/** How many refusal groups the Trusted pipelines section shows before "Show more". */
 export const REFUSALS_SHOWN = 3
 
 /** The heading id of the refused pipelines block, the target of the Pipelines tab's notice. */
@@ -207,11 +280,9 @@ export function CITrustRefusals({
   canFix?: (refusal: CITokenRefusal) => boolean
 }) {
   const { t } = useTranslation()
-  const [all, setAll] = useState(false)
   const { data, error, isLoading, mutate } = useTrustRefusals({ enabled: canWrite })
   if (!canWrite) return null
   const list = data?.data ?? []
-  const shown = all || bare ? list : list.slice(0, REFUSALS_SHOWN)
   return (
     <section aria-labelledby={REFUSALS_ID} className="space-y-2" data-testid="ci-refusals">
       <div className={bare ? 'sr-only' : undefined}>
@@ -239,25 +310,12 @@ export function CITrustRefusals({
           {t('scans.ci.refusals.none', 'No pipeline has been refused recently.')}
         </p>
       ) : (
-        <>
-          <ul className="divide-y rounded-lg border">
-            {shown.map((r, i) => (
-              <li key={`${r.at}-${i}`} className="p-3" data-testid="ci-refusal">
-                <RefusalDetail
-                  refusal={r}
-                  onFix={onFix && canFix?.(r) ? (f) => onFix(r, f) : undefined}
-                />
-              </li>
-            ))}
-          </ul>
-          {!bare && list.length > REFUSALS_SHOWN && (
-            <Button variant="ghost" size="sm" onClick={() => setAll((v) => !v)}>
-              {all
-                ? t('scans.ci.refusals.showFewer', 'Show fewer')
-                : t('scans.ci.refusals.showAll', 'Show all {count}', { count: list.length })}
-            </Button>
-          )}
-        </>
+        <RefusalGroupList
+          refusals={list}
+          onFix={onFix}
+          canFix={canFix ?? (() => false)}
+          page={bare ? REFUSAL_GROUPS_PAGE : REFUSALS_SHOWN}
+        />
       )}
     </section>
   )
