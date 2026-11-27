@@ -1619,6 +1619,28 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   at the top over the page's first lines, a bar at the bottom over its last
   lines: keep the bar's height as padding). A sticky toolbar or table header
   over text the page has scrolled past passes.
+- A control has no empty room inside it. A control with a trailing icon (a
+  select, a filter token, a menu button, Display, Group) hugs its content, or,
+  when it is given a width (a select field, a token holding one width with
+  `data-hold-width`), pins the icon to its end. The layout matrix's
+  `deadSpace` detector fails an icon more than 12 px from the inner end, or
+  more than 16 px after the text of a filter token, menu button or button
+  that neither fills its column nor holds its width.
+- A select or filter token is one line, as high as the controls beside it: a
+  long value ends in an ellipsis with the full text in its title
+  (`tallControl` fails a control 1.5 times as tall as its row).
+- A list row's action sits at the row's end (under the text on a phone),
+  never mid-row (`floatingAction`), and no control is drawn past the window
+  or the page column outside a box made to scroll sideways (`pastEdge`; a
+  table scroller, the page tab strip, a canvas, or `data-scroll-x`).
+- Controls side by side in one row (a toolbar, a header, a button group)
+  share one height, one centre line and one text size (buttons with
+  buttons, fields with fields: a phone field keeps 16 px text). The layout
+  matrix's `sizeMismatch` runs the page-rhythm row probe at every width.
+- A row's content stays inside the row: in a table row or a ruled list row,
+  no text line or chip comes closer than 3 px to a ruled edge or crosses it
+  (`cellCrowd`): a chip that would wrap past the row's line folds into "+N"
+  or the row grows.
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a
   fixed column count without breakpoints.
 - `e2e/specs/75a-layout-breaks-lists.spec.ts` (and 75b settings, 75c shell, 75d detail) check the lists and their overlays at
