@@ -96,7 +96,8 @@ var memberFindingRule = ` AND ` + vulnerability.FindingMemberVisibilitySQL("f", 
 // openFindingsByLocationAs and openURLFindingsAs are the two finding reads
 // of a path tree as v sees them, with their arguments.
 func openFindingsByLocationAs(tenantID, assetID shared.ID, v webendpoint.FindingViewer) (string, []any) {
-	args := []any{tenantID.String(), assetID.String(), webendpoint.MaxPathFindingRows}
+	args := make([]any, 0, 4)
+	args = append(args, tenantID.String(), assetID.String(), webendpoint.MaxPathFindingRows)
 	if v.MemberUserID == "" {
 		return openFindingsByLocation, args
 	}
@@ -106,7 +107,8 @@ func openFindingsByLocationAs(tenantID, assetID shared.ID, v webendpoint.Finding
 }
 
 func openURLFindingsAs(tenantID, assetID shared.ID, v webendpoint.FindingViewer) (string, []any) {
-	args := []any{tenantID.String(), assetID.String(), webendpoint.MaxPathFindingRows}
+	args := make([]any, 0, 4)
+	args = append(args, tenantID.String(), assetID.String(), webendpoint.MaxPathFindingRows)
 	if v.MemberUserID == "" {
 		return openURLFindings, args
 	}
