@@ -3110,24 +3110,35 @@ function FindingsContent() {
         <FindingsTableSkeleton />
       ) : verifyView ? (
         <div className="space-y-3">
+          {/* The view's title row, as every list view has one: the name at
+              the start, the way back and Refresh at the end. They used to be
+              toolbar tokens, which a phone moves into the Filters sheet, so
+              the phone showed only a Filters and a Refresh button. */}
+          <ListTitleRow
+            data-testid="findings-verify-title-row"
+            titleTestId="findings-view-title"
+            title={t('findings.verify.title', 'Fixes awaiting verification')}
+          >
+            <Button
+              variant="outline"
+              size="sm"
+              iconOnlyBelow="sm"
+              onClick={() => setViewParam('')}
+              aria-label={t('findings.verify.all', 'All findings')}
+            >
+              <ArrowLeft className="h-4 w-4 sm:me-2" aria-hidden />
+              <span className="sr-only sm:not-sr-only">
+                {t('findings.verify.all', 'All findings')}
+              </span>
+            </Button>
+            {refreshButton}
+          </ListTitleRow>
           <FindingGroupsTable
             {...groupedProps}
             dimension="cve_id"
             query={verifyQueueQuery(apiFilters)}
             statuses="fix_applied"
             renderGroupActions={verifyActions}
-            toolbarStart={
-              <>
-                <Button variant="ghost" size="sm" onClick={() => setViewParam('')}>
-                  <ArrowLeft className="me-2 h-4 w-4" />
-                  {t('findings.verify.all', 'All findings')}
-                </Button>
-                <span className="text-sm text-muted-foreground">
-                  {t('findings.verify.title', 'Fixes awaiting verification')}
-                </span>
-              </>
-            }
-            toolbarEnd={refreshButton}
             emptyMessage={
               verifyNoCveTotal > 0
                 ? t('findings.verify.noCveGroups', 'No fixes awaiting verification by CVE')

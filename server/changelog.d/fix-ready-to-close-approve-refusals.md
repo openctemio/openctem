@@ -1,0 +1,6 @@
+### Fixed: approving a fix in the verification queue says why nothing was verified
+
+- Approve and Reject on a CVE group of "Fixes awaiting verification" (`POST /findings/actions/verify` and `/reject-fix` by filter) dropped every finding the lifecycle refused without a word, so approving a group whose finding was critical, with no confirmed retest and no verification checklist completed by another person, showed a green "0 findings verified" and changed nothing. The rule stays; the response now reports every finding left alone with a refusal code (`refused`, `reasons`, `rows`), the by-id form answers the same shape (it used to send capitalised field names the web could not read), and the web shows "Nothing was verified: <reason>" as an error, or "1 of 3 verified" with the reasons as a warning.
+- No bulk action shows a success for nothing done any more: the shared bulk result (status change, assign, approval decisions), Mark fixed and Assign to asset owners warn when nothing changed.
+- On a phone the queue has its title row again ("Fixes awaiting verification", All findings, Refresh); its name and the way back used to fold into the Filters sheet.
+- Docs: server/docs/architecture/finding-status-lifecycle.md ("The paths that use the engine")
