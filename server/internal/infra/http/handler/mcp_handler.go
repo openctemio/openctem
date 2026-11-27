@@ -434,8 +434,10 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 
+	callArgs := p.Arguments
 	if tool.Write {
-		if res, done := h.runWriteTool(r, tool, tenantID, p.Arguments); done {
+		res, canonical, done := h.runWriteTool(r, tool, tenantID, p.Arguments)
+		if done {
 			isErr, _ := res["isError"].(bool)
 			outcome := auditdom.ResultSuccess
 			if isErr {
@@ -445,9 +447,12 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 			h.writeResult(w, req.ID, res)
 			return
 		}
+		// Run exactly the arguments the person confirmed (the audit entry
+		// still records what the client sent).
+		callArgs = canonical
 	}
 
-	result, err := tool.call(ctx, tenantID, p.Arguments)
+	result, err := tool.call(ctx, tenantID, callArgs)
 	if err != nil {
 		// MCP convention: tool execution failures are a normal result with
 		// isError=true, not a JSON-RPC protocol error. The error is typed
