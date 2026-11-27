@@ -56,7 +56,7 @@ func (s *TaskService) scopeEvents(ctx context.Context, tenantID, taskID shared.I
 		}
 		for _, id := range ids {
 			c := counts[id]
-			visible[id] = c.Total > 0 || c.Related > 0
+			visible[id] = c.Seen()
 		}
 	}
 	for _, e := range events {
