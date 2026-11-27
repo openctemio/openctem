@@ -45,7 +45,7 @@ export function ScanMobileCard({
   onOpen: (config: ScanConfig) => void
   onOpenRun: (runId: string) => void
 }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const run = lastRunOf(config)
   const type = scanTypeLabel(config, t)
   const ts = run?.task_summary
@@ -104,7 +104,7 @@ export function ScanMobileCard({
                   status={waiting ? 'queued' : run.status}
                   progress={waiting ? undefined : run.progress}
                   label={waiting ? t('scans.cell.waitingForSensor') : undefined}
-                  title={lastRunReason(run, t)}
+                  title={lastRunReason(run, t, locale)}
                 />
               </button>
             </div>

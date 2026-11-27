@@ -7,6 +7,7 @@
  */
 
 import type { ReactNode } from 'react'
+import { runMessage } from '@/features/scans/lib/scan-status'
 import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
 import { RunStatusBadge } from '@/features/shared'
@@ -87,8 +88,8 @@ export function RunScanCell({ run }: { run: ScanRun }) {
  * then the run's message (why it failed or was refused). Null when there is
  * nothing to add.
  */
-export function runStateReason(run: ScanRun, t: Translate): string | null {
-  const parts = [runTargetNote(run, t), run.error_message].filter(Boolean)
+export function runStateReason(run: ScanRun, t: Translate, locale = 'en'): string | null {
+  const parts = [runTargetNote(run, t), runMessage(run, t, locale)].filter(Boolean)
   return parts.length > 0 ? parts.join('. ') : null
 }
 
@@ -107,8 +108,8 @@ export function RunStateLine({
   extra?: ReactNode
   className?: string
 }) {
-  const { t } = useTranslation()
-  const reason = runStateReason(run, t)
+  const { t, locale } = useTranslation()
+  const reason = runStateReason(run, t, locale)
   return (
     <div
       data-slot="run-state"

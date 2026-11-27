@@ -71,4 +71,38 @@ describe('Priority rules page i18n', () => {
     expect(screen.queryByText('Add condition')).toBeNull()
     expect(screen.queryByText('Create priority rule')).toBeNull()
   })
+
+  it('reads stored conditions as plain sentences, never as code', () => {
+    swr.data = {
+      data: [
+        {
+          id: 'r1',
+          name: 'Internet KEV',
+          priority_class: 'P0',
+          conditions: [
+            { field: 'is_in_kev', operator: 'eq', value: true },
+            { field: 'epss_score', operator: 'gte', value: 0.5 },
+            { field: 'asset_exposure', operator: 'eq', value: 'private' },
+            { field: 'severity', operator: 'in', value: ['critical', 'high'] },
+          ],
+          is_active: true,
+          evaluation_order: 10,
+          created_at: '2026-11-01T00:00:00Z',
+          updated_at: '2026-11-01T00:00:00Z',
+        },
+      ],
+    }
+    render(
+      <I18nProvider locale="vi">
+        <PriorityRulesPage />
+      </I18nProvider>
+    )
+    expect(screen.getAllByText('Có trong danh mục KEV').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Điểm EPSS từ 50% trở lên').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Mức độ phơi nhiễm của tài sản là Riêng tư').length).toBeGreaterThan(
+      0
+    )
+    expect(screen.queryByText(/is_in_kev|epss_score|asset_exposure/)).toBeNull()
+    swr.data = { data: [] }
+  })
 })

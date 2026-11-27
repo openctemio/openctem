@@ -157,6 +157,7 @@ interface IntegrationAPIResponse {
   category: string
   status: string
   status_message?: string
+  status_code?: string
   auth_type: string
   base_url?: string
   credentials_masked?: string
@@ -193,6 +194,7 @@ function transformSCMConnection(api: IntegrationAPIResponse): SCMConnection {
     status: api.status as SCMConnection['status'],
     lastValidatedAt: api.last_sync_at,
     errorMessage: api.status_message,
+    errorCode: api.status_code,
     repositoryCount: api.scm_extension?.repository_count || 0,
     permissions: [] as SCMConnection['permissions'],
     createdAt: api.created_at,
