@@ -108,7 +108,11 @@ function ApproveDialog({
         onDone()
       }
     } catch (err) {
-      setError(err instanceof AdminApiError ? err.message : 'Could not approve the request')
+      setError(
+        err instanceof AdminApiError
+          ? err.message
+          : t('admin.accessRequestsPanel.approveFailed', 'Could not approve the request')
+      )
     } finally {
       setBusy(false)
     }
@@ -168,7 +172,7 @@ function ApproveDialog({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="ar-slug">{t('admin.accessRequestsPanel.slug', 'Slug')}</Label>
+                <Label htmlFor="ar-slug">{t('admin.accessRequestsPanel.slug', 'Short name')}</Label>
                 <Input
                   id="ar-slug"
                   value={slug}

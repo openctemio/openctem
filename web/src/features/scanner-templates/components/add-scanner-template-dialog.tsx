@@ -55,17 +55,31 @@ import {
   formatTemplateSize,
 } from '@/lib/api/scanner-template-types'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { useTranslation } from '@/context/i18n-provider'
 
 // Form schema
-const formSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(255, 'Name is too long'),
-  template_type: z.enum(TEMPLATE_TYPES, { message: 'Template type is required' }),
-  description: z.string().max(1000, 'Description is too long').optional(),
-  content: z.string().min(1, 'Template content is required'),
-  tags: z.string().optional(),
-})
+type Translate = ReturnType<typeof useTranslation>['t']
 
-type FormValues = z.infer<typeof formSchema>
+const buildFormSchema = (t: Translate) =>
+  z.object({
+    name: z
+      .string()
+      .min(1, t('scans.templates.add.nameRequired', 'Name is required'))
+      .max(255, t('scans.templates.add.nameTooLong', 'Name is too long')),
+    template_type: z.enum(TEMPLATE_TYPES, {
+      message: t('scans.templates.add.typeRequired', 'Template type is required'),
+    }),
+    description: z
+      .string()
+      .max(1000, t('scans.templates.add.descriptionTooLong', 'Description is too long'))
+      .optional(),
+    content: z
+      .string()
+      .min(1, t('scans.templates.add.contentRequired', 'Template content is required')),
+    tags: z.string().optional(),
+  })
+
+type FormValues = z.infer<ReturnType<typeof buildFormSchema>>
 
 interface AddScannerTemplateDialogProps {
   open: boolean
@@ -78,6 +92,7 @@ export function AddScannerTemplateDialog({
   onOpenChange,
   onSuccess,
 }: AddScannerTemplateDialogProps) {
+  const { t } = useTranslation()
   const [validationResult, setValidationResult] = useState<TemplateValidationResult | null>(null)
   const [isValidating, setIsValidating] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
@@ -86,7 +101,7 @@ export function AddScannerTemplateDialog({
   const { trigger: validateTemplate } = useValidateScannerTemplate()
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(buildFormSchema(t)),
     defaultValues: {
       name: '',
       template_type: undefined,
@@ -124,7 +139,11 @@ export function AddScannerTemplateDialog({
         setValidationResult({
           valid: false,
           errors: [
-            { field: 'content', message: 'Failed to validate template', code: 'VALIDATION_ERROR' },
+            {
+              field: 'content',
+              message: t('scans.templates.add.validateFailed', 'Failed to validate template'),
+              code: 'VALIDATION_ERROR',
+            },
           ],
           rule_count: 0,
         })
@@ -132,7 +151,7 @@ export function AddScannerTemplateDialog({
         setIsValidating(false)
       }
     },
-    [validateTemplate]
+    [validateTemplate, t]
   )
 
   // Handle file upload
@@ -145,7 +164,14 @@ export function AddScannerTemplateDialog({
       const type = selectedType as TemplateType
       if (type && file.size > TEMPLATE_TYPE_MAX_SIZES[type]) {
         toast.error(
-          `File too large. Maximum size for ${TEMPLATE_TYPE_DISPLAY_NAMES[type]} is ${formatTemplateSize(TEMPLATE_TYPE_MAX_SIZES[type])}`
+          t(
+            'scans.templates.add.fileTooLarge',
+            'File too large. Maximum size for {type} is {size}',
+            {
+              type: TEMPLATE_TYPE_DISPLAY_NAMES[type],
+              size: formatTemplateSize(TEMPLATE_TYPE_MAX_SIZES[type]),
+            }
+          )
         )
         return
       }
@@ -170,7 +196,7 @@ export function AddScannerTemplateDialog({
       }
       reader.readAsText(file)
     },
-    [form, selectedType, validateContent]
+    [form, selectedType, validateContent, t]
   )
 
   // Handle type change
@@ -189,7 +215,9 @@ export function AddScannerTemplateDialog({
     async (values: FormValues) => {
       // Require validation before submit
       if (!validationResult?.valid) {
-        toast.error('Please fix validation errors before uploading')
+        toast.error(
+          t('scans.templates.add.fixErrors', 'Please fix validation errors before uploading')
+        )
         return
       }
 
@@ -207,15 +235,21 @@ export function AddScannerTemplateDialog({
             : undefined,
         })
 
-        toast.success(`Template "${values.name}" created successfully`)
+        toast.success(
+          t('scans.templates.add.created', 'Template "{name}" created.', {
+            name: values.name,
+          })
+        )
         await invalidateScannerTemplatesCache()
         onOpenChange(false)
         onSuccess?.()
       } catch (err) {
-        toast.error(getErrorMessage(err, 'Failed to create template'))
+        toast.error(
+          getErrorMessage(err, t('scans.templates.add.createFailed', 'Failed to create template'))
+        )
       }
     },
-    [createTemplate, validationResult, onOpenChange, onSuccess]
+    [createTemplate, validationResult, onOpenChange, onSuccess, t]
   )
 
   return (
@@ -224,10 +258,13 @@ export function AddScannerTemplateDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileCode2 className="h-5 w-5" />
-            Upload Scanner Template
+            {t('scans.templates.add.title', 'Upload scanner template')}
           </DialogTitle>
           <DialogDescription>
-            Upload a custom template for Nuclei, Semgrep, or Betterleaks scanners.
+            {t(
+              'scans.templates.add.description',
+              'Upload a custom template for Nuclei, Semgrep, or Betterleaks scanners.'
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -240,14 +277,19 @@ export function AddScannerTemplateDialog({
                 name="template_type"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Template Type</FormLabel>
+                    <FormLabel>{t('scans.templates.add.type', 'Template type')}</FormLabel>
                     <Select
                       onValueChange={(v) => handleTypeChange(v as TemplateType)}
                       value={field.value}
                     >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select a scanner type" />
+                          <SelectValue
+                            placeholder={t(
+                              'scans.templates.add.typePlaceholder',
+                              'Select a scanner type'
+                            )}
+                          />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -256,7 +298,10 @@ export function AddScannerTemplateDialog({
                             <div className="flex flex-col">
                               <span>{TEMPLATE_TYPE_DISPLAY_NAMES[type]}</span>
                               <span className="text-xs text-muted-foreground">
-                                {TEMPLATE_TYPE_DESCRIPTIONS[type]}
+                                {t(
+                                  `scans.templates.add.typeDesc.${type}`,
+                                  TEMPLATE_TYPE_DESCRIPTIONS[type]
+                                )}
                               </span>
                             </div>
                           </SelectItem>
@@ -274,7 +319,7 @@ export function AddScannerTemplateDialog({
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Name</FormLabel>
+                    <FormLabel>{t('scans.templates.add.name', 'Name')}</FormLabel>
                     <FormControl>
                       <Input placeholder="my-custom-template" {...field} />
                     </FormControl>
@@ -289,10 +334,15 @@ export function AddScannerTemplateDialog({
                 name="description"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Description</FormLabel>
+                    <FormLabel>
+                      {t('scans.templates.add.descriptionLabel', 'Description')}
+                    </FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="A brief description of what this template detects..."
+                        placeholder={t(
+                          'scans.templates.add.descriptionPlaceholder',
+                          'A brief description of what this template detects...'
+                        )}
                         className="resize-none"
                         rows={2}
                         {...field}
@@ -309,7 +359,7 @@ export function AddScannerTemplateDialog({
                 name="content"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Template File</FormLabel>
+                    <FormLabel>{t('scans.templates.add.file', 'Template file')}</FormLabel>
                     <FormControl>
                       <div className="space-y-2">
                         <div className="flex items-center gap-2">
@@ -332,7 +382,7 @@ export function AddScannerTemplateDialog({
                             onClick={() => document.getElementById('template-file')?.click()}
                           >
                             <Upload className="me-2 h-4 w-4" />
-                            Choose File
+                            {t('scans.templates.add.chooseFile', 'Choose file')}
                           </Button>
                           {fileName && (
                             <span className="text-sm text-muted-foreground">{fileName}</span>
@@ -340,13 +390,18 @@ export function AddScannerTemplateDialog({
                         </div>
                         {selectedType && (
                           <FormDescription>
-                            Accepted: {TEMPLATE_TYPE_EXTENSIONS[selectedType]} (max{' '}
-                            {formatTemplateSize(TEMPLATE_TYPE_MAX_SIZES[selectedType])})
+                            {t('scans.templates.add.accepted', 'Accepted: {ext} (max {size})', {
+                              ext: TEMPLATE_TYPE_EXTENSIONS[selectedType],
+                              size: formatTemplateSize(TEMPLATE_TYPE_MAX_SIZES[selectedType]),
+                            })}
                           </FormDescription>
                         )}
                         {field.value && (
                           <Textarea
-                            placeholder="Or paste template content here..."
+                            placeholder={t(
+                              'scans.templates.add.pastePlaceholder',
+                              'Or paste template content here...'
+                            )}
                             className="font-mono text-sm"
                             rows={6}
                             value={field.value}
@@ -370,11 +425,13 @@ export function AddScannerTemplateDialog({
                 name="tags"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Tags (optional)</FormLabel>
+                    <FormLabel>{t('scans.templates.add.tags', 'Tags (optional)')}</FormLabel>
                     <FormControl>
                       <Input placeholder="sqli, owasp, web" {...field} />
                     </FormControl>
-                    <FormDescription>Comma-separated tags for filtering</FormDescription>
+                    <FormDescription>
+                      {t('scans.templates.add.tagsHint', 'Comma-separated tags for filtering')}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -384,8 +441,13 @@ export function AddScannerTemplateDialog({
               {isValidating && (
                 <Alert>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <AlertTitle>Validating...</AlertTitle>
-                  <AlertDescription>Checking template syntax and structure</AlertDescription>
+                  <AlertTitle>{t('scans.templates.add.validating', 'Validating...')}</AlertTitle>
+                  <AlertDescription>
+                    {t(
+                      'scans.templates.add.validatingHint',
+                      'Checking template syntax and structure'
+                    )}
+                  </AlertDescription>
                 </Alert>
               )}
 
@@ -394,17 +456,24 @@ export function AddScannerTemplateDialog({
                 (validationResult.valid ? (
                   <Alert className="border-success/30 bg-success/10">
                     <CheckCircle className="h-4 w-4 text-success" />
-                    <AlertTitle className="text-success">Valid Template</AlertTitle>
+                    <AlertTitle className="text-success">
+                      {t('scans.templates.add.valid', 'Valid template')}
+                    </AlertTitle>
                     <AlertDescription>
-                      Found {validationResult.rule_count}{' '}
-                      {validationResult.rule_count === 1 ? 'rule' : 'rules'}
+                      {validationResult.rule_count === 1
+                        ? t('scans.templates.add.foundOne', 'Found {count} rule', {
+                            count: validationResult.rule_count,
+                          })
+                        : t('scans.templates.add.foundMany', 'Found {count} rules', {
+                            count: validationResult.rule_count,
+                          })}
                     </AlertDescription>
                   </Alert>
                 ) : (
                   // submit-error-ok: the result of the Validate button, not a failed submit
                   <Alert variant="destructive">
                     <AlertTriangle className="h-4 w-4" />
-                    <AlertTitle>Validation Errors</AlertTitle>
+                    <AlertTitle>{t('scans.templates.add.errors', 'Validation errors')}</AlertTitle>
                     <AlertDescription>
                       <ul className="mt-2 list-inside list-disc">
                         {validationResult.errors?.map((error, i) => (
@@ -425,11 +494,11 @@ export function AddScannerTemplateDialog({
                 onClick={() => onOpenChange(false)}
                 disabled={isCreating}
               >
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </Button>
               <Button type="submit" disabled={isCreating || !validationResult?.valid}>
                 {isCreating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                Upload Template
+                {t('scans.templates.upload', 'Upload template')}
               </Button>
             </DialogFooter>
           </DialogForm>

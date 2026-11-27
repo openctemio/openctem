@@ -22,7 +22,7 @@ describe('describeEvidence', () => {
         observed: { root: 'acme.com', first_seen: '2026-01-05T00:00:00Z' },
       })
     ).toBe(
-      'Under verified domain acme.com — seen in Certificate Transparency (crt.sh) since 5 Jan 2026'
+      'Under verified domain acme.com — seen in Certificate Transparency (crt.sh) since Jan 5, 2026'
     )
   })
 

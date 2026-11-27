@@ -123,7 +123,7 @@ export function FeedFreshnessLimitsCard({ canEdit }: { canEdit: boolean }) {
         <p className="text-sm text-muted-foreground">
           {t(
             'admin.feedLimits.epss',
-            'EPSS scores are dated by day: their limit is {hours} hours.',
+            'EPSS scores are dated by day: their limit is {hours, plural, one {# hour} other {# hours}}.',
             {
               hours: epssHoursFor(shown),
             }
@@ -133,7 +133,7 @@ export function FeedFreshnessLimitsCard({ canEdit }: { canEdit: boolean }) {
           {data.source === 'console'
             ? t(
                 'admin.feedLimits.sourceConsole',
-                'Set in this console. The default is {hours} hours.',
+                'Set in this console. The default is {hours, plural, one {# hour} other {# hours}}.',
                 {
                   hours: data.default_hours,
                 }

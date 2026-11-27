@@ -10,6 +10,7 @@
 
 import Link from '@/components/link'
 
+import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useTranslation } from '@/context/i18n-provider'
@@ -45,20 +46,24 @@ export function WorkflowReadinessBadge({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          // Never wider than its cell: a long label (vi) ends in an ellipsis,
+          // the whole of it in the name, the title and the popover. A long one
+          // keeps 6rem, so a phone card moves it to a line of its own instead
+          // of squeezing the name beside it.
+          className={cn(
+            'max-w-full rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            label.length > 12 ? 'min-w-24' : 'shrink-0'
+          )}
           aria-label={`${label}: ${t('scans.readiness.details')}`}
+          title={label}
           onClick={(e) => e.stopPropagation()}
         >
-          <Badge variant="outline" className="cursor-pointer text-xs">
-            {label}
+          <Badge variant="outline" className="max-w-full cursor-pointer text-xs">
+            <span className="min-w-0 truncate">{label}</span>
           </Badge>
         </button>
       </PopoverTrigger>
-      <PopoverContent
-        className="w-80 space-y-3 text-xs"
-        align="start"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <PopoverContent className="w-80 space-y-3 text-xs" onClick={(e) => e.stopPropagation()}>
         {problems.length > 0 && (
           <StepList title={t('scans.readiness.problemsTitle')} steps={problems} />
         )}

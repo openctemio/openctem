@@ -13,6 +13,7 @@ import { EXPOSURES_SECTION_TABS } from '@/config/section-tabs'
 import { FINDINGS_LIST_HIDDEN_STATUSES } from '@/features/findings/lib/list-defaults'
 import { useTranslation } from '@/context/i18n-provider'
 import type { FindingTypeStats } from '../hooks/use-finding-type-stats'
+import { formatNumber } from '@/lib/app-locale'
 
 /**
  * Overview · Vulnerabilities · Secrets · Code weaknesses · Misconfigurations.
@@ -77,7 +78,7 @@ export function ViewFindingsButton({
       ? t('exposures.type.viewFindings', 'View findings')
       : count === 1
         ? t('exposures.type.viewOne', 'View 1 finding')
-        : t('exposures.type.viewMany', 'View {count} findings', { count: count.toLocaleString() })
+        : t('exposures.type.viewMany', 'View {count} findings', { count: formatNumber(count) })
   return (
     <Button asChild variant="outline" size="sm">
       <Link href={findingsHrefForSources(sources)}>

@@ -57,18 +57,13 @@ import {
   Copy,
   Clock,
 } from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Can, Permission, useHasPermission } from '@/lib/permissions'
 import { get, put, csrfFetch } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { FieldError, fieldErrorProps } from '@/features/shared/components/forms/field-error'
 import { workflowEndpoints } from '@/lib/api/endpoints'
 import {
   useWorkflows,
@@ -97,6 +92,7 @@ import type {
   UpdateWorkflowGraphRequest,
 } from '@/lib/api/workflow-types'
 import { useAutomationLabels } from '@/features/workflows/lib/use-automation-labels'
+import { formatDate } from '@/lib/app-locale'
 
 type T = ReturnType<typeof useTranslation>['t']
 
@@ -113,7 +109,7 @@ function formatRelativeTime(dateStr: string, t: T): string {
   if (diffMins < 60) return t('automations.time.minutesAgo', '{n} min ago', { n: diffMins })
   if (diffHours < 24) return t('automations.time.hoursAgo', '{n} h ago', { n: diffHours })
   if (diffDays < 7) return t('automations.time.daysAgo', '{n} d ago', { n: diffDays })
-  return date.toLocaleDateString()
+  return formatDate(date)
 }
 
 // Helper to get trigger type display
@@ -229,6 +225,8 @@ export default function WorkflowsPage() {
   const triggerOf = (w: Workflow) => getTriggerDisplay(w, t, labels.trigger)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [newWorkflowName, setNewWorkflowName] = useState('')
+  const [createNameError, setCreateNameError] = useState<string | null>(null)
+  const createNameField = fieldErrorProps('workflow-name', createNameError)
   const [newWorkflowDescription, setNewWorkflowDescription] = useState('')
 
   // Visual Builder state
@@ -496,7 +494,8 @@ export default function WorkflowsPage() {
 
   const handleCreateWorkflow = async () => {
     if (!newWorkflowName.trim()) {
-      toast.error(t('automations.toast.enterName', 'Please enter a workflow name'))
+      setCreateNameError(t('automations.toast.enterName', 'Please enter a workflow name'))
+      document.getElementById('workflow-name')?.focus()
       return
     }
 
@@ -510,6 +509,7 @@ export default function WorkflowsPage() {
             node_key: 'trigger_1',
             node_type: 'trigger',
             name: 'Manual Trigger',
+            // i18n-ok: stored workflow data sent to the API, not rendered text
             description: 'Manually triggered workflow',
             ui_position: { x: 250, y: 50 },
             config: {
@@ -569,7 +569,7 @@ export default function WorkflowsPage() {
         <DataTableColumnHeader column={column} title={t('automations.columns.status', 'Status')} />
       ),
       cell: ({ row }) => (
-        <Badge variant={row.original.is_active ? 'default' : 'secondary'}>
+        <Badge variant={row.original.is_active ? 'outline' : 'secondary'}>
           {row.original.is_active
             ? t('automations.status.active', 'Active')
             : t('automations.status.inactive', 'Inactive')}
@@ -689,50 +689,60 @@ export default function WorkflowsPage() {
       enableHiding: false,
       cell: ({ row }) => {
         const workflow = row.original
+        const label = t('common.actionMenu.label', 'Actions for {name}', { name: workflow.name })
+        const items: ActionMenuEntry[] = [
+          {
+            id: 'view',
+            label: t('automations.menu.viewDetails', 'View details'),
+            icon: Eye,
+            onSelect: () => handleViewWorkflow(workflow),
+          },
+          {
+            id: 'edit-in-builder',
+            label: t('automations.menu.editInBuilder', 'Edit in builder'),
+            icon: Pencil,
+            onSelect: () => handleEditInBuilder(workflow),
+          },
+          {
+            id: 'run-now',
+            label: t('automations.menu.runNow', 'Run now'),
+            icon: Play,
+            disabledReason: !canWrite
+              ? t('automations.menu.noWriteReason', 'You need permission to run automations.')
+              : undefined,
+            onSelect: () => setPendingRun(workflow),
+          },
+          {
+            id: 'duplicate',
+            section: 'duplicate',
+            label: t('automations.menu.duplicate', 'Duplicate'),
+            icon: Copy,
+            onSelect: () => handleDuplicateWorkflow(workflow),
+          },
+          {
+            id: 'delete',
+            label: t('confirm.delete', 'Delete'),
+            icon: Trash2,
+            destructive: true,
+            disabledReason: !canPublish
+              ? t('automations.menu.noPublishReason', 'You need permission to delete automations.')
+              : isDeleting && deleteWorkflowId === workflow.id
+                ? t('automations.menu.deletingReason', 'This automation is being deleted.')
+                : undefined,
+            onSelect: () => setPendingDelete(workflow),
+          },
+        ]
         return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
-                aria-label={t('automations.menu.actionsFor', 'Actions for {name}', {
-                  name: workflow.name,
-                })}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <MoreHorizontal className="h-4 w-4" />
+          <ActionMenu
+            title={workflow.name}
+            label={label}
+            items={items}
+            trigger={
+              <Button variant="ghost" size="icon-sm" className="p-0" aria-label={label}>
+                <MoreHorizontal className="h-4 w-4" aria-hidden />
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem onClick={() => handleViewWorkflow(workflow)}>
-                <Eye className="me-2 h-4 w-4" />
-                {t('automations.menu.viewDetails', 'View details')}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleEditInBuilder(workflow)}>
-                <Pencil className="me-2 h-4 w-4" />
-                {t('automations.menu.editInBuilder', 'Edit in builder')}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => setPendingRun(workflow)} disabled={!canWrite}>
-                <Play className="me-2 h-4 w-4" />
-                {t('automations.menu.runNow', 'Run now')}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => handleDuplicateWorkflow(workflow)}>
-                <Copy className="me-2 h-4 w-4" />
-                {t('automations.menu.duplicate', 'Duplicate')}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={() => setPendingDelete(workflow)}
-                disabled={!canPublish || (isDeleting && deleteWorkflowId === workflow.id)}
-              >
-                <Trash2 className="me-2 h-4 w-4" />
-                {t('confirm.delete', 'Delete')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+            }
+          />
         )
       },
     },
@@ -869,14 +879,6 @@ export default function WorkflowsPage() {
                     'automations.empty.description',
                     'Create your first automation workflow.'
                   )}
-                  action={
-                    <Can permission={Permission.AutomationsWrite} mode="disable">
-                      <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
-                        <Plus className="me-2 h-4 w-4" />
-                        {t('automations.empty.create', 'Create workflow')}
-                      </Button>
-                    </Can>
-                  }
                 />
               ) : (
                 <DataTable
@@ -1232,8 +1234,13 @@ export default function WorkflowsPage() {
                     'e.g., Critical Finding Response'
                   )}
                   value={newWorkflowName}
-                  onChange={(e) => setNewWorkflowName(e.target.value)}
+                  onChange={(e) => {
+                    setNewWorkflowName(e.target.value)
+                    setCreateNameError(null)
+                  }}
+                  {...createNameField.control}
                 />
+                <FieldError {...createNameField.message} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="workflow-description">
@@ -1256,7 +1263,7 @@ export default function WorkflowsPage() {
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
               {t('automations.create.cancel', 'Cancel')}
             </Button>
-            <Button onClick={handleCreateWorkflow} disabled={isCreating || !newWorkflowName.trim()}>
+            <Button onClick={handleCreateWorkflow} disabled={isCreating}>
               {isCreating
                 ? t('automations.create.creating', 'Creating...')
                 : t('automations.create.submit', 'Create workflow')}

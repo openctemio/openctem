@@ -297,6 +297,8 @@ func (s *VulnerabilityService) notifySeverityApprovers(ctx context.Context, f *v
 		if err := s.approvalInApp.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: f.TenantID(), Audience: notificationdom.AudienceUser, AudienceID: &user,
 			NotificationType: notificationdom.TypeFindingApproval, Title: title, Body: body,
+			Message: notificationdom.Msg("finding.severity_request.requested", "finding", oneLineTitle(findingDisplayTitle(f)),
+				"previous_severity", req.PreviousSeverity.String(), "requested_severity", req.RequestedSeverity.String()),
 			Severity: notificationdom.SeverityMedium, ResourceType: "finding", ResourceID: &fid, URL: url,
 		}); err != nil {
 			s.logger.Warn("severity request: in-app notification", "error", logger.SanitizeError(err))

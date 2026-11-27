@@ -9,12 +9,13 @@
  */
 
 import { useMemo } from 'react'
-import { Info, Lock, SlidersHorizontal } from 'lucide-react'
+import { Info, SlidersHorizontal } from 'lucide-react'
 
+import Link from '@/components/link'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState, ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { EmptyState, SettingsPage } from '@/features/shared'
 import {
   resetToolDefaults,
   saveToolDefaults,
@@ -70,38 +71,44 @@ export function ToolDefaultsSettings() {
   const { data, error, isLoading, mutate } = useToolDefaults()
   const entries = useMemo(() => (data?.items ?? []).map((i) => defaultsEntry(i, t)), [data, t])
 
-  return (
-    <PageStack>
-      <PageHeader
-        title={t('sensors.toolDefaults.title')}
-        description={t('sensors.toolDefaults.description')}
+  const title = t('sensors.toolDefaults.title')
+  const description = t('sensors.toolDefaults.description')
+  if (error || isLoading || !data) {
+    return (
+      <SettingsPage
+        title={title}
+        description={description}
+        state={error ? 'error' : 'loading'}
+        error={error}
+        onRetry={() => void mutate()}
       />
-      <Alert>
-        <Info className="h-4 w-4" />
-        <AlertDescription>{t('sensors.toolDefaults.layersNote')}</AlertDescription>
-      </Alert>
-      {!canWrite && (
-        <p className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-          <Lock className="h-3.5 w-3.5" aria-hidden />
-          {t('sensors.toolDefaults.readOnly')}
-        </p>
-      )}
-      {isLoading && <Skeleton className="h-40 w-full" />}
-      {error && !isLoading && (
-        <ErrorState
-          title={t('sensors.toolDefaults.loadError')}
-          error={error}
-          onRetry={() => void mutate()}
-        />
-      )}
-      {!isLoading && !error && entries.length === 0 && (
+    )
+  }
+
+  return (
+    <SettingsPage
+      title={title}
+      description={description}
+      readOnly={!canWrite && t('sensors.toolDefaults.readOnly')}
+      banners={
+        <Alert className="max-w-settings">
+          <Info className="size-4" aria-hidden />
+          <AlertDescription>{t('sensors.toolDefaults.layersNote')}</AlertDescription>
+        </Alert>
+      }
+    >
+      {entries.length === 0 ? (
         <EmptyState
           icon={SlidersHorizontal}
           title={t('sensors.toolDefaults.emptyTitle')}
           description={t('sensors.toolDefaults.empty')}
+          action={
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/sensors">{t('sensors.toolDefaults.openSensors', 'Open sensors')}</Link>
+            </Button>
+          }
         />
-      )}
-      {entries.length > 0 && (
+      ) : (
         <ToolSettingsList
           mode="organization"
           storageKey="openctem.settings.toolDefaults.open"
@@ -114,6 +121,6 @@ export function ToolDefaultsSettings() {
           onChanged={() => void mutate()}
         />
       )}
-    </PageStack>
+    </SettingsPage>
   )
 }

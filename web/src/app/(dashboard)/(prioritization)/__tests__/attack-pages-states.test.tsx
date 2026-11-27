@@ -4,7 +4,7 @@
  * The /attack-paths view has its own tests (attack-path-view.test.tsx).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 
 globalThis.ResizeObserver ??= class {
   observe() {}
@@ -41,7 +41,7 @@ describe('/exposure-chains', () => {
       mutate: vi.fn(),
     })
     render(<ExposureChainsPage />)
-    expect(screen.getByText(/Failed to load exposure chains/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load exposure chains/i)).toBeInTheDocument()
     expect(screen.queryByText(/No relationship data yet/i)).not.toBeInTheDocument()
   })
 
@@ -83,8 +83,18 @@ describe('/exposure-chains', () => {
     render(<ExposureChainsPage />)
     expect(screen.getAllByText('Outside your access')).toHaveLength(2)
     expect(screen.getByText('my-crown-jewel')).toBeInTheDocument()
-    // Only the visible asset is a link.
-    expect(screen.getAllByRole('link', { name: /my-crown-jewel/i })).toHaveLength(1)
+    // Only the visible asset opens its step detail (the graph-page rule: a sheet, not a link).
+    expect(screen.getAllByRole('button', { name: /my-crown-jewel/i })).toHaveLength(1)
+    expect(screen.getAllByTestId('chain-node')).toHaveLength(1)
+    // The node opens its step sheet; "View findings" is inside it, values translated.
+    fireEvent.click(screen.getByTestId('chain-node'))
+    const sheet = screen.getByTestId('exposure-chain-step-sheet')
+    expect(within(sheet).getByRole('link', { name: 'View findings' })).toHaveAttribute(
+      'href',
+      '/findings?asset_id=t1'
+    )
+    expect(sheet).toHaveTextContent('Private')
+    expect(sheet).not.toHaveTextContent(/\bprivate\b/)
     // Each chain opens the attack-path view of its target.
     expect(screen.getByTestId('chain-attack-paths-link')).toHaveAttribute(
       'href',

@@ -225,6 +225,31 @@ describe('BasicInfoStep', () => {
     expect(workflowCalls.some((f) => f !== undefined)).toBe(true)
   })
 
+  it('marks each missing value at its field once the step shows its problems', () => {
+    const { rerender } = render(<BasicInfoStep data={DEFAULT_NEW_SCAN} onChange={vi.fn()} />)
+    expect(screen.getByRole('textbox', { name: /Scan name/i })).not.toHaveAttribute('aria-invalid')
+    rerender(<BasicInfoStep data={DEFAULT_NEW_SCAN} onChange={vi.fn()} showErrors />)
+    const name = screen.getByRole('textbox', { name: /Scan name/i })
+    expect(name).toHaveAttribute('aria-invalid', 'true')
+    expect(name).toHaveAccessibleDescription(/Please enter a scan name/)
+    expect(screen.getByRole('combobox', { name: 'Scanner' })).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    )
+    rerender(
+      <BasicInfoStep
+        data={{ ...DEFAULT_NEW_SCAN, name: 'Weekly', mode: 'workflow' }}
+        onChange={vi.fn()}
+        showErrors
+      />
+    )
+    expect(screen.getByRole('textbox', { name: /Scan name/i })).not.toHaveAttribute('aria-invalid')
+    expect(screen.getByRole('combobox', { name: 'Workflow' })).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    )
+  })
+
   it('single mode asks for a scanner from the tool registry (no fake scan types)', () => {
     render(<BasicInfoStep data={DEFAULT_NEW_SCAN} onChange={vi.fn()} />)
     expect(screen.getByLabelText('Scanner')).toBeInTheDocument()
@@ -314,17 +339,25 @@ describe('BasicInfoStep', () => {
     expect(screen.getByRole('radio', { name: 'Discover' })).toBeEnabled()
   })
 
-  it('lists workflows that cannot run last, off, under Not available', async () => {
+  // A scan runs what is supported: a blocked workflow runs its other steps,
+  // so it is offered (under "Runs in part"); only a CI-only one stays off.
+  it('offers a blocked workflow under Runs in part and keeps a CI-only one off', async () => {
+    const onChange = vi.fn()
     render(
       <BasicInfoStep
         data={{ ...DEFAULT_NEW_SCAN, mode: 'workflow', workflowId: undefined }}
-        onChange={vi.fn()}
+        onChange={onChange}
       />
     )
     await userEvent.click(screen.getByRole('combobox', { name: 'Workflow' }))
-    expect(await screen.findByText('Not available')).toBeInTheDocument()
+    expect(await screen.findByText('Runs in part')).toBeInTheDocument()
+    expect(screen.getByText('Not available')).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /Code \/ CI/ })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
     const blocked = screen.getByRole('option', { name: /Network sweep/ })
-    expect(blocked).toHaveAttribute('aria-disabled', 'true')
+    expect(blocked).not.toHaveAttribute('aria-disabled', 'true')
     const options = screen.getAllByRole('option').map((o) => o.textContent ?? '')
     expect(options.findIndex((o) => o.includes('External discovery'))).toBeLessThan(
       options.findIndex((o) => o.includes('Network sweep'))
@@ -339,7 +372,7 @@ describe('BasicInfoStep', () => {
       expect(
         intensity.compareDocumentPosition(what) & Node.DOCUMENT_POSITION_FOLLOWING
       ).toBeTruthy()
-      expect(screen.getByRole('radio', { name: 'Active' })).toBeChecked()
+      expect(screen.getByRole('radio', { name: 'Probing' })).toBeChecked()
     })
 
     it('turns off the workflows above a passive scan, with why', () => {

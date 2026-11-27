@@ -18,6 +18,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useProgramMetrics } from '../hooks/use-ctem-dashboard'
 import { formatDurationHours, formatRatePct } from '../lib/program-health'
 import { MetricRowList, type MetricRow } from './metric-row-list'
+import { formatNumber } from '@/lib/app-locale'
 
 const NOT_MEASURED = '—'
 const K = 'insights.programMetrics'
@@ -45,7 +46,7 @@ function counted(t: Translate, noun: string, n: number | null | undefined): stri
   const count = n ?? 0
   const form = count === 1 ? 'one' : 'other'
   return t(`${K}.noun.${noun}.${form}`, `${count} ${noun}${count === 1 ? '' : 's'}`, {
-    count: count.toLocaleString(),
+    count: formatNumber(count),
   })
 }
 
@@ -138,14 +139,14 @@ export function ProgramMetricsSection({
   const oaCaption =
     oaDisplay !== null
       ? t(`${K}.acceptance.caption`, '{accepted} of {decided} in SLA', {
-          accepted: (oa?.accepted ?? 0).toLocaleString(),
+          accepted: formatNumber(oa?.accepted ?? 0),
           decided: counted(t, 'assignment', decided),
         }) +
         (oa?.pending
           ? `, ${t(`${K}.acceptance.pending`, '{count} pending', { count: oa.pending })}`
           : '')
       : oa?.pending
-        ? t(`${K}.acceptance.allPending`, '{items} still inside the SLA window', {
+        ? t(`${K}.acceptance.allPending`, '{items} still within the time limit', {
             items: counted(t, 'assignment', oa.pending),
           })
         : t(`${K}.acceptance.empty`, 'No assignments with an SLA in this period')
@@ -153,10 +154,10 @@ export function ProgramMetricsSection({
   const ccCaption =
     ccDisplay !== null
       ? t(`${K}.cycles.caption`, '{onTime} of {due} on time, {late} late, {open} open', {
-          onTime: (cc?.closed_on_time ?? 0).toLocaleString(),
+          onTime: formatNumber(cc?.closed_on_time ?? 0),
           due: counted(t, 'cycle', cc?.due),
-          late: (cc?.closed_late ?? 0).toLocaleString(),
-          open: (cc?.open ?? 0).toLocaleString(),
+          late: formatNumber(cc?.closed_late ?? 0),
+          open: formatNumber(cc?.open ?? 0),
         }) +
         (formatRatePct(cc?.mean_charter_completion_pct) !== null
           ? `, ${t(`${K}.cycles.charter`, 'criteria met {pct}', {
@@ -166,8 +167,8 @@ export function ProgramMetricsSection({
       : t(`${K}.cycles.empty`, 'No cycle was due in this period')
 
   const controlTitle: Record<string, string> = {
-    edr: t(`${K}.controls.edr.title`, 'Critical hosts without EDR'),
-    mfa: t(`${K}.controls.mfa.title`, 'Critical accounts without MFA'),
+    edr: t(`${K}.controls.edr.title`, 'Critical hosts without endpoint protection'),
+    mfa: t(`${K}.controls.mfa.title`, 'Critical accounts without multi-factor sign-in'),
     logging: t(`${K}.controls.logging.title`, 'Critical storage without logging'),
   }
   const controlInfo: Record<string, string> = {
@@ -275,8 +276,8 @@ export function ProgramMetricsSection({
       caption:
         display !== null
           ? t(`${K}.controls.caption`, '{lacking} lacking, {unknown} not recorded, of {total}', {
-              lacking: row.lacking.toLocaleString(),
-              unknown: row.unknown.toLocaleString(),
+              lacking: formatNumber(row.lacking),
+              unknown: formatNumber(row.unknown),
               total: counted(t, 'asset', row.total),
             })
           : t(`${K}.controls.empty`, 'No critical assets of this kind'),

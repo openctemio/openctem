@@ -413,7 +413,7 @@ func (s *Service) ApproveTarget(ctx context.Context, targetID, tenantID string, 
 		return nil, false, err
 	}
 	if effective {
-		s.notifyWidened(ctx, t, "Scope entry approved and in effect")
+		s.notifyWidened(ctx, t, "Scope entry approved and in effect", "scope.entry_approved")
 		s.scheduleJoin(t.TenantID())
 	}
 	s.logger.Info("scope target approved", "id", logSafe(targetID), "effective", effective)
@@ -466,9 +466,46 @@ func (s *Service) ExpireTargets(ctx context.Context) (int64, error) {
 }
 
 // notifyWidened tells every administrator that scope grew.
-func (s *Service) notifyWidened(ctx context.Context, t *scopedom.Target, title string) {
+func (s *Service) notifyWidened(ctx context.Context, t *scopedom.Target, title, code string) {
 	body := fmt.Sprintf("%s %s (%s, max tier %s)", t.TargetType(), t.Pattern(), describeExpiry(t), t.MaxTier())
-	s.NotifyAdmins(ctx, t.TenantID(), title, body)
+	s.NotifyAdminsMsg(ctx, t.TenantID(), title, body, entryMessage(code, t))
+}
+
+// targetTypeMessage is a scope entry kind as a nested message.
+func targetTypeMessage(tt scopedom.TargetType) *notificationdom.Message {
+	return notificationdom.Msg("scope.target_type." + scopeCodeSegment(tt.String()))
+}
+
+// scopeCodeSegment keeps a value usable as one message-code segment.
+func scopeCodeSegment(v string) string {
+	if v == "" {
+		return "other"
+	}
+	for _, r := range v {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+			return "other"
+		}
+	}
+	return v
+}
+
+// entryMessage is a scope entry's notice as a message code: the entry kind
+// and its deepest probe tier and its expiry as nested messages, and its pattern. extra are more key, value pairs.
+func entryMessage(code string, t *scopedom.Target, extra ...any) *notificationdom.Message {
+	m := notificationdom.Msg(code, "pattern", t.Pattern(),
+		"target_type", targetTypeMessage(t.TargetType()),
+		"max_tier", notificationdom.Msg("scope.tier."+scopeCodeSegment(t.MaxTier().String())))
+	if e := t.ExpiresAt(); e != nil {
+		m.Params["expiry"] = notificationdom.Msg("scope.expiry.until", "expires_at", e.UTC().Format(time.RFC3339))
+	} else {
+		m.Params["expiry"] = notificationdom.Msg("scope.expiry.permanent")
+	}
+	for i := 0; i+1 < len(extra); i += 2 {
+		if k, ok := extra[i].(string); ok {
+			m.Params[k] = extra[i+1]
+		}
+	}
+	return m
 }
 
 func describeExpiry(t *scopedom.Target) string {
@@ -482,6 +519,11 @@ func describeExpiry(t *scopedom.Target) string {
 // administrator of the tenant. Best effort: the change already happened and
 // is audited.
 func (s *Service) NotifyAdmins(ctx context.Context, tenantID shared.ID, title, body string) {
+	s.NotifyAdminsMsg(ctx, tenantID, title, body, nil)
+}
+
+// NotifyAdminsMsg is NotifyAdmins with the notice's language-neutral form.
+func (s *Service) NotifyAdminsMsg(ctx context.Context, tenantID shared.ID, title, body string, msg *notificationdom.Message) {
 	if s.admins == nil || s.inApp == nil {
 		return
 	}
@@ -494,7 +536,7 @@ func (s *Service) NotifyAdmins(ctx context.Context, tenantID shared.ID, title, b
 		uid := id
 		if err := s.inApp.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-			NotificationType: notificationdom.TypeScopeChange, Title: title, Body: body, Severity: "high",
+			NotificationType: notificationdom.TypeScopeChange, Title: title, Body: body, Message: msg, Severity: "high",
 			ResourceType: "scope", URL: "/scope",
 		}); err != nil {
 			s.logger.Warn("scope notice: in-app notification", "error", logger.SanitizeError(err))

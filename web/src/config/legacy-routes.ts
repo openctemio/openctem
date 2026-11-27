@@ -26,15 +26,15 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   // page exists for the API's CI snippet and quality-gate endpoints.
   { source: '/settings/integrations/cicd', destination: '/settings/integrations', permanent: true },
   // The SAML explainer stub: SSO is configured per organization in the
-  // platform admin console (RFC-022), and Authentication carries the same
-  // explanation as a card.
+  // platform admin console (RFC-022), and Sign-in carries the same
+  // explanation as a section.
   {
     source: '/settings/integrations/saml',
-    destination: '/settings/authentication',
+    destination: '/settings/sign-in',
     permanent: true,
   },
   // Personal notification settings moved to the user's own area.
-  { source: '/settings/notifications', destination: '/account/notifications', permanent: true },
+  { source: '/settings/notifications', destination: '/settings/me/notifications', permanent: true },
   // Access group: identity and machine access, out of Integrations.
   {
     source: '/settings/access-control/assignment-rules',
@@ -59,10 +59,35 @@ export const LEGACY_SETTINGS_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   {
     source: '/settings/tenant',
     has: [{ type: 'query', key: 'tab', value: 'security' }],
-    destination: '/settings/authentication',
+    destination: '/settings/sign-in',
     permanent: true,
   },
   { source: '/settings/tenant', destination: '/settings/general', permanent: true },
+  // Sign-in and joining: Authentication, Domains, Trusted organizations and
+  // SSO approvals are one page with two tabs. A link's #setting keeps working
+  // (the browser carries it over a redirect without one of its own, and the
+  // page opens the tab that holds it); the other three open the Joining tab
+  // at their section. The API's stored links (notifications, the security
+  // overview's checks) still name the old paths.
+  { source: '/settings/authentication', destination: '/settings/sign-in', permanent: true },
+  {
+    source: '/settings/domains',
+    destination: '/settings/sign-in?tab=domains',
+    permanent: true,
+  },
+  {
+    source: '/settings/trusted-organizations',
+    destination: '/settings/sign-in?tab=trusted-organizations',
+    permanent: true,
+  },
+  {
+    source: '/settings/sso-approvals',
+    destination: '/settings/sign-in?tab=sso-approvals',
+    permanent: true,
+  },
+  // Finding approvals is the Approvals page (its sections keep their ids, so a
+  // link's #setting still lands; scan approval keeps its own page).
+  { source: '/settings/finding-approvals', destination: '/settings/approvals', permanent: true },
   { source: '/settings/audit/:path*', destination: '/settings/audit-log/:path*', permanent: true },
   // Policies: Risk scoring says what it is; Priority rules are a CTEM working
   // object, so they leave /settings and stay in Prioritization.
@@ -216,7 +241,25 @@ export const LEGACY_CI_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
   },
 ]
 
+/**
+ * The account area: the no-organization hub became the account's
+ * Organizations page (memberships, invitations, new organization).
+ */
+export const LEGACY_ACCOUNT_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
+  { source: '/welcome', destination: '/account/organizations', permanent: true },
+  // The per-organization personal pages read the organization's data, so they
+  // moved to the organization's settings, "Your membership".
+  { source: '/account/notifications', destination: '/settings/me/notifications', permanent: true },
+  { source: '/account/activity', destination: '/settings/me/activity', permanent: true },
+  {
+    source: '/account/connected-apps',
+    destination: '/settings/me/connected-apps',
+    permanent: true,
+  },
+]
+
 export const LEGACY_ROUTE_REDIRECTS: LegacyRouteRedirect[] = [
+  ...LEGACY_ACCOUNT_ROUTE_REDIRECTS,
   ...LEGACY_SENSOR_ROUTE_REDIRECTS,
   ...LEGACY_SETTINGS_ROUTE_REDIRECTS,
   ...LEGACY_VALIDATION_ROUTE_REDIRECTS,

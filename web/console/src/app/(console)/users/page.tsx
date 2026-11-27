@@ -1,25 +1,25 @@
 'use client'
 
+import { authProviderLabel } from '@console/features/admin-console/lib/value-labels'
 import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
+import { UserRound } from 'lucide-react'
 import { Main } from '@/components/layout'
-import {
-  DataTable,
-  ErrorState,
-  ListToolbar,
-  PageHeader,
-  PageStack,
-  RelativeTime,
-} from '@/features/shared'
+import { DataTable, EmptyState, PageHeader, PageStack, RelativeTime } from '@/features/shared'
 import { FilterSelect } from '@/features/shared/components/filter-select'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { RowNameLink } from '@/features/shared/components/row-name-link'
 import { useTranslation } from '@/context/i18n-provider'
 import { useListParams } from '@/hooks/use-list-params'
+import { toDisplayText } from '@/lib/untrusted-text'
+import { BreakText } from '@/features/shared/components/break-text'
 import {
   PLATFORM_USER_SEARCH_MIN,
   usePlatformUsers,
 } from '@console/features/admin-console/api/use-platform-users'
 import { PlatformUserBadges } from '@console/features/admin-console/components/platform-user-badges'
+import { platformUserHref } from '@console/features/admin-console/lib/console-links'
 import {
   PLATFORM_USER_STATES,
   type PlatformUserListItem,
@@ -29,16 +29,24 @@ import {
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { RoleRequiredNotice } from '@console/features/admin-console/components/role-required-notice'
 
-/** English tab names (i18n fallback; keys admin.users.state.<state>). */
+/** English state names (i18n fallback; keys admin.users.state.<state>). */
 const STATE_LABELS: Record<PlatformUserState, string> = {
   all: 'All',
   active: 'Active',
   unverified: 'Not verified',
   locked: 'Locked',
   blocked: 'Blocked',
-  mfa_off: 'No MFA',
-  platform_admins: 'Platform admins',
+  mfa_off: 'Two-factor off',
+  platform_admins: 'Console administrators',
 }
+
+/**
+ * Table frame widths (px) under which a column folds away; the account, the
+ * state and the organizations count stay. Each is the sum of the columns still
+ * shown with it (account floor 200, state 208, organizations 112, last sign-in
+ * 152, created 152, signs in with 136) plus 40 of slack, so no header is cut.
+ */
+const USERS_HIDE_BELOW = { lastSignIn: 712, created: 864, signIn: 1000 } as const
 
 function isState(v: string): v is PlatformUserState {
   return (PLATFORM_USER_STATES as readonly string[]).includes(v)
@@ -46,8 +54,8 @@ function isState(v: string): v is PlatformUserState {
 
 /**
  * Customers > Users: every account of the installation, newest first, by
- * state (tabs with counts), with an optional search. Account facts only: no
- * names in the list and nothing an organization holds. Ops admin and up;
+ * state (a select with counts), with an optional search. Account facts only:
+ * no names in the list and nothing an organization holds. Ops admin and up;
  * every view is audited.
  */
 export default function AdminUsersPage() {
@@ -55,59 +63,118 @@ export default function AdminUsersPage() {
   const { t } = useTranslation()
   const me = useAdmin()
   const allowed = adminHas(me, 'platform.users.read')
-  // Search, tab and page live in the URL, so a support ticket can link to them.
+  // Search, state and page live in the URL, so a support ticket can link to them.
   const list = useListParams({ defaultPageSize: 25, filters: { state: 'all' } })
   const state: PlatformUserState = isState(list.filters.state) ? list.filters.state : 'all'
   const q = list.searchTerm
   const tooShort = q.length > 0 && q.length < PLATFORM_USER_SEARCH_MIN
-  const { data, error, isLoading, mutate } = usePlatformUsers(
+  const { data, error, isLoading, isValidating, mutate } = usePlatformUsers(
     allowed && !tooShort ? q : '',
     state,
     list.page,
     list.perPage
   )
+  const total = data?.total ?? 0
+  const narrowed = q !== '' || state !== 'all'
 
   const columns = useMemo<ColumnDef<PlatformUserListItem>[]>(
     () => [
       {
         accessorKey: 'email',
         header: t('admin.users.col.account', 'Account'),
-        cell: ({ row }) => (
-          <span className="break-all text-sm font-medium">{row.original.email}</span>
-        ),
+        // The account is the row's name: it stays in view while the table
+        // scrolls sideways and links to the account's page.
+        // A floor makes the column take the room the others leave (a long
+        // address ends in an ellipsis) instead of its content's width.
+        meta: {
+          kind: 'name',
+          pin: 'start',
+          minWidth: 200,
+          label: t('admin.users.col.account', 'Account'),
+        },
+        cell: ({ row }) => {
+          const href = platformUserHref(row.original.id)
+          return (
+            // A block around the link: the cell is sized by its floor and the
+            // room left, never by the address.
+            <div className="flex min-w-0">
+              <RowNameLink
+                href={href}
+                onOpen={() => router.push(href)}
+                title={toDisplayText(row.original.email)}
+              >
+                {/* On a phone card the address wraps at its dots and before
+                    the @, never inside a word. */}
+                <BreakText>{toDisplayText(row.original.email)}</BreakText>
+              </RowNameLink>
+            </div>
+          )
+        },
       },
       {
         id: 'state',
         header: t('admin.users.col.state', 'State'),
-        cell: ({ row }) => <PlatformUserBadges user={row.original} />,
+        // The account's state: on a phone it is the card's chip, at the end
+        // of the title line.
+        meta: {
+          kind: 'status',
+          width: 208,
+          label: t('admin.users.col.state', 'State'),
+        },
+        cell: ({ row }) => <PlatformUserBadges user={row.original} oneLine />,
       },
       {
         accessorKey: 'auth_provider',
         header: t('admin.users.col.signIn', 'Signs in with'),
-        cell: ({ row }) => <span className="text-sm capitalize">{row.original.auth_provider}</span>,
+        meta: {
+          kind: 'text',
+          width: 136,
+          hideBelow: USERS_HIDE_BELOW.signIn,
+          label: t('admin.users.col.signIn', 'Signs in with'),
+        },
+        cell: ({ row }) => (
+          <span className="block truncate">{authProviderLabel(t, row.original.auth_provider)}</span>
+        ),
       },
       {
         accessorKey: 'memberships',
         header: t('admin.users.col.orgs', 'Organizations'),
+        meta: { kind: 'number', width: 112, label: t('admin.users.col.orgs', 'Organizations') },
         cell: ({ row }) => <span className="tabular-nums">{row.original.memberships}</span>,
       },
       {
         accessorKey: 'last_login_at',
         header: t('admin.users.col.lastSignIn', 'Last sign-in'),
+        meta: {
+          kind: 'datetime-recent',
+          width: 152,
+          hideBelow: USERS_HIDE_BELOW.lastSignIn,
+          // A key figure on the phone card: never cut ("about 1 hou…"); when it
+          // does not fit half the line it takes the whole line.
+          cardFigure: true,
+          label: t('admin.users.col.lastSignIn', 'Last sign-in'),
+        },
         cell: ({ row }) =>
           row.original.last_login_at ? (
-            <RelativeTime date={row.original.last_login_at} className="text-sm" />
+            <RelativeTime date={row.original.last_login_at} />
           ) : (
-            <span className="text-sm text-muted-foreground">{t('admin.users.never', 'Never')}</span>
+            <span className="text-muted-foreground">{t('admin.users.never', 'Never')}</span>
           ),
       },
       {
         accessorKey: 'created_at',
         header: t('admin.users.col.created', 'Created'),
-        cell: ({ row }) => <RelativeTime date={row.original.created_at} className="text-sm" />,
+        meta: {
+          kind: 'date',
+          // "about 1 month ago" whole (vi "khoảng 1 tháng trước"), like Last sign-in.
+          width: 176,
+          hideBelow: USERS_HIDE_BELOW.created,
+          label: t('admin.users.col.created', 'Created'),
+        },
+        cell: ({ row }) => <RelativeTime date={row.original.created_at} />,
       },
     ],
-    [t]
+    [t, router]
   )
 
   return (
@@ -124,20 +191,51 @@ export default function AdminUsersPage() {
           <RoleRequiredNotice needed="ops_admin" variant="page" />
         ) : (
           <>
-            <ListToolbar
+            <ListTitleRow
+              title={
+                state === 'all'
+                  ? t('admin.users.viewAll', 'All accounts')
+                  : t(`admin.users.state.${state}`, STATE_LABELS[state])
+              }
+              count={
+                <ListCount
+                  total={total}
+                  loading={!data}
+                  label={t(
+                    'admin.users.total',
+                    '{count, plural, one {# account} other {# accounts}}',
+                    { count: total }
+                  )}
+                />
+              }
+            />
+            <DataTable
+              columns={columns}
+              data={data?.data ?? []}
+              caption={t('admin.nav.users', 'Users')}
+              getRowId={(u) => u.id}
+              error={error}
+              onRetry={() => void mutate()}
+              errorTitle={t('admin.users.errorTitle', 'accounts')}
+              // The first read: skeleton rows under a toolbar that stays mounted.
+              isLoading={isLoading && !data}
+              isRefreshing={isValidating && !!data}
+              refreshingLabel={t('admin.users.refreshing', 'Refreshing accounts')}
+              showSearch={false}
               search={{
                 value: list.q,
                 onChange: list.setSearch,
-                placeholder: t('admin.users.search', 'Search email, name or user id…'),
+                placeholder: t('admin.users.search', 'Search email or name…'),
                 label: t('admin.users.searchLabel', 'Search accounts'),
               }}
-              start={
-                <FilterSelect
+              toolbarStart={
+                <FilterSelect<PlatformUserState>
                   label={t('admin.users.stateFilter', 'State')}
                   value={state}
                   allValue="all"
                   allLabel={t('admin.users.state.all', STATE_LABELS.all)}
                   allCount={data?.counts?.all}
+                  foldLabel
                   onChange={(v) => list.setFilter('state', v || 'all')}
                   options={PLATFORM_USER_STATES.filter((x) => x !== 'all').map((x) => ({
                     value: x,
@@ -146,41 +244,37 @@ export default function AdminUsersPage() {
                   }))}
                 />
               }
-            />
-            {tooShort && (
-              <p className="text-sm text-muted-foreground">
-                {t('admin.users.tooShort', 'Type at least 3 characters to search.')}
-              </p>
-            )}
-            {error ? (
-              <ErrorState
-                title={t('admin.users.errorTitle', 'accounts')}
-                error={error}
-                onRetry={() => void mutate()}
-              />
-            ) : (
-              <DataTable
-                columns={columns}
-                data={data?.data ?? []}
-                getRowId={(u) => u.id}
-                isLoading={isLoading}
-                showSearch={false}
-                showColumnToggle={false}
-                showSelectionCount={false}
-                mobileCards
-                onRowClick={(u) => router.push(`/users/${u.id}`)}
-                emptyMessage={
-                  q
+              // The search needs three characters: said in the row under the
+              // toolbar, and the list stays as it was.
+              toolbarBelow={
+                tooShort ? (
+                  <p role="status" className="text-sm text-muted-foreground">
+                    {t('admin.users.tooShort', 'Type at least 3 characters to search.')}
+                  </p>
+                ) : undefined
+              }
+              showSelectionCount={false}
+              mobileCards
+              onRowClick={(u) => router.push(platformUserHref(u.id))}
+              isFiltered={narrowed}
+              onClearFilters={list.reset}
+              emptyState={{
+                nothingYet: (
+                  <EmptyState icon={UserRound} title={t('admin.users.empty', 'No accounts yet')} />
+                ),
+                noMatch: {
+                  title: q
                     ? t('admin.users.noMatch', 'No account matches this search')
-                    : t('admin.users.noneInState', 'No account in this state')
-                }
-                manualPagination
-                pageCount={data?.total_pages ?? 1}
-                rowCount={data?.total ?? 0}
-                pagination={list.pagination}
-                onPaginationChange={list.setPagination}
-              />
-            )}
+                    : t('admin.users.noneInState', 'No account in this state'),
+                },
+              }}
+              manualPagination
+              pageCount={data?.total_pages ?? 1}
+              rowCount={total}
+              pagination={list.pagination}
+              onPaginationChange={list.setPagination}
+              paginationNoun={t('admin.users.noun', 'accounts')}
+            />
           </>
         )}
       </PageStack>

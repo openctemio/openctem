@@ -42,6 +42,7 @@ import {
   templateSnippets,
   unmappedRequired,
 } from '../lib/mapping-utils'
+import { issueText } from '../lib/issue-text'
 import { renderSample } from '../lib/template-sample'
 import type {
   CatalogView,
@@ -168,7 +169,7 @@ export function FieldMapper({
               onChange={(e) => setAttrQuery(e.target.value)}
               placeholder={t('ticketMapping.common.search', 'Search')}
               aria-label={t('ticketMapping.fields.searchAttrs', 'Search attributes')}
-              className="h-8 w-full sm:w-48"
+              className="w-full sm:w-48"
             />
           </div>
           <ul
@@ -230,7 +231,7 @@ export function FieldMapper({
               onChange={(e) => setFieldQuery(e.target.value)}
               placeholder={t('ticketMapping.common.search', 'Search')}
               aria-label={t('ticketMapping.fields.searchFields', 'Search Jira fields')}
-              className="h-8 w-full sm:w-48"
+              className="w-full sm:w-48"
             />
           </div>
           {pickedAttr && (
@@ -405,7 +406,7 @@ function MappingRowCard({
   onRemove,
   onEditTransform,
 }: RowProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const attr = row.source.attr
     ? catalog.attributes.find((a) => a.path === row.source.attr)
     : undefined
@@ -430,16 +431,20 @@ function MappingRowCard({
 
   return (
     <li className={cn('rounded-lg border p-3', hasError && 'border-destructive')}>
-      <div className="grid items-center gap-2 md:grid-cols-[minmax(0,1.3fr)_auto_minmax(0,1fr)_auto]">
+      {/* Capped like a settings form from 1536 px: on a wide screen the transform and remove
+          buttons stay beside the Jira field instead of at the far edge. Below 1280 px the
+          source takes a line of its own, so its selects keep the width of their values
+          instead of wrapping them. */}
+      <div className="grid items-center gap-2 md:grid-cols-[auto_minmax(0,1fr)_auto] xl:grid-cols-[minmax(0,1.3fr)_auto_minmax(0,1fr)_auto] 2xl:max-w-4xl">
         {/* Source */}
-        <div className="flex min-w-0 gap-2">
+        <div className="flex min-w-0 gap-2 md:col-span-3 xl:col-span-1">
           <Select
             value={row.source.kind}
             onValueChange={(v) => setSourceKind(v as SourceKind)}
             disabled={readOnly}
           >
             <SelectTrigger
-              className="h-8 w-28 shrink-0"
+              className="shrink-0"
               aria-label={t('ticketMapping.fields.sourceKind', 'Source kind')}
             >
               <SelectValue />
@@ -459,7 +464,7 @@ function MappingRowCard({
               disabled={readOnly}
             >
               <SelectTrigger
-                className="h-8 min-w-0 font-mono text-xs"
+                className="min-w-0 flex-1 font-mono text-xs"
                 aria-label={t('ticketMapping.fields.attribute', 'Attribute')}
               >
                 <SelectValue />
@@ -475,7 +480,6 @@ function MappingRowCard({
           )}
           {row.source.kind === 'const' && (
             <Input
-              className="h-8"
               value={row.source.value ?? ''}
               maxLength={1000}
               disabled={readOnly}
@@ -484,7 +488,7 @@ function MappingRowCard({
             />
           )}
           {row.source.kind === 'template' && (
-            <span className="truncate text-xs text-muted-foreground">
+            <span className="self-center text-xs text-muted-foreground">
               {t('ticketMapping.fields.templateBelow', 'template below')}
             </span>
           )}
@@ -549,12 +553,12 @@ function MappingRowCard({
           }}
         >
           <SelectTrigger
-            className="h-8 min-w-0"
+            className="min-w-0"
             aria-label={t('ticketMapping.fields.target', 'Jira field')}
           >
             <span className="flex min-w-0 items-center gap-2">
               <FieldIcon field={field} />
-              <span className="truncate">
+              <span className="min-w-0 break-words">
                 {field?.name ?? row.target.name ?? row.target.field_id}
               </span>
             </span>
@@ -710,7 +714,7 @@ function MappingRowCard({
                 : 'bg-warning/10 text-warning'
             )}
           >
-            {i.message}
+            {issueText(t, locale, i)}
           </span>
         ))}
       </div>
@@ -741,7 +745,7 @@ export function MappingSettingsBar({
           }
           disabled={readOnly}
         >
-          <SelectTrigger className="h-8 w-auto">
+          <SelectTrigger className="w-auto">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

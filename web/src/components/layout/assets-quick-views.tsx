@@ -13,11 +13,7 @@ import {
   lensCounts,
 } from '@/features/assets/lib/inventory-lenses'
 import { NavQuickViewList } from './nav-quick-views'
-
-/** Whether `pathname` is the asset inventory (not groups, activity or a detail page). */
-export function isAssetInventoryPath(pathname: string): boolean {
-  return pathname === '/assets'
-}
+import { isAssetInventoryPath } from './assets-quick-views-lazy'
 
 /**
  * The inventory's quick views under the Assets row: All assets, then each lens

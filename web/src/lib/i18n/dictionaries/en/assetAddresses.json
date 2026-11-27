@@ -18,5 +18,5 @@
   "assetAddresses.providerHint": "Addresses a provider shares with many organizations are recorded on this name, not as your assets. Scans test this name, not those addresses.",
   "assetAddresses.servedBy": "Served by {provider}",
   "assetAddresses.title": "Addresses",
-  "assetAddresses.truncated": "{count} older addresses are not listed."
+  "assetAddresses.truncated": "{count, plural, one {# older address is not listed.} other {# older addresses are not listed.}}"
 }

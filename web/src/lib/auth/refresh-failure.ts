@@ -23,6 +23,8 @@
  * space instead (tenant-required.ts).
  */
 
+import { ACCOUNT_HOME_PATH } from '@/lib/middleware/config'
+
 export type RefreshFailureAction = 'sign_out' | 'two_factor_setup' | 'account_space' | 'keep'
 
 const SIGN_OUT_CODES = new Set([
@@ -102,10 +104,10 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/
 /** The account space for a refusal code, naming the organization that refused. */
 export function welcomeNoticeHref(code: string | undefined, orgSlug?: string): string {
   const notice = code ? NOTICE_FOR_CODE[code] : undefined
-  if (!notice) return '/welcome'
+  if (!notice) return ACCOUNT_HOME_PATH
   const params = new URLSearchParams({ notice })
   if (orgSlug && SLUG.test(orgSlug)) params.set('org', orgSlug)
-  return `/welcome?${params.toString()}`
+  return `${ACCOUNT_HOME_PATH}?${params.toString()}`
 }
 
 /** Reads a notice from the account space's URL: a known value and a valid slug, or nothing. */

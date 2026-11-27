@@ -22,6 +22,7 @@ import {
 } from '@/features/shared'
 import type { AssetType } from '../types/asset.types'
 import { ASSET_TYPE_LABELS } from '../types/asset.types'
+import { formatDateTime } from '@/lib/app-locale'
 
 // ============================================
 // Stat Card
@@ -51,7 +52,7 @@ export function StatCard({
           <Icon className={cn('h-5 w-5', iconColor)} />
         </div>
         <div>
-          <p className="text-2xl font-bold">{value}</p>
+          <p className="text-figure tabular-nums">{value}</p>
           <p className="text-xs text-muted-foreground">{label}</p>
         </div>
       </div>
@@ -74,7 +75,7 @@ export function StatCardCentered({
         <div className={cn('h-10 w-10 rounded-lg flex items-center justify-center mb-2', iconBg)}>
           <Icon className={cn('h-5 w-5', iconColor)} />
         </div>
-        <p className="text-xl font-bold">{value}</p>
+        <p className="text-xl font-semibold">{value}</p>
         <p className="text-xs text-muted-foreground">{label}</p>
       </div>
     </div>
@@ -135,7 +136,7 @@ export function TimelineSection({
   updatedAt,
 }: TimelineSectionProps) {
   const { t } = useTranslation()
-  const fmt = (iso: string) => new Date(iso).toLocaleString()
+  const fmt = (iso: string) => formatDateTime(new Date(iso))
   return (
     <DetailSection title={t('assets.sheetSections.timeline', 'Timeline')} icon={Clock}>
       <DetailFieldGrid>
@@ -355,8 +356,8 @@ export function TagsSection({
           {onSave && !editing && (
             <Button
               variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0"
+              size="icon-sm"
+              className="p-0"
               aria-label={t('assets.sheetSections.editTags', 'Edit tags')}
               onClick={startEditing}
             >
@@ -367,8 +368,8 @@ export function TagsSection({
             <>
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0"
+                size="icon-sm"
+                className="p-0"
                 aria-label={t('assets.sheetSections.saveTags', 'Save tags')}
                 onClick={handleSave}
                 disabled={saving}
@@ -377,8 +378,8 @@ export function TagsSection({
               </Button>
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0"
+                size="icon-sm"
+                className="p-0"
                 aria-label={t('common.cancel', 'Cancel')}
                 onClick={cancelEditing}
                 disabled={saving}

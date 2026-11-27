@@ -18,7 +18,7 @@
   "ticketPolicy.preview": "Preview",
   "ticketPolicy.previewFailed": "Could not preview",
   "ticketPolicy.previewHeld": "Of {held} findings held now, {release} would be created after saving.",
-  "ticketPolicy.previewLast30": "Of {total} findings first seen in the last 30 days, {pass} would get an issue.",
+  "ticketPolicy.previewLast30": "Of {total, plural, one {# finding} other {# findings}} first seen in the last 30 days, {pass} would get an issue.",
   "ticketPolicy.previewing": "Counting…",
   "ticketPolicy.save": "Save",
   "ticketPolicy.saveFailed": "Could not save the policy",

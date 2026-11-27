@@ -83,18 +83,20 @@ export function AssetsTab({
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h4 className="text-sm font-medium">Assigned Assets ({totalCount})</h4>
+        <h4 className="text-sm font-medium">
+          {t('org.teamAssets.assignedTitle', 'Assigned assets ({count})', { count: totalCount })}
+        </h4>
         <div className="flex items-center gap-2">
           {onBulkAddAssets && (
             <Button size="sm" variant="outline" onClick={onBulkAddAssets}>
               <Layers className="me-2 h-4 w-4" />
-              Bulk Add
+              {t('org.teamAssets.bulkAdd', 'Bulk add')}
             </Button>
           )}
           {onAddAsset && (
             <Button size="sm" onClick={onAddAsset}>
               <Plus className="me-2 h-4 w-4" />
-              Assign Asset
+              {t('org.teamAssets.assign', 'Assign asset')}
             </Button>
           )}
         </div>
@@ -114,10 +116,18 @@ export function AssetsTab({
           ))}
         </div>
       ) : totalCount === 0 ? (
-        <EmptyState icon={Box} title="No assets assigned to this group" card={false} />
+        <EmptyState
+          icon={Box}
+          title={t('org.teamAssets.emptyTitle', 'No assets assigned to this group')}
+          card={false}
+        />
       ) : filteredAssets.length === 0 ? (
         <div className="text-center py-8 text-muted-foreground">
-          <p>No assets found matching &quot;{searchQuery}&quot;</p>
+          <p>
+            {t('org.teamAssets.noMatch', 'No assets found matching "{query}"', {
+              query: searchQuery,
+            })}
+          </p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -132,22 +142,29 @@ export function AssetsTab({
                 </div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-medium break-all">
-                      {item.asset?.name || 'Unknown Asset'}
+                    <p className="text-sm font-medium break-words">
+                      {item.asset?.name || t('org.teamAssets.unknownAsset', 'Unknown asset')}
                     </p>
                     <Badge variant="outline" className="text-xs capitalize">
-                      {item.ownership_type} Owner
+                      {t('org.teamAssets.ownerBadge', '{type} owner', {
+                        type: t(`assets.ownershipType.${item.ownership_type}`, item.ownership_type),
+                      })}
                     </Badge>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="capitalize">{item.asset?.type || 'Unknown Type'}</span>
-                    <span className="capitalize">{item.asset?.status || 'Unknown Status'}</span>
+                    <span className="capitalize">
+                      {item.asset?.type || t('org.teamAssets.unknownType', 'Unknown type')}
+                    </span>
+                    <span className="capitalize">
+                      {item.asset?.status || t('org.teamAssets.unknownStatus', 'Unknown status')}
+                    </span>
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 {onRemoveAsset && (
                   <DataTableRowActions
+                    title={item.asset?.name || undefined}
                     actions={[
                       {
                         label: t('org.teamAssets.remove', 'Remove'),
@@ -168,11 +185,15 @@ export function AssetsTab({
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4 pt-4 border-t">
           <span className="text-xs text-muted-foreground">
-            Page {currentPage} of {totalPages} ({totalCount} total)
+            {t('org.teamAssets.pagination', 'Page {page} of {pages} ({total} total)', {
+              page: currentPage,
+              pages: totalPages,
+              total: totalCount,
+            })}
           </span>
           <div className="flex items-center gap-1">
             <Button
-              size="sm"
+              size="icon-sm"
               variant="outline"
               disabled={offset === 0}
               onClick={() => onPageChange(Math.max(0, offset - limit))}
@@ -180,7 +201,7 @@ export function AssetsTab({
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button
-              size="sm"
+              size="icon-sm"
               variant="outline"
               disabled={offset + limit >= totalCount}
               onClick={() => onPageChange(offset + limit)}

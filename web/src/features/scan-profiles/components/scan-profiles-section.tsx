@@ -28,6 +28,7 @@ import {
   type RowAction,
   PageStack,
 } from '@/features/shared'
+import { PersonPhoneCard } from '@/features/organization/components/person-phone-card'
 import { AddScanProfileDialog } from './add-scan-profile-dialog'
 import { EditScanProfileDialog } from './edit-scan-profile-dialog'
 import { CloneScanProfileDialog } from './clone-scan-profile-dialog'
@@ -120,10 +121,96 @@ export function ScanProfilesSection() {
     [setDefaultProfile, t]
   )
 
+  // A profile's marks (default, system, rule sources), in its row and its phone card.
+  const badgesFor = useCallback(
+    (profile: ScanProfile) => (
+      <>
+        {profile.is_default && (
+          <Badge variant="secondary" className="gap-1">
+            <Star className="h-3 w-3 fill-current" />
+            {t('scans.profiles.badge.default')}
+          </Badge>
+        )}
+        {profile.is_system && <Badge variant="outline">{t('scans.profiles.badge.system')}</Badge>}
+        {profile.rule_sources && profile.rule_sources !== 'both' && (
+          <Badge variant="outline">{t(`scans.profiles.rules.${profile.rule_sources}`)}</Badge>
+        )}
+      </>
+    ),
+    [t]
+  )
+
+  const actionsFor = useCallback(
+    (profile: ScanProfile) => (
+      <Can permission={[Permission.ScanProfilesWrite, Permission.ScanProfilesDelete]}>
+        <DataTableRowActions
+          title={profile.name}
+          label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+            name: profile.name,
+          })}
+          actions={[
+            ...(!profile.is_default && canSetDefault
+              ? ([
+                  {
+                    label: t('scans.profiles.setAsDefault'),
+                    icon: Star,
+                    onClick: () => handleSetDefault(profile),
+                    disabled: isSettingDefault,
+                    permission: Permission.ScanProfilesWrite,
+                  },
+                ] satisfies RowAction[])
+              : []),
+            // The default profile is organization-wide: owner or admin edits it.
+            ...(!profile.is_default || canSetDefault
+              ? ([
+                  {
+                    label: t('scans.profiles.edit'),
+                    icon: Pencil,
+                    onClick: () => handleEditProfile(profile),
+                    permission: Permission.ScanProfilesWrite,
+                  },
+                ] satisfies RowAction[])
+              : []),
+            {
+              label: t('scans.profiles.clone'),
+              icon: Copy,
+              onClick: () => handleCloneProfile(profile),
+              permission: Permission.ScanProfilesWrite,
+            },
+            ...(!profile.is_system
+              ? ([
+                  {
+                    label: t('scans.profiles.delete'),
+                    icon: Trash2,
+                    onClick: () => handleDeleteClick(profile),
+                    destructive: true,
+                    separatorBefore: true,
+                    permission: Permission.ScanProfilesDelete,
+                  },
+                ] satisfies RowAction[])
+              : []),
+          ]}
+        />
+      </Can>
+    ),
+    [
+      handleSetDefault,
+      handleEditProfile,
+      handleCloneProfile,
+      handleDeleteClick,
+      isSettingDefault,
+      canSetDefault,
+      t,
+    ]
+  )
+
   const columns = useMemo<ColumnDef<ScanProfile>[]>(
     () => [
       {
         id: 'name',
+        // The row's name: its description may end in an ellipsis, the full
+        // text in the cell's title.
+        meta: { kind: 'name', label: t('scans.profiles.name') },
         accessorFn: (p) => `${p.name} ${p.description ?? ''}`,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('scans.profiles.name')} />
@@ -132,22 +219,9 @@ export function ScanProfilesSection() {
           const profile = row.original
           return (
             <div className="min-w-0">
-              <div className="flex items-center gap-2 font-medium">
-                <span className="truncate">{profile.name}</span>
-                {profile.is_default && (
-                  <Badge variant="secondary" className="gap-1">
-                    <Star className="h-3 w-3 fill-current" />
-                    {t('scans.profiles.badge.default')}
-                  </Badge>
-                )}
-                {profile.is_system && (
-                  <Badge variant="outline">{t('scans.profiles.badge.system')}</Badge>
-                )}
-                {profile.rule_sources && profile.rule_sources !== 'both' && (
-                  <Badge variant="outline">
-                    {t(`scans.profiles.rules.${profile.rule_sources}`)}
-                  </Badge>
-                )}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
+                <span className="min-w-0 [overflow-wrap:anywhere]">{profile.name}</span>
+                {badgesFor(profile)}
               </div>
               {profile.description && (
                 <p
@@ -175,68 +249,10 @@ export function ScanProfilesSection() {
         id: 'actions',
         enableSorting: false,
         enableHiding: false,
-        cell: ({ row }) => {
-          const profile = row.original
-          return (
-            <Can permission={[Permission.ScanProfilesWrite, Permission.ScanProfilesDelete]}>
-              <DataTableRowActions
-                actions={[
-                  ...(!profile.is_default && canSetDefault
-                    ? ([
-                        {
-                          label: t('scans.profiles.setAsDefault'),
-                          icon: Star,
-                          onClick: () => handleSetDefault(profile),
-                          disabled: isSettingDefault,
-                          permission: Permission.ScanProfilesWrite,
-                        },
-                      ] satisfies RowAction[])
-                    : []),
-                  // The default profile is organization-wide: owner or admin edits it.
-                  ...(!profile.is_default || canSetDefault
-                    ? ([
-                        {
-                          label: t('scans.profiles.edit'),
-                          icon: Pencil,
-                          onClick: () => handleEditProfile(profile),
-                          permission: Permission.ScanProfilesWrite,
-                        },
-                      ] satisfies RowAction[])
-                    : []),
-                  {
-                    label: t('scans.profiles.clone'),
-                    icon: Copy,
-                    onClick: () => handleCloneProfile(profile),
-                    permission: Permission.ScanProfilesWrite,
-                  },
-                  ...(!profile.is_system
-                    ? ([
-                        {
-                          label: t('scans.profiles.delete'),
-                          icon: Trash2,
-                          onClick: () => handleDeleteClick(profile),
-                          destructive: true,
-                          separatorBefore: true,
-                          permission: Permission.ScanProfilesDelete,
-                        },
-                      ] satisfies RowAction[])
-                    : []),
-                ]}
-              />
-            </Can>
-          )
-        },
+        cell: ({ row }) => actionsFor(row.original),
       },
     ],
-    [
-      handleSetDefault,
-      handleEditProfile,
-      handleCloneProfile,
-      handleDeleteClick,
-      isSettingDefault,
-      canSetDefault,
-      t,
-    ]
+    [badgesFor, actionsFor, t]
   )
 
   const addMenu = (
@@ -249,7 +265,7 @@ export function ScanProfilesSection() {
             <ChevronDown className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent>
           <DropdownMenuItem onClick={() => setAddDialogOpen(true)}>
             <Plus className="me-2 h-4 w-4" />
             {t('scans.profiles.addCustom')}
@@ -276,14 +292,6 @@ export function ScanProfilesSection() {
         icon={Settings2}
         title={t('scans.profiles.empty')}
         description={t('scans.profiles.emptyDesc')}
-        action={
-          <Can permission={Permission.ScanProfilesWrite}>
-            <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-              <Plus className="h-4 w-4" />
-              {t('scans.profiles.create')}
-            </Button>
-          </Can>
-        }
       />
     )
   } else {
@@ -294,6 +302,22 @@ export function ScanProfilesSection() {
         getRowId={(p) => p.id}
         searchPlaceholder={t('scans.profiles.search')}
         toolbarEnd={<RefreshButton onClick={handleRefresh} loading={isLoading} />}
+        // A phone card: the name wraps, the marks and the rule read whole.
+        mobileRow={(profile) => (
+          <PersonPhoneCard
+            title={profile.name}
+            address={profile.description || undefined}
+            facts={
+              <>
+                {badgesFor(profile)}
+                <span className="text-cap text-muted-foreground">
+                  {gateSummary(profile.quality_gate, t)}
+                </span>
+              </>
+            }
+            menu={actionsFor(profile)}
+          />
+        )}
         emptyMessage={t('scans.profiles.noMatch')}
       />
     )

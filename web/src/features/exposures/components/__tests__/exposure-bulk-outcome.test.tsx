@@ -49,7 +49,7 @@ describe('bulk accept toasts', () => {
   it('reports applied items, pending items and failures separately', async () => {
     await acceptWith({ total: 3, succeeded: 2, pending: 1, failed: 1 })
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('1 of 3 failed.'))
-    expect(toast.success).toHaveBeenCalledWith('1 exposures accepted.')
+    expect(toast.success).toHaveBeenCalledWith('1 exposure accepted.')
     expect(toast.info).toHaveBeenCalled()
   })
 })

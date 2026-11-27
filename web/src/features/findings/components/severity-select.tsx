@@ -76,7 +76,7 @@ export function SeveritySelect({
         <Button
           variant="outline"
           size={size}
-          className={`${size === 'sm' ? 'h-7 px-2 text-xs' : 'h-9 sm:h-8'} min-h-[32px] ${currentConfig.bgColor} ${currentConfig.textColor} border-0 hover:opacity-80`}
+          className={`${size === 'sm' ? 'h-7 px-2 text-xs' : ''} min-h-[32px] ${currentConfig.bgColor} ${currentConfig.textColor} border-0 hover:opacity-80`}
           disabled={disabled || loading}
         >
           {loading ? (
@@ -89,7 +89,7 @@ export function SeveritySelect({
           {!disabled && <ChevronDown className="ms-1 h-3 w-3" />}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-52">
+      <DropdownMenuContent>
         {(Object.keys(SEVERITY_CONFIG) as Severity[]).map((severity) => {
           const config = SEVERITY_CONFIG[severity]
           return (

@@ -68,6 +68,7 @@ EMBEDDED="server/internal/versions/versions.yaml"
 # Never a Go file: Go reads the embedded copy.
 CONSUMERS=(
   'sensor.latest|server/deploy/docker-compose.sensor.yml|}|(SENSOR_VERSION:-)([^}]*)\}'
+  'sensor.latest|server/deploy/docker-compose.relay-sensor.yml|}|(SENSOR_VERSION:-)([^}]*)\}'
   'ci.latest|web/src/features/ci-runners/lib/ci.ts|'"'"'|^(export const CI_RELEASE_FALLBACK = '"'"')([^'"'"']*)'"'"''
 )
 

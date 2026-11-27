@@ -302,6 +302,14 @@ and, if that is refused, refreshes the session once under a cross-tab lock
 revokes the session family), then reconnects. It reconnects when the active
 organization changes.
 
+The same-origin forwarder (`server-with-ws.mjs`) passes only an allowlist of
+the client's headers to the API: `Upgrade`, `Connection`, `Sec-WebSocket-*`,
+`Cookie`, `Origin`, `User-Agent` and `Accept-Language`. `Forwarded`,
+`True-Client-IP`, `X-Client-IP` and any other header are dropped. The client
+address is sent as `X-Forwarded-For` / `X-Real-IP` set to the socket peer; with
+`TRUST_PROXY_HEADERS=true` (a gateway that overwrites those two headers) the
+gateway's values are passed on instead, as the HTTP proxy does.
+
 ### 5.2 Other hosts
 
 Serving the WebSocket from another host (`NEXT_PUBLIC_WS_BASE_URL`) needs the
@@ -442,12 +450,12 @@ Runs on: push/PR to main/develop + weekly (Monday 00:00 UTC)
 
 ### 10.2 Quality Gates (`.github/workflows/web-ci.yml`)
 
-| Check        | Tool              | Blocks PR |
-| ------------ | ----------------- | --------- |
-| Type safety  | `tsc --noEmit`    | Yes       |
-| Code quality | ESLint            | Yes       |
-| Formatting   | Prettier          | Yes       |
-| Unit tests   | Vitest + coverage | Yes       |
+| Check        | Tool              | Blocks PR            |
+| ------------ | ----------------- | -------------------- |
+| Type safety  | `tsc --noEmit`    | Yes                  |
+| Code quality | ESLint            | Yes                  |
+| Formatting   | Prettier          | Yes                  |
+| Unit tests   | Vitest + coverage | Yes                  |
 | Build        | `next build`      | Merge queue and push |
 
 ### 10.3 Pre-commit Hooks (`.githooks/` + lint-staged)

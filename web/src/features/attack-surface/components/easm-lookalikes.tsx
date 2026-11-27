@@ -10,7 +10,7 @@
  * (resolve).
  */
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Copy, Loader2, Plus, Settings2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -50,6 +50,12 @@ import {
   useLookalikeWatches,
 } from '../hooks/use-easm-lookalikes'
 import { confirmName } from '@/lib/confirm-name'
+import { BreakText } from '@/features/shared/components/break-text'
+import {
+  FieldError,
+  fieldErrorProps,
+  focusFirstInvalid,
+} from '@/features/shared/components/forms/field-error'
 
 /** Candidates one watch may check (the API's range). */
 const MAX_CANDIDATES_MIN = 10
@@ -218,7 +224,7 @@ function WatchRow({
           />
           {canWrite && (
             <Button
-              size="sm"
+              size="icon-sm"
               variant="ghost"
               aria-label={t('lookalikes.edit', 'Settings of {domain}', {
                 domain: watch.domain ?? '',
@@ -238,7 +244,7 @@ function WatchRow({
           )}
           {canDelete && (
             <Button
-              size="sm"
+              size="icon-sm"
               variant="ghost"
               aria-label={t('lookalikes.remove', 'Stop watching {domain}', {
                 domain: watch.domain ?? '',
@@ -304,7 +310,9 @@ function ReviewRow({
     <li className="flex flex-wrap items-center gap-3 py-3">
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="break-all font-medium">{display}</span>
+          <span className="break-words font-medium">
+            <BreakText>{display}</BreakText>
+          </span>
           {display !== ascii && (
             // An IDN homoglyph reads like the real name: always show what it really is.
             <span className="break-all font-mono text-xs text-muted-foreground">{ascii}</span>
@@ -506,8 +514,20 @@ export function EASMLookalikes() {
   const [saving, setSaving] = useState(false)
   const [removing, setRemoving] = useState<LookalikeWatch | null>(null)
 
+  const addRef = useRef<HTMLDivElement>(null)
+  const [domainError, setDomainError] = useState<string | null>(null)
+  const domainField = fieldErrorProps('lookalike-domain', domainError)
+
   const add = async () => {
-    if (!domain.trim()) return
+    if (!domain.trim()) {
+      setDomainError(t('lookalikes.domainRequired', 'Enter the root domain to watch.'))
+      focusFirstInvalid(addRef.current)
+      return
+    }
+    if (!maxValid(maxN)) {
+      focusFirstInvalid(addRef.current)
+      return
+    }
     setSaving(true)
     try {
       await createLookalikeWatch({
@@ -566,6 +586,7 @@ export function EASMLookalikes() {
         <CardContent className="space-y-4">
           {canWrite && watches.length < max && (
             <div
+              ref={addRef}
               className="space-y-3 rounded-md border p-3"
               role="group"
               aria-label={t('lookalikes.addLabel', 'Watch a domain')}
@@ -578,7 +599,11 @@ export function EASMLookalikes() {
                     value={domain}
                     maxLength={253}
                     placeholder={t('lookalikes.domainPlaceholder', 'example.com')}
-                    onChange={(e) => setDomain(e.target.value)}
+                    onChange={(e) => {
+                      setDomain(e.target.value)
+                      setDomainError(null)
+                    }}
+                    {...domainField.control}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault()
@@ -586,12 +611,9 @@ export function EASMLookalikes() {
                       }
                     }}
                   />
+                  <FieldError {...domainField.message} />
                 </div>
-                <Button
-                  type="button"
-                  disabled={saving || !domain.trim() || !maxValid(maxN)}
-                  onClick={() => void add()}
-                >
+                <Button type="button" disabled={saving} onClick={() => void add()}>
                   <Plus className="me-1 h-4 w-4" aria-hidden />
                   {t('lookalikes.add', 'Watch')}
                 </Button>

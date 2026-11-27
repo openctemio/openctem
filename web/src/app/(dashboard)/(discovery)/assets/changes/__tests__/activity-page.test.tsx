@@ -13,6 +13,11 @@ const setView = vi.fn((v: string) => {
   state.view = v
 })
 
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => '/assets/changes',
+  useSearchParams: () => new URLSearchParams(),
+}))
 vi.mock('@/lib/permissions', () => ({
   Permission: { AssetsRead: 'assets:read' },
   useHasPermission: () => state.canRead,
@@ -57,9 +62,10 @@ beforeEach(() => {
 })
 
 describe('Assets > Activity', () => {
-  it('is titled Activity and filters by kind from a token in the toolbar, with counts', async () => {
+  it('keeps the Assets title and filters by kind from a token in the toolbar, with counts', async () => {
     render(<AssetChangesPage />)
-    expect(screen.getByRole('heading', { name: 'Activity' })).toBeInTheDocument()
+    // The section title stays on every Assets tab; the tab names the page.
+    expect(screen.getByRole('heading', { name: 'Assets' })).toBeInTheDocument()
     // One tab row: the kind is a filter token, not a segmented row under the tabs.
     expect(screen.queryByRole('radiogroup')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Kind: Appeared' }))
@@ -92,10 +98,34 @@ describe('Assets > Activity', () => {
     expect(screen.queryByRole('combobox', { name: 'Period' })).toBeNull()
   })
 
+  it('the title row names the kind and says the count once', () => {
+    render(<AssetChangesPage />)
+    expect(screen.getByRole('heading', { level: 2, name: 'Appeared' })).toBeInTheDocument()
+    expect(document.querySelectorAll('[data-slot="list-count"]')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
+  })
+
+  it('the internet-facing toggle keeps its place, pressed and locked, for newly exposed', () => {
+    state.view = 'newly_exposed'
+    render(<AssetChangesPage />)
+    const toggle = screen.getByRole('button', { name: 'Internet-facing only' })
+    expect(toggle).toBeDisabled()
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('the internet-facing toggle is a toolbar button, not pressed at rest', () => {
+    render(<AssetChangesPage />)
+    const toggle = screen.getByRole('button', { name: 'Internet-facing only' })
+    expect(toggle).toBeEnabled()
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(toggle).toHaveAttribute('data-slot', 'internet-only-toggle')
+  })
+
   it('a reader without assets:read sees only the access message', () => {
     state.canRead = false
     render(<AssetChangesPage />)
-    expect(screen.getByText('Access denied')).toBeInTheDocument()
+    expect(screen.getByText('You do not have access to asset activity')).toBeInTheDocument()
+    expect(document.querySelector('[data-slot="list-title-row"]')).toBeNull()
     expect(screen.queryByRole('button', { name: /^Kind:/ })).toBeNull()
   })
 })

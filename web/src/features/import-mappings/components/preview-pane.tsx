@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FileSearch, Loader2, TriangleAlert } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
+import { serverText } from '@/lib/server-text'
 import { cn } from '@/lib/utils'
 import { PreviewError, previewMapping } from '../api/import-mappings-api'
 import type { MappingDocument, PreviewResult } from '../types/import-mapping.types'
@@ -159,7 +160,9 @@ export function PreviewPane({ document, file, canPreview, onFields }: PreviewPan
 }
 
 function PreviewResultView({ result }: { result: PreviewResult }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
+  const warningText = (w: PreviewResult['warnings'][number]) =>
+    serverText(t, locale, { code: `import.warning.${w.code}`, params: w.params }, w.message)
   const collisions = result.warnings.filter((w) => w.code === 'identity_collision')
   const otherWarnings = result.warnings.filter((w) => w.code !== 'identity_collision')
   const s = result.stats
@@ -198,7 +201,7 @@ function PreviewResultView({ result }: { result: PreviewResult }) {
           <ul className="mt-1 list-disc ps-5">
             {collisions.map((w, i) => (
               <li key={i} className="break-words">
-                {w.message}
+                {warningText(w)}
               </li>
             ))}
           </ul>
@@ -213,7 +216,7 @@ function PreviewResultView({ result }: { result: PreviewResult }) {
                 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
                 aria-hidden
               />
-              {w.message}
+              {warningText(w)}
             </li>
           ))}
         </ul>
@@ -303,7 +306,7 @@ function PreviewResultView({ result }: { result: PreviewResult }) {
                   <pre
                     className={cn(
                       'max-h-80 overflow-auto rounded bg-muted p-2 text-xs',
-                      'whitespace-pre-wrap break-all'
+                      'whitespace-pre-wrap break-words'
                     )}
                   >
                     {JSON.stringify(item.record, null, 2)}

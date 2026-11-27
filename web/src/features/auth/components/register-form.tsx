@@ -20,7 +20,7 @@ import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Loader2, UserPlus } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { cn } from '@/lib/utils'
@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/password-input'
-import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
+import { SocialProviderButtons } from './social-provider-buttons'
 
 // Import schema and server actions
 import { registerSchema, type RegisterInput } from '../schemas/auth.schema'
@@ -75,20 +75,6 @@ interface RegisterFormProps extends React.HTMLAttributes<HTMLFormElement> {
 }
 
 // ============================================
-// SOCIAL PROVIDERS CONFIG
-// ============================================
-
-const socialProviders: {
-  id: SocialProvider
-  name: string
-  icon: React.ComponentType<{ className?: string }>
-}[] = [
-  { id: 'google', name: 'Google', icon: IconGoogle },
-  { id: 'github', name: 'GitHub', icon: IconGithub },
-  { id: 'microsoft', name: 'Microsoft', icon: IconMicrosoft },
-]
-
-// ============================================
 // COMPONENT
 // ============================================
 
@@ -104,19 +90,13 @@ export function RegisterForm({
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  // Only render buttons that lead somewhere. This form mapped over
-  // socialProviders unconditionally, so all three rendered on every
-  // deployment — including the ones with no OAuth credentials, where the
-  // button dead-ends. LoginForm has always asked the API which providers are
-  // live; this is the same question, asked here too.
-  const { data: authProviders } = useAuthProviders()
+  // Only buttons that lead somewhere: the API says which providers are live
+  // (SocialProviderButtons keeps their place while it answers).
+  const { data: authProviders, error: authProvidersError } = useAuthProviders()
   const passwordPolicy = authProviders?.password_policy
   const captchaSiteKey = authProviders?.captcha_site_key ?? ''
   const [captchaToken, setCaptchaToken] = useState('')
   const [captchaReset, setCaptchaReset] = useState(0)
-  const enabledSocialProviders = authProviders
-    ? socialProviders.filter((provider) => authProviders.social?.[provider.id])
-    : []
 
   // Error code from an OAuth callback. Only a known code's message is shown,
   // never the raw parameter, and once per value (this ran on every render).
@@ -164,7 +144,7 @@ export function RegisterForm({
    * Handle form submission for local auth
    */
   function onSubmit(data: RegisterInput) {
-    const issue = passwordPolicy && passwordPolicyIssue(data.password, passwordPolicy)
+    const issue = passwordPolicy && passwordPolicyIssue(data.password, passwordPolicy, t)
     if (issue) {
       form.setError('password', { message: issue })
       return
@@ -228,7 +208,7 @@ export function RegisterForm({
       console.error(`Social login error (${provider}):`, error)
       toast.error(
         t('auth.register.providerFailed', 'Could not sign up with {provider}. Try again.', {
-          provider: identityProviderLabel(provider),
+          provider: identityProviderLabel(provider, t),
         })
       )
     }
@@ -241,52 +221,11 @@ export function RegisterForm({
       <form
         method="post"
         onSubmit={form.handleSubmit(onSubmit)}
-        className={cn('grid gap-3', className)}
+        className={cn('flex flex-col gap-3.5', className)}
         {...props}
       >
-        {/* Social Login Section - Show First for Better UX */}
-        {showSocialLogin && enabledSocialProviders.length > 0 && (
-          <>
-            <div
-              className="grid gap-2"
-              style={{
-                gridTemplateColumns: `repeat(${enabledSocialProviders.length}, minmax(0, 1fr))`,
-              }}
-            >
-              {enabledSocialProviders.map((provider) => (
-                <Button
-                  key={provider.id}
-                  variant="outline"
-                  type="button"
-                  disabled={isLoading}
-                  onClick={() => handleSocialLogin(provider.id)}
-                  className="relative"
-                >
-                  {loadingProvider === provider.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <provider.icon className="h-4 w-4" />
-                  )}
-                  <span className="sr-only">{provider.name}</span>
-                </Button>
-              ))}
-            </div>
-
-            <div className="relative my-2">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background text-muted-foreground px-2">
-                  {t('auth.register.orWithEmail', 'Or register with email')}
-                </span>
-              </div>
-            </div>
-          </>
-        )}
-
         {/* Name Fields */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3">
           <FormField
             control={form.control}
             name="firstName"
@@ -397,14 +336,23 @@ export function RegisterForm({
         )}
 
         {/* Submit Button */}
-        <Button className="mt-2" disabled={isLoading} type="submit">
-          {isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <UserPlus className="h-4 w-4" />
-          )}
+        <Button variant="signal" disabled={isLoading} type="submit">
+          {isPending ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
           {t('auth.register.submit', 'Create account')}
         </Button>
+
+        {/* Social sign-up after the form, as on sign-in; the block keeps its
+            place while the providers answer loads. */}
+        {showSocialLogin && (
+          <SocialProviderButtons
+            providers={authProviders}
+            failed={!!authProvidersError}
+            divider={t('auth.register.orContinueWith', 'Or sign up with')}
+            disabled={isLoading}
+            loadingProvider={loadingProvider}
+            onSelect={handleSocialLogin}
+          />
+        )}
       </form>
     </Form>
   )

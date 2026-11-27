@@ -1,139 +1,320 @@
 'use client'
 
 /**
- * The text mode every filter bar shares: a toggle (Ctrl+/ also toggles it),
- * the text editor on the shared QueryInput, and the chip of a filter chips
- * cannot show. Chips and text are two views of one state; the page decides how
+ * The Query mode every list search field shares (the in-field Basic | Query
+ * switch of `ListSearch`, the editor on the shared QueryInput), and the chip
+ * of a filter chips cannot show. Chips and text are two views of one state; the page decides how
  * a checked text is written back to its URL (a filter chips can show as flat
  * params, anything else as one `fq` text).
  */
 
-import { useEffect, useState } from 'react'
-import { Code2, X } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { X } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
+import type { ListSearchMode, ListSearchQuery } from '@/features/shared/components/list-search'
 import { toDisplayText } from '@/lib/untrusted-text'
-import { QueryInput } from './query-input'
+import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 import { queryApi, type ParseResult, type QueryEntity } from '../api/query-api'
+
+// The editor (completion, checks) loads when a list first switches to Query
+// mode, not with the list.
+const QueryInput = lazy(() => import('./query-input').then((m) => ({ default: m.QueryInput })))
 
 /** The URL param of a filter chips cannot show. */
 export const FQ_PARAM = 'fq'
 
 /**
- * The text of the current filter: fq as written, or the page's flat list
- * params printed by the server (null until known). `params` is the filter part
- * of the list query, in the API's own names.
+ * The URL param of the search field's mode: `mode=query` opens the list in
+ * Query mode, with the filter as text in the field; absent, Basic. It is page
+ * state, never a filter: no chip, no request param.
+ */
+export const MODE_PARAM = 'mode'
+const QUERY_MODE = 'query'
+
+/** Whether a list URL opens in Query mode. */
+export function queryModeIn(search: URLSearchParams): boolean {
+  return search.get(MODE_PARAM) === QUERY_MODE
+}
+
+/** A copy of a list URL in the given mode (Basic is the absent param). */
+export function withQueryMode(search: URLSearchParams, active: boolean): URLSearchParams {
+  const next = new URLSearchParams(search)
+  if (active) next.set(MODE_PARAM, QUERY_MODE)
+  else next.delete(MODE_PARAM)
+  return next
+}
+
+/** A saved view's page params for the mode on screen (saved with the view). */
+export function modePageParams(active: boolean): Record<string, string> {
+  return { [MODE_PARAM]: active ? QUERY_MODE : 'basic' }
+}
+
+/**
+ * The URL param of the saved view a list was derived from: set (in place of
+ * `view=<id>`) once a query text other than the view's own is applied. The
+ * list is then driven by the URL alone, so the view's conditions never apply
+ * a second time; the page still names the view, as changed. Page state, never
+ * a filter.
+ */
+export const FROM_VIEW_PARAM = 'from_view'
+
+/** Whether a saved view opens in Query mode. */
+export function viewOpensInQueryMode(view: { page_params?: Record<string, string> }): boolean {
+  return view.page_params?.[MODE_PARAM] === QUERY_MODE
+}
+
+/**
+ * The text of the current filter: the page's flat list params printed by the
+ * server, with fq (a filter chips cannot show) ANDed after them, or null
+ * while it is being read or while `active` is off. `params` is the filter part
+ * of the list query, in the API's own names. `base` is the filter document of
+ * the open saved view: the server prints it too, first, so the field shows the
+ * view's own conditions as text (one request when the mode opens or the view
+ * changes, none while typing).
  */
 export function useFilterText(
   entity: QueryEntity,
   fq: string | null,
   params: string,
-  active: boolean
+  active: boolean,
+  base?: Record<string, unknown> | null
 ) {
   const [text, setText] = useState<string | null>(null)
+  // The document by value: a refetched view with the same filter prints nothing again.
+  const baseKey = base ? JSON.stringify(base) : ''
   useEffect(() => {
-    if (!active) return
+    if (!active) {
+      setText(null)
+      return
+    }
     let cancelled = false
-    if (fq) {
-      setText(fq)
+    if (params === '' && baseKey === '') {
+      setText(fq ?? '')
       return
     }
-    if (params === '') {
-      setText('')
-      return
-    }
-    queryApi
-      .parse({ entity, params })
-      .then((r) => {
-        if (!cancelled) setText(r.valid ? r.text : '')
+    const print = (req: { params: string } | { document: Record<string, unknown> }) =>
+      queryApi.parse({ entity, ...req }).then((r) => (r.valid ? r.text : ''))
+    Promise.all([
+      baseKey === '' ? '' : print({ document: JSON.parse(baseKey) as Record<string, unknown> }),
+      params === '' ? '' : print({ params }),
+    ])
+      .then(([view, printed]) => {
+        if (!cancelled) setText(joinFilterText(joinViewText(view, printed), fq))
       })
       .catch(() => {
-        if (!cancelled) setText('')
+        // Without the printer the text would drop the params: say nothing
+        // rather than something partial.
+        if (!cancelled) setText(fq ?? '')
       })
     return () => {
       cancelled = true
     }
-  }, [entity, active, fq, params])
+  }, [entity, active, fq, params, baseKey])
   return text
 }
 
-/** The text mode toggle. */
-export function QueryModeToggle({ active, onToggle }: { active: boolean; onToggle: () => void }) {
-  const { t } = useTranslation()
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === '/' && (e.ctrlKey || e.metaKey)) {
-        e.preventDefault()
-        onToggle()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onToggle])
-  return (
-    <Button
-      type="button"
-      variant={active ? 'secondary' : 'ghost'}
-      size="sm"
-      className="size-7 gap-1 px-0 text-xs sm:w-auto sm:px-2"
-      aria-pressed={active}
-      onClick={onToggle}
-      title={t('queryInput.mode.toggleHint')}
-    >
-      <Code2 className="size-3.5" aria-hidden />
-      {/* Icon only on a phone (the label stays for screen readers), so the
-          toolbar keeps its two rows. */}
-      <span className="sr-only sm:not-sr-only">{t('queryInput.mode.toggle')}</span>
-    </Button>
-  )
+/**
+ * A saved view's own text and the text of what the URL adds: the view's text
+ * as it is when nothing is added, otherwise grouped so an OR in it keeps its
+ * meaning beside the added conditions.
+ */
+export function joinViewText(view: string, printed: string): string {
+  if (!view) return printed
+  if (!printed) return view
+  return `(${view}) ${printed}`
 }
 
-/** The text editor of a filter: loads the current text, then edits it. */
-export function QueryEditor({
-  entity,
-  testId,
-  initial,
-  resultCount,
-  preferFields,
-  recentScope,
-  onResult,
-}: {
+/** Printed params and an fq text as one filter (both apply, as on the list). */
+export function joinFilterText(printed: string, fq: string | null): string {
+  if (!fq) return printed
+  if (!printed) return fq
+  return `${printed} (${fq})`
+}
+
+export interface ListQueryModeOptions {
   entity: QueryEntity
-  testId: string
-  /** The current filter's text; null while it is still being read. */
-  initial: string | null
+  /** Query mode is on: the page's URL says so (`mode=query`, `queryModeIn`). */
+  active: boolean
+  /** Write the mode alone into the page's URL. */
+  onActiveChange: (active: boolean) => void
+  /** The fq text, when the filter has one. */
+  fq: string | null
+  /** The filter as the list's params (API names), for the server's printer. */
+  params: string
+  /**
+   * The open saved view's filter document (`view=<id>` in the URL): its text
+   * leads the field, so the text is the whole filter the person sees.
+   */
+  base?: Record<string, unknown> | null
+  /**
+   * Write a checked text back to the page, with the mode the field is left
+   * in, in one URL write (Enter keeps Query mode; switching to Basic with an
+   * edit applies it and leaves Query mode).
+   */
+  onApply: (result: ParseResult, active: boolean) => void
+  /** The list's total, read out under the field. */
   resultCount?: number | null
   /** Fields the completion lists first (the open tab's own fields). */
   preferFields?: string[]
   /** Recent queries are kept per scope (an entity and tab). */
   recentScope?: string
-  onResult: (result: ParseResult) => void
-}) {
+  /** The editor's accessible name (default "Filter as query text"). */
+  ariaLabel?: string
+  testId: string
+}
+
+/**
+ * The Query mode of a list's search field (`ListSearch` `query`). The page
+ * holds it, so the chips row can step aside while the text owns the filter.
+ *
+ * - Basic to Query: the field shows the current filter as text, printed by
+ *   the server from the page's params (never built on the client).
+ * - Enter applies a valid text (the page writes it back as flat params, or as
+ *   fq when chips cannot show it); the field stays in Query mode. Enter on
+ *   the text already in force writes nothing.
+ * - Escape puts back the applied text.
+ * - A refused text says its problem in the toolbar's status row, under the
+ *   toolbar (`ListToolbar`), so the toolbar row keeps its height.
+ * - Query to Basic with an edit not applied yet applies it first, so the
+ *   switch never drops what was typed; an invalid text keeps Query mode with
+ *   its problem shown.
+ * - The mode is the page's, kept in its URL (`mode=query`): a shared link,
+ *   a reload or a saved view opens in the mode it was left in.
+ * - With a saved view open (`base`) the field shows the view's own text. The
+ *   URL stays `view=<id>` until another text is applied; the page then writes
+ *   the whole text to the URL and keeps the view as `from_view=<id>`.
+ */
+export function useListQueryMode(opts: ListQueryModeOptions): {
+  active: boolean
+  setActive: (on: boolean) => void
+  /** The mode, for a switch drawn outside the field (`ListSearchModeSwitch`). */
+  mode: ListSearchMode
+  onModeChange: (mode: ListSearchMode) => void
+  query: ListSearchQuery
+} {
   const { t } = useTranslation()
-  const [text, setText] = useState('')
-  const [loaded, setLoaded] = useState(false)
+  const { entity, fq, params, active, resultCount, preferFields, recentScope, ariaLabel, testId } =
+    opts
+  const applied = useFilterText(entity, fq, params, active, opts.base)
+  const [draft, setDraftState] = useState<string | null>(null)
+  // The server's refusal of a text the mode switch tried to apply, or of a
+  // link's text, shown in the editor until the text changes.
+  const [refused, setRefused] = useState<ParseResult | null>(null)
+  // The field takes the focus when the person switches to Query mode, not
+  // when a link or a reload opens the page in it.
+  const [switched, setSwitched] = useState(false)
+  const setDraft = useCallback((text: string | null) => {
+    setDraftState(text)
+    setRefused(null)
+  }, [])
   useEffect(() => {
-    if (initial !== null) {
-      setText(initial)
-      setLoaded(true)
-    }
-  }, [initial])
-  return (
-    <div className="w-full" data-testid={testId}>
-      <QueryInput
-        entity={entity}
-        value={text}
-        onChange={setText}
-        disabled={!loaded}
-        autoFocus
-        resultCount={resultCount}
-        preferFields={preferFields}
-        recentScope={recentScope}
-        ariaLabel={t('queryInput.mode.label')}
-        onSubmit={onResult}
-      />
-    </div>
+    setDraft(applied)
+  }, [applied, setDraft])
+
+  const latest = useRef({ draft, applied, onApply: opts.onApply, onActive: opts.onActiveChange })
+  useEffect(() => {
+    latest.current = { draft, applied, onApply: opts.onApply, onActive: opts.onActiveChange }
+  })
+
+  // A link (or a reload) that opens in Query mode with a text chips cannot
+  // show: the text is checked once, so a text the server refuses shows its
+  // problem in the field instead of an empty list without a reason.
+  const firstText = useRef(true)
+  useEffect(() => {
+    if (applied === null || !firstText.current) return
+    firstText.current = false
+    if (switched || !fq || applied.trim() === '') return
+    const text = applied
+    queryApi
+      .parse({ entity, text })
+      .then((r) => {
+        // Only while the field still holds that text.
+        if (!r.valid && latest.current.draft === text) setRefused(r)
+      })
+      .catch(() => undefined)
+  }, [applied, entity, fq, switched])
+
+  const setActive = useCallback(
+    (on: boolean) => {
+      const { draft: text, applied: was, onApply, onActive } = latest.current
+      if (on) {
+        setSwitched(true)
+        onActive(true)
+        return
+      }
+      if (text === null || text.trim() === (was ?? '').trim()) {
+        onActive(false)
+        return
+      }
+      queryApi
+        .parse({ entity, text })
+        .then((r) => {
+          if (!r.valid) {
+            setRefused(r)
+            return
+          }
+          onApply(r, false)
+        })
+        .catch(() => undefined)
+    },
+    [entity]
   )
+
+  const onSubmit = useCallback((r: ParseResult) => {
+    const { draft: text, applied: was, onApply } = latest.current
+    // Enter on the text that is already in force writes nothing: the run
+    // button is off then too. (On an open saved view the text leaves the
+    // view's own conditions out, so writing it back would change the list.)
+    if ((text ?? '').trim() === (was ?? '').trim()) return
+    onApply(r, true)
+  }, [])
+  const revert = useCallback(() => setDraft(latest.current.applied), [setDraft])
+
+  const query: ListSearchQuery = {
+    active,
+    onActiveChange: setActive,
+    renderEditor: ({ inputClassName, adornments, status }) => (
+      <div className="w-full" data-testid={testId}>
+        <Suspense
+          fallback={
+            <div className="relative">
+              <Input
+                disabled
+                className={cn('font-mono', inputClassName)}
+                aria-label={ariaLabel ?? t('queryInput.mode.label')}
+                value={draft ?? ''}
+                readOnly
+              />
+              {adornments}
+            </div>
+          }
+        >
+          <QueryInput
+            entity={entity}
+            value={draft ?? ''}
+            onChange={setDraft}
+            applied={applied ?? ''}
+            checked={refused}
+            disabled={draft === null}
+            autoFocus={switched}
+            resultCount={resultCount}
+            preferFields={preferFields}
+            recentScope={recentScope}
+            ariaLabel={ariaLabel ?? t('queryInput.mode.label')}
+            onSubmit={onSubmit}
+            onEscape={revert}
+            quietStatus
+            statusSlot={status}
+            inputClassName={inputClassName}
+            adornments={adornments}
+          />
+        </Suspense>
+      </div>
+    ),
+  }
+  const onModeChange = useCallback((m: ListSearchMode) => setActive(m === 'query'), [setActive])
+  return { active, setActive, mode: active ? 'query' : 'basic', onModeChange, query }
 }
 
 /** The chip of an fq filter: its text, opening the editor; X removes it. */

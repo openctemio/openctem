@@ -18,6 +18,7 @@ const VARS = [
   'missing',
   'members',
   'name',
+  'points',
 ]
 
 describe('remediation hub plurals', () => {

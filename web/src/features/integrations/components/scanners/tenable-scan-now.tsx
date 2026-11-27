@@ -164,7 +164,7 @@ export function TenableScanNowButton({
             <ChevronDown className="ms-1 h-3.5 w-3.5" aria-hidden />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent>
           <DropdownMenuLabel>
             {t('tenableSc.scanNow.pickConnector', 'Scan with connector')}
           </DropdownMenuLabel>

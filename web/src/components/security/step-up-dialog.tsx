@@ -267,7 +267,7 @@ export function StepUpDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
-      <DialogContent size={children ? 'md' : 'sm'}>
+      <DialogContent size={children ? 'md' : 'sm'} typingSurface="step-up">
         <DialogForm onSubmit={submit}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">

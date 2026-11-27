@@ -99,6 +99,7 @@ beforeEach(() => {
 describe('copy link', () => {
   async function clickCopy() {
     render(<FindingHeader finding={finding()} status="new" />)
+    // Copy link and Copy finding ID are always there: the More menu holds both.
     await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: /copy link/i }))
   }

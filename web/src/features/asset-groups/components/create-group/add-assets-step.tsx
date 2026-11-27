@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import type { Asset, AssetType } from '@/features/assets/types'
 import { ASSET_TYPE_LABELS, ASSET_TYPE_TILE } from '@/features/assets/types'
 import { useActiveAssetTypes } from '@/features/asset-types/api/use-asset-type-api'
@@ -50,6 +51,7 @@ export function AddAssetsStep({
   ungroupedAssets,
   onSearchChange,
 }: AddAssetsStepProps) {
+  const { t } = useTranslation()
   const [searchQuery, setSearchQuery] = React.useState('')
   const [typeFilter, setTypeFilter] = React.useState<AssetType | 'all'>('all')
   const [newAssetType, setNewAssetType] = React.useState<AssetType>('domain')
@@ -60,7 +62,7 @@ export function AddAssetsStep({
 
   // Get current asset type info from API data
   const currentAssetTypeInfo = React.useMemo(
-    () => assetTypes.find((t) => t.code === newAssetType),
+    () => assetTypes.find((info) => info.code === newAssetType),
     [assetTypes, newAssetType]
   )
 
@@ -68,12 +70,12 @@ export function AddAssetsStep({
   const currentPlaceholder =
     currentAssetTypeInfo?.pattern_placeholder ||
     currentAssetTypeInfo?.pattern_example ||
-    'Enter asset name'
+    t('assetGroups.assetsStep.enterName', 'Enter asset name')
 
   // Helper to get asset type name from API data
   const getAssetTypeName = React.useCallback(
     (typeCode: string) => {
-      const typeInfo = assetTypes.find((t) => t.code === typeCode)
+      const typeInfo = assetTypes.find((info) => info.code === typeCode)
       return typeInfo?.name || ASSET_TYPE_LABELS[typeCode as AssetType] || typeCode
     },
     [assetTypes]
@@ -95,12 +97,16 @@ export function AddAssetsStep({
       const isValid = regex.test(newAssetName.trim())
       return {
         isValid,
-        error: isValid ? null : `Invalid ${currentAssetTypeInfo?.name || 'asset'} format`,
+        error: isValid
+          ? null
+          : t('assetGroups.assetsStep.invalidFormat', 'Invalid {type} format', {
+              type: currentAssetTypeInfo?.name || t('assetGroups.assetsStep.assetNoun', 'asset'),
+            }),
       }
     } catch {
       return { isValid: true, error: null } // Invalid regex = skip validation
     }
-  }, [newAssetName, currentAssetTypeInfo])
+  }, [newAssetName, currentAssetTypeInfo, t])
 
   // Filter assets
   const filteredAssets = React.useMemo(() => {
@@ -178,11 +184,19 @@ export function AddAssetsStep({
       {/* Summary header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-sm font-medium">Add Assets to Group</h3>
-          <p className="text-xs text-muted-foreground">Select existing or create new assets</p>
+          <h3 className="text-sm font-medium">
+            {t('assetGroups.assetsStep.title', 'Add assets to the group')}
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            {t('assetGroups.assetsStep.subtitle', 'Select existing assets or create new ones')}
+          </p>
         </div>
         <Badge variant={totalCount > 0 ? 'default' : 'secondary'}>
-          {totalCount} asset{totalCount !== 1 ? 's' : ''} added
+          {t(
+            'assetGroups.assetsStep.added',
+            '{count, plural, one {# asset added} other {# assets added}}',
+            { count: totalCount }
+          )}
         </Badge>
       </div>
 
@@ -191,12 +205,12 @@ export function AddAssetsStep({
         <TabsList className="mb-4">
           <TabsTrigger value="select" className="gap-2">
             <ListChecks className="h-4 w-4" />
-            Select Existing
+            {t('assetGroups.assetsStep.tabSelect', 'Select existing')}
             {data.selectedAssetIds.length > 0 && <TabsCount value={data.selectedAssetIds.length} />}
           </TabsTrigger>
           <TabsTrigger value="create" className="gap-2">
             <PlusCircle className="h-4 w-4" />
-            Create New
+            {t('assetGroups.assetsStep.tabCreate', 'Create new')}
             {data.newAssets.length > 0 && <TabsCount value={data.newAssets.length} />}
           </TabsTrigger>
         </TabsList>
@@ -208,13 +222,13 @@ export function AddAssetsStep({
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search assets..."
+                placeholder={t('assetGroups.addAssets.search', 'Search assets...')}
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value)
                   onSearchChange?.(e.target.value)
                 }}
-                className="ps-9 h-9"
+                className="ps-9"
               />
             </div>
             <Select
@@ -222,11 +236,19 @@ export function AddAssetsStep({
               onValueChange={(v) => setTypeFilter(v as AssetType | 'all')}
               disabled={isLoadingTypes}
             >
-              <SelectTrigger className="w-[130px] h-9">
-                <SelectValue placeholder={isLoadingTypes ? 'Loading...' : 'All types'} />
+              <SelectTrigger className="w-[130px]">
+                <SelectValue
+                  placeholder={
+                    isLoadingTypes
+                      ? t('assetGroups.assetsStep.loading', 'Loading...')
+                      : t('assetGroups.assetsStep.allTypes', 'All types')
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="all">
+                  {t('assetGroups.assetsStep.allTypes', 'All types')}
+                </SelectItem>
                 {assetTypes.map((type) =>
                   // The spec declares code optional, so a Select value could be undefined.
                   type.code ? (
@@ -250,7 +272,7 @@ export function AddAssetsStep({
                 className="h-7 text-xs"
               >
                 <Check className="h-3 w-3 me-1" />
-                Select All
+                {t('assetGroups.selectAll', 'Select all')}
               </Button>
               {data.selectedAssetIds.length > 0 && (
                 <Button
@@ -261,7 +283,7 @@ export function AddAssetsStep({
                   className="h-7 text-xs text-muted-foreground"
                 >
                   <X className="h-3 w-3 me-1" />
-                  Clear
+                  {t('assetGroups.assetsStep.clear', 'Clear')}
                 </Button>
               )}
             </div>
@@ -272,11 +294,13 @@ export function AddAssetsStep({
             {filteredAssets.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-[200px] text-muted-foreground">
                 <FolderOpen className="h-8 w-8 mb-2 opacity-50" />
-                <p className="text-sm">No ungrouped assets</p>
+                <p className="text-sm">
+                  {t('assetGroups.assetsStep.noUngrouped', 'No ungrouped assets')}
+                </p>
                 <p className="text-xs">
                   {searchQuery || typeFilter !== 'all'
-                    ? 'Try adjusting filters'
-                    : 'Switch to Create New tab'}
+                    ? t('assetGroups.assetsStep.adjustFilters', 'Try adjusting filters')
+                    : t('assetGroups.assetsStep.switchToCreate', 'Switch to the Create new tab')}
                 </p>
               </div>
             ) : (
@@ -309,7 +333,7 @@ export function AddAssetsStep({
                           colors.bg
                         )}
                       >
-                        <span className={cn('text-xs font-bold', colors.text)}>
+                        <span className={cn('text-xs font-semibold', colors.text)}>
                           {asset.type.charAt(0).toUpperCase()}
                         </span>
                       </div>
@@ -337,8 +361,14 @@ export function AddAssetsStep({
                 onValueChange={(v) => setNewAssetType(v as AssetType)}
                 disabled={isLoadingTypes}
               >
-                <SelectTrigger className="w-[140px] h-9">
-                  <SelectValue placeholder={isLoadingTypes ? 'Loading...' : 'Select type'} />
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue
+                    placeholder={
+                      isLoadingTypes
+                        ? t('assetGroups.assetsStep.loading', 'Loading...')
+                        : t('assetGroups.assetsStep.selectType', 'Select type')
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {assetTypes.map((type) =>
@@ -357,7 +387,7 @@ export function AddAssetsStep({
                 onChange={(e) => setNewAssetName(e.target.value)}
                 onKeyDown={handleKeyDown}
                 className={cn(
-                  'flex-1 h-9',
+                  'flex-1',
                   validationResult.error && 'border-destructive focus-visible:ring-destructive'
                 )}
               />
@@ -365,8 +395,8 @@ export function AddAssetsStep({
                 type="button"
                 onClick={addNewAsset}
                 disabled={!newAssetName.trim() || !validationResult.isValid || isLoadingTypes}
-                size="sm"
-                className="h-9 px-3"
+                size="icon-sm"
+                className="px-3"
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -376,13 +406,18 @@ export function AddAssetsStep({
                 {validationResult.error}
                 {currentAssetTypeInfo?.pattern_example && (
                   <span className="text-muted-foreground ms-1">
-                    (e.g., {currentAssetTypeInfo.pattern_example})
+                    {t('assetGroups.assetsStep.example', '(e.g., {example})', {
+                      example: currentAssetTypeInfo.pattern_example,
+                    })}
                   </span>
                 )}
               </p>
             ) : (
               <p className="text-xs text-muted-foreground mt-2">
-                Press Enter to quickly add multiple assets
+                {t(
+                  'assetGroups.assetsStep.pressEnter',
+                  'Press Enter to quickly add multiple assets'
+                )}
               </p>
             )}
           </Card>
@@ -392,8 +427,12 @@ export function AddAssetsStep({
             {data.newAssets.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-[180px] text-muted-foreground border rounded-lg border-dashed">
                 <Plus className="h-8 w-8 mb-2 opacity-50" />
-                <p className="text-sm">No assets added yet</p>
-                <p className="text-xs">Use the form above to add assets</p>
+                <p className="text-sm">
+                  {t('assetGroups.assetsStep.noneYet', 'No assets added yet')}
+                </p>
+                <p className="text-xs">
+                  {t('assetGroups.assetsStep.useForm', 'Use the form above to add assets')}
+                </p>
               </div>
             ) : (
               <div className="space-y-1.5">
@@ -411,7 +450,7 @@ export function AddAssetsStep({
                           colors.bg
                         )}
                       >
-                        <span className={cn('text-xs font-bold', colors.text)}>
+                        <span className={cn('text-xs font-semibold', colors.text)}>
                           {asset.type.charAt(0).toUpperCase()}
                         </span>
                       </div>
@@ -422,14 +461,14 @@ export function AddAssetsStep({
                         </p>
                       </div>
                       <Badge variant="outline" className="shrink-0 text-xs">
-                        New
+                        {t('assetGroups.assetsStep.new', 'New')}
                       </Badge>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
                         onClick={() => deleteNewAsset(asset.id)}
-                        className="h-7 w-7 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>

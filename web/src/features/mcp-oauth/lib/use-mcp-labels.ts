@@ -3,6 +3,7 @@
 import { useCallback } from 'react'
 
 import { useTranslation } from '@/context/i18n-provider'
+import { usePermissionLabel } from '@/lib/use-permission-label'
 
 import type { ClientKind, ConsentBlocked } from '../api/consent'
 
@@ -44,6 +45,7 @@ export const MCP_PENTEST_DRAFT_SCOPE = 'mcp:pentest.draft'
  */
 export function useMcpLabels() {
   const { t } = useTranslation()
+  const permissionLabel = usePermissionLabel()
 
   /** Short name for a chip ("Findings"). */
   const scopeShort = useCallback(
@@ -68,10 +70,10 @@ export function useMcpLabels() {
         case MCP_PENTEST_DRAFT_SCOPE:
           return t('mcp.scope.pentestDraft.short', 'Pentest drafts')
         default:
-          return scope
+          return permissionLabel(scope)
       }
     },
-    [t]
+    [t, permissionLabel]
   )
 
   /** What the scope lets an application do, in a sentence. */

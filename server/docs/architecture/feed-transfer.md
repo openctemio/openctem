@@ -137,8 +137,10 @@ directory nor the release serves `latest.v2.dsse.json`. Both readers share
 the applied sequence (the v1 reader never goes below the checkpoint and
 moves it forward; a v2 run first carries the v1 sequence into the
 checkpoint) and the key-set version. Origins: the release
-(`VULNFEED_BASE_URL` + `/latest/download`), then `VULNFEED_MIRRORS`; with
-`VULNFEED_BUNDLE_DIR` only that directory is read.
+(the release base URL in force + `/latest/download`), then the mirrors in
+force; with `VULNFEED_BUNDLE_DIR` only that directory is read. The release
+base URL and the mirrors are a console setting
+([Feed sources in the console](#feed-sources-in-the-console)).
 
 ### KEV and EPSS (signed side manifest)
 
@@ -216,10 +218,20 @@ makes no outbound feed request:
 
 | Feed | In relay mode |
 |---|---|
-| vulnerability feed (corpus, KEV/EPSS side manifest, aliases, vulnerability ids) | relayed from `VULNFEED_BASE_URL` (not the direct-mode mirrors); the importer reads the relay working directory as its only origin |
+| vulnerability feed (corpus, KEV/EPSS side manifest, aliases, vulnerability ids) | relayed from the release base URL in force (the console setting, else `VULNFEED_BASE_URL`; not the direct-mode mirrors), read when each round is created; the importer reads the relay working directory as its only origin |
 | KEV / EPSS | carried by the vulnerability feed's side manifest (the platform never fetches them itself, in either mode) |
 | version check (release feed) | relayed; applied with origin `relay` (the same file again each day is not an error); the online check does not run |
 | program feed URLs | not fetched (a `PROGRAMFEED_DIR` still is); listed as `not_relayed` in the status |
+
+Relay sensors: any active shared sensor that reports `feed.relay@1` can be
+designated. A sensor that should relay and never scan runs the sensor's relay
+profile image (`ghcr.io/openctemio/sensor:<version>-relay`, sensor repository
+`docs/PROFILES.md`): no tool, `feed.relay@1` as its only capability (no
+`shared.isolation@1`, so no shared job is ever offered to it). The compose
+install adds one with `deploy/docker-compose.relay-sensor.yml` (its own
+enrollment token, `-feed-relay` on its enrollment job); the Helm chart runs
+its bundled sensor from that image with `sensor.profile=relay`. Run one to
+three for redundancy.
 
 Defaults: a new compose install with the bundled sensor starts in relay mode
 (`bootstrap-admin sensor-token -feed-relay` stores relay mode only when the
@@ -316,6 +328,63 @@ which replaced the relay's own 48-hour `feed_stale` alert.
 
 A bundle directory (`VULNFEED_BUNDLE_DIR`) or a missing job signer locks relay
 mode off.
+
+## Feed sources in the console
+
+Where the vulnerability feed is fetched from is the platform setting
+`vulnfeed.sources` (`internal/app/vulnfeedsources`; console System > Threat
+intelligence > Vulnerability feed address, next to Feed delivery):
+
+| Value | Who changes it | Where it applies |
+|---|---|---|
+| Release base URL | platform owner in the console, unless the server pins it | direct mode: the importer's first origin; relay mode: the origin of every relay round |
+| Mirrors (at most 5) | the same | direct mode only, tried after the release |
+| Pinned root key id (`VULNFEED_ROOT_KEY_ID`) | server only | shown as "Official root" or "Custom root (set on the server)" with its fingerprint |
+| Bundle directory (`VULNFEED_BUNDLE_DIR`) | server only | shown as set or not; the path is never sent |
+
+- **Environment = default and lock.** Nothing stored: the server's
+  `VULNFEED_BASE_URL` / `VULNFEED_MIRRORS` (or the built-in release). When
+  either variable is set the address is pinned: the console shows it locked
+  and `PUT` answers 409 `SETTING_LOCKED_BY_ENVIRONMENT`, as for the other
+  settings that moved from the environment (RFC-079).
+- **Validation.** https only; no user information, query or fragment; at most
+  512 characters; not an internal address (`httpsec.ValidateFeedURL`, and the
+  guarded feed client refuses one again at connect time); no duplicate, the
+  mirror list at most 5. There is no private-mirror switch: a mirror on a
+  private network is reached through the feed proxy, or the bundle directory
+  is used. A stored value that no longer validates is ignored (the server's
+  value applies, logged).
+- **Applies without a restart.** The importer reads the address at the start of
+  every run (`Importer.WithSources`; a change rebuilds the network fetcher; its
+  transfer counters keep the first fetcher's until restart). The relay feed
+  reads it whenever it creates a round (`feedrelay.VulnFeed.Origin`); the job
+  signer still refuses an origin outside `SIGNER_FEED_ORIGINS` and the relay
+  sensor one outside its `SENSOR_FEED_RELAY_ORIGINS`, so in relay mode the
+  egress allowlists stay the boundary.
+- **Change.** `PUT /api/v1/admin/settings/vulnfeed-sources`: permission
+  `platform.settings.feed_sources` (platform owner only, migration
+  `20261125035231`), a fresh step-up and a reason. A critical admin audit row
+  `platform.vulnfeed_sources_changed` records the previous and new release URL
+  and mirrors in full (a feed address carries no credential) and every
+  administrator is told.
+- **Test fetch.** `POST /api/v1/admin/settings/vulnfeed-sources/test` (same
+  permission, a few per minute per administrator) fetches only the key set and
+  the newest signed pointer (`latest.v2.dsse.json`, or `latest.dsse.json` from
+  a v1 release) from each address with the guarded feed client, verifies the
+  key set against the pinned root and the accepted key set version and the
+  pointer against that key set, and answers per address: verified (sequence,
+  and whether it is older than the applied one) or a code
+  (`blocked_address`, `unreachable`, `not_found`, `http_error`,
+  `root_mismatch`, `pointer_invalid`). Nothing is imported or stored. In
+  relay mode or with a bundle directory the platform makes no outbound request,
+  so the test answers 409 `FEED_TEST_UNAVAILABLE`.
+
+Why the root stays on the server: every file from every origin is verified
+against the pinned root before anything is applied, so an address only decides
+whether the feed arrives, never what it says. A root changeable in the console
+would let one console session (or a stolen one) make the platform accept a
+feed signed by anyone, for every organization. The bundle directory is a path
+on the server's file system, which the console never names.
 
 ## Push: segments and the outbox
 

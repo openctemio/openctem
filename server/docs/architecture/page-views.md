@@ -24,6 +24,8 @@ and every page has a **request budget** that the e2e gate enforces.
    response holds only that part: a missing finding, one outside the caller's data scope and another
    tenant's all give the same 404 the endpoint gives, and nothing else runs.
 3. The other parts (`FindingViewParts`) are dispatched in parallel, at most eight at a time per tenant.
+   They include the finding's AI agent runs (`/findings/{id}/ai/runs`), which the AI review on the
+   finding page reads, so that panel costs no request of its own.
 4. The response is `{"parts": {"<url>": {"status": 200, "body": {...}}}}`, `Cache-Control: private,
    no-store`.
 

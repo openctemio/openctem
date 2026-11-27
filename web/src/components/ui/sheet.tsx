@@ -5,7 +5,9 @@ import * as SheetPrimitive from '@radix-ui/react-dialog'
 import { XIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { useTranslation } from '@/context/i18n-provider'
 import { ignoreToasterInteractions } from '@/components/ui/toaster-guard'
+import { FloatingFocusScope, type TouchTypingSurface } from '@/components/ui/touch-focus'
 import {
   ModalBody,
   ModalForm,
@@ -54,10 +56,11 @@ const sheetCloseClassName =
   'ring-offset-background focus-visible:ring-ring data-[state=open]:bg-secondary rounded-md opacity-70 transition-opacity hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-offset-2 focus:outline-hidden disabled:pointer-events-none flex items-center justify-center h-10 w-10 min-h-[44px] min-w-[44px]'
 
 function SheetCloseButton({ className }: { className?: string }) {
+  const { t } = useTranslation()
   return (
     <SheetPrimitive.Close data-slot="sheet-close" className={cn(sheetCloseClassName, className)}>
       <XIcon className="size-5" aria-hidden />
-      <span className="sr-only">Close</span>
+      <span className="sr-only">{t('common.close', 'Close')}</span>
     </SheetPrimitive.Close>
   )
 }
@@ -83,11 +86,17 @@ function SheetContent({
   showCloseButton = true,
   onInteractOutside,
   onOpenAutoFocus,
+  typingSurface,
   ref,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: 'top' | 'right' | 'bottom' | 'left'
   showCloseButton?: boolean
+  /**
+   * Its one purpose is typing (`TOUCH_TYPING_SURFACES`): its first field gets
+   * focus on open on a touch screen too.
+   */
+  typingSurface?: TouchTypingSurface
 }) {
   const contentRef = React.useRef<HTMLDivElement | null>(null)
   const [node, setNode] = React.useState<HTMLDivElement | null>(null)
@@ -106,7 +115,7 @@ function SheetContent({
   )
   const layout = useModalLayoutState(closeButton)
   useKeyboardInset(node)
-  const autoFocus = useOpenAutoFocus(contentRef, 'sheet-body', onOpenAutoFocus)
+  const autoFocus = useOpenAutoFocus(contentRef, 'sheet-body', onOpenAutoFocus, typingSurface)
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -115,7 +124,9 @@ function SheetContent({
         data-slot="sheet-content"
         data-layout={layout.sections ? 'sections' : 'block'}
         className={cn(
-          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out motion-reduce:animate-none fixed z-50 flex flex-col shadow-lg ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
+          // transition-none: the durations time the open/close animation
+          // only; a sheet lifted by the keyboard must follow it at once.
+          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out motion-reduce:animate-none fixed z-50 flex flex-col shadow-lg transition-none ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
           layout.sections
             ? 'gap-0 overflow-hidden supports-[overflow:clip]:overflow-clip'
             : 'gap-4 overflow-y-auto',
@@ -126,14 +137,19 @@ function SheetContent({
           side === 'top' &&
             'data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto max-h-[100dvh] border-b',
           side === 'bottom' &&
-            'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-[var(--modal-kb,0px)] h-auto max-h-[calc(100dvh-var(--modal-kb,0px))] border-t',
+            // As tall as what it holds, up to the screen less the top inset
+            // and a 40px strip of page (keyboard up: the visible part less
+            // 8px, so its top stays on screen); the body scrolls beyond.
+            'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-[var(--modal-kb,0px)] h-auto max-h-[min(calc(100dvh_-_var(--modal-kb,0px)_-_env(safe-area-inset-top)_-_2.5rem),calc(var(--modal-vvh,100dvh)_-_0.5rem))] rounded-t-xl border-t',
           className
         )}
         onInteractOutside={ignoreToasterInteractions(onInteractOutside)}
         onOpenAutoFocus={autoFocus}
         {...props}
       >
-        <ModalLayoutContext.Provider value={layout}>{children}</ModalLayoutContext.Provider>
+        <ModalLayoutContext.Provider value={layout}>
+          <FloatingFocusScope typingSurface={typingSurface}>{children}</FloatingFocusScope>
+        </ModalLayoutContext.Provider>
         {showCloseButton && !layout.sections && (
           <SheetCloseButton className="absolute top-3 right-3" />
         )}

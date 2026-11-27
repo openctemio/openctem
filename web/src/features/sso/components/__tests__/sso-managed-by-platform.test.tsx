@@ -10,9 +10,9 @@ describe('SsoManagedByPlatform', () => {
     expect(screen.getByText(/contact your platform administrator/)).toBeInTheDocument()
     // The organization's own sign-in rules (2FA, sessions, restrictions) live
     // in Settings › Access › Authentication, which shows the same notice.
-    expect(screen.getByRole('link', { name: 'Authentication settings' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Sign-in settings' })).toHaveAttribute(
       'href',
-      '/settings/authentication'
+      '/settings/sign-in'
     )
   })
 })

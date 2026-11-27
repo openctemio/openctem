@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { useTheme } from 'next-themes'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
+import { HEADER_ICON_BUTTON, HEADER_MENU } from '@/components/layout/header-controls'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,46 +14,64 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-export function ThemeSwitch() {
-  const { theme, setTheme, systemTheme } = useTheme()
+const MODES = ['light', 'dark', 'system'] as const
+
+/**
+ * Light / Dark / System as menu rows with a check on the current one: the
+ * theme menu of the top bar. On a phone the account menu builds the same rows
+ * as its "Theme" step (the phone bar has no theme button).
+ */
+export function ThemeMenuItems() {
+  const { theme, setTheme } = useTheme()
   const { t } = useTranslation()
-  const names: Record<string, string> = {
+  const names: Record<(typeof MODES)[number], string> = {
     light: t('nav.header.themeLight', 'Light'),
     dark: t('nav.header.themeDark', 'Dark'),
     system: t('nav.header.themeSystem', 'System'),
   }
+  return MODES.map((mode) => (
+    <DropdownMenuItem key={mode} onClick={() => setTheme(mode)}>
+      {names[mode]}
+      <Check aria-hidden className={cn('ms-auto', theme !== mode && 'invisible')} />
+    </DropdownMenuItem>
+  ))
+}
 
+/**
+ * The top bar's theme menu. Below 768 px the app bar hides it (`className`)
+ * but keeps it mounted, so it still sets the browser's theme colour.
+ */
+export function ThemeSwitch({ className }: { className?: string }) {
+  const { resolvedTheme } = useTheme()
+  const { t } = useTranslation()
+
+  // The browser bar takes the page background token (theme.css `--background`,
+  // drawn by body), read after the theme class has been applied.
   useEffect(() => {
-    const current =
-      theme === 'system'
-        ? systemTheme === 'dark'
-          ? '#020817'
-          : '#ffffff'
-        : theme === 'dark'
-          ? '#020817'
-          : '#ffffff'
-
-    const meta = document.querySelector("meta[name='theme-color']")
-    if (meta) meta.setAttribute('content', current)
-  }, [theme, systemTheme])
+    const frame = requestAnimationFrame(() => {
+      const meta = document.querySelector("meta[name='theme-color']")
+      if (meta) meta.setAttribute('content', getComputedStyle(document.body).backgroundColor)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [resolvedTheme])
 
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative scale-95 rounded-full">
-          <Sun className="size-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-          <Moon className="absolute size-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-          <span className="sr-only">{t('nav.header.theme', 'Theme')}</span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn(HEADER_ICON_BUTTON, className)}
+          aria-label={t('nav.header.theme', 'Theme')}
+          title={t('nav.header.theme', 'Theme')}
+        >
+          <Sun aria-hidden className="dark:hidden" />
+          <Moon aria-hidden className="hidden dark:block" />
         </Button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="min-w-[8rem]">
-        {['light', 'dark', 'system'].map((mode) => (
-          <DropdownMenuItem key={mode} onClick={() => setTheme(mode)}>
-            {names[mode]}
-            <Check size={14} className={cn('ms-auto', theme !== mode && 'hidden')} />
-          </DropdownMenuItem>
-        ))}
+      <DropdownMenuContent className={HEADER_MENU}>
+        <ThemeMenuItems />
       </DropdownMenuContent>
     </DropdownMenu>
   )

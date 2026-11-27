@@ -196,6 +196,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     >
       <AlertDialogContent
         className={cn(className)}
+        typingSurface={typeToConfirm ? 'type-to-confirm' : undefined}
         onOpenAutoFocus={(e) => {
           // With typed confirmation the field gets focus (Enter in it does
           // nothing); otherwise Cancel keeps it, so Enter on open cancels.
@@ -246,9 +247,9 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
             )}
             {typeToConfirm && (
               <div className="space-y-2">
-                <Label htmlFor={inputId} className="block font-normal">
+                <Label htmlFor={inputId} className="block font-normal leading-snug">
                   {typeBefore}
-                  <span className="font-semibold break-all">{typeToConfirm}</span>
+                  <span className="font-semibold break-words">{typeToConfirm}</span>
                   {typeAfter}
                 </Label>
                 <Input

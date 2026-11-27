@@ -13,6 +13,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/context/i18n-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { DataTable, KeyValueList, type KeyValueItem } from '@/features/shared'
 import type {
   AssetTier,
@@ -20,6 +21,7 @@ import type {
   EmergingThreatHost,
   EmergingThreatHostService,
 } from '../types'
+import { BreakText } from '@/features/shared/components/break-text'
 
 const TIER_ORDER: AssetTier[] = ['confirmed', 'likely', 'possible']
 const PAGE_SIZES = [25, 50, 100]
@@ -44,7 +46,9 @@ export function HostTitle({ row }: { row: HostRow }) {
           {row.host}
         </Link>
       ) : (
-        <span className="font-medium [overflow-wrap:anywhere]">{row.host}</span>
+        <span className="font-medium [overflow-wrap:anywhere]">
+          <BreakText>{row.host}</BreakText>
+        </span>
       )}
       {single ? (
         <span className="text-xs text-muted-foreground">{single.asset_type}</span>
@@ -110,6 +114,7 @@ export function AffectedAssets({
   onRetry?: () => void
 }) {
   const { t } = useTranslation()
+  const isPhone = useIsMobile()
 
   const rows = useMemo<HostRow[]>(
     () =>
@@ -157,53 +162,74 @@ export function AffectedAssets({
     () => [
       {
         id: 'asset',
+        meta: { kind: 'asset' },
         header: t('emergingThreats.assets.asset'),
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => <HostTitle row={row.original} />,
       },
       {
+        // Exposure and criticality in one column, product and version in
+        // another: seven columns did not fit a tablet and cut the last
+        // headers (Finding, Task).
         id: 'exposure',
+        meta: { kind: 'text' },
         header: t('emergingThreats.assets.exposure'),
         enableSorting: false,
-        cell: ({ row }) =>
-          row.original.internet_facing ? (
-            <Badge variant="outline">{t('emergingThreats.assets.internetFacing')}</Badge>
-          ) : (
-            <Dash />
-          ),
-      },
-      {
-        id: 'criticality',
-        header: t('emergingThreats.assets.criticality'),
-        enableSorting: false,
-        cell: ({ row }) => cells.criticality(row.original) || <Dash />,
+        cell: ({ row }) => {
+          const criticality = cells.criticality(row.original)
+          if (!row.original.internet_facing && !criticality) return <Dash />
+          return (
+            <span className="flex flex-col items-start gap-1">
+              {row.original.internet_facing && (
+                <Badge variant="outline">{t('emergingThreats.assets.internetFacing')}</Badge>
+              )}
+              {criticality && (
+                <span>
+                  <span className="text-muted-foreground">
+                    {t('emergingThreats.assets.criticality')}:
+                  </span>{' '}
+                  {criticality}
+                </span>
+              )}
+            </span>
+          )
+        },
       },
       {
         id: 'product',
+        meta: { kind: 'text' },
         header: t('emergingThreats.assets.product'),
         enableSorting: false,
-        cell: ({ row }) => row.original.products.join(', ') || <Dash />,
-      },
-      {
-        id: 'version',
-        header: t('emergingThreats.assets.version'),
-        enableSorting: false,
-        cell: ({ row }) =>
-          row.original.versions.length > 0 ? (
-            <span className="font-mono text-xs">{row.original.versions.join(', ')}</span>
-          ) : (
-            <Dash />
-          ),
+        cell: ({ row }) => {
+          const products = row.original.products.join(', ')
+          const versions = row.original.versions.join(', ')
+          if (!products && !versions) return <Dash />
+          return (
+            <span className="flex flex-col gap-0.5">
+              {products && <span>{products}</span>}
+              {versions && (
+                <span className="text-xs">
+                  <span className="text-muted-foreground">
+                    {t('emergingThreats.assets.version')}:
+                  </span>{' '}
+                  <span className="font-mono">{versions}</span>
+                </span>
+              )}
+            </span>
+          )
+        },
       },
       {
         id: 'finding',
+        meta: { kind: 'text' },
         header: t('emergingThreats.assets.finding'),
         enableSorting: false,
         cell: ({ row }) => cells.finding(row.original),
       },
       {
         id: 'task',
+        meta: { kind: 'text' },
         header: t('emergingThreats.assets.task'),
         enableSorting: false,
         cell: ({ row }) => cells.task(row.original),
@@ -230,9 +256,25 @@ export function AffectedAssets({
   )
 
   const mobileRow = (row: HostRow) => {
-    const facts: KeyValueItem[] = []
+    const facts: KeyValueItem[] = [
+      {
+        key: 'tier',
+        label: t('emergingThreats.col.tier'),
+        value: t(`emergingThreats.assets.${row.tier}`, row.tier),
+      },
+    ]
     const criticality = cells.criticality(row)
-    if (criticality)
+    // The title line ends with the host's state: internet-facing, else its
+    // criticality (then not repeated in the facts), so no card is bunched
+    // at its start.
+    const endState = row.internet_facing ? (
+      <Badge variant="outline" className="shrink-0">
+        {t('emergingThreats.assets.internetFacing')}
+      </Badge>
+    ) : criticality ? (
+      <span className="shrink-0 text-sm text-muted-foreground">{criticality}</span>
+    ) : null
+    if (criticality && row.internet_facing)
       facts.push({
         key: 'criticality',
         label: t('emergingThreats.assets.criticality'),
@@ -263,11 +305,7 @@ export function AffectedAssets({
       <div className="flex flex-col gap-2 px-3 py-3">
         <div className="flex items-start justify-between gap-2">
           <HostTitle row={row} />
-          {row.internet_facing && (
-            <Badge variant="outline" className="shrink-0">
-              {t('emergingThreats.assets.internetFacing')}
-            </Badge>
-          )}
+          {endState}
         </div>
         {facts.length > 0 && (
           <KeyValueList
@@ -296,9 +334,14 @@ export function AffectedAssets({
           getRowId={(r) => r.key}
           showSearch={false}
           showColumnToggle={false}
+          // Nothing to search, filter or arrange: no toolbar row with a lone
+          // Display button above the hosts.
+          showToolbar={false}
           pageSize={50}
           pageSizeOptions={PAGE_SIZES}
-          rowGroups={rowGroups}
+          // A phone shows no group rows (each was a row of its own above
+          // its cards): the cards keep the tier order and each says its match.
+          rowGroups={isPhone ? undefined : rowGroups}
           mobileRow={mobileRow}
         />
       )}

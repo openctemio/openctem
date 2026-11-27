@@ -4,26 +4,25 @@ import type { SensorGrantSummary } from '@/lib/api/sensor-grant-hooks'
 import type * as React from 'react'
 import { useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Progress } from '@/components/ui/progress'
-import { Eye, Settings, KeyRound, Trash2, Power, PowerOff, Ban } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
-import { sensorActions } from '../lib/sensor-actions'
-import { useSensorActionPerms } from '../lib/use-sensor-action-perms'
 import {
   DataTable,
   DataTableColumnHeader,
-  DataTableRowActions,
+  StackedCell,
   type DataTableRowGroups,
+  type DataTableSelectMode,
   type FilterPanelToggleProps,
-  type RowAction,
   type DataTableSearch,
 } from '@/features/shared'
+import type { DataTableBulk } from '@/features/shared/components/data-table/data-table-selection'
 
+import { cn } from '@/lib/utils'
 import type { Sensor } from '@/lib/api/sensor-types'
 import { sensorRoleOf } from '@/lib/api/sensor-types'
-import { SensorStateBadge } from './sensor-state-badge'
+import { SensorStateBadge, sensorStateDetail } from './sensor-state-badge'
 import {
+  SensorHostCell,
   SensorJobsCell,
   SensorKeyCell,
   SensorNameCell,
@@ -32,6 +31,7 @@ import {
   SensorVersionCell,
 } from './sensor-cells'
 import { SensorMobileCard } from './sensor-mobile-card'
+import { SensorRowMenu, type SensorRowHandlers } from './sensor-row-menu'
 import { SensorContentCell } from './sensor-content-cells'
 import { dispatchTools } from '../lib/capabilities'
 import { worstContentState } from '../lib/content'
@@ -39,29 +39,34 @@ import { normalizeSensorVersion } from '../lib/sensor-version'
 import { sensorState, SENSOR_STATES, type FleetThresholds } from '../lib/sensor-state'
 import { sensorPolicyOf, type ReleaseChannel } from '../lib/fleet'
 import { sensorFacts, sensorReason, VERSION_FACT_KEYS } from '../lib/sensor-facts'
-import { cn } from '@/lib/utils'
 import { SensorLocalPolicyBadge } from './sensor-local-policy-section'
+import { TABLE_PAGE_SIZES } from '@/lib/page-size-options'
 
-interface SensorTableProps {
+interface SensorTableProps extends SensorRowHandlers {
   sensors: Sensor[]
-  onViewSensor: (sensor: Sensor) => void
-  onEditSensor: (sensor: Sensor) => void
-  onActivateSensor: (sensor: Sensor) => void
-  onDeactivateSensor: (sensor: Sensor) => void
-  onDeleteSensor: (sensor: Sensor) => void
-  onRegenerateKey: (sensor: Sensor) => void
-  /** Revoke for good (the same action as the drawer's menu). */
-  onRevokeSensor?: (sensor: Sensor) => void
-  /** Selected rows, for the page's bulk-action bar. */
-  onSelectionChange?: (sensors: Sensor[]) => void
+  /**
+   * The bulk actions of the page (Disable, Delete). Left out for a user who
+   * may do neither: the table then has no checkbox column.
+   */
+  bulk?: DataTableBulk<Sensor>
+  /** Phone select mode held by the page (Select is in the page's More). */
+  selectMode?: DataTableSelectMode
   /** Bump to clear the selection (e.g. after a bulk delete). */
   resetSelectionKey?: number
   search?: DataTableSearch
   toolbarStart?: React.ReactNode
   toolbarEnd?: React.ReactNode
+  /** The active filter chips, in their own row under the toolbar. */
+  toolbarBelow?: React.ReactNode
   filterToggle?: FilterPanelToggleProps
-  emptyMessage?: string
-  emptyDescription?: string
+  /** The fleet is being read for the first time: skeleton rows under the toolbar. */
+  isLoading?: boolean
+  /** The fleet read failed: the error takes the rows' place, with Retry. */
+  error?: unknown
+  onRetry?: () => void
+  /** A search or a filter narrows the list (an empty list is then "no match"). */
+  isFiltered?: boolean
+  onClearFilters?: () => void
   /** State ladder thresholds from GET /sensors/stats. */
   thresholds?: FleetThresholds
   /** The current time (useNow). */
@@ -88,10 +93,9 @@ function UsageCell({ percent }: { percent: number }) {
 /**
  * Off by default, available under Display: the outbox, key, local policy and
  * content columns (most rows read "not reported" or "never expires"; a
- * problem in any of them is the row's reason under Status instead), metrics
- * most sensors do not report yet (CPU, memory, region) and the role, which
- * the Role filter and grouping carry. Five columns fit 1440px without a
- * sideways scroll.
+ * problem in any of them is the row's reason beside its state instead),
+ * metrics most sensors do not report yet (CPU, memory, region) and the role,
+ * which the Role filter and grouping carry.
  */
 const HIDDEN_BY_DEFAULT = {
   outbox: false,
@@ -104,7 +108,36 @@ const HIDDEN_BY_DEFAULT = {
   region: false,
 }
 
+/**
+ * Column widths (px) and the table-frame width under which a column steps
+ * aside (it stays under Display > Columns): Host, then Tools, then Jobs, then
+ * Version. Each threshold is the width the columns still shown need: with the
+ * checkbox column (40), the name's floor (200) and the row menu (48) the
+ * default set needs 1104 (a 1440 screen's frame, 1114); without Host 952 (a
+ * 1280 screen, 954); without Tools 824; without Jobs 720 (a 1024 screen with
+ * the sidebar closed); without Version 488, which fits a 768 tablet, an 820
+ * tablet and a 1024 screen with the sidebar open, so the pinned row menu is
+ * never cut by the scroller's edge. A phone shows the card list instead.
+ */
+const SENSORS_WIDTH = {
+  host: 152,
+  status: 240,
+  version: 192,
+  jobs: 104,
+  tools: 128,
+  outbox: 152,
+  key: 152,
+  policy: 136,
+  content: 168,
+  role: 176,
+  usage: 128,
+  region: 128,
+}
+const SENSORS_HIDE_BELOW = { host: 1104, tools: 952, jobs: 824, version: 720 } as const
+
 const STATE_RANK = new Map(SENSOR_STATES.map((s, i) => [s, i]))
+
+const getSensorId = (a: Sensor) => a.id
 
 export function SensorTable({
   sensors,
@@ -115,14 +148,19 @@ export function SensorTable({
   onDeleteSensor,
   onRegenerateKey,
   onRevokeSensor,
-  onSelectionChange,
+  bulk,
+  selectMode,
   resetSelectionKey,
   search,
   toolbarStart,
   toolbarEnd,
+  toolbarBelow,
   filterToggle,
-  emptyMessage,
-  emptyDescription,
+  isLoading,
+  error,
+  onRetry,
+  isFiltered,
+  onClearFilters,
   thresholds,
   now,
   channel,
@@ -130,53 +168,62 @@ export function SensorTable({
   grants,
 }: SensorTableProps) {
   const { t } = useTranslation()
-  const actionPerms = useSensorActionPerms()
-  // Rows are selectable for the bulk actions: Disable (sensors:write) and Delete.
-  const canSelect = actionPerms.delete || actionPerms.write
+  const handlers = useMemo<SensorRowHandlers>(
+    () => ({
+      onViewSensor,
+      onEditSensor,
+      onActivateSensor,
+      onDeactivateSensor,
+      onDeleteSensor,
+      onRegenerateKey,
+      onRevokeSensor,
+    }),
+    [
+      onViewSensor,
+      onEditSensor,
+      onActivateSensor,
+      onDeactivateSensor,
+      onDeleteSensor,
+      onRegenerateKey,
+      onRevokeSensor,
+    ]
+  )
   const columns = useMemo<ColumnDef<Sensor>[]>(
     () => [
-      ...(canSelect
-        ? ([
-            {
-              id: 'select',
-              header: ({ table }) => (
-                <Checkbox
-                  checked={
-                    table.getIsAllPageRowsSelected() ||
-                    (table.getIsSomePageRowsSelected() && 'indeterminate')
-                  }
-                  onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
-                  aria-label={t('sensors.table.selectAll')}
-                />
-              ),
-              cell: ({ row }) => (
-                <Checkbox
-                  checked={row.getIsSelected()}
-                  onCheckedChange={(value) => row.toggleSelected(!!value)}
-                  aria-label={t('sensors.table.selectRow')}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              ),
-              enableSorting: false,
-              enableHiding: false,
-            },
-          ] as ColumnDef<Sensor>[])
-        : []),
+      // A cell's second fact goes on a line under its first (a mark under
+      // the name, a reason under the state) rather than cut beside it. The
+      // checkbox column is the table's own (`bulk`).
       {
         id: 'name',
-        meta: { label: t('sensors.table.col.sensor') },
+        // The row's identity: frozen at the start while the table scrolls sideways.
+        meta: { kind: 'name', pin: 'start', minWidth: 200, label: t('sensors.table.col.sensor') },
+        enableHiding: false,
         accessorFn: (a) => a.name,
         sortingFn: (a, b) => a.original.name.localeCompare(b.original.name),
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('sensors.table.col.sensor')} />
         ),
         cell: ({ row }) => (
-          <SensorNameCell sensor={row.original} grant={grants?.get(row.original.id)} />
+          <SensorNameCell sensor={row.original} grant={grants?.get(row.original.id)} inline />
         ),
       },
       {
+        id: 'host',
+        meta: {
+          kind: 'text',
+          width: SENSORS_WIDTH.host,
+          hideBelow: SENSORS_HIDE_BELOW.host,
+          label: t('sensors.table.col.host', 'Host'),
+        },
+        accessorFn: (a) => a.hostname || a.ip_address || '',
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('sensors.table.col.host', 'Host')} />
+        ),
+        cell: ({ row }) => <SensorHostCell sensor={row.original} />,
+      },
+      {
         id: 'status',
-        meta: { label: t('sensors.table.col.status') },
+        meta: { kind: 'text', width: SENSORS_WIDTH.status, label: t('sensors.table.col.status') },
         // Sort by the ladder (online first), not alphabetically.
         accessorFn: (a) => STATE_RANK.get(sensorState(a, now, thresholds)) ?? 0,
         header: ({ column }) => (
@@ -184,51 +231,77 @@ export function SensorTable({
         ),
         cell: ({ row }) => {
           const reasons = row.original.health_reasons ?? []
-          // The reason in plain words, under the state: the same facts the
+          // The reason in plain words, beside the state: the same facts the
           // phone card lists (outbox, key, policy, version, content) so the
-          // columns that hold them can stay hidden until they matter.
+          // columns that hold them can stay hidden until they matter. A
+          // sensor with nothing to say shows its heartbeat age there.
           const reason = sensorReason(
             sensorFacts(row.original, { now, thresholds, channel }, t),
             VERSION_FACT_KEYS
           )
+          const detail = sensorStateDetail(row.original, now, thresholds, t)
+          const hover = [
+            ...(reasons.length ? reasons.map((r) => r.message) : reason ? [reason.text] : []),
+            ...(detail ? [detail] : []),
+          ].join('\n')
+          // The state, then the reason (or the heartbeat age) under it with
+          // the column's whole width, wrapping in full: a clamp cut "takes no
+          // new jo…" on its second line.
           return (
-            <span
-              className="flex min-w-0 flex-col items-start gap-0.5"
-              title={reasons.length ? reasons.map((r) => r.message).join('\n') : undefined}
-            >
-              <SensorStateBadge
-                sensor={row.original}
-                now={now}
-                thresholds={thresholds}
-                withLastSeen
+            <span className="block min-w-0" title={hover || undefined} data-slot="sensor-status">
+              <StackedCell
+                primary={
+                  <SensorStateBadge sensor={row.original} now={now} thresholds={thresholds} />
+                }
+                secondary={
+                  reason ? (
+                    <span
+                      data-slot="sensor-reason"
+                      className={cn(
+                        'block whitespace-normal break-words',
+                        reason.tone === 'destructive' ? 'text-destructive' : 'text-warning'
+                      )}
+                    >
+                      {reason.text}
+                    </span>
+                  ) : (
+                    detail && (
+                      <span
+                        data-slot="sensor-state-detail"
+                        className="block whitespace-normal break-words"
+                      >
+                        {detail}
+                      </span>
+                    )
+                  )
+                }
               />
-              {reason && (
-                <span
-                  data-slot="sensor-reason"
-                  className={cn(
-                    'line-clamp-2 max-w-56 text-xs',
-                    reason.tone === 'destructive' ? 'text-destructive' : 'text-warning'
-                  )}
-                >
-                  {reason.text}
-                </span>
-              )}
             </span>
           )
         },
       },
       {
         id: 'version',
-        meta: { label: t('sensors.table.col.version') },
+        meta: {
+          kind: 'text',
+          width: SENSORS_WIDTH.version,
+          hideBelow: SENSORS_HIDE_BELOW.version,
+          label: t('sensors.table.col.version'),
+        },
         accessorFn: (a) => normalizeSensorVersion(a.version) ?? '',
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('sensors.table.col.version')} />
         ),
-        cell: ({ row }) => <SensorVersionCell sensor={row.original} channel={channel} />,
+        cell: ({ row }) => <SensorVersionCell sensor={row.original} channel={channel} inline />,
       },
       {
         id: 'jobs',
-        meta: { label: t('sensors.table.col.jobs') },
+        meta: {
+          kind: 'text',
+          width: SENSORS_WIDTH.jobs,
+          hideBelow: SENSORS_HIDE_BELOW.jobs,
+          label: t('sensors.table.col.jobs'),
+        },
         // current_jobs is what the API reports; it never sent active_jobs.
         accessorFn: (a) => a.current_jobs ?? 0,
         header: ({ column }) => (
@@ -238,26 +311,35 @@ export function SensorTable({
       },
       {
         id: 'outbox',
-        meta: { label: t('sensors.table.col.outbox') },
+        meta: { kind: 'text', width: SENSORS_WIDTH.outbox, label: t('sensors.table.col.outbox') },
         accessorFn: (a) => a.outbox?.pending_count ?? -1,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('sensors.table.col.outbox')} />
         ),
-        cell: ({ row }) => <SensorOutboxCell sensor={row.original} />,
+        cell: ({ row }) => <SensorOutboxCell sensor={row.original} inline />,
       },
       {
         id: 'key',
-        meta: { label: t('sensors.table.col.key') },
+        meta: { kind: 'text', width: SENSORS_WIDTH.key, label: t('sensors.table.col.key') },
         accessorFn: (a) =>
           a.key_expires_at ? new Date(a.key_expires_at).getTime() : Number.MAX_SAFE_INTEGER,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('sensors.table.col.key')} />
         ),
-        cell: ({ row }) => <SensorKeyCell sensor={row.original} now={now} />,
+        cell: ({ row }) => (
+          <span className="flex min-w-0 items-center whitespace-nowrap [&>span]:flex-nowrap">
+            <SensorKeyCell sensor={row.original} now={now} />
+          </span>
+        ),
       },
       {
         id: 'tools',
-        meta: { label: t('sensors.table.col.tools') },
+        meta: {
+          kind: 'text',
+          width: SENSORS_WIDTH.tools,
+          hideBelow: SENSORS_HIDE_BELOW.tools,
+          label: t('sensors.table.col.tools'),
+        },
         accessorFn: (a) => dispatchTools(a).join(', '),
         enableSorting: false,
         header: t('sensors.table.col.tools'),
@@ -265,7 +347,11 @@ export function SensorTable({
       },
       {
         id: 'policy',
-        meta: { label: t('sensors.table.col.localPolicy') },
+        meta: {
+          kind: 'status',
+          width: SENSORS_WIDTH.policy,
+          label: t('sensors.table.col.localPolicy'),
+        },
         accessorFn: (a) => sensorPolicyOf(a),
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('sensors.table.col.policy')} />
@@ -274,7 +360,7 @@ export function SensorTable({
       },
       {
         id: 'content',
-        meta: { label: t('sensors.table.col.content') },
+        meta: { kind: 'text', width: SENSORS_WIDTH.content, label: t('sensors.table.col.content') },
         accessorFn: (a) => worstContentState(a.content) ?? '',
         enableSorting: false,
         header: t('sensors.table.col.content'),
@@ -282,13 +368,13 @@ export function SensorTable({
       },
       {
         id: 'type',
-        meta: { label: t('sensors.table.col.role') },
+        meta: { kind: 'text', width: SENSORS_WIDTH.role, label: t('sensors.table.col.role') },
         accessorFn: (a) => a.type,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('sensors.table.col.role')} />
         ),
         cell: ({ row }) => (
-          <span className="text-sm">
+          <span className="block truncate text-sm">
             {sensorRoleOf(row.original.type) === 'collector'
               ? t('sensors.table.roleCollector')
               : t('sensors.table.roleScanner')}
@@ -301,7 +387,7 @@ export function SensorTable({
       },
       {
         id: 'cpuUsage',
-        meta: { label: t('sensors.table.col.cpu') },
+        meta: { kind: 'text', width: SENSORS_WIDTH.usage, label: t('sensors.table.col.cpu') },
         accessorFn: (a) => a.cpu_percent || 0,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('sensors.table.col.cpu')} />
@@ -310,7 +396,7 @@ export function SensorTable({
       },
       {
         id: 'memoryUsage',
-        meta: { label: t('sensors.table.col.memory') },
+        meta: { kind: 'text', width: SENSORS_WIDTH.usage, label: t('sensors.table.col.memory') },
         accessorFn: (a) => a.memory_percent || 0,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('sensors.table.col.memory')} />
@@ -319,7 +405,7 @@ export function SensorTable({
       },
       {
         id: 'region',
-        meta: { label: t('sensors.table.col.region') },
+        meta: { kind: 'text', width: SENSORS_WIDTH.region, label: t('sensors.table.col.region') },
         // Only what the sensor reported; nothing invented.
         accessorFn: (a) => a.region || '',
         header: ({ column }) => (
@@ -327,113 +413,65 @@ export function SensorTable({
         ),
         cell: ({ getValue }) =>
           getValue<string>() ? (
-            <span className="text-sm">{getValue<string>()}</span>
+            <span className="block truncate text-sm">{getValue<string>()}</span>
           ) : (
             <span className="text-sm text-muted-foreground">—</span>
           ),
       },
       {
         id: 'actions',
+        meta: { kind: 'actions' },
         enableSorting: false,
         enableHiding: false,
-        cell: ({ row }) => {
-          const sensor = row.original
-          // Editing, keys and lifecycle are admin actions (sensors:write /
-          // sensors:delete, admins and owners only since api#669).
-          const can = sensorActions(sensor, actionPerms)
-          const actions: RowAction[] = [
-            {
-              label: t('sensors.table.action.viewDetails'),
-              icon: Eye,
-              onClick: () => onViewSensor(sensor),
-            },
-          ]
-          if (can.edit)
-            actions.push({
-              label: t('sensors.table.action.edit'),
-              icon: Settings,
-              onClick: () => onEditSensor(sensor),
-            })
-          if (can.rotate)
-            actions.push({
-              label: t('sensors.table.action.rotateKey'),
-              icon: KeyRound,
-              onClick: () => onRegenerateKey(sensor),
-            })
-          if (can.enable)
-            actions.push({
-              label: t('sensors.table.action.enable'),
-              icon: Power,
-              onClick: () => onActivateSensor(sensor),
-              separatorBefore: true,
-            })
-          if (can.disable)
-            actions.push({
-              label: t('sensors.table.action.disable'),
-              icon: PowerOff,
-              onClick: () => onDeactivateSensor(sensor),
-              separatorBefore: true,
-            })
-          if (can.revoke && onRevokeSensor)
-            actions.push({
-              label: t('sensors.table.action.revoke'),
-              icon: Ban,
-              onClick: () => onRevokeSensor(sensor),
-              destructive: true,
-              separatorBefore: !can.disable && !can.enable,
-            })
-          if (can.delete)
-            actions.push({
-              label: t('sensors.table.action.delete'),
-              icon: Trash2,
-              onClick: () => onDeleteSensor(sensor),
-              destructive: true,
-              separatorBefore: true,
-            })
-          return <DataTableRowActions actions={actions} />
-        },
+        cell: ({ row }) => <SensorRowMenu sensor={row.original} {...handlers} />,
       },
     ],
-    [
-      onViewSensor,
-      onEditSensor,
-      onActivateSensor,
-      onDeactivateSensor,
-      onDeleteSensor,
-      onRegenerateKey,
-      onRevokeSensor,
-      actionPerms,
-      canSelect,
-      thresholds,
-      now,
-      channel,
-      grants,
-      t,
-    ]
+    [handlers, thresholds, now, channel, grants, t]
   )
 
   return (
     <DataTable
       columns={columns}
       data={sensors}
-      getRowId={(a) => a.id}
+      getRowId={getSensorId}
       showSearch={false}
       onRowClick={onViewSensor}
-      onSelectionChange={onSelectionChange}
+      // No bulk action for this user: no checkbox column either.
+      bulk={bulk}
+      selectMode={selectMode}
       resetSelectionKey={resetSelectionKey}
       showSelectionCount={false}
       filterToggle={filterToggle}
       search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
-      emptyMessage={emptyMessage ?? t('sensors.table.emptyMessage')}
-      emptyDescription={emptyDescription ?? t('sensors.table.emptyDescription')}
+      toolbarBelow={toolbarBelow}
+      // The first read: skeleton rows under a toolbar that stays mounted. A
+      // failed read keeps the toolbar too; the error takes the rows' place.
+      isLoading={isLoading}
+      error={error}
+      onRetry={onRetry}
+      errorTitle={t('sensors.list.errorTitle')}
+      isFiltered={isFiltered}
+      onClearFilters={onClearFilters}
+      // A fleet with no sensor at all is the page's own first-run block
+      // (how to add one), so an empty table here is always "no match".
+      emptyState={{
+        nothingYet: null,
+        noMatch: {
+          title: t('sensors.table.emptyMessage'),
+          hint: t('sensors.table.emptyDescription'),
+        },
+      }}
       initialColumnVisibility={HIDDEN_BY_DEFAULT}
       // A fleet is small; grouping reads best on one page.
       pageSize={50}
-      pageSizeOptions={[25, 50, 100]}
+      // A pager only when the fleet does not fit the smallest page: never
+      // "Showing 1 to 1 of 1" and "Page 1 of 1" over one sensor.
+      showPagination={sensors.length > TABLE_PAGE_SIZES[0]}
+      paginationNoun={t('sensors.list.noun', 'sensors')}
       rowGroups={rowGroups}
-      mobileRow={(sensor) => (
+      mobileRow={(sensor, selection) => (
         <SensorMobileCard
           sensor={sensor}
           now={now}
@@ -441,6 +479,8 @@ export function SensorTable({
           channel={channel}
           onOpen={onViewSensor}
           grant={grants?.get(sensor.id)}
+          selection={selection}
+          actions={<SensorRowMenu sensor={sensor} {...handlers} />}
         />
       )}
     />

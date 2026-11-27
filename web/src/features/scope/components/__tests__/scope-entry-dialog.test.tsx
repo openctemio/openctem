@@ -8,6 +8,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import type { ReactNode } from 'react'
+import { enter } from '@/test/user-input'
 
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), del: vi.fn() }))
 vi.mock('@/lib/api/client', () => api)
@@ -58,9 +59,9 @@ beforeEach(() => {
 describe('ScopeEntryDialog', () => {
   it('an approver adds the domain and every name below it by default', async () => {
     api.post.mockResolvedValue({ pattern: '*.acme.io', status: 'pending', approvals_required: 1 })
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
-    await user.type(await screen.findByLabelText('What'), 'acme.io')
+    await enter(user, await screen.findByLabelText('What'), 'acme.io')
     expect(screen.getByText('acme.io and every name below it, permanent')).toBeInTheDocument()
     expect(screen.getByText(/Needs 1 approval from another approver/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Add to scope' }))
@@ -81,10 +82,10 @@ describe('ScopeEntryDialog', () => {
 
   it('typing *.x picks "x and every name below it"; "only" stores the exact name', async () => {
     api.post.mockResolvedValue({ pattern: 'acme.io', status: 'active' })
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
     const input = await screen.findByLabelText('What')
-    await user.type(input, '*.acme.io')
+    await enter(user, input, '*.acme.io')
     expect(input).toHaveValue('acme.io')
     await user.click(screen.getByText('acme.io only'))
     await user.click(screen.getByRole('button', { name: 'Add to scope' }))
@@ -98,7 +99,7 @@ describe('ScopeEntryDialog', () => {
 
   it('a one-off from a fix needs a reason and sends its days', async () => {
     api.post.mockResolvedValue({ pattern: 'promo.net', status: 'active' })
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     wrap(
       <ScopeEntryDialog
         open
@@ -111,7 +112,7 @@ describe('ScopeEntryDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Add to scope' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/Say why this target may be probed/)
     expect(api.post).not.toHaveBeenCalled()
-    await user.type(screen.getByLabelText('Reason'), 'MKT-9')
+    await enter(user, screen.getByLabelText('Reason'), 'MKT-9')
     await user.click(screen.getByRole('button', { name: 'Add to scope' }))
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith(
@@ -124,20 +125,20 @@ describe('ScopeEntryDialog', () => {
   it('a member requests one name for a few days, never a wildcard', async () => {
     perms.approve = false
     api.post.mockResolvedValue({ pattern: 'shop.acme.io', status: 'pending' })
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
     expect(await screen.findByRole('heading', { name: 'Request access' })).toBeInTheDocument()
     // No coverage or duration choice: a request is one name, one-off.
     expect(screen.queryByText('Covers')).not.toBeInTheDocument()
     expect(screen.queryByText('Permanent')).not.toBeInTheDocument()
-    await user.type(screen.getByLabelText('What'), '*.acme.io')
-    await user.type(screen.getByLabelText('Reason'), 'need it')
+    await enter(user, screen.getByLabelText('What'), '*.acme.io')
+    await enter(user, screen.getByLabelText('Reason'), 'need it')
     await user.click(screen.getByRole('button', { name: 'Send request' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/one name or address/)
     expect(api.post).not.toHaveBeenCalled()
 
     await user.clear(screen.getByLabelText('What'))
-    await user.type(screen.getByLabelText('What'), 'shop.acme.io')
+    await enter(user, screen.getByLabelText('What'), 'shop.acme.io')
     await user.click(screen.getByRole('button', { name: 'Send request' }))
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith(
@@ -156,10 +157,10 @@ describe('ScopeEntryDialog', () => {
       approval_policy: { entries_need_approval: false },
     })
     api.post.mockResolvedValue({ pattern: 'shop.acme.io', status: 'active' })
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
     expect(await screen.findByRole('heading', { name: 'Add to scope' })).toBeInTheDocument()
-    await user.type(screen.getByLabelText('What'), 'shop.acme.io')
+    await enter(user, screen.getByLabelText('What'), 'shop.acme.io')
     await user.click(screen.getByText('shop.acme.io only'))
     await user.click(screen.getByRole('button', { name: 'Add to scope' }))
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('shop.acme.io is in scope'))
@@ -178,9 +179,9 @@ describe('ScopeEntryDialog', () => {
 
   it('shows the server refusal as a sentence', async () => {
     api.post.mockRejectedValue(Object.assign(new Error('raw'), { code: 'PUBLIC_SUFFIX' }))
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
-    await user.type(await screen.findByLabelText('What'), 'com.vn')
+    await enter(user, await screen.findByLabelText('What'), 'com.vn')
     await user.click(screen.getByRole('button', { name: 'Add to scope' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/public suffix/i)
   })
@@ -218,9 +219,9 @@ describe('ScopeEntryDialog: letter of authorization', () => {
         : settings
     )
     api.post.mockResolvedValue({ pattern: '*.client.io', status: 'pending', approvals_required: 1 })
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
-    await user.type(await screen.findByLabelText('What'), 'client.io')
+    await enter(user, await screen.findByLabelText('What'), 'client.io')
     await user.click(await screen.findByLabelText('Authorized by'))
     expect(screen.queryByRole('option', { name: /Old LoA/ })).toBeNull()
     expect(screen.queryByRole('option', { name: /Revoked LoA/ })).toBeNull()
@@ -265,7 +266,7 @@ describe('ScopeEntryDialog: duration follows the policy', () => {
   it('a T2 entry defaults to the longest allowed expiry; Permanent is disabled with who can change it', async () => {
     api.get.mockResolvedValue({ ...settings, t2_max_days: 30, t2_permanent_allowed: false })
     api.post.mockResolvedValue({ pattern: '*.example.com', status: 'pending' })
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     wrap(
       <ScopeEntryDialog
         open
@@ -284,7 +285,7 @@ describe('ScopeEntryDialog: duration follows the policy', () => {
       '/settings/scope'
     )
     expect(screen.getByTestId('expiry')).toHaveTextContent(/^Expires \d{1,2} \w{3} \d{4}$/)
-    await user.type(screen.getByLabelText('Reason'), 'pentest OPS-1')
+    await enter(user, screen.getByLabelText('Reason'), 'pentest OPS-1')
     await user.click(screen.getByRole('button', { name: 'Add to scope' }))
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith(
@@ -315,7 +316,7 @@ describe('ScopeEntryDialog: duration follows the policy', () => {
 
   it('a custom date is bounded from tomorrow to the policy limit', async () => {
     api.get.mockResolvedValue({ ...settings, t2_max_days: 90, t2_permanent_allowed: false })
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     wrap(
       <ScopeEntryDialog
         open
@@ -389,11 +390,11 @@ describe('ScopeEntryDialog: a member outside Strict adds directly', () => {
       },
     })
     api.post.mockResolvedValue({ pattern: '*.acme.io', status: 'active' })
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
     expect(await screen.findByRole('heading', { name: 'Add to scope' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Send request' })).not.toBeInTheDocument()
-    await user.type(screen.getByLabelText('What'), 'acme.io')
+    await enter(user, screen.getByLabelText('What'), 'acme.io')
     await user.click(screen.getByRole('button', { name: 'Add to scope' }))
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith(
@@ -419,7 +420,7 @@ describe('ScopeEntryDialog: a pasted list', () => {
   })
 
   const paste = async (text: string) => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     wrap(<ScopeEntryDialog open onOpenChange={() => {}} />)
     await user.click(await screen.findByLabelText('What'))
     await user.paste(text)
@@ -447,7 +448,7 @@ describe('ScopeEntryDialog: a pasted list', () => {
     const user = await paste('acme.io\nshop.acme.io\nfoo_bar')
     await user.click(await screen.findByRole('button', { name: 'Remove the lines not recognised' }))
     await user.click(screen.getByText('Each domain only'))
-    await user.type(screen.getByLabelText('Reason (optional)'), 'ticket 9')
+    await enter(user, screen.getByLabelText('Reason (optional)'), 'ticket 9')
     await user.click(screen.getByRole('button', { name: 'Add 2 to scope' }))
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/api/v1/scope/targets/bulk', {
@@ -477,7 +478,7 @@ describe('ScopeEntryDialog: a pasted list', () => {
   it('refuses more than 1,000 values with a clear message', async () => {
     await paste(Array.from({ length: 1001 }, (_, i) => `h${i}.acme.io`).join('\n'))
     expect(await screen.findByTestId('scope-list-too-many')).toHaveTextContent(
-      'at most 1000 values and this one has 1001'
+      'at most 1,000 values and this one has 1001'
     )
   })
 
@@ -502,9 +503,9 @@ describe('ScopeEntryDialog: a pasted list', () => {
       })
     )
     const onOpenChange = vi.fn()
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     wrap(<ScopeEntryDialog open onOpenChange={onOpenChange} />)
-    await user.type(await screen.findByLabelText('What'), 'agency.example.gov.xx')
+    await enter(user, await screen.findByLabelText('What'), 'agency.example.gov.xx')
     await user.click(screen.getByRole('button', { name: 'Add to scope' }))
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(/does not allow this target/)
@@ -526,9 +527,9 @@ describe('ScopeEntryDialog: a pasted list', () => {
       })
     )
     const onOpenChange = vi.fn()
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     wrap(<ScopeEntryDialog open onOpenChange={onOpenChange} />)
-    await user.type(await screen.findByLabelText('What'), 'agency.example.gov.xx')
+    await enter(user, await screen.findByLabelText('What'), 'agency.example.gov.xx')
     await user.click(screen.getByRole('button', { name: 'Add to scope' }))
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(

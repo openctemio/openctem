@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { formatDate } from '@/lib/app-locale'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import { CIRepositorySettingsTab } from '../components/ci-repo-settings'
 import { CIRunSheet } from '../components/ci-runs-view'
-import { PolicyLocks } from '../components/ci-trust-settings'
+import { PolicyLocks } from '../components/ci-gate-settings'
 import { pipelineTab } from '../components/ci-pipeline-sheet'
 import {
   allowedCapabilityModes,
@@ -346,9 +347,7 @@ describe('CIRepositorySettingsTab', () => {
     render(<CIRepositorySettingsTab repositoryAssetId={REPO} />)
     expect(screen.getByText('First verified default-branch run')).toBeInTheDocument()
     expect(screen.getByText('42')).toBeInTheDocument()
-    expect(
-      screen.getByText(new Date('2026-10-11T00:00:00Z').toLocaleDateString())
-    ).toBeInTheDocument()
+    expect(screen.getByText(formatDate(new Date('2026-10-11T00:00:00Z')))).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Remove baseline' })).toBeInTheDocument()
   })
 })
@@ -410,10 +409,7 @@ describe('CIRunSheet baseline and code host', () => {
     // An informational reason is a note, never listed as blocking.
     expect(screen.queryByRole('heading', { name: 'Blocking' })).not.toBeInTheDocument()
     expect(screen.getByRole('list', { name: 'Notes' })).toHaveTextContent('Baseline recorded')
-    expect(screen.getByTestId('ci-run-connect-host')).toHaveAttribute(
-      'href',
-      '/ci-cd?tab=setup&section=feedback'
-    )
+    expect(screen.getByTestId('ci-run-connect-host')).toHaveAttribute('href', '/ci-cd?tab=feedback')
   })
 
   it('hides Connect GitLab from a reader and has no baseline line without a baseline', () => {

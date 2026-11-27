@@ -11,7 +11,8 @@
  */
 
 import * as React from 'react'
-import { ClipboardCheck } from 'lucide-react'
+import { ChevronDown, ClipboardCheck } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -88,10 +89,37 @@ function BenchmarkRow({
   )
 }
 
+/** Per-browser memory of a folded block (a convenience: storage may be absent). */
+const FOLD_KEY = 'findings.complianceBenchmarks.folded'
+function readFolded(): boolean {
+  try {
+    return window.localStorage.getItem(FOLD_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+function writeFolded(folded: boolean) {
+  try {
+    if (folded) window.localStorage.setItem(FOLD_KEY, '1')
+    else window.localStorage.removeItem(FOLD_KEY)
+  } catch {
+    // Storage blocked: the block still folds for this visit.
+  }
+}
+
+/**
+ * The benchmarks block. It is content of the list, not its chrome: the page
+ * draws it under the chips row and above the rows (`DataTable` `beforeRows`),
+ * so the title row and the toolbar never move when it loads. It folds to its
+ * heading.
+ */
 export function ComplianceBenchmarksPanel() {
   const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useComplianceBenchmarks()
   const [open, setOpen] = React.useState<ComplianceBenchmark | null>(null)
+  const [folded, setFolded] = React.useState(false)
+  React.useEffect(() => setFolded(readFolded()), [])
+  const bodyId = React.useId()
   const rows = data?.data ?? []
 
   let body: React.ReactNode
@@ -106,14 +134,9 @@ export function ComplianceBenchmarksPanel() {
   } else if (isLoading && !data) {
     body = <Skeleton className="h-24 w-full" />
   } else if (rows.length === 0) {
-    body = (
-      <p className="text-sm text-muted-foreground" data-testid="compliance-benchmarks-empty">
-        {t(
-          'findings.complianceView.empty',
-          'No benchmark checks yet. Import a scan that runs a compliance audit, and each control appears here with its result.'
-        )}
-      </p>
-    )
+    // Nothing to show: no block at all. The list's empty body says what to do
+    // (the practice's first run), in the table, where empty content belongs.
+    return null
   } else {
     body = (
       <div className="overflow-x-auto">
@@ -143,17 +166,42 @@ export function ComplianceBenchmarksPanel() {
         title={t('findings.complianceView.title', 'Benchmarks')}
         icon={ClipboardCheck}
         actions={
-          rows.length > 0 ? (
-            <span className="text-xs text-muted-foreground">
-              {t(
-                'findings.complianceView.rateHint',
-                'Pass rate: passed checks out of passed and failed. Not applicable and checks that could not run are not counted.'
-              )}
-            </span>
-          ) : undefined
+          <>
+            {rows.length > 0 && !folded && (
+              <span className="text-xs text-muted-foreground">
+                {t(
+                  'findings.complianceView.rateHint',
+                  'Pass rate: passed checks out of passed and failed. Not applicable and checks that could not run are not counted.'
+                )}
+              </span>
+            )}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              data-slot="compliance-benchmarks-fold"
+              aria-expanded={!folded}
+              aria-controls={bodyId}
+              aria-label={
+                folded
+                  ? t('findings.complianceView.unfold', 'Show benchmarks')
+                  : t('findings.complianceView.fold', 'Hide benchmarks')
+              }
+              onClick={() => {
+                writeFolded(!folded)
+                setFolded(!folded)
+              }}
+            >
+              <ChevronDown
+                className={folded ? 'h-4 w-4 -rotate-90 rtl:rotate-90' : 'h-4 w-4'}
+                aria-hidden
+              />
+            </Button>
+          </>
         }
       >
-        <div data-testid="compliance-benchmarks-panel">{body}</div>
+        <div id={bodyId} data-testid="compliance-benchmarks-panel" hidden={folded}>
+          {body}
+        </div>
       </DetailSection>
       <ComplianceBenchmarkSheet benchmark={open} onClose={() => setOpen(null)} />
     </>

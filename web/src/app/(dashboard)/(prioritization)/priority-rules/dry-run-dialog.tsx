@@ -152,7 +152,7 @@ export function DryRunDialog({ open, onOpenChange, rule }: DryRunDialogProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FlaskConical className="size-5" />
-            {t('prioritization.dryRun.title', 'Dry run: {name}', {
+            {t('prioritization.dryRun.title', 'Test run: {name}', {
               name: rule.name || t('prioritization.dryRun.unsaved', '(unsaved rule)'),
             })}
           </DialogTitle>
@@ -260,7 +260,7 @@ function ResultView({ result, targetClass }: { result: DryRunResult; targetClass
           {t('prioritization.dryRun.impact', 'Impact')}
         </div>
         <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-bold tabular-nums">{matched}</span>
+          <span className="text-figure tabular-nums">{matched}</span>
           <span className="text-muted-foreground text-sm">
             {t(
               'prioritization.dryRun.matchedOf',

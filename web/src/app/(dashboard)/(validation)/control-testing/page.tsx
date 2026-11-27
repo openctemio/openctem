@@ -242,6 +242,7 @@ function RecordResultAction({ ct }: { ct: ControlTest }) {
   return (
     <Can permission={Permission.PentestWrite}>
       <Button
+        iconOnlyBelow="sm"
         variant="ghost"
         size="sm"
         onClick={() => setRecordOpen(true)}
@@ -615,7 +616,7 @@ function CreateControlTestDialog({ open, onOpenChange, onSuccess }: CreateContro
                   {t('validation.controlTesting.field.framework', 'Framework *')}
                 </Label>
                 <Select value={framework} onValueChange={setFramework} required>
-                  <SelectTrigger id="ct-framework">
+                  <SelectTrigger id="ct-framework" className="w-full">
                     <SelectValue
                       placeholder={t(
                         'validation.controlTesting.field.frameworkPlaceholder',
@@ -640,7 +641,7 @@ function CreateControlTestDialog({ open, onOpenChange, onSuccess }: CreateContro
                   {t('validation.controlTesting.field.risk', 'Risk level')}
                 </Label>
                 <Select value={riskLevel} onValueChange={setRiskLevel}>
-                  <SelectTrigger id="ct-risk">
+                  <SelectTrigger id="ct-risk" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -673,7 +674,7 @@ function CreateControlTestDialog({ open, onOpenChange, onSuccess }: CreateContro
                   {t('validation.controlTesting.field.category', 'Category')}
                 </Label>
                 <Select value={category} onValueChange={setCategory}>
-                  <SelectTrigger id="ct-category">
+                  <SelectTrigger id="ct-category" className="w-full">
                     <SelectValue
                       placeholder={t(
                         'validation.controlTesting.field.categoryPlaceholder',
@@ -909,7 +910,7 @@ export default function ControlTestingPage() {
             'Track whether your security controls pass their tests, framework by framework.'
           )}
         >
-          <Button size="sm" onClick={() => setDialogOpen(true)}>
+          <Button iconOnlyBelow="sm" size="sm" onClick={() => setDialogOpen(true)}>
             <Plus className="h-4 w-4 sm:me-2" />
             <span className="sr-only sm:not-sr-only">
               {t('validation.controlTesting.add', 'Add control test')}
@@ -917,7 +918,7 @@ export default function ControlTestingPage() {
           </Button>
         </PageHeader>
 
-        <MetricStrip items={metrics} />
+        <MetricStrip items={metrics} listFirst />
 
         {/* Validation coverage KPI: how much exposure has been re-checked. */}
         <ValidationCoverageCard />
@@ -967,12 +968,6 @@ export default function ControlTestingPage() {
                 'validation.controlTesting.emptyDesc',
                 'Add control tests to track security control effectiveness across frameworks.'
               )}
-              action={
-                <Button size="sm" onClick={() => setDialogOpen(true)}>
-                  <Plus className="me-2 h-4 w-4" />
-                  {t('validation.controlTesting.add', 'Add control test')}
-                </Button>
-              }
             />
           ) : (
             <DataTable

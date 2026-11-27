@@ -134,6 +134,7 @@ every administrator):
 | Alert webhook | `alerts.webhook` | guarded; SSRF-guarded HTTPS; address and secret write-only | send a test alert |
 | Social login (Google, GitHub, Microsoft) | `auth.social_login` | super admin, fresh confirmation, reason, critical audit, notice; client secret write-only and encrypted; a provider pinned by `OAUTH_<PROVIDER>_CLIENT_SECRET` is read-only | test the client against the provider's token endpoint |
 | Platform AI provider | `ai.platform` | guarded; off by default | one-token request |
+| Vulnerability feed address (release URL, mirrors) | `vulnfeed.sources` | platform owner (`platform.settings.feed_sources`), fresh confirmation, reason, critical audit with old and new values, notice; pinned while `VULNFEED_BASE_URL` or `VULNFEED_MIRRORS` is set; the root key id and bundle directory stay server-side (read-only) | fetch and verify the signed pointer against the pinned root, no import (`docs/architecture/feed-transfer.md`) |
 
 Still planned from §3: sign-in policy (tighten-only), discovery jobs, retention (shown read-only), sensor public URL,
 log level. Design and order: the console configuration plan of the platform

@@ -21,7 +21,7 @@ const ANY = 'any'
 
 export function CatalogTab({ onOpen }: { onOpen: (packageId: string) => void }) {
   const { t } = useTranslation()
-  const list = useListParams({ defaultPageSize: 20, filters: { type: '', installed: '' } })
+  const list = useListParams({ filters: { type: '', installed: '' } })
   const q = list.searchTerm
   const type = (CONTENT_TYPES as readonly string[]).includes(list.filters.type)
     ? list.filters.type

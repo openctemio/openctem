@@ -48,38 +48,41 @@ import type {
 } from '@/lib/api/secret-store-types'
 
 // Form schema - matches all credential types
-const formSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(255),
-  description: z.string().max(1000).optional(),
-  expires_at: z.string().optional(),
-  // API Key
-  api_key_value: z.string().optional(),
-  // Basic Auth
-  basic_username: z.string().optional(),
-  basic_password: z.string().optional(),
-  // Bearer Token
-  bearer_token: z.string().optional(),
-  // SSH Key
-  ssh_private_key: z.string().optional(),
-  ssh_passphrase: z.string().optional(),
-  // AWS Role
-  aws_role_arn: z.string().optional(),
-  aws_external_id: z.string().optional(),
-  // GCP Service Account
-  gcp_json_key: z.string().optional(),
-  // Azure Service Principal
-  azure_tenant_id: z.string().optional(),
-  azure_client_id: z.string().optional(),
-  azure_client_secret: z.string().optional(),
-  // GitHub App
-  github_app_id: z.string().optional(),
-  github_installation_id: z.string().optional(),
-  github_private_key: z.string().optional(),
-  // GitLab Token
-  gitlab_token: z.string().optional(),
-})
+type Translate = ReturnType<typeof useTranslation>['t']
 
-type FormData = z.infer<typeof formSchema>
+const buildFormSchema = (t: Translate) =>
+  z.object({
+    name: z.string().min(1, t('scans.credentials.add.nameRequired', 'Name is required')).max(255),
+    description: z.string().max(1000).optional(),
+    expires_at: z.string().optional(),
+    // API Key
+    api_key_value: z.string().optional(),
+    // Basic Auth
+    basic_username: z.string().optional(),
+    basic_password: z.string().optional(),
+    // Bearer Token
+    bearer_token: z.string().optional(),
+    // SSH Key
+    ssh_private_key: z.string().optional(),
+    ssh_passphrase: z.string().optional(),
+    // AWS Role
+    aws_role_arn: z.string().optional(),
+    aws_external_id: z.string().optional(),
+    // GCP Service Account
+    gcp_json_key: z.string().optional(),
+    // Azure Service Principal
+    azure_tenant_id: z.string().optional(),
+    azure_client_id: z.string().optional(),
+    azure_client_secret: z.string().optional(),
+    // GitHub App
+    github_app_id: z.string().optional(),
+    github_installation_id: z.string().optional(),
+    github_private_key: z.string().optional(),
+    // GitLab Token
+    gitlab_token: z.string().optional(),
+  })
+
+type FormData = z.infer<ReturnType<typeof buildFormSchema>>
 
 interface EditCredentialDialogProps {
   open: boolean
@@ -99,7 +102,7 @@ export function EditCredentialDialog({
   const { t } = useTranslation()
 
   const form = useForm<FormData>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(buildFormSchema(t)),
     defaultValues: {
       name: '',
       description: '',
@@ -217,7 +220,7 @@ export function EditCredentialDialog({
     const hasMetadata = Object.keys(request).length > 0
     const hasRotation = Object.keys(rotation).length > 0
     if (!hasMetadata && !hasRotation) {
-      toast.info('No changes to save')
+      toast.info(t('scans.credentials.edit.noChanges', 'No changes to save'))
       return
     }
 
@@ -232,15 +235,24 @@ export function EditCredentialDialog({
       if (hasRotation) await rotateCredential(rotation)
       toast.success(
         hasRotation
-          ? `Credential "${data.name}" rotated: the new secret is used from the next fetch`
-          : `Credential "${data.name}" updated`
+          ? t(
+              'scans.credentials.edit.rotated',
+              'Credential "{name}" rotated: the new secret is used from the next fetch',
+              { name: data.name }
+            )
+          : t('scans.credentials.edit.updated', 'Credential "{name}" updated', { name: data.name })
       )
       await invalidateSecretStoreCache()
       setShowSecrets({})
       onOpenChange(false)
       onSuccess?.()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to update credential'))
+      toast.error(
+        getErrorMessage(
+          err,
+          t('scans.credentials.edit.updateFailed', 'Failed to update credential')
+        )
+      )
     }
   }
 
@@ -253,12 +265,15 @@ export function EditCredentialDialog({
             name="bearer_token"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Token</FormLabel>
+                <FormLabel>{t('scans.credentials.field.token', 'Token')}</FormLabel>
                 <FormControl>
                   <div className="relative">
                     <Input
                       type={showSecrets.bearer_token ? 'text' : 'password'}
-                      placeholder="Enter new token to update"
+                      placeholder={t(
+                        'scans.credentials.edit.newTokenPlaceholder',
+                        'Enter new token to update'
+                      )}
                       {...field}
                     />
                     <Button
@@ -290,10 +305,13 @@ export function EditCredentialDialog({
               name="ssh_private_key"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Private Key</FormLabel>
+                  <FormLabel>{t('scans.credentials.field.privateKey', 'Private Key')}</FormLabel>
                   <FormControl>
                     <Textarea
-                      placeholder="Enter new private key to update"
+                      placeholder={t(
+                        'scans.credentials.edit.newPrivateKeyPlaceholder',
+                        'Enter new private key to update'
+                      )}
                       className="font-mono text-xs"
                       rows={6}
                       {...field}
@@ -308,11 +326,16 @@ export function EditCredentialDialog({
               name="ssh_passphrase"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Passphrase (optional)</FormLabel>
+                  <FormLabel>
+                    {t('scans.credentials.field.passphrase', 'Passphrase (optional)')}
+                  </FormLabel>
                   <FormControl>
                     <Input
                       type="password"
-                      placeholder="Enter new passphrase to update"
+                      placeholder={t(
+                        'scans.credentials.edit.newPassphrasePlaceholder',
+                        'Enter new passphrase to update'
+                      )}
                       {...field}
                     />
                   </FormControl>
@@ -330,12 +353,15 @@ export function EditCredentialDialog({
             name="api_key_value"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>API Key</FormLabel>
+                <FormLabel>{t('scans.credentials.field.apiKey', 'API Key')}</FormLabel>
                 <FormControl>
                   <div className="relative">
                     <Input
                       type={showSecrets.api_key ? 'text' : 'password'}
-                      placeholder="Enter new API key to update"
+                      placeholder={t(
+                        'scans.credentials.edit.newApiKeyPlaceholder',
+                        'Enter new API key to update'
+                      )}
                       {...field}
                     />
                     <Button
@@ -367,9 +393,15 @@ export function EditCredentialDialog({
               name="basic_username"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Username</FormLabel>
+                  <FormLabel>{t('scans.credentials.field.username', 'Username')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="Enter new username to update" {...field} />
+                    <Input
+                      placeholder={t(
+                        'scans.credentials.edit.newUsernamePlaceholder',
+                        'Enter new username to update'
+                      )}
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -380,12 +412,15 @@ export function EditCredentialDialog({
               name="basic_password"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Password</FormLabel>
+                  <FormLabel>{t('scans.credentials.field.password', 'Password')}</FormLabel>
                   <FormControl>
                     <div className="relative">
                       <Input
                         type={showSecrets.basic_password ? 'text' : 'password'}
-                        placeholder="Enter new password to update"
+                        placeholder={t(
+                          'scans.credentials.edit.newPasswordPlaceholder',
+                          'Enter new password to update'
+                        )}
                         {...field}
                       />
                       <Button
@@ -418,7 +453,7 @@ export function EditCredentialDialog({
               name="aws_role_arn"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Role ARN</FormLabel>
+                  <FormLabel>{t('scans.credentials.field.roleArn', 'Role ARN')}</FormLabel>
                   <FormControl>
                     <Input placeholder="arn:aws:iam::123456789012:role/MyRole" {...field} />
                   </FormControl>
@@ -431,9 +466,17 @@ export function EditCredentialDialog({
               name="aws_external_id"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>External ID (optional)</FormLabel>
+                  <FormLabel>
+                    {t('scans.credentials.field.externalId', 'External ID (optional)')}
+                  </FormLabel>
                   <FormControl>
-                    <Input placeholder="External ID for cross-account access" {...field} />
+                    <Input
+                      placeholder={t(
+                        'scans.credentials.field.externalIdPlaceholder',
+                        'External ID for cross-account access'
+                      )}
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -449,10 +492,15 @@ export function EditCredentialDialog({
             name="gcp_json_key"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Service Account JSON Key</FormLabel>
+                <FormLabel>
+                  {t('scans.credentials.field.gcpJsonKey', 'Service Account JSON Key')}
+                </FormLabel>
                 <FormControl>
                   <Textarea
-                    placeholder="Paste the full service-account key JSON"
+                    placeholder={t(
+                      'scans.credentials.edit.gcpPlaceholder',
+                      'Paste the full service-account key JSON'
+                    )}
                     className="font-mono text-xs"
                     rows={6}
                     {...field}
@@ -472,9 +520,13 @@ export function EditCredentialDialog({
               name="azure_tenant_id"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Tenant ID</FormLabel>
+                  <FormLabel>{t('scans.credentials.field.tenantId', 'Tenant ID')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" {...field} />
+                    <Input
+                      // i18n-ok: identifier format sample
+                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -485,9 +537,15 @@ export function EditCredentialDialog({
               name="azure_client_id"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Client ID</FormLabel>
+                  <FormLabel>{t('scans.credentials.field.clientId', 'Client ID')}</FormLabel>
                   <FormControl>
-                    <Input placeholder="Application (client) ID" {...field} />
+                    <Input
+                      placeholder={t(
+                        'scans.credentials.edit.clientIdPlaceholder',
+                        'Application (client) ID'
+                      )}
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -498,12 +556,17 @@ export function EditCredentialDialog({
               name="azure_client_secret"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Client Secret</FormLabel>
+                  <FormLabel>
+                    {t('scans.credentials.field.clientSecret', 'Client Secret')}
+                  </FormLabel>
                   <FormControl>
                     <div className="relative">
                       <Input
                         type={showSecrets.azure_secret ? 'text' : 'password'}
-                        placeholder="Enter new client secret to update"
+                        placeholder={t(
+                          'scans.credentials.edit.newClientSecretPlaceholder',
+                          'Enter new client secret to update'
+                        )}
                         {...field}
                       />
                       <Button
@@ -536,7 +599,7 @@ export function EditCredentialDialog({
               name="github_app_id"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>App ID</FormLabel>
+                  <FormLabel>{t('scans.credentials.field.appId', 'App ID')}</FormLabel>
                   <FormControl>
                     <Input placeholder="123456" {...field} />
                   </FormControl>
@@ -549,7 +612,9 @@ export function EditCredentialDialog({
               name="github_installation_id"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Installation ID</FormLabel>
+                  <FormLabel>
+                    {t('scans.credentials.field.installationId', 'Installation ID')}
+                  </FormLabel>
                   <FormControl>
                     <Input placeholder="12345678" {...field} />
                   </FormControl>
@@ -562,9 +627,10 @@ export function EditCredentialDialog({
               name="github_private_key"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Private Key</FormLabel>
+                  <FormLabel>{t('scans.credentials.field.privateKey', 'Private Key')}</FormLabel>
                   <FormControl>
                     <Textarea
+                      // i18n-ok: PEM format sample
                       placeholder="-----BEGIN RSA PRIVATE KEY-----"
                       className="font-mono text-xs"
                       rows={6}
@@ -585,12 +651,15 @@ export function EditCredentialDialog({
             name="gitlab_token"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>GitLab Token</FormLabel>
+                <FormLabel>{t('scans.credentials.field.gitlabToken', 'GitLab Token')}</FormLabel>
                 <FormControl>
                   <div className="relative">
                     <Input
                       type={showSecrets.gitlab_token ? 'text' : 'password'}
-                      placeholder="Enter new token to update"
+                      placeholder={t(
+                        'scans.credentials.edit.newTokenPlaceholder',
+                        'Enter new token to update'
+                      )}
                       {...field}
                     />
                     <Button
@@ -623,9 +692,12 @@ export function EditCredentialDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent size="lg">
         <DialogHeader>
-          <DialogTitle>Edit Credential</DialogTitle>
+          <DialogTitle>{t('scans.credentials.edit.title', 'Edit credential')}</DialogTitle>
           <DialogDescription>
-            Update the credential configuration. Leave secret fields empty to keep existing values.
+            {t(
+              'scans.credentials.edit.description',
+              'Update the credential configuration. Leave secret fields empty to keep existing values.'
+            )}
           </DialogDescription>
           <div className="flex items-center gap-2">
             <Badge variant="outline">
@@ -644,9 +716,15 @@ export function EditCredentialDialog({
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Name</FormLabel>
+                      <FormLabel>{t('scans.credentials.add.name', 'Name')}</FormLabel>
                       <FormControl>
-                        <Input placeholder="Credential name" {...field} />
+                        <Input
+                          placeholder={t(
+                            'scans.credentials.edit.namePlaceholder',
+                            'Credential name'
+                          )}
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -658,10 +736,15 @@ export function EditCredentialDialog({
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Description (optional)</FormLabel>
+                      <FormLabel>
+                        {t('scans.credentials.add.descriptionLabel', 'Description (optional)')}
+                      </FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="Describe what this credential is used for"
+                          placeholder={t(
+                            'scans.credentials.edit.descriptionPlaceholder',
+                            'Describe what this credential is used for'
+                          )}
                           className="resize-none"
                           {...field}
                         />
@@ -676,7 +759,9 @@ export function EditCredentialDialog({
                   name="expires_at"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Expiration Date (optional)</FormLabel>
+                      <FormLabel>
+                        {t('scans.credentials.add.expiry', 'Expiration Date (optional)')}
+                      </FormLabel>
                       <FormControl>
                         <Input type="date" {...field} />
                       </FormControl>
@@ -691,12 +776,17 @@ export function EditCredentialDialog({
               {/* Credential-specific fields */}
               <div className="space-y-4">
                 <h4 className="text-sm font-medium">
-                  Update {CREDENTIAL_TYPE_DISPLAY_NAMES[credential.credential_type]}
+                  {t('scans.credentials.edit.updateType', 'Update {type}', {
+                    type: CREDENTIAL_TYPE_DISPLAY_NAMES[credential.credential_type],
+                  })}
                 </h4>
 
                 <Alert>
                   <AlertDescription>
-                    Leave fields empty to keep the current values. Enter new values to update.
+                    {t(
+                      'scans.credentials.edit.keepHint',
+                      'Leave fields empty to keep the current values. Enter new values to update.'
+                    )}
                   </AlertDescription>
                 </Alert>
 
@@ -711,11 +801,11 @@ export function EditCredentialDialog({
                 onClick={() => onOpenChange(false)}
                 disabled={isMutating}
               >
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </Button>
               <Button type="submit" disabled={isMutating}>
                 {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                Save Changes
+                {t('scans.credentials.edit.save', 'Save changes')}
               </Button>
             </DialogFooter>
           </DialogForm>

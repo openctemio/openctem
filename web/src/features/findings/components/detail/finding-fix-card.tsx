@@ -176,7 +176,7 @@ function ManifestRef({
   const { t } = useTranslation()
   const label = line ? `${file}:${line}` : file
   return (
-    <span className="min-w-0 break-all">
+    <span className="min-w-0 break-words">
       <span className="whitespace-pre">{`${t('findings.fixCard.inPrefix', 'in')} `}</span>
       {codeUrl ? (
         <SafeExternalLink
@@ -200,10 +200,18 @@ export interface FindingFixCardProps {
   onOpenPlan?: () => void
   /** Drawer: no commands, just the action line. */
   compact?: boolean
+  /** The page: a block of the tab panel (no card, section title). The drawer keeps the card. */
+  flat?: boolean
   className?: string
 }
 
-export function FindingFixCard({ finding, onOpenPlan, compact, className }: FindingFixCardProps) {
+export function FindingFixCard({
+  finding,
+  onOpenPlan,
+  compact,
+  flat,
+  className,
+}: FindingFixCardProps) {
   const { t } = useTranslation()
   const g = fixGuidance(finding)
   if (!g) return null
@@ -408,18 +416,27 @@ export function FindingFixCard({ finding, onOpenPlan, compact, className }: Find
       aria-label={t('findings.fixCard.fix', 'Fix')}
       data-slot="finding-fix"
       data-kind={g.kind}
-      className={cn('rounded-lg border bg-card p-4', className)}
+      className={cn(!flat && 'rounded-lg border bg-card p-4', className)}
     >
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold">
-          <Wrench className="h-4 w-4" aria-hidden />
-          {t('findings.fixCard.fix', 'Fix')}
-        </h2>
-        {onOpenPlan && (
-          <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={onOpenPlan}>
-            {t('findings.fixCard.remediationPlan', 'Remediation plan')}
-          </Button>
+        {flat ? (
+          <h2 className="text-section">{t('findings.fixCard.fix', 'Fix')}</h2>
+        ) : (
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+            <Wrench className="h-4 w-4" aria-hidden />
+            {t('findings.fixCard.fix', 'Fix')}
+          </h2>
         )}
+        {onOpenPlan &&
+          (flat ? (
+            <Button variant="link" onClick={onOpenPlan}>
+              {t('findings.fixCard.remediationPlan', 'Remediation plan')}
+            </Button>
+          ) : (
+            <Button variant="link" size="sm" className="h-auto p-0 text-xs" onClick={onOpenPlan}>
+              {t('findings.fixCard.remediationPlan', 'Remediation plan')}
+            </Button>
+          ))}
       </div>
       {body}
     </section>

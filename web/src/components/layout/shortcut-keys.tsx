@@ -33,13 +33,25 @@ function Kbd({ children }: { children: string }) {
   )
 }
 
-export function ShortcutKeys({ keys }: { keys: ShortcutKey[] }) {
+export function ShortcutKeys({
+  keys,
+  sequence,
+  thenLabel = 'then',
+}: {
+  keys: ShortcutKey[]
+  /** Pressed one after the other: the caps are joined by `thenLabel`. */
+  sequence?: boolean
+  thenLabel?: string
+}) {
   const apple = useIsApple()
   return (
     <span className="flex shrink-0 items-center gap-1" dir="ltr">
       {keys.map((k, i) => (
         <Fragment key={k}>
-          {i > 0 && !apple && <span className="text-xs text-muted-foreground">+</span>}
+          {i > 0 && sequence && <span className="text-cap text-muted-foreground">{thenLabel}</span>}
+          {i > 0 && !sequence && !apple && (
+            <span className="text-cap text-muted-foreground">+</span>
+          )}
           <Kbd>{keyLabel(k, apple)}</Kbd>
         </Fragment>
       ))}

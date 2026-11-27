@@ -45,34 +45,52 @@ export function ScopeAttestations() {
     try {
       await attestScopeTarget(e.id ?? '')
       await invalidateScopeCache()
-      toast.success(`${e.pattern} keeps intrusive (T2) probes`)
+      toast.success(
+        t('scope.attest.kept', '{pattern} keeps intrusive (T2) probes', {
+          pattern: e.pattern ?? '',
+        })
+      )
     } catch (err) {
-      toast.error(scopeErrorMessage(t, err, 'Could not confirm the entry.'))
+      toast.error(
+        scopeErrorMessage(t, err, t('scope.attest.failed', 'Could not confirm the entry.'))
+      )
     } finally {
       setBusy(null)
     }
   }
 
   return (
-    <section className="space-y-3" aria-label="Intrusive entries to confirm">
-      <h3 className="text-sm font-medium">Confirm intrusive (T2) entries</h3>
+    <section
+      className="space-y-3"
+      aria-label={t('scope.attest.label', 'Intrusive entries to confirm')}
+    >
+      <h3 className="text-sm font-medium">
+        {t('scope.attest.title', 'Confirm intrusive (T2) entries')}
+      </h3>
       <ul className="space-y-3">
         {due.map((e) => (
           <li key={e.id} className="space-y-2 rounded-lg border border-warning/40 p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
               <div className="min-w-0 flex-1 space-y-1 break-words">
                 <div className="flex flex-wrap items-center gap-2">
-                  <TonePill tone="warning" label="Keep T2?" />
+                  <TonePill tone="warning" label={t('scope.attest.keepQuestion', 'Keep T2?')} />
                   <code className="break-all text-sm font-medium">{e.pattern}</code>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Covers {coversText(e)}. {e.expires_at ? 'Expires later' : 'Permanent'}.
+                  {t('scope.attest.covers', 'Covers {what}.', { what: coversText(e, t) })}{' '}
+                  {e.expires_at
+                    ? t('scope.attest.expiresLater', 'Expires later.')
+                    : t('scope.attest.permanent', 'Permanent.')}
                 </p>
                 {e.reason && <p className="text-sm">&ldquo;{e.reason}&rdquo;</p>}
                 {e.attestation?.downgrade_at && (
                   <p className="text-xs text-muted-foreground">
-                    Without a confirmation it falls back to non-intrusive (T1){' '}
-                    <RelativeTime date={e.attestation.downgrade_at} />. It is not removed.
+                    {t(
+                      'scope.attest.fallback',
+                      'Without a confirmation it falls back to non-intrusive (T1)'
+                    )}{' '}
+                    <RelativeTime date={e.attestation.downgrade_at} />.{' '}
+                    {t('scope.attest.notRemoved', 'It is not removed.')}
                   </p>
                 )}
               </div>
@@ -88,11 +106,11 @@ export function ScopeAttestations() {
                   ) : (
                     <ShieldAlert className="h-4 w-4" />
                   )}
-                  Keep T2
+                  {t('scope.attest.keep', 'Keep T2')}
                 </Button>
               ) : (
                 <p className="shrink-0 text-xs text-muted-foreground sm:max-w-56 sm:text-end">
-                  A scope approver confirms this.
+                  {t('scope.attest.approverNote', 'A scope approver confirms this.')}
                 </p>
               )}
             </div>

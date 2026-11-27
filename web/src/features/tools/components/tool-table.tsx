@@ -6,6 +6,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import Image from 'next/image'
 import { ArrowUpCircle, ExternalLink, Eye, Github, Settings, Trash2 } from 'lucide-react'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -51,6 +52,11 @@ const openExternal = (url: string) =>
 
 const STATUS_ORDER = new Map(TOOL_AVAILABILITY_STATUSES.map((s, i) => [s, i]))
 
+// Frame widths (px) under which a column gives way, so the table fits its
+// frame instead of cutting a header: the last report, the version, the
+// category, then the sensor count (all are in the tool's details).
+const TOOL_HIDE_BELOW = { lastReported: 1040, versions: 870, category: 720, sensors: 600 } as const
+
 export function ToolTable({
   items,
   categories,
@@ -61,8 +67,9 @@ export function ToolTable({
   search,
   toolbarStart,
   toolbarEnd,
-  emptyMessage = 'No tools match these filters',
+  emptyMessage,
 }: ToolTableProps) {
+  const { t } = useTranslation()
   const categoryName = useCallback(
     (item: ToolAvailabilityItem) => getCategoryNameById(categories, item.tool?.category_id),
     [categories]
@@ -77,9 +84,12 @@ export function ToolTable({
     () => [
       {
         id: 'name',
+        meta: { kind: 'name', label: t('scans.tools.col.tool', 'Tool') },
         accessorFn: (i) => `${toolDisplayName(i)} ${i.name} ${i.tool?.description ?? ''}`,
         sortingFn: (a, b) => toolDisplayName(a.original).localeCompare(toolDisplayName(b.original)),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Tool" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.tools.col.tool', 'Tool')} />
+        ),
         cell: ({ row }) => {
           const item = row.original
           const logoSrc = safeImageSrc(item.tool?.logo_url)
@@ -109,12 +119,12 @@ export function ToolTable({
                   <span className="truncate">{toolDisplayName(item)}</span>
                   {item.tool && !item.tool.is_builtin && (
                     <Badge variant="outline" className="text-[10px] font-normal">
-                      Custom
+                      {t('scans.tools.badge.custom', 'Custom')}
                     </Badge>
                   )}
                   {!item.in_catalog && (
                     <Badge variant="outline" className="text-[10px] font-normal">
-                      Not in catalog
+                      {t('scans.tools.badge.notInCatalog', 'Not in catalog')}
                     </Badge>
                   )}
                 </p>
@@ -126,8 +136,19 @@ export function ToolTable({
       },
       {
         id: 'category',
+        meta: {
+          kind: 'text',
+          width: 150,
+          hideBelow: TOOL_HIDE_BELOW.category,
+          label: t('scans.tools.col.category', 'Category'),
+        },
         accessorFn: (i) => categoryDisplayName(i),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Category" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scans.tools.col.category', 'Category')}
+          />
+        ),
         cell: ({ row }) =>
           row.original.tool ? (
             <Badge variant="outline" className="gap-1">
@@ -140,8 +161,11 @@ export function ToolTable({
       },
       {
         id: 'status',
+        meta: { kind: 'text', width: 150, label: t('scans.tools.col.status', 'Status') },
         accessorFn: (i) => STATUS_ORDER.get(i.status) ?? 99,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Status" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.tools.col.status', 'Status')} />
+        ),
         cell: ({ row }) => (
           <span className="inline-flex flex-wrap items-center gap-1">
             <ToolStatusBadge item={row.original} />
@@ -151,15 +175,28 @@ export function ToolTable({
       },
       {
         id: 'sensors',
+        meta: {
+          kind: 'number',
+          hideBelow: TOOL_HIDE_BELOW.sensors,
+          label: t('scans.tools.col.sensors', 'Sensors'),
+        },
         accessorFn: (i) => i.sensors_online * 1000 + i.sensors_total,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Sensors" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.tools.col.sensors', 'Sensors')} />
+        ),
         cell: ({ row }) => <ToolSensorsCell item={row.original} />,
       },
       {
         id: 'versions',
+        meta: {
+          kind: 'text',
+          width: 120,
+          hideBelow: TOOL_HIDE_BELOW.versions,
+          label: t('scans.tools.col.versions', 'Version(s)'),
+        },
         accessorFn: (i) => versionsLabel(i),
         enableSorting: false,
-        header: 'Version(s)',
+        header: t('scans.tools.col.versions', 'Version(s)'),
         cell: ({ row }) => {
           const item = row.original
           const label = versionsLabel(item)
@@ -175,7 +212,11 @@ export function ToolTable({
                     </Badge>
                   </TooltipTrigger>
                   <TooltipContent>
-                    A sensor runs an older version than {item.latest_version}, the newest known
+                    {t(
+                      'scans.tools.update.tooltip',
+                      'A sensor runs an older version than {version}, the newest known',
+                      { version: item.latest_version }
+                    )}
                   </TooltipContent>
                 </Tooltip>
               )}
@@ -185,8 +226,18 @@ export function ToolTable({
       },
       {
         id: 'last_reported',
+        meta: {
+          kind: 'datetime-recent',
+          hideBelow: TOOL_HIDE_BELOW.lastReported,
+          label: t('scans.tools.col.lastReported', 'Last reported'),
+        },
         accessorFn: (i) => i.last_reported_at ?? '',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Last reported" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scans.tools.col.lastReported', 'Last reported')}
+          />
+        ),
         cell: ({ row }) => (
           <span
             className="text-xs text-muted-foreground"
@@ -198,8 +249,11 @@ export function ToolTable({
       },
       {
         id: 'enabled',
+        meta: { kind: 'status', width: 96, label: t('scans.tools.col.enabled', 'Enabled') },
         accessorFn: (i) => (i.enabled ? 1 : 0),
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Enabled" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.tools.col.enabled', 'Enabled')} />
+        ),
         cell: ({ row }) => {
           const item = row.original
           // A tool outside the catalog, or one the platform switched off,
@@ -210,7 +264,15 @@ export function ToolTable({
               <Switch
                 checked={item.enabled}
                 disabled={!switchable}
-                aria-label={`${item.enabled ? 'Disable' : 'Enable'} ${toolDisplayName(item)}`}
+                aria-label={
+                  item.enabled
+                    ? t('scans.tools.switch.disable', 'Disable {name}', {
+                        name: toolDisplayName(item),
+                      })
+                    : t('scans.tools.switch.enable', 'Enable {name}', {
+                        name: toolDisplayName(item),
+                      })
+                }
                 onCheckedChange={(on) => onToggleEnabled?.(item, on)}
               />
             </span>
@@ -219,43 +281,53 @@ export function ToolTable({
       },
       {
         id: 'actions',
+        meta: { kind: 'actions' },
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => {
           const item = row.original
           const tool = item.tool
           const actions: RowAction[] = [
-            { label: 'View details', icon: Eye, onClick: () => onViewTool(item) },
+            {
+              label: t('scans.tools.action.viewDetails', 'View details'),
+              icon: Eye,
+              onClick: () => onViewTool(item),
+            },
           ]
           if (tool && !tool.is_builtin && onEditTool) {
-            actions.push({ label: 'Edit', icon: Settings, onClick: () => onEditTool(tool) })
+            actions.push({
+              label: t('scans.tools.action.edit', 'Edit'),
+              icon: Settings,
+              onClick: () => onEditTool(tool),
+            })
           }
           if (tool?.github_url) {
             const url = tool.github_url
+            // i18n-ok: brand name
             actions.push({ label: 'GitHub', icon: Github, onClick: () => openExternal(url) })
           }
           if (tool?.docs_url) {
             const url = tool.docs_url
             actions.push({
-              label: 'Documentation',
+              label: t('scans.tools.action.docs', 'Documentation'),
               icon: ExternalLink,
               onClick: () => openExternal(url),
             })
           }
           if (tool && !tool.is_builtin && onDeleteTool) {
             actions.push({
-              label: 'Delete',
+              label: t('scans.tools.action.delete', 'Delete'),
               icon: Trash2,
               onClick: () => onDeleteTool(tool),
               destructive: true,
               separatorBefore: true,
             })
           }
-          return <DataTableRowActions actions={actions} />
+          return <DataTableRowActions title={tool?.name} actions={actions} />
         },
       },
     ],
-    [onViewTool, onEditTool, onDeleteTool, onToggleEnabled, categoryName, categoryDisplayName]
+    [onViewTool, onEditTool, onDeleteTool, onToggleEnabled, categoryName, categoryDisplayName, t]
   )
 
   return (
@@ -268,7 +340,8 @@ export function ToolTable({
       search={search}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
-      emptyMessage={emptyMessage}
+      pinActions
+      emptyMessage={emptyMessage ?? t('scans.tools.empty.filters', 'No tools match these filters')}
     />
   )
 }

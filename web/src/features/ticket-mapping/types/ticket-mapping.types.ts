@@ -182,6 +182,10 @@ export interface ValidationIssue {
   field_id?: string
   state?: string
   message: string
+  /** The values the message names; with `code` they word it in any language. */
+  params?: Record<string, unknown>
+  /** The exact sentence when `code` is shared by several; wins over `code` for wording. */
+  message_code?: string
 }
 
 export interface CatalogAttribute {

@@ -27,7 +27,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DetailSection, ErrorState } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
-import { usePermissions, Permission } from '@/lib/permissions'
+import { usePermissions, Permission, type PermissionString } from '@/lib/permissions'
 import { cn } from '@/lib/utils'
 import {
   ScopeEntryDialog,
@@ -55,6 +55,27 @@ const QUICK_SCAN_TYPES = new Set(['domain', 'subdomain', 'ip_address'])
 /** Whether "Mark out of scope" still means something for this answer. */
 function canMarkOut(a: AssetAttribution): boolean {
   return a.state !== 'rejected' && a.blocked_code !== 'excluded'
+}
+
+/**
+ * Scan now and Mark out of scope, from the scan gate's answer and the
+ * viewer's permissions: one rule for this section and the asset page's header.
+ */
+export function assetScanGates(
+  asset: Pick<Asset, 'type'>,
+  attribution: AssetAttribution | undefined,
+  can: (permission: PermissionString) => boolean
+): { canScan: boolean; canExclude: boolean } {
+  if (!attribution) return { canScan: false, canExclude: false }
+  return {
+    canScan:
+      attribution.active_checks_allowed &&
+      QUICK_SCAN_TYPES.has(asset.type) &&
+      can(Permission.ScansWrite) &&
+      can(Permission.ScansExecute),
+    canExclude:
+      (can(Permission.ScopeWrite) || can(Permission.AssetsWrite)) && canMarkOut(attribution),
+  }
 }
 
 export interface AssetScanningSectionProps {
@@ -117,14 +138,8 @@ export function AssetScanningSection({ asset, onShowDetails }: AssetScanningSect
   const wildcard = attribution.blocked_code === 'wildcard_only'
   const canAddScope = can(Permission.ScopeWrite) && !allowed && !!scope?.canAdd
   const canConfirm = can(Permission.AssetsWrite) && wildcard
-  const canExclude =
-    (can(Permission.ScopeWrite) || can(Permission.AssetsWrite)) && canMarkOut(attribution)
+  const { canScan, canExclude } = assetScanGates(asset, attribution, can)
   const tenableType = isTenableScannableAssetType(asset.type) && can(Permission.ScansWrite)
-  const canScan =
-    allowed &&
-    QUICK_SCAN_TYPES.has(asset.type) &&
-    can(Permission.ScansWrite) &&
-    can(Permission.ScansExecute)
 
   const confirm = async () => {
     try {
@@ -171,7 +186,8 @@ export function AssetScanningSection({ asset, onShowDetails }: AssetScanningSect
         {(canAddScope || canConfirm || canExclude || canScan || tenableType) && (
           <div className="flex flex-wrap items-center gap-2">
             {canScan && (
-              <Button size="sm" className="h-8" onClick={() => setScanOpen(true)}>
+              // A section action: the sheet's and the page's main action is Edit.
+              <Button variant="outline" size="sm" onClick={() => setScanOpen(true)}>
                 <Play className="me-1.5 h-3.5 w-3.5" aria-hidden />
                 {t('assets.scanning.scanNow', 'Scan now')}
               </Button>
@@ -191,7 +207,6 @@ export function AssetScanningSection({ asset, onShowDetails }: AssetScanningSect
               <Button
                 size="sm"
                 variant="outline"
-                className="h-8"
                 onClick={() =>
                   setDraft(
                     scopeDraftForAsset(
@@ -205,13 +220,7 @@ export function AssetScanningSection({ asset, onShowDetails }: AssetScanningSect
               </Button>
             )}
             {canConfirm && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8"
-                disabled={saving}
-                onClick={confirm}
-              >
+              <Button size="sm" variant="outline" disabled={saving} onClick={confirm}>
                 {saving && <Loader2 className="me-1 h-3 w-3 animate-spin" />}
                 {t('assets.scanning.allowWildcard', 'Confirm and allow scanning')}
               </Button>

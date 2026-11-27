@@ -267,11 +267,14 @@ function RowEditor({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Button, then identity and the transform chips wrapping in their own
+          column, then remove: the chips never wrap under the button. */}
+      <div className="flex items-center gap-2">
         <Button
           type="button"
           variant="outline"
           size="sm"
+          className="shrink-0"
           onClick={() => setTransformsOpen(true)}
           aria-label={t('importMappings.table.transformsFor', 'Transforms for {target}', {
             target: targetLabel,
@@ -286,34 +289,36 @@ function RowEditor({
               ? t('importMappings.table.variables', 'Variables')
               : t('importMappings.table.transforms', 'Transforms')}
         </Button>
-        {identityOk ? (
-          <label className="flex items-center gap-1.5 text-sm">
-            <Checkbox
-              checked={draft.identity.includes(row.target)}
-              disabled={readOnly}
-              onCheckedChange={(v) => onChange(toggleIdentity(draft, row.target, v === true))}
-              aria-label={t(
-                'importMappings.table.identityFor',
-                'Use {target} to identify a finding',
-                {
-                  target: row.target,
-                }
-              )}
-            />
-            {t('importMappings.table.identity', 'Identity')}
-          </label>
-        ) : null}
-        {transforms.map((name) => (
-          <Badge key={name} variant="secondary" className="font-normal">
-            {t(`importMappings.transformName.${name}`, name)}
-          </Badge>
-        ))}
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+          {identityOk ? (
+            <label className="flex items-center gap-1.5 text-sm">
+              <Checkbox
+                checked={draft.identity.includes(row.target)}
+                disabled={readOnly}
+                onCheckedChange={(v) => onChange(toggleIdentity(draft, row.target, v === true))}
+                aria-label={t(
+                  'importMappings.table.identityFor',
+                  'Use {target} to identify a finding',
+                  {
+                    target: row.target,
+                  }
+                )}
+              />
+              {t('importMappings.table.identity', 'Identity')}
+            </label>
+          ) : null}
+          {transforms.map((name) => (
+            <Badge key={name} variant="secondary" className="max-w-full font-normal">
+              <span className="truncate">{t(`importMappings.transformName.${name}`, name)}</span>
+            </Badge>
+          ))}
+        </div>
         {!readOnly && (
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="ms-auto"
+            className="shrink-0"
             onClick={remove}
             aria-label={t('importMappings.table.removeRow', 'Remove {target}', {
               target: targetLabel,
@@ -380,7 +385,7 @@ export function MappingTable({ draft, onChange, fields, readOnly }: MappingTable
                   }}
                 >
                   <SelectTrigger
-                    className="h-8 w-36"
+                    className="w-36"
                     aria-label={t('importMappings.table.ruleKind', 'What rule {n} creates', {
                       n: i + 1,
                     })}

@@ -8,7 +8,7 @@ describe('NavCount', () => {
   it('renders a plain number, never a filled pill', () => {
     render(<NavCount>12</NavCount>)
     const el = screen.getByText('12')
-    expect(el.className).toContain('text-muted-foreground')
+    expect(el.className).toContain('text-fg-dim')
     expect(el.className).not.toMatch(/\bbg-|rounded-full/)
   })
 

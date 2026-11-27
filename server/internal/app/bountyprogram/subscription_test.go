@@ -7,6 +7,7 @@ import (
 	"time"
 
 	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
@@ -152,6 +153,9 @@ func TestSubscribe_PassiveUntilAccepted(t *testing.T) {
 	if got, _ = repo.GetByID(ctx, tenant, p.ID); got.Status != bp.StatusPendingAttestation || n.n == before {
 		t.Fatalf("after widening: status %s, notified %v", got.Status, n.n > before)
 	}
+	if m := n.msgs[len(n.msgs)-1]; m == nil || m.Code != "program.terms_new_targets" || m.Params["count"] != 1 || m.Params["program"] != got.Name {
+		t.Fatalf("widening message = %+v", m)
+	}
 
 	// Changed rules alone also ask again.
 	if _, err := svc.Resume(ctx, tenant, user, p.ID, got.TermsSHA256); err != nil {
@@ -177,6 +181,11 @@ func TestSubscribe_PassiveUntilAccepted(t *testing.T) {
 	cat.programs[pub.ID] = &closed
 	if out, _ := svc.ApplyFeedChange(ctx, bp.ProgramRef{TenantID: tenant, ProgramID: p.ID}); out != "suspended" {
 		t.Fatalf("closed: %q", out)
+	}
+	if m := n.msgs[len(n.msgs)-1]; m == nil || m.Code != "program.suspended" || m.Params["program"] != cur.Name {
+		t.Fatalf("suspension message = %+v", m)
+	} else if r, _ := m.Params["reason"].(*notificationdom.Message); r == nil || r.Code != "program.suspend_reason.closed" {
+		t.Fatalf("suspension reason = %+v", m.Params["reason"])
 	}
 	if a, _ := activeCount(t, repo, tenant, p.ID); a != 0 {
 		t.Fatalf("active entries after the program closed: %d", a)

@@ -30,25 +30,23 @@ import { copyToClipboard } from '@/lib/clipboard'
 import { provisionAdministrator } from '../api/use-admin-users'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { AdminRole } from '../types'
+import { roleName } from '../lib/role-name'
+import { BreakText } from '@/features/shared/components/break-text'
 
 export const ADMIN_ROLE_OPTIONS: {
   value: AdminRole
-  labelKey: string
   hintKey: string
 }[] = [
   {
     value: 'super_admin',
-    labelKey: 'admin.role.super_admin',
     hintKey: 'admin.createAdminDialog.superAdminHint',
   },
   {
     value: 'ops_admin',
-    labelKey: 'admin.role.ops_admin',
     hintKey: 'admin.createAdminDialog.operationsAdminHint',
   },
   {
     value: 'readonly',
-    labelKey: 'admin.role.readonly',
     hintKey: 'admin.createAdminDialog.readOnlyAdminHint',
   },
 ]
@@ -108,7 +106,11 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
       })
       onCreated()
     } catch (err) {
-      setError(err instanceof AdminApiError ? err.message : 'Could not create the administrator')
+      setError(
+        err instanceof AdminApiError
+          ? err.message
+          : t('admin.createAdminDialog.createFailed', 'Could not create the administrator')
+      )
     } finally {
       setBusy(false)
     }
@@ -138,11 +140,11 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                   : created.link
                     ? t(
                         'admin.createAdminDialog.invitationLinkShownOnce',
-                        'This platform cannot send e-mail. Give this link only to the new administrator. It is shown once, works once and expires in 24 hours.'
+                        'This platform cannot send email. Give this link only to the new administrator. It is shown once, works once and expires in 24 hours.'
                       )
                     : t(
                         'admin.createAdminDialog.invitationNotSent',
-                        'The administrator was added, but the invitation e-mail could not be sent. They can use Forgot password on the sign-in page.'
+                        'The administrator was added, but the invitation email could not be sent. They can use Forgot password on the sign-in page.'
                       )}
               </DialogDescription>
             </DialogHeader>
@@ -151,7 +153,9 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                 <dt className="text-muted-foreground">
                   {t('admin.createAdminDialog.email', 'Email')}
                 </dt>
-                <dd className="min-w-0 break-all">{created.email}</dd>
+                <dd className="min-w-0 break-words">
+                  <BreakText>{created.email}</BreakText>
+                </dd>
                 {created.link && (
                   <>
                     <dt className="text-muted-foreground">
@@ -195,7 +199,7 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
               <DialogDescription>
                 {t(
                   'admin.createAdminDialog.anAdministratorSignsInOn',
-                  'The new administrator is e-mailed a link to choose their own password. They belong to no organization: use an email that has no account yet.'
+                  'The new administrator is emailed a link to choose their own password. They belong to no organization: use an email that has no account yet.'
                 )}
               </DialogDescription>
             </DialogHeader>
@@ -233,7 +237,7 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                     <SelectContent>
                       {ADMIN_ROLE_OPTIONS.map((o) => (
                         <SelectItem key={o.value} value={o.value}>
-                          {t(o.labelKey)}
+                          {roleName(t, o.value)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -256,7 +260,7 @@ export function CreateAdminDialog({ onCreated }: { onCreated: () => void }) {
                     <Label htmlFor="adm-break-glass">
                       {t(
                         'admin.createAdminDialog.breakGlassEmergencyAccessAccount',
-                        'Break-glass (emergency access) account'
+                        'Emergency access account'
                       )}
                     </Label>
                     <p className="text-xs text-muted-foreground">

@@ -81,7 +81,7 @@ export function MappingHistory({
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <History className="h-4 w-4 text-muted-foreground" aria-hidden />
               <span className="font-medium">v{v.version}</span>
-              <Badge variant={v.state === 'published' ? 'default' : 'outline'}>
+              <Badge variant={v.state === 'published' ? 'secondary' : 'outline'}>
                 {t(`ticketMapping.versionState.${v.state}`, v.state)}
               </Badge>
               {v.note && <span className="text-muted-foreground">{v.note}</span>}
@@ -152,10 +152,10 @@ export function MappingHistory({
                     <span className="font-mono">{c.key}</span>
                   </div>
                   {c.kind !== 'added' && (
-                    <p className="mt-1 break-all text-destructive">− {short(c.from)}</p>
+                    <p className="mt-1 break-words text-destructive">− {short(c.from)}</p>
                   )}
                   {c.kind !== 'removed' && (
-                    <p className="mt-1 break-all text-success">+ {short(c.to)}</p>
+                    <p className="mt-1 break-words text-success">+ {short(c.to)}</p>
                   )}
                 </li>
               ))}

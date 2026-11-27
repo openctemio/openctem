@@ -1057,7 +1057,8 @@ func (s *TenantService) UpdateMemberRole(ctx context.Context, membershipID strin
 	s.logger.Info("member role updated", "membership_id", logger.SanitizeValue(membershipID), "new_role", logger.SanitizeValue(string(role)))
 	if tenantdom.PrivilegeRank(role) > tenantdom.PrivilegeRank(tenantdom.Role(oldRole)) {
 		s.notifyPrivilegeIncrease(ctx, membership.TenantID(), membership.UserID(),
-			fmt.Sprintf("membership role raised from %s to %s", oldRole, role))
+			fmt.Sprintf("membership role raised from %s to %s", oldRole, role),
+			notificationdom.Msg("member.privilege.role_raised", "from_role", roleMessage(oldRole), "to_role", roleMessage(string(role))))
 	}
 
 	// Log audit event
@@ -1176,7 +1177,8 @@ func (s *TenantService) SuspendMember(ctx context.Context, membershipID string, 
 	// Owned schedules never run as a disabled person: they were paused, and
 	// the administrators are told so they can hand them over or resume them.
 	if disabled.Paused() > 0 {
-		s.notifyAdmins(ctx, membership.TenantID(),
+		s.notifyAdminsMsg(ctx, membership.TenantID(),
+			notificationdom.Msg("member.schedules_paused", "paused", pausedMessage(disabled)),
 			"A disabled member's schedules were paused",
 			fmt.Sprintf("A member was disabled. Their %s were paused and will not run until an administrator resumes them or offboards the member and reassigns them.",
 				pausedSummary(disabled)),
@@ -1245,7 +1247,8 @@ func (s *TenantService) ReactivateMember(ctx context.Context, membershipID strin
 	if approval {
 		msg = "Access approved for a member SSO admitted"
 		s.notifyPrivilegeIncrease(ctx, membership.TenantID(), membership.UserID(),
-			"access approved after their first sign-in through SSO")
+			"access approved after their first sign-in through SSO",
+			notificationdom.Msg("member.privilege.sso_approved"))
 	}
 	event := auditapp.NewSuccessEvent(audit.ActionMemberReactivated, audit.ResourceTypeMembership, membershipID).
 		WithSeverity(audit.SeverityHigh).
@@ -2567,7 +2570,7 @@ func (s *TenantService) UpdatePentestSettings(ctx context.Context, tenantID stri
 		WithMessage("Pentest settings updated")
 	if pentestLoosened(before, after) {
 		event = event.WithSeverity(audit.SeverityHigh)
-		s.notifyPolicyLoosened(ctx, tenantID, actx, "Pentest policy loosened",
+		s.notifyPolicyLoosenedCode(ctx, tenantID, actx, "settings.pentest_loosened", "Pentest policy loosened",
 			"the pentest settings (tracker TLP limit or authorization before testing)", "/settings/pentest")
 	}
 	s.logAudit(ctx, actx, event)
@@ -2787,7 +2790,7 @@ func (s *TenantService) UpdateAssetLifecycleSettings(
 		WithMetadata("close_findings_when_gone_after", al.LivenessSettings().CloseFindingsWhenGone)
 	if lifecycleLoosened(before, t.TypedSettings().AssetLifecycle) {
 		event = event.WithSeverity(audit.SeverityHigh)
-		s.notifyPolicyLoosened(ctx, tenantID, actx, "Asset lifecycle loosened",
+		s.notifyPolicyLoosenedCode(ctx, tenantID, actx, "settings.asset_lifecycle_loosened", "Asset lifecycle loosened",
 			"the asset lifecycle settings (more assets can be set stale or inactive)", "/settings/asset-lifecycle")
 	}
 	s.logAudit(ctx, actx, event)
@@ -2849,7 +2852,7 @@ func (s *TenantService) UpdateRetestSettings(
 		WithMetadata("auto_resolve_after", rs.AutoResolve)
 	if rs.AutoResolve && !before.AutoResolve {
 		event = event.WithSeverity(audit.SeverityHigh)
-		s.notifyPolicyLoosened(ctx, tenantID, actx, "Auto-resolve turned on",
+		s.notifyPolicyLoosenedCode(ctx, tenantID, actx, "settings.auto_resolve_on", "Auto-resolve turned on",
 			"auto-retest now closes findings without a person", "/findings")
 	}
 	s.logAudit(ctx, actx, event)
@@ -2990,7 +2993,7 @@ func (s *TenantService) UpdateCycleSettings(
 		WithMetadata("enforce_coverage_slo", cs.EnforceCoverageSLO)
 	if cycleLoosened(before, cs) {
 		event = event.WithSeverity(audit.SeverityHigh)
-		s.notifyPolicyLoosened(ctx, tenantID, actx, "CTEM cycle policy loosened",
+		s.notifyPolicyLoosenedCode(ctx, tenantID, actx, "settings.cycle_loosened", "CTEM cycle policy loosened",
 			"a cycle can now close below the coverage thresholds", "/cycles")
 	}
 	s.logAudit(ctx, actx, event)
@@ -3327,7 +3330,7 @@ func (s *TenantService) UpdateEASMSettings(
 		WithMetadata("dns_interval_hours", es.DNSIntervalHours)
 	if easmLoosened(before, es) {
 		event = event.WithSeverity(audit.SeverityHigh)
-		s.notifyPolicyLoosened(ctx, tenantID, actx, "Attack-surface monitoring loosened",
+		s.notifyPolicyLoosenedCode(ctx, tenantID, actx, "settings.easm_loosened", "Attack-surface monitoring loosened",
 			"the attack-surface monitoring settings (less is watched, or less often)", "/attack-surface")
 	}
 	s.logAudit(ctx, actx, event)
@@ -3344,19 +3347,29 @@ func (s *TenantService) NotifyPolicyLoosened(ctx context.Context, tenantID strin
 // notifyPolicyLoosened tells every owner and administrator, in-app, that a
 // policy outside the security section was loosened, and by whom. Best effort.
 func (s *TenantService) notifyPolicyLoosened(ctx context.Context, tenantID string, actx auditapp.AuditContext, title, what, url string) {
+	s.notifyPolicyLoosenedCode(ctx, tenantID, actx, "", title, what, url)
+}
+
+// notifyPolicyLoosenedCode is notifyPolicyLoosened with the message code of
+// the notice (empty leaves the English text only); the message carries who.
+func (s *TenantService) notifyPolicyLoosenedCode(ctx context.Context, tenantID string, actx auditapp.AuditContext, code, title, what, url string) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return
 	}
-	who := "An administrator"
+	who, named := someAdministrator, ""
 	if actx.ActorID != "" && s.userInfoProvider != nil {
 		if uid, err := shared.IDFromString(actx.ActorID); err == nil {
 			if name, err := s.userInfoProvider.GetUserNameByID(ctx, uid); err == nil && name != "" {
-				who = name
+				who, named = name, name
 			}
 		}
 	}
-	s.notifyAdminsAbout(ctx, tid, adminNotice{
-		Type: notificationdom.TypeSystemAlert, ResourceType: "tenant_settings", URL: url,
-	}, title, fmt.Sprintf("%s changed %s.", who, what), notificationdom.SeverityHigh)
+	var msg *notificationdom.Message
+	if code != "" {
+		msg = notificationdom.Msg(code, "who", actorParam(named))
+	}
+	s.notifyAdminsAboutMsg(ctx, tid, adminNotice{
+		Type: notificationdom.TypeSystemAlert, ResourceType: resourceTenantSettings, URL: url,
+	}, msg, title, fmt.Sprintf("%s changed %s.", who, what), notificationdom.SeverityHigh)
 }

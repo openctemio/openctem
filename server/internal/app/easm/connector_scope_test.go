@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/asset"
 	"github.com/openctemio/openctem/server/pkg/domain/scangov"
@@ -18,10 +20,14 @@ func (f fakeTouched) TouchedAssetsByCommand(_ context.Context, _, commandID shar
 	return f[commandID.String()], nil
 }
 
-type fakeNotifier struct{ titles []string }
+type fakeNotifier struct {
+	titles []string
+	msgs   []*notificationdom.Message
+}
 
-func (f *fakeNotifier) NotifyAdmins(_ context.Context, _ shared.ID, title, _ string) {
+func (f *fakeNotifier) NotifyAdminsMsg(_ context.Context, _ shared.ID, title, _ string, msg *notificationdom.Message) {
 	f.titles = append(f.titles, title)
+	f.msgs = append(f.msgs, msg)
 }
 
 type countingAudit struct{ n int }
@@ -67,6 +73,10 @@ func TestConnectorScope_AddsExactEntriesOfSyncedAssets(t *testing.T) {
 	if len(notify.titles) != 1 || audit.n != 2 {
 		t.Fatalf("notices %v audit events %d", notify.titles, audit.n)
 	}
+	if m := notify.msgs[0]; m == nil || m.Code != "connector.scope_added" || m.Params["count"] != 2 || m.Params["connector"] != "sc" ||
+		m.Params["entries"] != "203.0.113.30, app.corp.example" && m.Params["entries"] != "app.corp.example, 203.0.113.30" {
+		t.Fatalf("added message = %+v", m)
+	}
 
 	// Another tenant: the same command reads nothing of this tenant's.
 	targets.calls = nil
@@ -82,6 +92,9 @@ func TestConnectorScope_AddsExactEntriesOfSyncedAssets(t *testing.T) {
 	c.NotifyConnectorScope(context.Background(), tenantID, "sc")
 	if notify.titles[len(notify.titles)-1] != "Assets from sc will be added to scope" {
 		t.Fatalf("notice %v", notify.titles)
+	}
+	if m := notify.msgs[len(notify.msgs)-1]; m == nil || m.Code != "connector.scope_planned" || m.Params["connector"] != "sc" {
+		t.Fatalf("planned message = %+v", m)
 	}
 }
 

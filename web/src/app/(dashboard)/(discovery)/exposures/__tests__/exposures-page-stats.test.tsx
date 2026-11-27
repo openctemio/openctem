@@ -21,11 +21,12 @@ vi.mock('@/context/tenant-provider', () => ({
 }))
 
 const stats = vi.fn()
+const rows = vi.hoisted(() => ({ current: [] as unknown[] }))
 vi.mock('@/features/exposures/hooks', async (orig) => ({
   ...(await orig<typeof import('@/features/exposures/hooks')>()),
   useExposures: () => ({
-    exposures: [],
-    total: 0,
+    exposures: rows.current,
+    total: rows.current.length,
     isLoading: false,
     error: undefined,
     mutate: vi.fn(),
@@ -45,7 +46,10 @@ const base = {
   by_event_type: {},
 }
 
-beforeEach(() => stats.mockReset())
+beforeEach(() => {
+  stats.mockReset()
+  rows.current = []
+})
 
 describe('/exposures stats', () => {
   it('Closed tile is resolved + accepted + false positive', () => {
@@ -64,6 +68,56 @@ describe('/exposures stats', () => {
       mutate: vi.fn(),
     })
     render(<ExposuresPage />)
-    expect(screen.getByText(/Failed to load exposure statistics/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load exposure statistics/i)).toBeInTheDocument()
+  })
+})
+
+describe('/exposures list', () => {
+  const exposure = {
+    id: 'e1',
+    title: 'Port 3389 open on gateway.example.com',
+    event_type: 'port_open',
+    severity: 'high',
+    state: 'active',
+    source: 'easm',
+    description: 'Remote desktop is reachable from the internet',
+    first_seen_at: '2026-10-01T00:00:00Z',
+    last_seen_at: '2026-10-02T00:00:00Z',
+  }
+
+  it('names the view, says the count once and keeps one line per row', () => {
+    stats.mockReturnValue({ stats: base, isLoading: false, error: undefined, mutate: vi.fn() })
+    rows.current = [exposure]
+    render(<ExposuresPage />)
+    expect(screen.getByRole('heading', { level: 2, name: 'Needs attention' })).toBeInTheDocument()
+    expect(document.querySelectorAll('[data-slot="list-count"]')).toHaveLength(1)
+    // Unchanged view: no Modified mark, no Reset.
+    expect(document.querySelector('[data-slot="list-modified"]')).toBeNull()
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent?.trim())).toEqual([
+      '',
+      'Exposure',
+      'Summary',
+      'Signals',
+      'Severity',
+      'State',
+      'Source',
+      'First seen',
+      'Actions',
+    ])
+    expect(screen.getByText('Remote desktop is reachable from the internet')).toHaveClass(
+      'truncate'
+    )
+    // One filter entry (Add filter) and one fixed select (State); no filter menus.
+    expect(screen.getByRole('button', { name: /Add filter/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'State: Needs attention' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Severity' })).toBeNull()
+    expect(screen.getByRole('checkbox', { name: `Select ${exposure.title}` })).toBeInTheDocument()
+  })
+
+  it('an empty, unfiltered list is a first run: no toolbar', () => {
+    stats.mockReturnValue({ stats: base, isLoading: false, error: undefined, mutate: vi.fn() })
+    render(<ExposuresPage />)
+    expect(screen.getByText('No exposures')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Add filter/ })).toBeNull()
   })
 })

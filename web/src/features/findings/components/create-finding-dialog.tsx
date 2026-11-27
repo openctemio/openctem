@@ -37,6 +37,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Loader2, Check, ChevronsUpDown, AlertCircle, Code, Globe, Box, Cloud } from 'lucide-react'
 import { toast } from 'sonner'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import {
+  FieldError,
+  fieldErrorProps,
+  focusFirstInvalid,
+} from '@/features/shared/components/forms/field-error'
 import { cn } from '@/lib/utils'
 import { useAssets } from '@/features/assets/hooks/use-assets'
 import { useCreateFindingApi, invalidateFindingsCache } from '../api/use-findings-api'
@@ -87,6 +92,14 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
   const [source, setSource] = useState<FindingSource>('manual')
   const [severity, setSeverity] = useState<Severity>('medium')
   const [title, setTitle] = useState('')
+  const [errors, setErrors] = useState<{
+    asset: string | null
+    title: string | null
+    description: string | null
+  }>({ asset: null, title: null, description: null })
+  const assetField = fieldErrorProps('asset', errors.asset)
+  const titleField = fieldErrorProps('title', errors.title)
+  const descriptionField = fieldErrorProps('description', errors.description)
   const [description, setDescription] = useState('')
   const [toolName, setToolName] = useState('Manual Entry')
 
@@ -180,18 +193,19 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!assetId) {
-      toast.error(t('findings.createFinding.assetRequired', 'Please select an asset'))
-      return
+    // The button stays enabled: say what is missing under each field, focus the first.
+    const next = {
+      asset: assetId ? null : t('findings.createFinding.assetRequired', 'Please select an asset'),
+      title: title.trim()
+        ? null
+        : t('findings.createFinding.titleRequired', 'Please enter a title'),
+      description: description.trim()
+        ? null
+        : t('findings.createFinding.descriptionRequired', 'Please enter a description'),
     }
-
-    if (!title.trim()) {
-      toast.error(t('findings.createFinding.titleRequired', 'Please enter a title'))
-      return
-    }
-
-    if (!description.trim()) {
-      toast.error(t('findings.createFinding.descriptionRequired', 'Please enter a description'))
+    setErrors(next)
+    if (next.asset || next.title || next.description) {
+      focusFirstInvalid(e.currentTarget as HTMLElement)
       return
     }
 
@@ -226,7 +240,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
         snippet: snippet || undefined,
       })
 
-      toast.success(t('findings.createFinding.created', 'Finding created successfully'))
+      toast.success(t('findings.createFinding.created', 'Finding created'))
       await invalidateFindingsCache()
       resetForm()
       onOpenChange(false)
@@ -242,7 +256,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t('findings.createFinding.title', 'Add Finding')}</DialogTitle>
+          <DialogTitle>{t('findings.createFinding.title', 'Add finding')}</DialogTitle>
           <DialogDescription>
             {t(
               'findings.createFinding.description',
@@ -259,6 +273,8 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
               <Popover open={assetPopoverOpen} onOpenChange={setAssetPopoverOpen}>
                 <PopoverTrigger asChild>
                   <Button
+                    id="asset"
+                    {...assetField.control}
                     variant="outline"
                     role="combobox"
                     aria-expanded={assetPopoverOpen}
@@ -274,10 +290,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                     <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent
-                  className="w-[var(--radix-popover-trigger-width)] p-0"
-                  align="start"
-                >
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
                   <Command shouldFilter={false}>
                     <CommandInput
                       placeholder={t('findings.createFinding.searchAssets', 'Search assets...')}
@@ -303,6 +316,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                               value={asset.id}
                               onSelect={() => {
                                 setAssetId(asset.id)
+                                setErrors((x) => ({ ...x, asset: null }))
                                 setAssetPopoverOpen(false)
                               }}
                             >
@@ -326,6 +340,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                   </Command>
                 </PopoverContent>
               </Popover>
+              <FieldError {...assetField.message} />
             </div>
 
             {/* Source & Severity Row */}
@@ -400,8 +415,13 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                   'e.g., SQL Injection in login form'
                 )}
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  setTitle(e.target.value)
+                  setErrors((x) => ({ ...x, title: null }))
+                }}
+                {...titleField.control}
               />
+              <FieldError {...titleField.message} />
             </div>
 
             {/* Description */}
@@ -416,9 +436,14 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                   'Describe the security finding...'
                 )}
                 value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                onChange={(e) => {
+                  setDescription(e.target.value)
+                  setErrors((x) => ({ ...x, description: null }))
+                }}
                 rows={3}
+                {...descriptionField.control}
               />
+              <FieldError {...descriptionField.message} />
             </div>
 
             {/* Type-specific fields - shown based on selected asset type */}
@@ -463,7 +488,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="startLine">
-                          {t('findings.createFinding.startLine', 'Start Line')}
+                          {t('findings.createFinding.startLine', 'Start line')}
                         </Label>
                         <Input
                           id="startLine"
@@ -475,7 +500,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="endLine">
-                          {t('findings.createFinding.endLine', 'End Line')}
+                          {t('findings.createFinding.endLine', 'End line')}
                         </Label>
                         <Input
                           id="endLine"
@@ -509,7 +534,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
                 {assetCategory === 'network' && (
                   <div className="space-y-2">
                     <Label htmlFor="affectedUrl">
-                      {t('findings.createFinding.affectedUrl', 'Affected URL/Endpoint')}
+                      {t('findings.createFinding.affectedUrl', 'Affected URL or endpoint')}
                     </Label>
                     <Input
                       id="affectedUrl"
@@ -594,7 +619,7 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
             {/* Tool Name */}
             <div className="space-y-2">
               <Label htmlFor="toolName">
-                {t('findings.createFinding.toolName', 'Tool/Scanner Name')}
+                {t('findings.createFinding.toolName', 'Tool or scanner name')}
               </Label>
               <Input
                 id="toolName"
@@ -624,9 +649,9 @@ export function CreateFindingDialog({ open, onOpenChange, onSuccess }: CreateFin
             >
               {t('common.cancel', 'Cancel')}
             </Button>
-            <Button type="submit" disabled={isCreating || !assetId || !title.trim()}>
+            <Button type="submit" disabled={isCreating}>
               {isCreating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-              {t('findings.createFinding.submit', 'Create Finding')}
+              {t('findings.createFinding.submit', 'Create finding')}
             </Button>
           </DialogFooter>
         </DialogForm>

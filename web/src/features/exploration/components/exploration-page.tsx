@@ -15,6 +15,7 @@ import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
+import { GraphToolbar } from '@/components/graph-page/graph-page'
 import { useTranslation } from '@/context/i18n-provider'
 import { RefreshButton } from '@/features/dashboards/components/dashboard-freshness'
 import {
@@ -51,9 +52,13 @@ import {
 import { LeadDetailSheet } from './lead-detail-sheet'
 import { useLeadActions } from './lead-actions'
 
+/**
+ * How many steps there are and how fresh they are: a caption under the list,
+ * never a row of its own above it.
+ */
 function StatusLine() {
   const { t, locale } = useTranslation()
-  const { summary, error, isLoading, refresh } = useLeadSummary()
+  const { summary, error, isLoading } = useLeadSummary()
   if (isLoading) return <Skeleton className="h-5 w-2/3" />
   if (error || !summary) return null
   const rel = (iso: string) => formatRelativeTime(iso, locale)
@@ -89,9 +94,15 @@ function StatusLine() {
           ]}
         />
       </div>
-      {org && <RefreshButton onRefresh={refresh} />}
     </div>
   )
+}
+
+/** Refresh now, at the end of the toolbar (organization-wide steps only). */
+function StatusRefresh() {
+  const { summary, refresh } = useLeadSummary()
+  if (summary?.scope !== 'organization') return null
+  return <RefreshButton onRefresh={refresh} iconOnly />
 }
 
 function TierBadge({ tier }: { tier: number }) {
@@ -181,13 +192,13 @@ function LeadRow({
 function emptyText(t: ReturnType<typeof useTranslation>['t'], group: LeadGroup): string {
   switch (group) {
     case 'waiting':
-      return t('exploration.empty.waiting', 'Nothing is waiting for you.')
+      return t('exploration.empty.waiting', 'Nothing is waiting for you')
     case 'next':
-      return t('exploration.empty.next', 'No next steps planned.')
+      return t('exploration.empty.next', 'No next steps planned')
     case 'running':
-      return t('exploration.empty.running', 'Nothing is running.')
+      return t('exploration.empty.running', 'Nothing is running')
     default:
-      return t('exploration.empty.done', 'No step has finished yet.')
+      return t('exploration.empty.done', 'No step has finished yet')
   }
 }
 
@@ -239,8 +250,10 @@ export function ExplorationPage() {
           'The next steps the platform plans to learn more about your attack surface, and what they found.'
         )}
       />
-      <StatusLine />
-      <div className="flex flex-wrap items-center gap-3">
+      <GraphToolbar
+        label={t('exploration.toolbarLabel', 'Next step filters')}
+        end={<StatusRefresh />}
+      >
         <FilterSelect<LeadGroup>
           label={t('exploration.groups.label', 'Steps')}
           value={group}
@@ -254,7 +267,7 @@ export function ExplorationPage() {
           ]}
         />
         {assetId && (
-          <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-sm">
+          <span className="inline-flex h-control items-center gap-1 rounded-md border px-2 text-dense">
             {t('exploration.assetFilter', 'Asset: {name}', { name: nameFor(assetId) })}
             <button
               type="button"
@@ -266,7 +279,7 @@ export function ExplorationPage() {
             </button>
           </span>
         )}
-      </div>
+      </GraphToolbar>
 
       {isLoading ? (
         <div className="space-y-2">
@@ -281,7 +294,14 @@ export function ExplorationPage() {
           onRetry={() => void mutate()}
         />
       ) : leads.length === 0 ? (
-        <EmptyState icon={Compass} title={emptyText(t, group)} />
+        <EmptyState
+          icon={Compass}
+          title={emptyText(t, group)}
+          description={t(
+            'exploration.empty.hint',
+            'Next steps appear here when a scan finds something worth a closer look.'
+          )}
+        />
       ) : (
         <div className="space-y-3">
           <ul
@@ -310,6 +330,8 @@ export function ExplorationPage() {
           )}
         </div>
       )}
+
+      <StatusLine />
 
       <BulkActionBar
         count={selected.size}

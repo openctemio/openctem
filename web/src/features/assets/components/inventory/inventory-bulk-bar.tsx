@@ -1,12 +1,20 @@
 'use client'
 
 /**
- * Bulk actions for the All-Assets inventory, in the shared floating
- * BulkActionBar (it overlays the page, so selecting rows never moves the
- * table; Escape clears the selection). An operator can apply an action to the
- * whole selection: assign an owner, set criticality, add a tag, or add the
- * assets to a business unit or service. Every mutation is tenant-scoped (it goes
- * through the shared API client) and gated on `assets:write` by the caller.
+ * Bulk actions for the asset lists, in the shared bulk bar (it overlays the
+ * page, so selecting rows never moves the table; Escape clears the
+ * selection): two direct actions (Assign owner, Set criticality), the rest
+ * under More. An operator can apply an action to the whole selection: assign
+ * an owner, set criticality, add or remove a tag, add the assets to a
+ * business unit or service, add them to the scope, mark them out of scope,
+ * archive or delete them. Every mutation is tenant-scoped (it goes through
+ * the shared API client); an action shows only with its permission (the API
+ * checks again).
+ *
+ * `useInventoryTableBulk` is what an asset list page uses: the selection, the
+ * table's `bulk` (checkbox column and bar) and the dialogs. `useInventoryBulk`
+ * gives the actions for a known selection; `InventoryBulkBar` draws them in a
+ * bar of its own.
  *
  * Writes run in small concurrent batches (mirrors bulkDeleteAssets) with
  * Promise.allSettled so a partial failure is surfaced rather than swallowed.
@@ -14,7 +22,7 @@
  */
 
 import { PICKER_MEMBER_STATUS } from '@/features/organization/api/use-members'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import {
   UserPlus,
@@ -22,8 +30,12 @@ import {
   Tag as TagIcon,
   TagsIcon,
   User,
+  Archive,
+  Ban,
+  Building,
   Building2,
   ChevronsUpDown,
+  Crosshair,
   Check,
   Trash2,
 } from 'lucide-react'
@@ -33,6 +45,7 @@ import {
   irreversibleTypeToConfirm,
 } from '@/components/confirm-dialog'
 import { usePermissions, Permission } from '@/lib/permissions'
+import type { ActionMenuEntry } from '@/components/ui/action-menu'
 import { bulkDeleteAssetsSafely, reportBulkDelete } from '../../lib/safe-delete'
 import { bulkActionsFor } from '../../lib/type-actions'
 import { ScanConfirmDialog } from '../scan-confirm-dialog'
@@ -66,7 +79,8 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import useSWR from 'swr'
-import { BulkActionBar } from '@/features/shared'
+import { BulkActionBar, type DataTableBulk, type DataTableSelection } from '@/features/shared'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { cn } from '@/lib/utils'
 import { get } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -74,11 +88,15 @@ import { useSearchQuery } from '@/hooks/use-search-query'
 import { useTenant } from '@/context/tenant-provider'
 import { useGroups } from '@/features/access-control/api/use-groups'
 import { bulkChangeAssetTags, updateAsset } from '../../hooks/use-assets'
-import { InventoryBusinessContextActions } from './inventory-business-context-actions'
+import {
+  InventoryBusinessContextActions,
+  useBusinessContextAccess,
+  type BusinessContextTarget,
+} from './inventory-business-context-actions'
 import { addAssetOwner } from '../../hooks/use-asset-owners'
+import { OWNERSHIP_TYPES, ownershipTypeLabel } from '../../lib/ownership-labels'
 import {
   CRITICALITY_LABELS,
-  OWNERSHIP_TYPE_LABELS,
   type Asset,
   type Criticality,
   type OwnershipType,
@@ -86,14 +104,28 @@ import {
 import { ASSET_CRITICALITY_LEVELS } from '@/lib/criticality'
 import { useTranslation } from '@/context/i18n-provider'
 import { AddToScopeAction } from '@/features/scope/components/add-to-scope-action'
-import { ArchiveAssetsAction, MarkOutOfScopeAction } from './mark-out-of-scope-action'
+import { MarkOutOfScopeAction, useArchiveAssets } from './mark-out-of-scope-action'
 
-interface BulkBarProps {
+interface InventoryBulkProps {
   selected: Asset[]
   canWrite: boolean
-  onClear: () => void
   /** Called after a successful bulk mutation to refetch + drop the selection. */
   onDone: () => void
+}
+
+interface BulkBarProps extends InventoryBulkProps {
+  onClear: () => void
+}
+
+export interface InventoryBulk {
+  /** The viewer may act on several assets at once (else: no checkbox column). */
+  available: boolean
+  /** The bar's two direct actions. */
+  actions: ReactNode
+  /** The other actions, under the bar's More. */
+  more: ActionMenuEntry[]
+  /** The actions' dialogs: render once, anywhere on the page. */
+  dialogs: ReactNode
 }
 
 /** Run an async op over items in small concurrent batches; returns failures. */
@@ -122,7 +154,79 @@ interface MembersResponse {
   total: number
 }
 
+/**
+ * Bulk actions of an asset list drawn by `InventoryTable`: the selection the
+ * table reports, the table's `bulk` (absent without a bulk permission: no
+ * checkbox column) and the dialogs to render once on the page. `resetKey`
+ * clears the table's checkboxes; `clear` is for the page (its query changed).
+ */
+export function useInventoryTableBulk({
+  canWrite,
+  onDone,
+}: {
+  canWrite: boolean
+  /** Refetch after a bulk change (the selection is cleared here). */
+  onDone: () => void
+}): {
+  bulk: DataTableBulk<Asset> | undefined
+  dialogs: ReactNode
+  resetKey: number
+  clear: () => void
+} {
+  const { t } = useTranslation()
+  const [selection, setSelection] = useState<DataTableSelection<Asset> | null>(null)
+  const selected = useMemo(() => (selection?.kind === 'ids' ? selection.rows : []), [selection])
+  const [resetKey, setResetKey] = useState(0)
+  const clear = useCallback(() => {
+    setResetKey((n) => n + 1)
+    setSelection(null)
+  }, [])
+  const actions = useInventoryBulk({
+    selected,
+    canWrite,
+    onDone: () => {
+      clear()
+      onDone()
+    },
+  })
+  const bulk: DataTableBulk<Asset> | undefined = actions.available
+    ? {
+        rowLabel: (a) => toDisplayText(a.name, 80),
+        checkboxLabel: (a) =>
+          t('assets.inv.selectAsset', 'Select asset {name}', { name: toDisplayText(a.name, 80) }),
+        noun: (count) => t('assets.bulk.selectedNoun', 'assets selected', { count }),
+        onSelectionChange: setSelection,
+        actions: actions.actions,
+        more: actions.more,
+      }
+    : undefined
+  return { bulk, dialogs: actions.dialogs, resetKey, clear }
+}
+
+/** The same actions in a bar of its own, for a known selection. */
 export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBarProps) {
+  const { t } = useTranslation()
+  const bulk = useInventoryBulk({ selected, canWrite, onDone })
+  return (
+    <>
+      <BulkActionBar
+        count={bulk.available ? selected.length : 0}
+        onClear={onClear}
+        noun={(count) => t('assets.bulk.selectedNoun', 'assets selected', { count })}
+        more={bulk.more}
+      >
+        {bulk.actions}
+      </BulkActionBar>
+      {bulk.dialogs}
+    </>
+  )
+}
+
+export function useInventoryBulk({
+  selected,
+  canWrite,
+  onDone,
+}: InventoryBulkProps): InventoryBulk {
   const { t } = useTranslation()
   const count = selected.length
   const selectedNames = useMemo(() => selected.map((a) => a.name), [selected])
@@ -156,6 +260,13 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
   const ownerDialogOpen = dialog === 'owner'
   const { can } = usePermissions()
   const canDelete = can(Permission.AssetsDelete)
+  // Scope is its own permission (scope:write), not assets:write.
+  const canScope = can(Permission.ScopeWrite)
+  const { canUnit, canService } = useBusinessContextAccess()
+  const archive = useArchiveAssets({ selected, onDone })
+  const [scopeOpen, setScopeOpen] = useState(false)
+  const [outOfScopeOpen, setOutOfScopeOpen] = useState(false)
+  const [contextDialog, setContextDialog] = useState<BusinessContextTarget | null>(null)
   // Type actions (repository Scan / Sync) for the selected assets they fit.
   const typeActions = bulkActionsFor(selected, t).filter((a) => a.permissions.every((p) => can(p)))
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -397,7 +508,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
       reportResult(
         t('assets.bulk.ownerAssigned', 'Assigned {name} as {role} owner', {
           name: selectedOption.label,
-          role: OWNERSHIP_TYPE_LABELS[ownershipType].toLowerCase(),
+          role: ownershipTypeLabel(t, ownershipType).toLowerCase(),
         }),
         failed
       )
@@ -412,68 +523,167 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
     }
   }
 
-  return (
+  // Two direct actions; on a phone they are icons, so More and X stay on screen.
+  const actions = canWrite ? (
     <>
-      <BulkActionBar count={count} onClear={onClear} noun="selected">
-        {/* Scope is its own permission (scope:write), not assets:write. */}
-        <AddToScopeAction names={selectedNames} onDone={onDone} />
-        {/* Triage after the fact (research/124): each checks its own permission. */}
-        <MarkOutOfScopeAction selected={selected} onDone={onDone} />
-        <ArchiveAssetsAction selected={selected} onDone={onDone} />
-        {canWrite ? (
-          <>
-            <Button variant="ghost" size="sm" onClick={() => setDialog('owner')}>
-              <UserPlus className="me-2 h-4 w-4" />
-              {t('assets.bulk.assignOwner', 'Assign owner')}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setDialog('criticality')}>
-              <ShieldAlert className="me-2 h-4 w-4" />
-              {t('assets.bulk.setCriticality', 'Set criticality')}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={() => setDialog('tag')}>
-              <TagIcon className="me-2 h-4 w-4" />
-              {t('assets.bulk.addTag', 'Add tag')}
-            </Button>
-            {selectionTags.length > 0 && (
-              <Button variant="ghost" size="sm" onClick={() => setDialog('removeTags')}>
-                <TagsIcon className="me-2 h-4 w-4" />
-                {t('assets.bulkTags.removeButton', 'Remove tags')}
-              </Button>
-            )}
-            <InventoryBusinessContextActions selected={selected} onDone={onDone} />
-            {typeActions.map((a) => (
-              <Button
-                key={a.id}
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={() => (a.id === 'scan' ? setPendingScan(a) : void runTypeAction(a))}
-              >
-                <a.icon className="me-2 h-4 w-4" />
-                {a.label}
-              </Button>
-            ))}
-            {canDelete && (
-              <>
-                <span aria-hidden className="mx-1.5 h-5 w-px shrink-0 bg-border" />
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => setConfirmDelete(true)}
-                >
-                  <Trash2 className="me-2 h-4 w-4" />
-                  {t('assets.inv.deleteCount', 'Delete {count}', { count })}
-                </Button>
-              </>
-            )}
-          </>
-        ) : (
-          <span className="whitespace-nowrap px-2 text-xs text-muted-foreground">
-            {t('assets.bulk.readOnly', 'Read-only: assets:write is needed to change assets')}
-          </span>
-        )}
-      </BulkActionBar>
+      <Button
+        iconOnlyBelow="sm"
+        variant="ghost"
+        size="sm"
+        aria-label={t('assets.bulk.assignOwner', 'Assign owner')}
+        onClick={() => setDialog('owner')}
+      >
+        <UserPlus className="h-4 w-4 sm:me-2" aria-hidden />
+        <span className="sr-only sm:not-sr-only">
+          {t('assets.bulk.assignOwner', 'Assign owner')}
+        </span>
+      </Button>
+      <Button
+        iconOnlyBelow="sm"
+        variant="ghost"
+        size="sm"
+        aria-label={t('assets.bulk.setCriticality', 'Set criticality')}
+        onClick={() => setDialog('criticality')}
+      >
+        <ShieldAlert className="h-4 w-4 sm:me-2" aria-hidden />
+        <span className="sr-only sm:not-sr-only">
+          {t('assets.bulk.setCriticality', 'Set criticality')}
+        </span>
+      </Button>
+    </>
+  ) : null
+
+  // The rest, in the order the bar had them: triage (scope, out of scope,
+  // archive), tags, business context, the type's own actions, then Delete.
+  const busyReason = busy ? t('assets.bulk.busy', 'Another change is running') : undefined
+  const more: ActionMenuEntry[] = [
+    ...(canScope
+      ? [
+          {
+            id: 'add-to-scope',
+            section: 'triage',
+            label: t('scope.bulk.action', 'Add to scope'),
+            icon: Crosshair,
+            onSelect: () => setScopeOpen(true),
+          },
+        ]
+      : []),
+    // Triage after the fact: scope:write excludes, assets:write alone decides "not ours".
+    ...(canScope || canWrite
+      ? [
+          {
+            id: 'out-of-scope',
+            section: 'triage',
+            label: t('assets.triage.action', 'Mark out of scope'),
+            icon: Ban,
+            onSelect: () => setOutOfScopeOpen(true),
+          },
+        ]
+      : []),
+    ...(archive.allowed
+      ? [
+          {
+            id: 'archive',
+            section: 'triage',
+            label: archive.label,
+            icon: Archive,
+            onSelect: () => void archive.run(),
+            disabledReason:
+              archive.disabledReason ??
+              (archive.busy ? t('assets.bulk.busy', 'Another change is running') : undefined),
+          },
+        ]
+      : []),
+    ...(canWrite
+      ? [
+          {
+            id: 'add-tag',
+            section: 'tags',
+            label: t('assets.bulk.addTag', 'Add tag'),
+            icon: TagIcon,
+            onSelect: () => setDialog('tag'),
+          },
+          {
+            id: 'remove-tags',
+            section: 'tags',
+            label: t('assets.bulkTags.removeButton', 'Remove tags'),
+            icon: TagsIcon,
+            onSelect: () => setDialog('removeTags'),
+            disabledReason:
+              selectionTags.length === 0
+                ? t('assets.bulkTags.none', 'The selected assets have no tags')
+                : undefined,
+          },
+          ...(canUnit
+            ? [
+                {
+                  id: 'add-to-unit',
+                  section: 'context',
+                  label: t('assets.bizctx.addToUnit', 'Add to unit'),
+                  icon: Building2,
+                  onSelect: () => setContextDialog('unit'),
+                },
+              ]
+            : []),
+          ...(canService
+            ? [
+                {
+                  id: 'add-to-service',
+                  section: 'context',
+                  label: t('assets.bizctx.addToService', 'Add to service'),
+                  icon: Building,
+                  onSelect: () => setContextDialog('service'),
+                },
+              ]
+            : []),
+          ...typeActions.map((a) => ({
+            id: `type-${a.id}`,
+            section: 'type',
+            label: a.label,
+            icon: a.icon,
+            onSelect: () => (a.id === 'scan' ? setPendingScan(a) : void runTypeAction(a)),
+            disabledReason: busyReason,
+          })),
+          ...(canDelete
+            ? [
+                {
+                  id: 'delete',
+                  label: t('assets.inv.deleteCount', 'Delete {count}', { count }),
+                  icon: Trash2,
+                  destructive: true,
+                  onSelect: () => setConfirmDelete(true),
+                  disabledReason: busyReason,
+                },
+              ]
+            : []),
+        ]
+      : []),
+  ]
+
+  const dialogs = (
+    <>
+      {canScope && (
+        <AddToScopeAction
+          names={selectedNames}
+          onDone={onDone}
+          open={scopeOpen}
+          onOpenChange={setScopeOpen}
+        />
+      )}
+      <MarkOutOfScopeAction
+        selected={selected}
+        onDone={onDone}
+        open={outOfScopeOpen}
+        onOpenChange={setOutOfScopeOpen}
+      />
+      {canWrite && (
+        <InventoryBusinessContextActions
+          selected={selected}
+          onDone={onDone}
+          dialog={contextDialog}
+          onDialogChange={setContextDialog}
+        />
+      )}
 
       <ScanConfirmDialog
         open={!!pendingScan}
@@ -743,10 +953,7 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
                       <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent
-                    className="w-[var(--radix-popover-trigger-width)] p-0"
-                    align="start"
-                  >
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
                     <Command shouldFilter={false}>
                       <CommandInput
                         value={pickerSearch}
@@ -863,13 +1070,11 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(Object.entries(OWNERSHIP_TYPE_LABELS) as [OwnershipType, string][]).map(
-                      ([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          {label}
-                        </SelectItem>
-                      )
-                    )}
+                    {OWNERSHIP_TYPES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {ownershipTypeLabel(t, value)}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -889,4 +1094,6 @@ export function InventoryBulkBar({ selected, canWrite, onClear, onDone }: BulkBa
       </Dialog>
     </>
   )
+
+  return { available: canWrite || canScope, actions, more, dialogs }
 }

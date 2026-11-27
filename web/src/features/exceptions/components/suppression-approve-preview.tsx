@@ -6,6 +6,7 @@ import { AlertTriangle, Info, Loader2 } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { useTranslation } from '@/context/i18n-provider'
 import { useSuppressionPreview } from '../api/use-suppressions-api'
+import { formatNumber } from '@/lib/app-locale'
 
 /**
  * What approving a suppression rule does to existing findings: the open
@@ -45,7 +46,7 @@ export function SuppressionApprovePreview({ ruleId }: { ruleId: string | undefin
     text = t(
       'confirm.suppression.previewCapped',
       'More than {limit} open findings match. This approval closes {limit} of them; the rest stay open.',
-      { limit: data.limit.toLocaleString() }
+      { limit: formatNumber(data.limit) }
     )
   } else if (count === 0) {
     text = t(
@@ -56,7 +57,7 @@ export function SuppressionApprovePreview({ ruleId }: { ruleId: string | undefin
     text = t('confirm.suppression.previewOne', 'This will close 1 open finding.')
   } else {
     text = t('confirm.suppression.previewMany', 'This will close {count} open findings.', {
-      count: count.toLocaleString(),
+      count: formatNumber(count),
     })
   }
 
@@ -76,8 +77,8 @@ export function SuppressionApprovePreview({ ruleId }: { ruleId: string | undefin
               'confirm.suppression.previewSampleTitle',
               'Examples within your access ({shown} of {count})',
               {
-                shown: sample.length.toLocaleString(),
-                count: data.in_scope_findings.toLocaleString(),
+                shown: formatNumber(sample.length),
+                count: formatNumber(data.in_scope_findings),
               }
             )}
           </p>
@@ -111,7 +112,7 @@ export function SuppressionApprovePreview({ ruleId }: { ruleId: string | undefin
           {t(
             'confirm.suppression.previewOutOfScope',
             '{count} matching findings are on assets outside your access and are not listed.',
-            { count: hidden.toLocaleString() }
+            { count: formatNumber(hidden) }
           )}
         </p>
       )}

@@ -1,5 +1,6 @@
 'use client'
 
+import { accountStatusLabel, memberRoleLabel } from '../lib/value-labels'
 import { useState } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -40,11 +41,7 @@ function useUserColumns(
     {
       accessorKey: 'role',
       header: t('admin.organizationUsersSection.role', 'Role'),
-      cell: ({ row }) => (
-        <Badge variant="secondary" className="capitalize">
-          {row.original.role}
-        </Badge>
-      ),
+      cell: ({ row }) => <Badge variant="secondary">{memberRoleLabel(t, row.original.role)}</Badge>,
     },
     {
       accessorKey: 'status',
@@ -53,11 +50,8 @@ function useUserColumns(
         row.original.pending_setup && row.original.status !== 'suspended' ? (
           <PendingSetupBadge />
         ) : (
-          <Badge
-            variant={row.original.status === 'active' ? 'secondary' : 'outline'}
-            className="capitalize"
-          >
-            {row.original.status}
+          <Badge variant={row.original.status === 'active' ? 'secondary' : 'outline'}>
+            {accountStatusLabel(t, row.original.status)}
           </Badge>
         ),
     },
@@ -70,6 +64,8 @@ function useUserColumns(
   if (onSetupLink) {
     columns.push({
       id: 'actions',
+      // Labelled buttons: as wide as they need (the 48 px actions column cut them).
+      meta: { kind: 'decisions' },
       header: () => <span className="sr-only">{t('common.table.actionsColumn', 'Actions')}</span>,
       cell: ({ row }) =>
         needsHandOverLink(row.original) ? (
@@ -229,6 +225,10 @@ export function OrganizationUsersSection({
       )}
       {linkFor && (
         <AdminConfirmDialog
+          reasonPlaceholder={t(
+            'admin.org.users.reasonSetupLink',
+            'The first link expired before they opened it, ticket 2231'
+          )}
           open
           onOpenChange={(next) => !next && setLinkFor(null)}
           title={t('admin.org.users.setupLink', 'New setup link')}

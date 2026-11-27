@@ -20,16 +20,17 @@ import { SafeExternalLink } from '@/components/safe-external-link'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { confirmName } from '@/lib/confirm-name'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 interface ManualEvidenceNotesSectionProps {
   findingId: string
 }
 
-function formatDate(dateString: string, locale: string): string {
+function formatDate(dateString: string, _locale: string): string {
   const d = new Date(dateString)
   return Number.isNaN(d.getTime())
     ? dateString
-    : d.toLocaleDateString(locale, {
+    : localeFormatDate(d, {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
@@ -73,7 +74,7 @@ function NoteCard({
           {hasUrl && (
             <SafeExternalLink
               href={note.url}
-              className="inline-flex items-center gap-1 text-sm text-primary hover:underline break-all"
+              className="inline-flex items-center gap-1 text-sm text-primary hover:underline break-words"
             >
               {note.url}
               <ExternalLink className="h-3 w-3 shrink-0" />
@@ -99,7 +100,7 @@ function NoteCard({
           <Button
             size="icon"
             variant="ghost"
-            className="text-muted-foreground hover:text-destructive h-8 w-8 shrink-0"
+            className="text-muted-foreground hover:text-destructive shrink-0"
             aria-label={t('findings.manualEvidence.deleteAria', 'Delete evidence note')}
             disabled={isDeleting}
             onClick={() => onDelete(note)}

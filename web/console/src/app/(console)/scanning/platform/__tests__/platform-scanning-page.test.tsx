@@ -143,17 +143,29 @@ describe('Platform scanning console page', () => {
     state.tab = 'fleet'
   })
 
-  it('shows one notice and the domain-proof policy, no fleet, while shared sensors are not available', () => {
+  it('shows the notice and the domain-proof policy on a Policy tab, no fleet, while shared sensors are not available', () => {
     state.ready = false
     state.role = 'readonly'
+    state.tab = 'policy'
     render(<PlatformScanningPage />)
+    expect(screen.getAllByRole('tab').map((t) => t.textContent)).toEqual([
+      'Policy',
+      'Blocked names',
+    ])
     expect(screen.getByTestId('shared-sensors-unavailable')).toHaveTextContent(
       'Shared sensors are not available in this release'
     )
-    expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     expect(screen.queryByText('shared-eu-1')).not.toBeInTheDocument()
+  })
+
+  it('opens a Blocked names link on the exceptions list while shared sensors are not available', () => {
+    state.ready = false
+    state.tab = 'blocked'
+    render(<PlatformScanningPage />)
+    expect(screen.getByTestId('blocked-names-exceptions')).toBeInTheDocument()
     // The blocked names policy does not depend on shared sensors.
     expect(screen.getByText('Blocked target names')).toBeInTheDocument()
+    expect(screen.queryByTestId('shared-sensors-unavailable')).not.toBeInTheDocument()
   })
 
   it('offers the six tabs once shared sensors are available', () => {
@@ -185,6 +197,7 @@ describe('Platform scanning console page', () => {
     expect(screen.queryByRole('button', { name: /Pause/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Retire/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Targets and logs/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Actions for the job/ })).not.toBeInTheDocument()
   })
 
   it('lets an operations administrator view a job only with a reason', async () => {
@@ -192,7 +205,9 @@ describe('Platform scanning console page', () => {
     state.tab = 'queue'
     render(<PlatformScanningPage />)
     expect(screen.queryByRole('button', { name: /Pause/ })).not.toBeInTheDocument()
-    await userEvent.click(screen.getAllByRole('button', { name: /Targets and logs/ })[0])
+    // The job's one action is in its row menu.
+    await userEvent.click(screen.getAllByRole('button', { name: /^Actions for the job of / })[0])
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Targets and logs' }))
     await userEvent.type(screen.getByLabelText(/reason/i), 'abuse report 42 from the operator')
     await userEvent.click(screen.getByRole('button', { name: 'View' }))
     await waitFor(() =>

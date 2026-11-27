@@ -3,7 +3,10 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { toDisplayText } from '@/lib/untrusted-text'
+import { maskSensitiveText } from '@/lib/mask-sensitive'
 import { middleEllipsis } from '@/lib/middle-ellipsis'
+import { RowNameLink } from '@/features/shared/components/row-name-link'
+import { findingDetailHref } from '@/features/findings/lib/finding-link'
 
 /**
  * How a finding reads wherever findings are listed: the stored title is the
@@ -12,8 +15,11 @@ import { middleEllipsis } from '@/lib/middle-ellipsis'
  * the same line twice ("CVE-2019-9516 in nginx 1.15.5" for each asset); the
  * target line is what tells them apart.
  *
- * Every value is scanner-supplied text: it is escaped (toDisplayText) and
- * rendered as React text, never markup. The cell holds no focusable element,
+ * Every value is scanner-supplied text: e-mail addresses and secrets in it
+ * are masked (maskSensitiveText; a list never shows one in clear, "Show" is on
+ * the finding page), then it is escaped (toDisplayText) and rendered as React
+ * text, never markup. The title, its tooltip, `openLabel` and the target all
+ * go through the mask here, so every list that uses the cell has it. The cell holds no focusable element,
  * so it can sit inside the row's own button or link; the full target is in
  * the `title` tooltip and in `targetLabel` for the row's accessible name.
  *
@@ -39,6 +45,14 @@ export interface FindingTitleCellProps {
   onOpen?: () => void
   /** The open button's accessible name; it must contain the visible title. */
   openLabel?: string
+  /**
+   * With `onOpen`: the title is a real link to this finding's page
+   * (`findingDetailHref`: the id is only an encoded segment under
+   * `/findings/`). A plain click calls `onOpen` (the drawer);
+   * Ctrl/Cmd/Shift-click, a middle click and "Open in new tab" are the
+   * browser's, so the page opens in a new tab.
+   */
+  findingId?: string
   className?: string
 }
 
@@ -52,9 +66,9 @@ export const TARGET_MIDDLE = 120
  */
 export const TARGET_TAIL = 18
 
-/** The target as shown: escaped, cut from the middle when long. */
+/** The target as shown: masked, escaped, cut from the middle when long. */
 export function shownTarget(target: string | null | undefined): string {
-  const raw = (target ?? '').trim()
+  const raw = maskSensitiveText(target).trim()
   if (!raw) return ''
   return middleEllipsis(toDisplayText(raw, 2000), TARGET_MIDDLE)
 }
@@ -68,9 +82,15 @@ export function FindingTitleCell({
   titleLines = 1,
   onOpen,
   openLabel,
+  findingId,
   className,
 }: FindingTitleCellProps) {
-  const full = toDisplayText((target ?? '').trim(), 2000)
+  const full = toDisplayText(maskSensitiveText(target).trim(), 2000)
+  // Masked before it is cut: half a value no longer has the shape that names it.
+  const shownTitle = toDisplayText(maskSensitiveText(title), 500)
+  // The whole title on pointer hover when one line cuts it (its name holds it too).
+  const tip = titleLines === 1 ? shownTitle : undefined
+  const openName = openLabel ? maskSensitiveText(openLabel) : undefined
   const shown = shownTarget(target)
   const titleClass = cn(
     'min-w-0 font-medium [unicode-bidi:isolate]',
@@ -79,7 +99,18 @@ export function FindingTitleCell({
   return (
     <div data-slot="finding-title-cell" className={cn('flex min-w-0 flex-col', className)}>
       <div className="flex min-w-0 items-center gap-1.5">
-        {onOpen ? (
+        {onOpen && findingId ? (
+          <RowNameLink
+            href={findingDetailHref(findingId)}
+            onOpen={onOpen}
+            label={openName}
+            title={tip}
+            lines={titleLines}
+            slot="finding-title-link"
+          >
+            {shownTitle}
+          </RowNameLink>
+        ) : onOpen ? (
           <button
             type="button"
             dir="auto"
@@ -87,17 +118,18 @@ export function FindingTitleCell({
               titleClass,
               'rounded-sm text-start hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none'
             )}
-            aria-label={openLabel}
+            aria-label={openName}
             onClick={(e) => {
               e.stopPropagation()
               onOpen()
             }}
           >
-            {toDisplayText(title ?? '', 500)}
+            {shownTitle}
           </button>
         ) : (
-          <p dir="auto" className={titleClass}>
-            {toDisplayText(title ?? '', 500)}
+          // A name: it may end in an ellipsis, the whole title held by its title.
+          <p dir="auto" data-cut-tooltip title={shownTitle} className={titleClass}>
+            {shownTitle}
           </p>
         )}
         {chips}
@@ -108,6 +140,7 @@ export function FindingTitleCell({
             <span
               dir="auto"
               data-slot="finding-target"
+              data-cut-tooltip
               title={full}
               className="min-w-0 truncate text-xs text-muted-foreground [unicode-bidi:isolate]"
             >

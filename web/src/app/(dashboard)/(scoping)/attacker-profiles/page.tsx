@@ -276,6 +276,10 @@ export default function AttackerProfilesPage() {
           if (profile.is_default) return null
           return (
             <DataTableRowActions
+              title={profile.name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                name: profile.name,
+              })}
               actions={[
                 {
                   label: t('confirm.delete', 'Delete'),
@@ -298,7 +302,7 @@ export default function AttackerProfilesPage() {
       <Main>
         <PageStack>
           <PageHeader
-            title={t('attackerProfiles.title', 'Attacker profiles')}
+            title={t('threatModel.title', 'Threat model')}
             description={t(
               'attackerProfiles.description',
               'Threat actor profiles that exposure assessment and threat models reason about.'

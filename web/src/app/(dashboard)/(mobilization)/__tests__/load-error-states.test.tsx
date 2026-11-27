@@ -11,6 +11,9 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 } as unknown as typeof ResizeObserver
 
+vi.mock('@/features/remediation-hub/api/use-owner-names', () => ({
+  useOwnerNames: () => ({ user: () => undefined }),
+}))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
   usePathname: () => '/exceptions',
@@ -66,7 +69,7 @@ describe('/exceptions', () => {
     const retry = vi.fn()
     suppressions.mockReturnValue({ ...idle, error: apiError, mutate: retry })
     render(<ExceptionsPage />)
-    expect(screen.getByText(/Failed to load suppression rules/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load suppression rules/i)).toBeInTheDocument()
     expect(screen.getByText(/Report this problem/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /retry/i }))
     expect(retry).toHaveBeenCalledTimes(1)
@@ -78,7 +81,7 @@ describe('/automations', () => {
     workflows.mockReturnValue({ ...idle, error: apiError })
     runs.mockReturnValue({ ...idle, data: { data: [], total: 0 } })
     render(<AutomationsPage />)
-    expect(screen.getByText(/Failed to load/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load/i)).toBeInTheDocument()
     expect(screen.queryByText(/No workflows yet/i)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
   })

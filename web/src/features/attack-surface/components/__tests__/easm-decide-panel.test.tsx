@@ -20,6 +20,10 @@ vi.mock('@/lib/permissions', async (orig) => {
   const actual = await orig<typeof import('@/lib/permissions')>()
   return { ...actual, usePermissions: () => ({ can: () => true }), useHasPermission: () => true }
 })
+vi.mock('@/lib/permissions/hooks', async (orig) => ({
+  ...(await orig<typeof import('@/lib/permissions/hooks')>()),
+  usePermissions: () => ({ can: () => true }),
+}))
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), warning: vi.fn(), error: vi.fn(), info: vi.fn() },
 }))

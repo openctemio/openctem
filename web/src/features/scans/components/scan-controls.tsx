@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Loader2, Pause, Play, Power } from 'lucide-react'
 import { toast } from 'sonner'
@@ -28,16 +28,21 @@ import { ScheduleOnConfirm } from './schedule-on-confirm'
  *   schedule to switch.
  * - Enable: a disabled scan, which runs for nobody.
  * - A managed scan (a platform policy owns it) has none of them.
+ *
+ * `run` is the main action (Run now, or Enable for a disabled scan),
+ * `schedule` the schedule switch (an outline button), `dialogs` the
+ * confirmations both need: render all three, the page header places them.
  */
-export function ScanControls({
-  config,
-  onViewRun,
-  onChanged,
-}: {
-  config: ScanConfig
-  onViewRun?: (runId: string) => void
-  onChanged?: () => void
-}) {
+export function useScanControls(
+  config: ScanConfig,
+  {
+    onViewRun,
+    onChanged,
+  }: {
+    onViewRun?: (runId: string) => void
+    onChanged?: () => void
+  } = {}
+): { run: ReactNode; schedule: ReactNode; dialogs: ReactNode } {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
   // The schedule-on / enable question (these start scans); off needs none.
@@ -52,7 +57,7 @@ export function ScanControls({
 
   // A platform policy owns a managed scan: no Run now, no schedule switch, no
   // enable here (the API refuses them with SCAN_MANAGED_BY_POLICY).
-  if (isManagedScan(config)) return null
+  if (isManagedScan(config)) return { run: null, schedule: null, dialogs: null }
 
   const setState = async (action: 'pause' | 'activate', done: string) => {
     setBusy(true)
@@ -74,14 +79,17 @@ export function ScanControls({
   }
 
   if (config.status === 'disabled') {
-    return (
-      <>
+    return {
+      run: (
         <Can permission={Permission.ScansWrite} mode="disable">
           <Button size="sm" onClick={() => setAskActivate(true)} disabled={busy}>
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}
             {t('scans.controls.enable')}
           </Button>
         </Can>
+      ),
+      schedule: null,
+      dialogs: (
         <ScheduleOnConfirm
           name={config.name}
           kind="enable"
@@ -91,13 +99,13 @@ export function ScanControls({
             setState('activate', t('scans.controls.enabled', undefined, { name: config.name }))
           }
         />
-      </>
-    )
+      ),
+    }
   }
 
   const on = scheduleOn(config)
-  return (
-    <>
+  return {
+    run: (
       <Can permission={[Permission.ScansWrite, Permission.ScansExecute]} requireAll mode="disable">
         <Button
           size="sm"
@@ -109,41 +117,66 @@ export function ScanControls({
           {t('scans.controls.runNow')}
         </Button>
       </Can>
-      {hasSchedule(config) && (
-        <Can permission={Permission.ScansWrite} mode="disable">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              on
-                ? void setState(
-                    'pause',
-                    t('scans.controls.scheduleOff', undefined, { name: config.name })
-                  )
-                : setAskActivate(true)
-            }
-            disabled={busy || triggering}
-          >
-            {busy ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : on ? (
-              <Pause className="h-4 w-4" />
-            ) : (
-              <Play className="h-4 w-4" />
-            )}
-            {on ? t('scans.state.scheduleOff') : t('scans.state.scheduleOn')}
-          </Button>
-        </Can>
-      )}
-      <ScheduleOnConfirm
-        name={config.name}
-        open={askActivate}
-        onOpenChange={setAskActivate}
-        onConfirm={() =>
-          setState('activate', t('scans.controls.scheduleOn', undefined, { name: config.name }))
-        }
-      />
-      {dialog}
+    ),
+    schedule: hasSchedule(config) ? (
+      <Can permission={Permission.ScansWrite} mode="disable">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() =>
+            on
+              ? void setState(
+                  'pause',
+                  t('scans.controls.scheduleOff', undefined, { name: config.name })
+                )
+              : setAskActivate(true)
+          }
+          disabled={busy || triggering}
+        >
+          {busy ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : on ? (
+            <Pause className="h-4 w-4" />
+          ) : (
+            <Play className="h-4 w-4" />
+          )}
+          {on ? t('scans.state.scheduleOff') : t('scans.state.scheduleOn')}
+        </Button>
+      </Can>
+    ) : null,
+    dialogs: (
+      <>
+        <ScheduleOnConfirm
+          name={config.name}
+          open={askActivate}
+          onOpenChange={setAskActivate}
+          onConfirm={() =>
+            setState('activate', t('scans.controls.scheduleOn', undefined, { name: config.name }))
+          }
+        />
+        {dialog}
+      </>
+    ),
+  }
+}
+
+/** The controls in a row (the scan drawer's actions). */
+export function ScanControls({
+  config,
+  onViewRun,
+  onChanged,
+}: {
+  config: ScanConfig
+  onViewRun?: (runId: string) => void
+  onChanged?: () => void
+}) {
+  const { run, schedule, dialogs } = useScanControls(config, { onViewRun, onChanged })
+  if (!run && !schedule) return null
+  return (
+    <>
+      {run}
+      {schedule}
+      {dialogs}
     </>
   )
 }

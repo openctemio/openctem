@@ -65,11 +65,11 @@ export function SidebarFooterLinks({
   const { t } = useTranslation()
   const pathname = usePathname()
   const settingsActive = isSettingsShellPath(pathname)
-  const settingsLabel = t('nav.item.settings', 'Settings')
+  const settingsLabel = t('nav.item.organizationSettings', 'Organization settings')
 
   return (
-    <SidebarFooter className="gap-4">
-      <Separator orientation="horizontal" />
+    <SidebarFooter>
+      <Separator orientation="horizontal" className="bg-sidebar-border" />
       <SidebarMenu>
         {showSettings && (
           <SidebarMenuItem>

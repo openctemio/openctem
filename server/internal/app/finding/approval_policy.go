@@ -591,14 +591,14 @@ func (s *VulnerabilityService) NotifyMaterialChange(ctx context.Context, d vulne
 	if s.approvalInApp == nil {
 		return
 	}
-	var title string
+	var title, code string
 	switch action {
 	case approvalpolicy.ActionEnd:
-		title = "Risk acceptance ended: the finding changed"
+		title, code = "Risk acceptance ended: the finding changed", "finding.material_change.ended"
 	case approvalpolicy.ActionRevoke:
-		title = "False positive withdrawn: the finding changed"
+		title, code = "False positive withdrawn: the finding changed", "finding.material_change.revoked"
 	default:
-		title = "A finding decision needs review: the finding changed"
+		title, code = "A finding decision needs review: the finding changed", "finding.material_change.review"
 	}
 	parts := make([]string, 0, len(signals))
 	for _, sg := range signals {
@@ -616,12 +616,22 @@ func (s *VulnerabilityService) NotifyMaterialChange(ctx context.Context, d vulne
 		if err := s.approvalInApp.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: d.TenantID, Audience: notificationdom.AudienceUser, AudienceID: &u,
 			NotificationType: notificationdom.TypeFindingApproval, Title: title, Body: body,
+			Message:  notificationdom.Msg(code, "changes", signalMessages(signals)),
 			Severity: notificationdom.SeverityHigh, ResourceType: "finding", ResourceID: &fid,
 			URL: "/findings/" + d.FindingID.String(),
 		}); err != nil {
 			s.logger.Warn("material change: in-app notification", "error", logger.SanitizeError(err))
 		}
 	}
+}
+
+// signalMessages names the material-change signals as a list of messages.
+func signalMessages(signals []approvalpolicy.Signal) []*notificationdom.Message {
+	out := make([]*notificationdom.Message, 0, len(signals))
+	for _, sg := range signals {
+		out = append(out, notificationdom.Msg("finding.signal."+codeSegment(string(sg))))
+	}
+	return out
 }
 
 // AIAgentChecker answers whether a user is one of the organization's AI

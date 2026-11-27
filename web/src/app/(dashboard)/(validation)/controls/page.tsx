@@ -12,12 +12,7 @@ import {
   EmptyState,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu } from '@/components/ui/action-menu'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -333,45 +328,49 @@ export default function CompensatingControlsPage() {
           return (
             <Can permission={Permission.CompensatingControlsWrite}>
               <div className="flex items-center justify-end gap-1">
-                <Button variant="ghost" size="sm" onClick={() => setLinkControl(control)}>
-                  <Link2 className="me-1 h-3 w-3" />
-                  {t('validation.controls.linkAssets', 'Link assets')}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setTestControlId(control.id)
-                    setTestResult('pass')
-                  }}
-                >
-                  <FlaskConical className="me-1 h-3 w-3" />
-                  {t('validation.controls.test', 'Test')}
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
+                <ActionMenu
+                  title={control.name}
+                  label={t('common.actionMenu.label', 'Actions for {name}', {
+                    name: control.name,
+                  })}
+                  items={[
+                    {
+                      id: 'link-assets',
+                      label: t('validation.controls.linkAssets', 'Link assets'),
+                      icon: Link2,
+                      onSelect: () => setLinkControl(control),
+                    },
+                    {
+                      id: 'test',
+                      label: t('validation.controls.test', 'Test'),
+                      icon: FlaskConical,
+                      onSelect: () => {
+                        setTestControlId(control.id)
+                        setTestResult('pass')
+                      },
+                    },
+                    {
+                      id: 'delete',
+                      label: t('validation.controls.deleteAria', 'Delete {name}', {
+                        name: control.name,
+                      }),
+                      icon: Trash2,
+                      destructive: true,
+                      onSelect: () => setDeleteControl(control),
+                    },
+                  ]}
+                  trigger={
                     <Button
                       variant="ghost"
-                      size="sm"
-                      aria-label={t('validation.controls.moreAria', 'More actions for {name}', {
+                      size="icon-sm"
+                      aria-label={t('common.actionMenu.label', 'Actions for {name}', {
                         name: control.name,
                       })}
                     >
-                      <MoreHorizontal className="h-4 w-4" />
+                      <MoreHorizontal className="h-4 w-4" aria-hidden />
                     </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onSelect={() => setDeleteControl(control)}
-                    >
-                      <Trash2 className="me-2 h-4 w-4" />
-                      {t('validation.controls.deleteAria', 'Delete {name}', {
-                        name: control.name,
-                      })}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                  }
+                />
               </div>
             </Can>
           )
@@ -517,7 +516,7 @@ export default function CompensatingControlsPage() {
               <p className="text-muted-foreground text-xs">
                 {t(
                   'validation.controls.capHint',
-                  'Findings on the linked assets are held at P2 rather than P1. The percentage is shown as the rationale only.'
+                  'Findings on the linked assets rank one step lower. The percentage is shown for reference only.'
                 )}
               </p>
             </div>

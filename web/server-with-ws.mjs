@@ -29,31 +29,51 @@ export function isApiWebSocket(url) {
   return (q === -1 ? url : url.slice(0, q)) === WS_PATH
 }
 
+// The only client headers the API needs for the upgrade. Everything else
+// (Forwarded, True-Client-IP, X-Client-IP, custom headers) is dropped, so the
+// client cannot hand the API a value this hop did not choose.
+const FORWARDED_HEADERS = new Set([
+  'upgrade',
+  'connection',
+  'cookie',
+  'origin',
+  'user-agent',
+  'accept-language',
+])
+
+function isForwardedHeader(lowerName) {
+  return FORWARDED_HEADERS.has(lowerName) || lowerName.startsWith('sec-websocket-')
+}
+
+/** True when the operator declared a header-overwriting reverse proxy (same switch as the HTTP proxy). */
+function trustProxyHeaders() {
+  return process.env.TRUST_PROXY_HEADERS === 'true'
+}
+
 /**
- * Builds the upgrade request sent to the API: same path and query, the
- * client's headers minus hop-by-hop ones we set ourselves, Host rewritten to
- * the backend, and the client address as X-Forwarded-For (overwritten, never
- * appended, so a client cannot inject one).
+ * Builds the upgrade request sent to the API: same path and query, Host
+ * rewritten to the backend, and only the allowlisted client headers above
+ * (Cookie and Origin unchanged). The client address is the socket peer as
+ * X-Forwarded-For / X-Real-IP, overwritten, never appended. Only when
+ * TRUST_PROXY_HEADERS=true, where a gateway in front sets those two headers,
+ * the gateway's values are passed on so this path and the HTTP proxy agree.
  */
-export function buildUpgradeRequest(req, backend) {
-  const skip = new Set([
-    'host',
-    'x-forwarded-for',
-    'x-forwarded-proto',
-    'x-forwarded-host',
-    'x-real-ip',
-  ])
+export function buildUpgradeRequest(req, backend, trusted = trustProxyHeaders()) {
   const lines = [`GET ${req.url} HTTP/1.1`, `Host: ${backend.host}`]
   for (let i = 0; i < req.rawHeaders.length; i += 2) {
     const name = req.rawHeaders[i]
-    if (skip.has(name.toLowerCase())) continue
+    if (!isForwardedHeader(name.toLowerCase())) continue
     lines.push(`${name}: ${req.rawHeaders[i + 1]}`)
   }
-  const clientIP = req.socket.remoteAddress || ''
-  if (clientIP) {
-    lines.push(`X-Forwarded-For: ${clientIP}`)
-    lines.push(`X-Real-IP: ${clientIP}`)
+  const peer = req.socket.remoteAddress || ''
+  const header = (n) => {
+    const v = req.headers && req.headers[n]
+    return typeof v === 'string' ? v.trim() : ''
   }
+  const xff = (trusted && header('x-forwarded-for')) || peer
+  const realIP = (trusted && header('x-real-ip')) || peer
+  if (xff) lines.push(`X-Forwarded-For: ${xff}`)
+  if (realIP) lines.push(`X-Real-IP: ${realIP}`)
   lines.push(`X-Forwarded-Proto: ${req.socket.encrypted ? 'https' : 'http'}`)
   if (req.headers.host) lines.push(`X-Forwarded-Host: ${req.headers.host}`)
   return lines.join('\r\n') + '\r\n\r\n'

@@ -15,6 +15,7 @@ const IDENTIFIER_WORDS: Record<string, string> = {
   api: 'API',
   ci: 'CI',
   cve: 'CVE',
+  ctem: 'CTEM',
   easm: 'EASM',
   idp: 'identity provider',
   ip: 'IP',

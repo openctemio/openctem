@@ -11,6 +11,7 @@ import { TonePill } from '@/features/shared/components/tone-pill'
 import { useTranslation } from '@/context/i18n-provider'
 import { feedName, feedProblem, stateHint, stateLabel, stateTone } from '../lib/feed-status'
 import type { ThreatIntelFeed } from '../types'
+import { formatNumber } from '@/lib/app-locale'
 
 interface FeedCardProps {
   feed: ThreatIntelFeed
@@ -93,10 +94,10 @@ export function FeedCard({
             {feed.data_as_of ? <RelativeTime date={feed.data_as_of} /> : never}
           </Row>
           <Row label={t('admin.ti.catalog', 'In the catalog')}>
-            {feed.catalog_records.toLocaleString()}
+            {formatNumber(feed.catalog_records)}
           </Row>
           <Row label={t('admin.ti.changed', 'Changed in the last run')}>
-            {feed.records_changed.toLocaleString()}
+            {formatNumber(feed.records_changed)}
           </Row>
           <Row label={t('admin.ti.lastAttempt', 'Last attempt')}>
             {feed.last_attempt_at ? <RelativeTime date={feed.last_attempt_at} /> : never}
@@ -113,11 +114,19 @@ export function FeedCard({
           </Row>
         </dl>
         <div className="flex flex-wrap items-center gap-2">
-          {canWrite && (
-            <Button size="sm" variant="outline" disabled={busy || running} onClick={onSync}>
-              <RefreshCw className={running ? 'me-2 size-4 animate-spin' : 'me-2 size-4'} />
-              {running ? t('admin.ti.running', 'Running') : t('admin.ti.syncOne', 'Sync now')}
-            </Button>
+          {/* A running sync is a status line, not a disabled button. */}
+          {running ? (
+            <p className="flex items-center gap-2 text-body text-muted-foreground" role="status">
+              <RefreshCw className="size-4 animate-spin" aria-hidden />
+              {t('admin.ti.running', 'Running')}
+            </p>
+          ) : (
+            canWrite && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={onSync}>
+                <RefreshCw className="me-2 size-4" />
+                {t('admin.ti.syncOne', 'Sync now')}
+              </Button>
+            )
           )}
           {feed.last_error && problem && (
             <Collapsible className="w-full">

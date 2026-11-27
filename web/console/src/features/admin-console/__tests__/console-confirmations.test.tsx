@@ -97,6 +97,7 @@ describe('TypedAdminConfirmDialog', () => {
     render(
       <TypedAdminConfirmDialog
         open
+        reasonPlaceholder="Why, ticket 1"
         onOpenChange={vi.fn()}
         title="Retire shared-1?"
         description={<p>It stops.</p>}
@@ -151,7 +152,7 @@ describe('Platform identity provider', () => {
       .getAllByRole('switch')
       .find((s) => /require/i.test(s.getAttribute('aria-label') ?? s.id))
     await user.click((requireSwitch ?? sw)!)
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: /Save changes/ }))
     expect(savePlatformIdP).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Stop requiring it' }))
     await waitFor(() => expect(savePlatformIdP).toHaveBeenCalled())

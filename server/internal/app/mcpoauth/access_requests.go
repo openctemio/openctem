@@ -236,10 +236,12 @@ func (s *Service) closeAccessRequest(ctx context.Context, ar *mcpoauth.AccessReq
 			WithMetadata("client_host", ar.ClientHost))
 	if ar.RequestedBy != nil && *ar.RequestedBy != userID {
 		body := fmt.Sprintf("Your organization declined applications published by %s.", ar.ClientHost)
+		m := notificationdom.Msg("mcp.access_declined", "host", ar.ClientHost)
 		if approve {
 			body = fmt.Sprintf("Applications published by %s can now be connected. Connect %s again.", ar.ClientHost, ar.ClientName)
+			m = notificationdom.Msg("mcp.access_approved", "host", ar.ClientHost, "app", ar.ClientName)
 		}
-		s.notify(ctx, ar.TenantID, *ar.RequestedBy, userID, title, body, "/account/connected-apps")
+		s.notify(ctx, ar.TenantID, *ar.RequestedBy, userID, m, title, body, "/account/connected-apps")
 	}
 	return nil
 }
@@ -256,19 +258,21 @@ func (s *Service) notifyAdmins(ctx context.Context, tenantID, requester shared.I
 	body := fmt.Sprintf("A member asks to connect %s, published by %s. Review it in AI assistants settings.", ar.ClientName, ar.ClientHost)
 	for _, a := range admins {
 		if a != requester {
-			s.notify(ctx, tenantID, a, requester, "AI application access requested", body, "/settings/mcp?tab=applications")
+			s.notify(ctx, tenantID, a, requester,
+				notificationdom.Msg("mcp.access_requested", "app", ar.ClientName, "host", ar.ClientHost),
+				"AI application access requested", body, "/settings/mcp?tab=applications")
 		}
 	}
 }
 
-func (s *Service) notify(ctx context.Context, tenantID, to, actor shared.ID, title, body, link string) {
+func (s *Service) notify(ctx context.Context, tenantID, to, actor shared.ID, msg *notificationdom.Message, title, body, link string) {
 	if s.notifier == nil {
 		return
 	}
 	uid, aid := to, actor
 	if err := s.notifier.Notify(ctx, notificationdom.NotificationParams{
 		TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-		NotificationType: notificationdom.TypeMCPAccessRequest, Title: title, Body: body, Severity: "medium",
+		NotificationType: notificationdom.TypeMCPAccessRequest, Title: title, Body: body, Message: msg, Severity: "medium",
 		URL: link, ActorID: &aid,
 	}); err != nil {
 		s.log.Warn("mcp access request: notify", "error", err.Error())

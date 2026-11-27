@@ -27,7 +27,7 @@ export function RefreshButton({
         <Button
           variant="outline"
           size="icon"
-          className="h-9 w-9"
+
           onClick={onClick}
           disabled={loading}
           aria-label={label}

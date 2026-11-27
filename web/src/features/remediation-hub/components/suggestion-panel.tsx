@@ -47,6 +47,7 @@ import {
 import { FixStepsBlock } from './fix-steps'
 import { OwnerCombobox, type OwnerValue } from './owner-combobox'
 import { RiskPoints } from './risk-points'
+import { formatDate } from '@/lib/app-locale'
 
 const PER_PAGE = 50
 
@@ -69,12 +70,12 @@ export interface SuggestionPanelProps {
   onNext?: () => void
 }
 
-function dateLabel(iso: string | undefined, locale: string): string {
+function dateLabel(iso: string | undefined, _locale: string): string {
   if (!iso) return ''
   const d = new Date(iso)
   return Number.isNaN(d.getTime())
     ? ''
-    : d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' })
+    : formatDate(d, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 export function SuggestionPanel({
@@ -189,7 +190,7 @@ export function SuggestionPanel({
               <Button
                 size="icon"
                 variant="ghost"
-                className="size-8"
+
                 onClick={onPrev}
                 disabled={!position || position.index <= 0}
                 aria-label={t('remediationHub.panel.previous')}
@@ -202,7 +203,7 @@ export function SuggestionPanel({
               <Button
                 size="icon"
                 variant="ghost"
-                className="size-8"
+
                 onClick={onNext}
                 disabled={!position || position.index >= position.total - 1}
                 aria-label={t('remediationHub.panel.next')}
@@ -580,7 +581,7 @@ function WhySection({ s }: { s: RemediationSuggestion }) {
           </p>
         )}
         <DetailDisclosure summary={t('remediationHub.panel.technical')}>
-          <p className="text-muted-foreground text-xs break-all">
+          <p className="text-muted-foreground text-xs break-words">
             {t('remediationHub.explain.key', undefined, { key: s.action_key })}
           </p>
           <p className="text-muted-foreground text-xs">

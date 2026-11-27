@@ -59,11 +59,16 @@ describe('QuickScanDialog', () => {
       target_count: 2,
     })
     render(<QuickScanDialog open onOpenChange={vi.fn()} />)
-    const start = screen.getByRole('button', { name: /Start Scan/ })
-    expect(start).toBeDisabled()
+    const start = screen.getByRole('button', { name: /Start scan/ })
+    expect(start).toBeEnabled()
+    await userEvent.click(start)
+    expect(await screen.findByText('Please enter at least one target')).toBeInTheDocument()
+    expect(quickScan).not.toHaveBeenCalled()
 
     await userEvent.type(screen.getByLabelText('Targets'), 'example.com, api.example.com')
-    expect(start).toBeDisabled() // no scanner yet: nothing is hardcoded
+    await userEvent.click(start) // no scanner yet: nothing is hardcoded
+    expect(await screen.findByText('Please choose a scanner')).toBeInTheDocument()
+    expect(quickScan).not.toHaveBeenCalled()
     await userEvent.click(screen.getByLabelText('Scanner'))
     await userEvent.click(await screen.findByRole('option', { name: 'Nuclei' }))
     await userEvent.click(start)
@@ -93,7 +98,7 @@ describe('QuickScanDialog', () => {
     await userEvent.type(screen.getByLabelText('Targets'), 'promo.net, old.example.com')
     await userEvent.click(screen.getByLabelText('Scanner'))
     await userEvent.click(await screen.findByRole('option', { name: 'Nuclei' }))
-    await userEvent.click(screen.getByRole('button', { name: /Start Scan/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Start scan/ }))
 
     expect(await screen.findByText('2 targets may not be scanned')).toBeInTheDocument()
     expect(screen.getByText('Not in scope')).toBeInTheDocument()
@@ -112,7 +117,7 @@ describe('QuickScanDialog', () => {
     await userEvent.type(screen.getByLabelText('Targets'), 'example.com')
     await userEvent.click(screen.getByLabelText('Scanner'))
     await userEvent.click(await screen.findByRole('option', { name: 'Nuclei' }))
-    await userEvent.click(screen.getByRole('button', { name: /Start Scan/ }))
+    await userEvent.click(screen.getByRole('button', { name: /Start scan/ }))
 
     const name = await screen.findByLabelText('Save as scan')
     expect(name).toHaveValue('nuclei — example.com')
@@ -126,6 +131,63 @@ describe('QuickScanDialog', () => {
       'href',
       '/scans/s1'
     )
+  })
+})
+
+describe('QuickScanDialog once started', () => {
+  beforeEach(() => {
+    quickScan.mockReset()
+    saveQuickScan.mockReset()
+  })
+
+  async function start(onOpenChange = vi.fn()) {
+    quickScan.mockResolvedValue({
+      scan_run_id: 'r1',
+      scan_id: 's1',
+      status: 'pending',
+      target_count: 1,
+    })
+    render(<QuickScanDialog open onOpenChange={onOpenChange} />)
+    await userEvent.type(screen.getByLabelText('Targets'), 'example.com')
+    await userEvent.click(screen.getByLabelText('Scanner'))
+    await userEvent.click(await screen.findByRole('option', { name: 'Nuclei' }))
+    await userEvent.click(screen.getByRole('button', { name: /Start scan/ }))
+    return screen.findByLabelText('Save as scan')
+  }
+
+  it('has one action, Done, which closes; no Cancel', async () => {
+    const onOpenChange = vi.fn()
+    await start(onOpenChange)
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    expect(quickScan).toHaveBeenCalledTimes(1)
+  })
+
+  it('Enter in the name field saves the scan and keeps the dialog open', async () => {
+    saveQuickScan.mockResolvedValue({ id: 's1', name: 'Nightly' })
+    const onOpenChange = vi.fn()
+    const name = await start(onOpenChange)
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Nightly{Enter}')
+    expect(saveQuickScan).toHaveBeenCalledWith({ name: 'Nightly' })
+    expect(onOpenChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('QuickScanDialog with a line that is not a target', () => {
+  it('saving the line from its edit field does not start the scan', async () => {
+    quickScan.mockReset()
+    render(<QuickScanDialog open onOpenChange={vi.fn()} />)
+    await userEvent.type(screen.getByLabelText('Targets'), 'bad_host!!')
+    await userEvent.click(screen.getByLabelText('Scanner'))
+    await userEvent.click(await screen.findByRole('option', { name: 'Nuclei' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit bad_host!!' }))
+    const edit = screen.getByRole('textbox', { name: 'Edit bad_host!!' })
+    await userEvent.clear(edit)
+    await userEvent.type(edit, 'example.com{Enter}')
+    expect(quickScan).not.toHaveBeenCalled()
+    expect(screen.queryByRole('textbox', { name: 'Edit bad_host!!' })).not.toBeInTheDocument()
   })
 })
 

@@ -45,13 +45,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
@@ -88,7 +82,7 @@ import {
 } from '../hooks/use-asset-owners'
 import type { AssetOwner, OwnershipType } from '../types'
 import { AssetAccessGrantsSection } from './asset-access-grants-section'
-import { OWNERSHIP_TYPE_LABELS, OWNERSHIP_TYPE_DESCRIPTIONS } from '../types'
+import { OWNERSHIP_TYPES, ownershipTypeHint, ownershipTypeLabel } from '../lib/ownership-labels'
 import { Tag } from '@/components/ui/tag'
 
 // ============================================
@@ -131,8 +125,9 @@ const OWNERSHIP_TYPE_ICON: Record<OwnershipType, LucideIcon> = {
 }
 
 function OwnershipBadge({ type }: { type: OwnershipType }) {
+  const { t } = useTranslation()
   return (
-    <Tag variant="plain" icon={OWNERSHIP_TYPE_ICON[type]} label={OWNERSHIP_TYPE_LABELS[type]} />
+    <Tag variant="plain" icon={OWNERSHIP_TYPE_ICON[type]} label={ownershipTypeLabel(t, type)} />
   )
 }
 
@@ -188,6 +183,26 @@ function OwnerCard({
   const isUser = !!owner.userId
   const name = isUser ? owner.userName : owner.groupName
   const subtitle = isUser ? owner.userEmail : t('assets.ownersTab.group', 'Group')
+  const actionsName = name || t('assets.ownersTab.unknown', 'Unknown')
+  const actionsLabel = t('assets.ownersTab.actionsFor', 'Actions for {name}', {
+    name: actionsName,
+  })
+  const menuItems: ActionMenuEntry[] = []
+  if (canEdit)
+    menuItems.push({
+      id: 'edit',
+      label: t('assets.ownersTab.edit', 'Edit'),
+      icon: Pencil,
+      onSelect: () => onEdit(owner),
+    })
+  if (canDelete)
+    menuItems.push({
+      id: 'remove',
+      label: t('assets.ownersTab.remove', 'Remove'),
+      icon: Trash2,
+      destructive: true,
+      onSelect: () => onRemove(owner),
+    })
 
   return (
     <div className="flex items-center justify-between rounded-lg border p-3">
@@ -223,35 +238,16 @@ function OwnerCard({
         </div>
       </div>
       {(canEdit || canDelete) && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              aria-label={t('assets.ownersTab.actionsFor', 'Actions for {name}', {
-                name: name || t('assets.ownersTab.unknown', 'Unknown'),
-              })}
-            >
+        <ActionMenu
+          title={actionsName}
+          label={actionsLabel}
+          items={menuItems}
+          trigger={
+            <Button variant="ghost" size="icon" aria-label={actionsLabel}>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {canEdit && (
-              <DropdownMenuItem onClick={() => onEdit(owner)}>
-                <Pencil className="me-2 h-4 w-4" />
-                {t('assets.ownersTab.edit', 'Edit')}
-              </DropdownMenuItem>
-            )}
-            {canEdit && canDelete && <DropdownMenuSeparator />}
-            {canDelete && (
-              <DropdownMenuItem className="text-destructive" onClick={() => onRemove(owner)}>
-                <Trash2 className="me-2 h-4 w-4" />
-                {t('assets.ownersTab.remove', 'Remove')}
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          }
+        />
       )}
     </div>
   )
@@ -450,7 +446,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
       toast.success(
         t('assets.ownersTab.added', '{name} added as {role} owner', {
           name: selectedOption.label,
-          role: OWNERSHIP_TYPE_LABELS[addOwnershipType].toLowerCase(),
+          role: ownershipTypeLabel(t, addOwnershipType).toLowerCase(),
         })
       )
       setShowAddDialog(false)
@@ -550,7 +546,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
         {canEdit && !ownersError && (
           <Button variant="outline" size="sm" onClick={() => setShowAddDialog(true)}>
             <UserPlus className="me-1.5 h-3.5 w-3.5" />
-            {t('assets.ownersTab.addOwner', 'Add Owner')}
+            {t('assets.ownersTab.addOwner', 'Add owner')}
           </Button>
         )}
       </div>
@@ -573,23 +569,11 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           onRetry={() => mutate()}
         />
       ) : owners.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-8">
-          <Users className="h-8 w-8 text-muted-foreground/50" />
-          <p className="mt-2 text-sm text-muted-foreground">
-            {t('assets.ownersTab.none', 'No owners assigned')}
-          </p>
-          {canEdit && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3"
-              onClick={() => setShowAddDialog(true)}
-            >
-              <UserPlus className="me-1.5 h-3.5 w-3.5" />
-              {t('assets.ownersTab.addFirst', 'Add First Owner')}
-            </Button>
-          )}
-        </div>
+        // One sentence, as the Direct access section below: the heading's
+        // "Add owner" is the one way to add (no second button here).
+        <p className="text-sm text-muted-foreground">
+          {t('assets.ownersTab.none', 'No owners assigned')}
+        </p>
       ) : (
         <div className="space-y-2">
           {/*
@@ -676,7 +660,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogHeader>
-            <DialogTitle>{t('assets.ownersTab.addOwner', 'Add Owner')}</DialogTitle>
+            <DialogTitle>{t('assets.ownersTab.addOwner', 'Add owner')}</DialogTitle>
             <DialogDescription>
               {t(
                 'assets.ownersTab.addDesc',
@@ -737,7 +721,6 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                   </PopoverTrigger>
                   <PopoverContent
                     className="w-[var(--radix-popover-trigger-width)] p-0"
-                    align="start"
                     // Same nested-dialog guards: prevent the parent dialog from
                     // interpreting clicks inside the popover as outside-clicks.
                     onPointerDownOutside={(e) => {
@@ -872,7 +855,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                 render it inside the trigger AS WELL, creating a 2-line
                 trigger and a duplicate of the helper text. */}
               <div className="space-y-2">
-                <Label>{t('assets.ownersTab.role', 'Ownership Role')}</Label>
+                <Label>{t('assets.ownersTab.role', 'Ownership role')}</Label>
                 <Select
                   value={addOwnershipType}
                   onValueChange={(v) => setAddOwnershipType(v as OwnershipType)}
@@ -881,21 +864,19 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {(Object.entries(OWNERSHIP_TYPE_LABELS) as [OwnershipType, string][]).map(
-                      ([value, label]) => (
-                        <SelectItem
-                          key={value}
-                          value={value}
-                          disabled={!canAssignGroups && VIEW_GRANTING_TYPES.has(value)}
-                        >
-                          {label}
-                        </SelectItem>
-                      )
-                    )}
+                    {OWNERSHIP_TYPES.map((value) => (
+                      <SelectItem
+                        key={value}
+                        value={value}
+                        disabled={!canAssignGroups && VIEW_GRANTING_TYPES.has(value)}
+                      >
+                        {ownershipTypeLabel(t, value)}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  {OWNERSHIP_TYPE_DESCRIPTIONS[addOwnershipType]}
+                  {ownershipTypeHint(t, addOwnershipType)}
                 </p>
                 {!canAssignGroups && (
                   <p className="text-xs text-muted-foreground">
@@ -921,7 +902,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
             <Button onClick={handleAdd} disabled={isSubmitting || !selectedOption}>
               {isSubmitting
                 ? t('assets.ownersTab.adding', 'Adding...')
-                : t('assets.ownersTab.addOwner', 'Add Owner')}
+                : t('assets.ownersTab.addOwner', 'Add owner')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -934,7 +915,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogHeader>
-            <DialogTitle>{t('assets.ownersTab.editTitle', 'Edit Ownership Type')}</DialogTitle>
+            <DialogTitle>{t('assets.ownersTab.editTitle', 'Edit ownership type')}</DialogTitle>
             <DialogDescription>
               {t('assets.ownersTab.editDesc', 'Change the ownership type for {name}.', {
                 name:
@@ -946,7 +927,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
           </DialogHeader>
           <DialogBody>
             <div className="space-y-2">
-              <Label>{t('assets.ownersTab.type', 'Ownership Type')}</Label>
+              <Label>{t('assets.ownersTab.type', 'Ownership type')}</Label>
               <Select
                 value={editOwnershipType}
                 onValueChange={(v) => setEditOwnershipType(v as OwnershipType)}
@@ -955,7 +936,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(OWNERSHIP_TYPE_LABELS).map(([value, label]) => (
+                  {OWNERSHIP_TYPES.map((value) => (
                     <SelectItem
                       key={value}
                       value={value}
@@ -966,7 +947,7 @@ export function AssetOwnersTab({ assetId }: AssetOwnersTabProps) {
                         VIEW_GRANTING_TYPES.has(value)
                       }
                     >
-                      {label}
+                      {ownershipTypeLabel(t, value)}
                     </SelectItem>
                   ))}
                 </SelectContent>

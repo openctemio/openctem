@@ -241,6 +241,14 @@ func (s *NotificationService) Notify(ctx context.Context, params notificationdom
 		params.URL = weblink.WithOrg(params.URL, params.TenantID.String())
 	}
 
+	// A message the store would refuse never costs the notice: it is sent
+	// with its English title and body only, which the web shows as before.
+	if err := params.Message.Validate(); err != nil {
+		s.logger.Warn("notification message dropped, English text kept",
+			"tenant_id", params.TenantID, "type", params.NotificationType, "error", err)
+		params.Message = nil
+	}
+
 	n := notificationdom.NewNotification(params)
 
 	if err := s.store(ctx, n); err != nil {
@@ -309,6 +317,12 @@ func (s *NotificationService) pushWebSocket(ctx context.Context, n *notification
 		"title":    n.Title(),
 		"body":     n.Body(),
 		"severity": n.Severity(),
+	}
+	if m := n.Message(); m != nil {
+		payload["message_code"] = m.Code
+		if len(m.Params) > 0 {
+			payload["message_params"] = m.Params
+		}
 	}
 
 	tenantID := n.TenantID().String()

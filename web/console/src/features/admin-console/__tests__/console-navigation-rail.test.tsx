@@ -43,7 +43,7 @@ describe('console sidebar and settings rail', () => {
       'href',
       '/system/configuration'
     )
-    expect(within(nav).queryByRole('link', { name: 'E-mail' })).not.toBeInTheDocument()
+    expect(within(nav).queryByRole('link', { name: 'Email' })).not.toBeInTheDocument()
     expect(within(nav).getByRole('link', { name: 'Admin activity' })).toBeInTheDocument()
   })
 
@@ -56,10 +56,7 @@ describe('console sidebar and settings rail', () => {
       'href',
       '/organizations?owner=none'
     )
-    expect(within(nav).getByRole('link', { name: 'E-mail' })).toHaveAttribute(
-      'aria-current',
-      'page'
-    )
+    expect(within(nav).getByRole('link', { name: 'Email' })).toHaveAttribute('aria-current', 'page')
     expect(within(nav).queryByRole('link', { name: 'Organizations' })).not.toBeInTheDocument()
   })
 
@@ -87,7 +84,7 @@ describe('actingRoleLabel', () => {
         elevated_as: 'platform_owner',
         permissions: owner.max_permissions,
       })
-    ).toEqual({ key: 'admin.platformRole.platform_owner', fallback: 'platform_owner' })
+    ).toEqual({ key: 'admin.platformRole.platform_owner', fallback: 'Platform owner' })
   })
 
   it('says read-only while an elevation would add something', () => {

@@ -114,7 +114,7 @@ function buildSCMConnectionsEndpoint(): string {
 }
 
 function buildSCMConnectionEndpoint(connectionId: string): string {
-  return `/api/v1/integrations/${connectionId}`
+  return `/api/v1/integrations/${encodeURIComponent(connectionId)}`
 }
 
 // ============================================
@@ -768,7 +768,7 @@ function buildSCMRepositoriesEndpoint(
   connectionId: string,
   options?: SCMRepositoriesOptions
 ): string {
-  const baseUrl = `/api/v1/integrations/${connectionId}/repositories`
+  const baseUrl = `/api/v1/integrations/${encodeURIComponent(connectionId)}/repositories`
   const params = new URLSearchParams()
 
   if (options?.search) params.set('search', options.search)

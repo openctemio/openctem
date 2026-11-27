@@ -192,14 +192,37 @@ export interface ScopeStatusCounts {
  * two requests, each a one-row page with every status counted
  * (include=status_counts), instead of one request per count.
  */
-export function useScopeStatusCounts(): ScopeStatusCounts {
-  const targets = useScopeTargetsApi({ per_page: 1, include: 'status_counts' })
-  const exclusions = useScopeExclusionsApi({ per_page: 1, include: 'status_counts' })
+export function useScopeStatusCounts(
+  entriesFromList = false,
+  exclusionsNeeded = true
+): ScopeStatusCounts {
+  const { currentTenant } = useTenant()
+  // While the entries list is on screen it carries the entry counts itself
+  // (include=status_counts, whatever its filters), so the one-row request is
+  // not sent a second time.
+  const targets = useSWR<ApiScopeTargetListResponse>(
+    currentTenant && !entriesFromList
+      ? buildTargetsEndpoint({ per_page: 1, include: 'status_counts' })
+      : null,
+    fetchTargets,
+    defaultConfig
+  )
+  // Exclusion counts show only in the list menu and the approvals badge:
+  // read when the page asks (the menu opens, or another list is shown).
+  const exclusions = useSWR<ApiScopeExclusionListResponse>(
+    currentTenant && exclusionsNeeded
+      ? buildExclusionsEndpoint({ per_page: 1, include: 'status_counts' })
+      : null,
+    fetchExclusions,
+    defaultConfig
+  )
   return {
     targets: targets.data?.status_counts,
     exclusions: exclusions.data?.status_counts,
     error: targets.error ?? exclusions.error,
-    isLoading: (!targets.data && !targets.error) || (!exclusions.data && !exclusions.error),
+    isLoading:
+      (!entriesFromList && !targets.data && !targets.error) ||
+      (exclusionsNeeded && !exclusions.data && !exclusions.error),
   }
 }
 

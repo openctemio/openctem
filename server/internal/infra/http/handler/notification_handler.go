@@ -56,6 +56,12 @@ type NotificationResponse struct {
 	// CoalescedCount is how many events the notice stands for (1 unless
 	// events of one item were folded into it).
 	CoalescedCount int `json:"coalesced_count"`
+	// MessageCode is the stable code of the title and body (for example
+	// coverage.gap) that the web renders in the reader's language from its
+	// catalogs, with MessageParams as the values; absent on notices that
+	// predate it, where title and body are the text to show.
+	MessageCode   string         `json:"message_code,omitempty"`
+	MessageParams map[string]any `json:"message_params,omitempty"`
 }
 
 // UnreadCountResponse represents the unread notification count.
@@ -399,6 +405,9 @@ func toNotificationResponse(n *notification.Notification) NotificationResponse {
 		CoalescedCount:   n.Count(),
 	}
 
+	if m := n.Message(); m != nil {
+		resp.MessageCode, resp.MessageParams = m.Code, m.Params
+	}
 	if n.AudienceID() != nil {
 		resp.AudienceID = n.AudienceID().String()
 	}

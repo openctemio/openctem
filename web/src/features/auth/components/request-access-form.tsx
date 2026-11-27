@@ -1,10 +1,15 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import Link from '@/components/link'
-import { Loader2, MailCheck } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
+import {
+  EntryActions,
+  EntryBackLink,
+  EntryBanner,
+  EntryCard,
+  EntryHeader,
+} from '@/components/entry'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -13,6 +18,12 @@ import { submitAccessRequestAction } from '../actions/local-auth-actions'
 import { useAuthProviders } from '../api/use-auth-providers'
 import { TurnstileWidget } from './turnstile-widget'
 import { isSignupNotAvailable } from '../lib/signup-outcome'
+import { authErrorText } from '../lib/auth-error-codes'
+import {
+  FieldError,
+  fieldErrorProps,
+  focusFirstInvalid,
+} from '@/features/shared/components/forms/field-error'
 
 const MAX_COMPANY = 200
 const MAX_NOTE = 1000
@@ -28,6 +39,8 @@ export function RequestAccessForm() {
   const [email, setEmail] = useState('')
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [companyError, setCompanyError] = useState<string | null>(null)
+  const [emailError, setEmailError] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
   const [isPending, startTransition] = useTransition()
   const { data: authProviders } = useAuthProviders()
@@ -42,9 +55,26 @@ export function RequestAccessForm() {
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) &&
     (!captchaSiteKey || captchaToken !== '')
 
-  function onSubmit(e: React.FormEvent) {
+  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    if (!valid) return
+    const form = e.currentTarget
+    const missingCompany =
+      company.trim().length === 0
+        ? t('auth.requestAccess.companyRequired', 'Enter your company name.')
+        : null
+    const badEmail = !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+      ? t('auth.requestAccess.emailInvalid', 'Enter a work email, like name@example.com.')
+      : null
+    setCompanyError(missingCompany)
+    setEmailError(badEmail)
+    if (missingCompany || badEmail) {
+      focusFirstInvalid(form)
+      return
+    }
+    if (!valid) {
+      setError(t('auth.captcha.failed', 'Complete the security check and try again.'))
+      return
+    }
     setError(null)
     startTransition(async () => {
       const res = await submitAccessRequestAction({
@@ -61,109 +91,120 @@ export function RequestAccessForm() {
       } else if (res.code === 'CAPTCHA_FAILED') {
         setError(t('auth.captcha.failed', 'Complete the security check and try again.'))
       } else {
-        setError(res.error)
+        // The words come from the API's code; the server's sentence is never shown.
+        setError(
+          authErrorText(
+            res.code,
+            t,
+            t('auth.requestAccess.failed', 'Could not send the request. Try again in a minute.')
+          )
+        )
       }
     })
   }
 
+  const companyField = fieldErrorProps('ra-company', companyError)
+  const emailField = fieldErrorProps('ra-email', emailError)
+
   if (sent) {
     return (
-      <Card className="mx-auto w-full max-w-md">
-        <CardHeader className="items-center text-center">
-          <MailCheck className="size-8 text-muted-foreground" aria-hidden />
-          <CardTitle>{t('auth.requestAccess.title', 'Request access')}</CardTitle>
-          <CardDescription>
+      <EntryCard>
+        <EntryHeader title={t('auth.requestAccess.title', 'Request access')} />
+        <EntryBanner tone="ok">
+          <p>
             {t(
               'auth.requestAccess.sent',
               'Thanks. If your request is approved, you will get an email at the address you entered.'
             )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 text-center text-sm text-muted-foreground">
+          </p>
           <p>
             {t(
               'auth.requestAccess.checkEmail',
               'If email is set up, we sent you a link to confirm the request.'
             )}
           </p>
-          <Button asChild variant="outline">
-            <Link href="/login">{t('auth.notSetUp.backToSignIn', 'Back to sign in')}</Link>
-          </Button>
-        </CardContent>
-      </Card>
+        </EntryBanner>
+        <EntryActions>
+          <EntryBackLink />
+        </EntryActions>
+      </EntryCard>
     )
   }
 
   return (
-    <Card className="mx-auto w-full max-w-md">
-      <CardHeader>
-        <CardTitle>{t('auth.requestAccess.title', 'Request access')}</CardTitle>
-        <CardDescription>
-          {t(
-            'auth.requestAccess.description',
-            'Tell us about your organization. An administrator reviews every request.'
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form method="post" onSubmit={onSubmit} className="space-y-4" noValidate>
-          <div className="space-y-2">
-            <Label htmlFor="ra-company">{t('auth.requestAccess.company', 'Company')}</Label>
-            <Input
-              id="ra-company"
-              value={company}
-              onChange={(e) => setCompany(e.target.value)}
-              maxLength={MAX_COMPANY}
-              autoComplete="organization"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ra-email">{t('auth.requestAccess.email', 'Work email')}</Label>
-            <Input
-              id="ra-email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-              required
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ra-note">
-              {t('auth.requestAccess.note', 'What would you like to use it for? (optional)')}
-            </Label>
-            <Textarea
-              id="ra-note"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              maxLength={MAX_NOTE}
-              rows={3}
-            />
-          </div>
-          {captchaSiteKey && (
-            <TurnstileWidget
-              siteKey={captchaSiteKey}
-              onToken={setCaptchaToken}
-              resetSignal={captchaReset}
-            />
-          )}
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          )}
-          <Button type="submit" className="w-full" disabled={!valid || isPending}>
-            {isPending && <Loader2 className="me-2 size-4 animate-spin" />}
+    <EntryCard>
+      <EntryHeader
+        title={t('auth.requestAccess.title', 'Request access')}
+        description={t(
+          'auth.requestAccess.description',
+          'Tell us about your organization. An administrator reviews every request.'
+        )}
+      />
+      <form method="post" onSubmit={onSubmit} className="flex flex-col gap-3.5" noValidate>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="ra-company">{t('auth.requestAccess.company', 'Company')}</Label>
+          <Input
+            id="ra-company"
+            value={company}
+            onChange={(e) => {
+              setCompany(e.target.value)
+              setCompanyError(null)
+            }}
+            maxLength={MAX_COMPANY}
+            autoComplete="organization"
+            required
+            {...companyField.control}
+          />
+          <FieldError {...companyField.message} />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="ra-email">{t('auth.requestAccess.email', 'Work email')}</Label>
+          <Input
+            id="ra-email"
+            type="email"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value)
+              setEmailError(null)
+            }}
+            autoComplete="email"
+            required
+            {...emailField.control}
+          />
+          <FieldError {...emailField.message} />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="ra-note">
+            {t('auth.requestAccess.note', 'What would you like to use it for? (optional)')}
+          </Label>
+          <Textarea
+            id="ra-note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={MAX_NOTE}
+            rows={3}
+          />
+        </div>
+        {captchaSiteKey && (
+          <TurnstileWidget
+            siteKey={captchaSiteKey}
+            onToken={setCaptchaToken}
+            resetSignal={captchaReset}
+          />
+        )}
+        {error && (
+          <EntryBanner tone="danger" role="alert">
+            {error}
+          </EntryBanner>
+        )}
+        <EntryActions>
+          <Button variant="signal" type="submit" disabled={isPending}>
+            {isPending && <Loader2 aria-hidden className="size-4 animate-spin" />}
             {t('auth.requestAccess.submit', 'Send request')}
           </Button>
-          <div className="text-center">
-            <Link href="/login" className="text-sm text-muted-foreground hover:underline">
-              {t('auth.notSetUp.backToSignIn', 'Back to sign in')}
-            </Link>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+          <EntryBackLink />
+        </EntryActions>
+      </form>
+    </EntryCard>
   )
 }

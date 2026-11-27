@@ -80,7 +80,7 @@ describe('ComplianceCheckSection', () => {
     fireEvent.click(screen.getByRole('button', { name: '+2 more' }))
     expect(screen.getByText('AC-5')).toBeInTheDocument()
     expect(screen.queryByText('HIPAA')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '+1 more frameworks' }))
+    fireEvent.click(screen.getByRole('button', { name: '+1 more framework' }))
     expect(screen.getByText('HIPAA')).toBeInTheDocument()
   })
 

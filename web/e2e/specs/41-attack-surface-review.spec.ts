@@ -46,7 +46,8 @@ test(
 test('Review fits a phone', { tag: ['@attack-surface'] }, async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${REVIEW}?all=1`)
-  await expect(page.getByRole('button', { name: /^State:/ })).toBeVisible({ timeout: 30_000 })
+  // A phone keeps the filters behind one Filters button (the State token is in its sheet).
+  await expect(page.getByRole('button', { name: /^Filters/ })).toBeVisible({ timeout: 30_000 })
   const [scroll, inner] = await page.evaluate(() => [
     document.documentElement.scrollWidth,
     window.innerWidth,

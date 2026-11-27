@@ -23,6 +23,8 @@ import (
 	"sync"
 	"time"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	"github.com/openctemio/openctem/server/pkg/domain/admin"
 	"github.com/openctemio/openctem/server/pkg/domain/scangov"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
@@ -92,7 +94,7 @@ type Mailer interface {
 
 // TenantNotifier tells an organization's administrators in-app.
 type TenantNotifier interface {
-	NotifyAdmins(ctx context.Context, tenantID shared.ID, title, body string)
+	NotifyAdminsMsg(ctx context.Context, tenantID shared.ID, title, body string, msg *notificationdom.Message)
 }
 
 // Service reads and changes the policy.
@@ -348,8 +350,9 @@ func (s *Service) UpdateOverride(ctx context.Context, tenantID shared.ID, p *sca
 		fmt.Sprintf("%s changed the scan approval policy of organization %s from %s to %s (in effect: %s). Reason: %s",
 			c.Actor.Email(), tenantID, policyText(prev), policyText(p), next, strings.TrimSpace(c.Reason)))
 	if s.tenants != nil && prevMode != next {
-		s.tenants.NotifyAdmins(ctx, tenantID, "Scan approval changed by your platform administrator",
-			"Scan approval in your organization is now "+describeMode(next)+". Step-up, scope exclusions, ownership proof, the platform deny list, audit and notifications still apply.")
+		s.tenants.NotifyAdminsMsg(ctx, tenantID, "Scan approval changed by your platform administrator",
+			"Scan approval in your organization is now "+describeMode(next)+". Step-up, scope exclusions, ownership proof, the platform deny list, audit and notifications still apply.",
+			modeChangedMessage(next))
 	}
 	return nil
 }
@@ -414,6 +417,19 @@ func policyText(p *scangov.PlatformPolicy) string {
 		return "platform default"
 	}
 	return string(*p)
+}
+
+// modeChangedMessage is the language-neutral notice of a new scan approval
+// mode: the mode is a nested message (scanpolicy.mode.<off|on|strict>).
+func modeChangedMessage(m scangov.Mode) *notificationdom.Message {
+	mode := "off"
+	switch m {
+	case scangov.ModeOn:
+		mode = "on"
+	case scangov.ModeStrict:
+		mode = "strict"
+	}
+	return notificationdom.Msg("scanpolicy.approval_changed", "mode", notificationdom.Msg("scanpolicy.mode."+mode))
 }
 
 func describeMode(m scangov.Mode) string {

@@ -38,6 +38,7 @@ import type { SelectorPreview } from '../../hooks/use-selector-preview'
 import { effectiveCidrMode } from '../../lib/liveness'
 import type { Translate } from '../../lib/translate'
 import { selectorOptionsSummary } from '../../lib/targets-step'
+import { formatNumber } from '@/lib/app-locale'
 
 interface CidrModeChoiceProps {
   options: ScanTargetOptions | undefined
@@ -134,11 +135,11 @@ export function selectorPreviewText(
       undefined,
       {
         value: sel.value,
-        count: p.total.toLocaleString(),
+        count: formatNumber(p.total),
         cap:
           p.total > MAX_SELECTOR_TARGETS
             ? t('scans.dynamic.wildcardCap', undefined, {
-                max: MAX_SELECTOR_TARGETS.toLocaleString(),
+                max: formatNumber(MAX_SELECTOR_TARGETS),
               })
             : '',
       }
@@ -146,7 +147,7 @@ export function selectorPreviewText(
   }
   if (p.total === 0) return t('scans.dynamic.cidrEmpty')
   if (p.total === 1) return t('scans.dynamic.cidrOne')
-  return t('scans.dynamic.cidrMany', undefined, { count: p.total.toLocaleString() })
+  return t('scans.dynamic.cidrMany', undefined, { count: formatNumber(p.total) })
 }
 
 /** The names a selector matched recently: one line, the full list as a tooltip. */
@@ -219,7 +220,7 @@ export function SelectorOptions({ options, onChange, workflow }: SelectorOptions
               value={String(seenWithin)}
               onValueChange={(v) => set({ seen_within_days: Number(v) || undefined })}
             >
-              <SelectTrigger id="dyn-seen-within" className="h-8 w-28">
+              <SelectTrigger id="dyn-seen-within" className="w-28">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

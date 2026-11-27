@@ -47,6 +47,11 @@ import {
   SeverityBadge,
 } from '@/features/shared'
 import { StatusChip } from '@/features/shared/components/status-chip'
+import {
+  FieldError,
+  fieldErrorProps,
+  focusFirstInvalid,
+} from '@/features/shared/components/forms/field-error'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { toSeverity } from './easm-overview'
@@ -152,11 +157,10 @@ function ChangesSection({ onOpen }: { onOpen: (id: string) => void }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>{t('pageMonitor.changes.title', 'Changes')}</CardTitle>
         <CardDescription>
           {t(
             'pageMonitor.changes.description',
-            'What changed on your watched pages and scripts, newest first. A script from a new third-party host is also raised as an exposure.'
+            'Newest first. A script from a new third-party host is also raised as an exposure.'
           )}
         </CardDescription>
       </CardHeader>
@@ -397,7 +401,7 @@ function WatchRow({
           )}
           {canWrite && (
             <Button
-              size="sm"
+              size="icon-sm"
               variant="ghost"
               aria-label={t('pageMonitor.edit', 'Settings of {url}', { url: watch.url })}
               aria-expanded={editing}
@@ -408,7 +412,7 @@ function WatchRow({
           )}
           {canWrite && (
             <Button
-              size="sm"
+              size="icon-sm"
               variant="ghost"
               aria-label={t('pageMonitor.remove', 'Stop watching {url}', { url: watch.url })}
               onClick={() => onRemove(watch)}
@@ -500,6 +504,8 @@ function AddWatch({ onAdded }: { onAdded: () => void }) {
   const [url, setUrl] = useState('')
   const [mode, setMode] = useState<PageWatchMode>('js')
   const [busy, setBusy] = useState(false)
+  const [urlError, setUrlError] = useState<string | null>(null)
+  const urlField = fieldErrorProps('page-watch-url', urlError)
   const add = async () => {
     setBusy(true)
     try {
@@ -518,7 +524,12 @@ function AddWatch({ onAdded }: { onAdded: () => void }) {
       className="flex flex-col gap-2 sm:flex-row sm:items-end"
       onSubmit={(e) => {
         e.preventDefault()
-        if (url.trim()) void add()
+        if (!url.trim()) {
+          setUrlError(t('pageMonitor.urlRequired', 'Enter the address of the page to watch.'))
+          focusFirstInvalid(e.currentTarget)
+          return
+        }
+        void add()
       }}
     >
       <div className="min-w-0 flex-1 space-y-1">
@@ -531,10 +542,15 @@ function AddWatch({ onAdded }: { onAdded: () => void }) {
           inputMode="url"
           placeholder="https://app.example.com/login"
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          onChange={(e) => {
+            setUrl(e.target.value)
+            setUrlError(null)
+          }}
+          {...urlField.control}
         />
+        <FieldError {...urlField.message} />
       </div>
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1">
         <Label htmlFor="page-watch-mode">{t('pageMonitor.mode.label', 'What to follow')}</Label>
         <Select value={mode} onValueChange={(v) => setMode(v as PageWatchMode)}>
           <SelectTrigger id="page-watch-mode" className="w-full sm:w-40">
@@ -546,7 +562,7 @@ function AddWatch({ onAdded }: { onAdded: () => void }) {
           </SelectContent>
         </Select>
       </div>
-      <Button type="submit" disabled={busy || !url.trim()}>
+      <Button type="submit" disabled={busy}>
         {busy ? (
           <Loader2 className="me-1.5 h-4 w-4 animate-spin" aria-hidden />
         ) : (

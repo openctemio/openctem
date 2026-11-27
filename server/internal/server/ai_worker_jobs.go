@@ -27,6 +27,17 @@ func (q analysisJobQueue) QueueAnalysisJob(ctx context.Context, j aianalysis.Ana
 	return err
 }
 
+// AnalysisJob implements aianalysis.AnalysisJobReader: the job of the
+// organization, read with its tenant.
+func (q analysisJobQueue) AnalysisJob(ctx context.Context, tenantID, commandID shared.ID) (*aianalysis.JobRecord, error) {
+	c, err := q.cmds.Get(ctx, tenantID.String(), commandID.String())
+	if err != nil {
+		return nil, err
+	}
+	return &aianalysis.JobRecord{TenantID: c.TenantID, ID: c.ID, Type: string(c.Type), Status: string(c.Status),
+		SensorID: c.SensorID, Payload: c.Payload, Result: c.Result}, nil
+}
+
 // CancelAnalysisJob implements aianalysis.AnalysisJobQueue.
 func (q analysisJobQueue) CancelAnalysisJob(ctx context.Context, tenantID, commandID shared.ID) error {
 	_, err := q.cmds.CancelCommand(ctx, tenantID.String(), commandID.String())

@@ -1,6 +1,10 @@
 import { cookies } from 'next/headers'
 
+import { EntryFrame } from '@/components/entry'
+import { EntryScope } from '@/components/ui/density'
 import { env } from '@/lib/env'
+import { legalConfig } from '@/lib/legal'
+import { legalSettings } from '@/lib/legal-settings'
 
 import { InvitationView } from './invitation-view'
 
@@ -18,5 +22,12 @@ export default async function InvitationPage() {
     cookieStore.get(env.auth.cookieName)?.value ||
     cookieStore.get(env.auth.refreshCookieName)?.value
   )
-  return <InvitationView hasSession={hasSession} />
+  const legal = legalConfig(await legalSettings())
+  return (
+    <EntryScope>
+      <EntryFrame termsUrl={legal.termsUrl} privacyUrl={legal.privacyUrl}>
+        <InvitationView hasSession={hasSession} />
+      </EntryFrame>
+    </EntryScope>
+  )
 }

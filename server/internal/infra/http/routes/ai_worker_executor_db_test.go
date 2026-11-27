@@ -60,6 +60,15 @@ func (q testJobQueue) QueueAnalysisJob(ctx context.Context, j aianalysis.Analysi
 	return err
 }
 
+func (q testJobQueue) AnalysisJob(ctx context.Context, tenantID, commandID shared.ID) (*aianalysis.JobRecord, error) {
+	c, err := q.cmds.Get(ctx, tenantID.String(), commandID.String())
+	if err != nil {
+		return nil, err
+	}
+	return &aianalysis.JobRecord{TenantID: c.TenantID, ID: c.ID, Type: string(c.Type), Status: string(c.Status),
+		SensorID: c.SensorID, Payload: c.Payload, Result: c.Result}, nil
+}
+
 func (q testJobQueue) CancelAnalysisJob(ctx context.Context, tenantID, commandID shared.ID) error {
 	_, err := q.cmds.CancelCommand(ctx, tenantID.String(), commandID.String())
 	return err
@@ -67,9 +76,11 @@ func (q testJobQueue) CancelAnalysisJob(ctx context.Context, tenantID, commandID
 
 type aiWorkerHarness struct {
 	*aiExecHarness
-	svc   *aianalysis.Service
-	wexec *aianalysis.BuiltinExecutor
-	aiOff bool
+	svc    *aianalysis.Service
+	wexec  *aianalysis.BuiltinExecutor
+	worker *aianalysis.WorkerExecutor
+	cmds   *command.Service
+	aiOff  bool
 }
 
 func newAIWorkerHarness(t *testing.T) *aiWorkerHarness {
@@ -104,9 +115,14 @@ func newAIWorkerHarness(t *testing.T) *aiWorkerHarness {
 		aibundle.NewBuilder(aipolicy.New(nil, nil)), maps, aianalysis.ExecutorConfig{MaxTokens: 500}, log)
 	h.wexec.SetAIAgents(h.svc)
 	h.wexec.SetUseCases(tenantai.NewService(base.useCases, nil, nil, nil, nil, nil))
-	jobs := testJobQueue{cmds: command.NewService(postgres.NewCommandRepository(db), log)}
-	aianalysis.NewWorkerExecutor(h.wexec, jobs, audit, log)
+	h.cmds = command.NewService(postgres.NewCommandRepository(db), log)
+	jobs := testJobQueue{cmds: h.cmds}
+	h.worker = aianalysis.NewWorkerExecutor(h.wexec, jobs, audit, log)
 	h.svc.SetJobCanceler(jobs)
+	h.svc.SetResultApplier(h.worker)
+	// The organization's switch and limits on changes without a person,
+	// read from the database (defaults: not paused, 100 an hour).
+	h.wexec.SetAutonomy(tenantai.NewService(base.useCases, nil, nil, nil, nil, nil))
 	t.Cleanup(func() {
 		_, _ = base.db.ExecContext(context.Background(), `DELETE FROM commands WHERE tenant_id = $1`, base.org)
 		_, _ = base.db.ExecContext(context.Background(), `DELETE FROM audit_logs WHERE tenant_id = $1`, base.org)

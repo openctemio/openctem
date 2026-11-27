@@ -121,6 +121,7 @@ type Notification struct {
 	reason           string
 	count            int // events this notice stands for (1 unless coalesced)
 	coalesce         bool
+	message          *Message // code + values of title and body; nil on older rows
 }
 
 // NotificationParams contains parameters for creating a new notification.
@@ -131,11 +132,15 @@ type NotificationParams struct {
 	NotificationType string
 	Title            string
 	Body             string
-	Severity         string
-	ResourceType     string
-	ResourceID       *shared.ID
-	URL              string
-	ActorID          *shared.ID
+	// Message is the language-neutral form of Title and Body (a code and
+	// typed values) that the web renders in the reader's language. Title and
+	// Body stay the English text for e-mail, chat and webhooks.
+	Message      *Message
+	Severity     string
+	ResourceType string
+	ResourceID   *shared.ID
+	URL          string
+	ActorID      *shared.ID
 	// Reason says why the person got it (ReasonAssigned, ReasonWatching, ...);
 	// empty for notices that are not about a person's role.
 	Reason string
@@ -183,6 +188,7 @@ func NewNotification(params NotificationParams) *Notification {
 		reason:           params.Reason,
 		count:            1,
 		coalesce:         params.Coalesce && params.Audience == AudienceUser,
+		message:          params.Message,
 	}
 }
 
@@ -247,6 +253,12 @@ func (n *Notification) Count() int {
 	}
 	return n.count
 }
+
+// Message is the code and values of the notice's text (nil when it has none).
+func (n *Notification) Message() *Message { return n.message }
+
+// SetMessage sets the message read from persistence.
+func (n *Notification) SetMessage(m *Message) { n.message = m }
 
 // Coalesce reports whether the notice is folded into an unread one.
 func (n *Notification) Coalesce() bool { return n.coalesce }

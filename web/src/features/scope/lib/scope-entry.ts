@@ -78,7 +78,13 @@ export function wildcardApex(pattern: string): string {
  * reading (name, domain_and_subdomains, addresses, pattern); the pattern is
  * used when the server sent none.
  */
-export function coversText(e: { pattern?: string; covers?: string; target_type?: string }): string {
+export function coversText(
+  e: { pattern?: string; covers?: string; target_type?: string },
+  t?: CoversT
+): string {
+  // Through the catalog when the caller passes t (a vi page read
+  // "Covers every address in ..." in English); English otherwise.
+  const tr: CoversT = t ?? ((_k, fallback, v) => fill(fallback, v))
   const pattern = (e.pattern ?? '').trim()
   const apex = wildcardApex(pattern)
   const kind = e.target_type ?? ''
@@ -93,16 +99,24 @@ export function coversText(e: { pattern?: string; covers?: string; target_type?:
           : '')
   switch (covers) {
     case 'domain_and_subdomains':
-      return apex ? `${apex} and every name below it` : 'The domain and every name below it'
+      return apex
+        ? tr('scope.coversText.subtree', '{apex} and every name below it', { apex })
+        : tr('scope.coversText.domainSubtree', 'The domain and every name below it')
     case 'name':
-      return `${pattern} only`
+      return tr('scope.coversText.only', '{pattern} only', { pattern })
     case 'addresses':
       return pattern.includes('/') || pattern.includes('-')
-        ? `every address in ${pattern}`
-        : `${pattern} only`
+        ? tr('scope.coversText.range', 'every address in {pattern}', { pattern })
+        : tr('scope.coversText.only', '{pattern} only', { pattern })
     default:
-      return pattern ? `Names matching ${pattern}` : ''
+      return pattern ? tr('scope.coversText.matching', 'names matching {pattern}', { pattern }) : ''
   }
+}
+
+type CoversT = (key: string, fallback: string, vars?: Record<string, string>) => string
+
+function fill(s: string, v?: Record<string, string>): string {
+  return v ? s.replace(/\{(\w+)\}/g, (m, k: string) => v[k] ?? m) : s
 }
 
 /** Whole days until `iso` from `now` (ceil; negative once past). */
@@ -112,26 +126,48 @@ export function daysUntil(iso: string, now: number = Date.now()): number {
   return Math.ceil((t - now) / 86_400_000)
 }
 
-/** "Expires in 3 days", "Expires today", "Expired 2 days ago", "Permanent". */
-export function expiryText(expiresAt: string | undefined | null, now: number = Date.now()): string {
-  if (!expiresAt) return 'Permanent'
-  const t = Date.parse(expiresAt)
-  if (Number.isNaN(t)) return 'Permanent'
-  const ms = t - now
+/**
+ * "Expires in 3 days", "Expires today", "Expired 2 days ago", "Permanent".
+ * `verb: 'blocked'` words a path exclusion's testing window ("Blocked again in 3 days").
+ * Through the catalog when the caller passes t (a vi page read "Expires in 7 days"); English otherwise.
+ */
+export function expiryText(
+  expiresAt: string | undefined | null,
+  now: number = Date.now(),
+  t?: CoversT,
+  verb: 'expires' | 'blocked' = 'expires'
+): string {
+  const tr: CoversT = t ?? ((_k, fallback, v) => fill(fallback, v))
+  const permanent = () => tr('scope.expiry.permanent', 'Permanent')
+  if (!expiresAt) return permanent()
+  const t0 = Date.parse(expiresAt)
+  if (Number.isNaN(t0)) return permanent()
+  const ms = t0 - now
   if (ms <= 0) {
     const ago = Math.floor(-ms / 86_400_000)
-    return ago === 0 ? 'Expired today' : `Expired ${ago} ${ago === 1 ? 'day' : 'days'} ago`
+    if (ago === 0) return tr('scope.expiry.expiredToday', 'Expired today')
+    return ago === 1
+      ? tr('scope.expiry.expiredDay', 'Expired 1 day ago')
+      : tr('scope.expiry.expiredDays', 'Expired {n} days ago', { n: String(ago) })
   }
+  const lead = verb === 'blocked' ? 'Blocked again in' : 'Expires in'
+  const k = verb === 'blocked' ? 'scope.expiry.blockedIn' : 'scope.expiry.in'
   const hours = Math.ceil(ms / 3_600_000)
-  if (hours < 24) return `Expires in ${hours} ${hours === 1 ? 'hour' : 'hours'}`
+  if (hours < 24) {
+    return hours === 1
+      ? tr(`${k}Hour`, `${lead} 1 hour`)
+      : tr(`${k}Hours`, `${lead} {n} hours`, { n: String(hours) })
+  }
   const days = Math.ceil(ms / 86_400_000)
-  return `Expires in ${days} ${days === 1 ? 'day' : 'days'}`
+  return days === 1
+    ? tr(`${k}Day`, `${lead} 1 day`)
+    : tr(`${k}Days`, `${lead} {n} days`, { n: String(days) })
 }
 
 export const TIER_LABEL: Record<string, string> = {
-  t0: 'T0 passive',
-  t1: 'T1 safe active',
-  t2: 'T2 intrusive',
+  t0: 'Passive',
+  t1: 'Safe active',
+  t2: 'Intrusive',
 }
 
 export const TIER_HINT: Record<string, string> = {
@@ -294,4 +330,32 @@ export function formatDay(d: Date, locale = 'en'): string {
     month: 'short',
     year: 'numeric',
   }).format(d)
+}
+
+/**
+ * What authorizes probing the entry's targets, in words (the Scope list's
+ * "Authorized by"): a CI trust that manages it, a bug-bounty program, a
+ * letter of authorization, a self-attestation, or ownership (the default).
+ */
+export function authorizedByText(
+  e: {
+    authorization_source?: string
+    origin?: string
+    managed_by?: { trust_name?: string }[]
+  },
+  t?: CoversT
+): string {
+  const tr: CoversT = t ?? ((_k, fallback, v) => fill(fallback, v))
+  const trust = e.origin === 'ci_trust' ? e.managed_by?.[0]?.trust_name : undefined
+  if (trust) return tr('scope.authorizedBy.ciTrust', 'CI trust {name}', { name: trust })
+  switch (e.authorization_source) {
+    case 'program':
+      return tr('scope.authorizedBy.program', 'A bug bounty program')
+    case 'authorization_letter':
+      return tr('scope.authorizedBy.letter', 'A letter of authorization')
+    case 'self_attestation':
+      return tr('scope.authorizedBy.selfAttestation', 'Attested by a member')
+    default:
+      return tr('scope.authorizedBy.ownership', 'Our organization owns it')
+  }
 }

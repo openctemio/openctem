@@ -2,21 +2,30 @@
  * Settings navigation: the one source of truth for the settings rail, the
  * /settings landing page and the Settings section of the command palette (⌘K).
  *
- * Routes under /settings and /account (plus every item's own URL) render the
+ * Routes under /settings (plus every item's own URL) render the
  * settings shell: the left sidebar swaps its content for this list, two levels
  * deep (group, then item), with a way back to the app. The main sidebar keeps a
- * single "Settings" link.
+ * single "Organization settings" link. The person's own account (profile,
+ * security, preferences, organizations) is not here: it is the account area,
+ * src/config/account-nav.ts, outside the organization shell.
  *
- * Six groups (settings IA decided 2026-10-01; placement research 346, then
- * research 369 sorted items by the task and the person who uses them):
- * - My account: the signed-in person's own pages, nothing of the organization;
+ * Nine groups (settings IA decided 2026-10-01, regrouped by the redesign's
+ * boards: each group is the task a person comes with):
+ * - Your membership: the signed-in person inside this organization (role,
+ *   leaving, notifications, activity, connected applications); no role needed;
  * - Organization: what the organization is, its modules, usage and AI;
- * - Access & security: people and their roles, then API access (service
- *   accounts, keys, AI assistants), Sign-in, and Oversight (security
- *   overview, audit log, support access);
- * - Findings & assets: how findings are handled, then Risk and threats
+ * - People and access: members, teams, roles, service accounts, API keys,
+ *   AI assistants and directory sync;
+ * - Sign-in and oversight: sign-in rules, security overview, audit log and
+ *   support access;
+ * - Approvals: who approves findings decisions (one page; the boards give it
+ *   a group of its own so it is found without knowing it is about findings);
+ * - Findings and assets: how findings are handled, then Risk and threats
  *   (scoring, matching, alerts, licenses), then Assets;
- * - Scanning: what scans may do, then Tools, Sensors and Scanner content;
+ * - Scanning: what scans may do and when, and which need approval;
+ * - Tools and sensors: the tools, their defaults and capabilities, sensor
+ *   builds and proxies, then Detection content (the catalog and the rules,
+ *   templates and wordlists drawn from it) and Scanner content;
  * - Integrations.
  * A long group is split by `section` sub-headings. URLs never move with the
  * grouping, so a regrouping needs no redirect.
@@ -24,9 +33,10 @@
  * Rules (src/config/__tests__/settings-nav.test.ts):
  * - every url has a page; no page is a scaffold;
  * - `permission` / `module` equal what the route guard enforces for the url,
- *   and personal items (/account) carry neither;
+ *   and membership items (/settings/me) carry neither;
  * - a "Soon" badge if and only if the page is a ComingSoonPage;
- * - 2 to 10 items per group, or per section in a group with sections (a
+ * - 2 to 10 items per group (Approvals alone has one, as on the boards), or
+ *   per section in a group with sections (a
  *   group's first section is untitled; items of a section are contiguous);
  *   titles in sentence case;
  * - every title, group, description and anchor has en and vi strings.
@@ -38,9 +48,7 @@
 import {
   Fingerprint,
   GitMerge,
-  Handshake,
   LifeBuoy,
-  Globe,
   Activity,
   Bell,
   Bot,
@@ -73,7 +81,6 @@ import {
   Scale,
   ClipboardCheck,
   ServerCog,
-  Settings2,
   Shield,
   SlidersHorizontal,
   Sparkles,
@@ -89,7 +96,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react'
-import { Permission } from '@/lib/permissions'
+import { Permission } from '@/lib/permissions/constants'
 import { matchesAllWords } from './settings-search'
 import { webExtension } from '@/lib/extension'
 import { mergeSettingsGroups } from '@/lib/extension/merge'
@@ -151,38 +158,22 @@ export interface SettingsNavGroup {
 
 const coreSettingsNav: SettingsNavGroup[] = [
   {
-    id: 'account',
-    title: 'My account',
+    id: 'membership',
+    title: 'Your membership',
     items: [
       {
-        id: 'profile',
-        title: 'Profile',
-        description: 'Your name, email and avatar.',
-        url: '/account',
+        id: 'membership',
+        title: 'Membership',
+        description: 'Your role in this organization, and leaving it.',
+        url: '/settings/me',
         icon: User,
-        keywords: ['name', 'avatar', 'me'],
-      },
-      {
-        id: 'account-security',
-        title: 'Security',
-        description: 'Password, two-factor authentication and active sessions.',
-        url: '/account/security',
-        icon: Shield,
-        keywords: ['password', '2fa', 'mfa', 'totp', 'sessions'],
-      },
-      {
-        id: 'preferences',
-        title: 'Preferences',
-        description: 'Theme and how your findings lists open.',
-        url: '/account/preferences',
-        icon: Settings2,
-        keywords: ['theme', 'dark mode', 'informational findings'],
+        keywords: ['role', 'leave', 'me', 'member since'],
       },
       {
         id: 'my-notifications',
         title: 'Notifications',
         description: 'Which notifications you receive, and how.',
-        url: '/account/notifications',
+        url: '/settings/me/notifications',
         icon: Bell,
         keywords: ['email', 'digest', 'alerts', 'mute'],
       },
@@ -190,7 +181,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
         id: 'activity',
         title: 'Activity',
         description: 'Your own recent sign-ins and actions.',
-        url: '/account/activity',
+        url: '/settings/me/activity',
         icon: Activity,
         keywords: ['history', 'sign-ins'],
       },
@@ -198,7 +189,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
         id: 'connected-apps',
         title: 'Connected applications',
         description: 'AI applications you allowed to read your data.',
-        url: '/account/connected-apps',
+        url: '/settings/me/connected-apps',
         icon: Bot,
         keywords: ['mcp', 'oauth', 'ai', 'assistant', 'claude', 'disconnect'],
       },
@@ -254,7 +245,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'limits',
-        title: 'Usage & limits',
+        title: 'Usage and limits',
         description: 'The limits that apply to this organization and what it uses.',
         url: '/settings/limits',
         icon: Gauge,
@@ -317,7 +308,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
   },
   {
     id: 'access',
-    title: 'Access & security',
+    title: 'People and access',
     items: [
       {
         id: 'members',
@@ -359,7 +350,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
         // roles, teams and API keys. Not module gated: the API gates none of
         // its routes on the integrations module.
         id: 'service-accounts',
-        section: 'api-access',
         title: 'Service accounts',
         description: 'Identities for integrations, with their own roles and API keys.',
         url: '/settings/service-accounts',
@@ -376,7 +366,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'api-keys',
-        section: 'api-access',
         title: 'API keys',
         description: 'Keys for scripts and tools that call the API.',
         url: '/settings/api-keys',
@@ -386,7 +375,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'mcp',
-        section: 'api-access',
         title: 'AI assistants (MCP)',
         description: 'Let AI assistants work with your data over MCP; approve applications.',
         url: '/settings/mcp',
@@ -395,27 +383,59 @@ const coreSettingsNav: SettingsNavGroup[] = [
         keywords: ['mcp', 'claude', 'llm', 'assistant', 'publisher', 'approve', 'request'],
       },
       {
-        id: 'authentication',
-        section: 'sign-in',
-        title: 'Authentication',
-        description: 'Two-factor, who may join, the IP allowlist and email verification.',
-        url: '/settings/authentication',
+        id: 'scim',
+        title: 'Directory sync (SCIM)',
+        description: 'Provision members from your identity provider.',
+        url: '/settings/scim',
+        icon: UserCog,
+        permission: Permission.MembersRead,
+        keywords: ['scim', 'provisioning', 'okta', 'entra', 'azure ad', 'directory'],
+      },
+    ],
+  },
+  {
+    id: 'oversight',
+    title: 'Sign-in and oversight',
+    items: [
+      {
+        // One page, two tabs: Sign-in (two-factor, re-verification, email
+        // verification, IP allowlist) and Joining (who may join, personal
+        // accounts, verified domains, trusted organizations, SSO changes).
+        // Viewing needs team:update; saving is owner only in the API.
+        id: 'sign-in',
+        title: 'Sign-in',
+        description: 'Two-factor, re-verification, the IP allowlist, and who may join.',
+        url: '/settings/sign-in',
         icon: LockKeyhole,
         permission: Permission.TeamUpdate,
-        keywords: ['2fa', 'mfa', 'ip allowlist', 'domains', 'sso', 'saml', 'sign-in'],
+        keywords: [
+          '2fa',
+          'mfa',
+          'ip allowlist',
+          'authentication',
+          'domains',
+          'sso',
+          'saml',
+          'sign-in',
+          'joining',
+          'trusted organizations',
+          'trust',
+          'partner',
+          'sso approvals',
+          'identity provider',
+        ],
         anchors: [
           {
             id: 'two-factor',
             title: 'Require two-factor authentication',
             keywords: ['2fa', 'mfa', 'totp'],
           },
-          { id: 'sso-member-approval', title: 'Approve new SSO members', keywords: ['jit', 'sso'] },
-          { id: 'email-verification', title: 'Email verification', keywords: ['verify email'] },
           {
-            id: 'allowed-domains',
-            title: 'Allowed email domains',
-            keywords: ['domain', 'restrict'],
+            id: 're-verification',
+            title: 'Re-verification',
+            keywords: ['step-up', 'reauthentication', 'confirm identity'],
           },
+          { id: 'email-verification', title: 'Email verification', keywords: ['verify email'] },
           {
             id: 'ip-allowlist',
             title: 'IP allowlist',
@@ -427,64 +447,38 @@ const coreSettingsNav: SettingsNavGroup[] = [
             keywords: ['invite', 'external', 'guest'],
           },
           {
+            id: 'allowed-domains',
+            title: 'Allowed email domains',
+            keywords: ['domain', 'restrict'],
+          },
+          { id: 'sso-member-approval', title: 'Approve new SSO members', keywords: ['jit', 'sso'] },
+          {
             id: 'personal-accounts',
             title: 'Personal accounts and SSO exceptions',
             keywords: ['gmail', 'personal email', 'break-glass'],
           },
+          {
+            id: 'domains',
+            title: 'Verified domains',
+            keywords: ['domain', 'join', 'sign up', 'sso required', 'workspace', 'claim'],
+          },
+          {
+            id: 'trusted-organizations',
+            title: 'Trusted organizations',
+            keywords: ['trust', 'partner', 'sister company', 'external', 'home realm'],
+          },
+          {
+            id: 'sso-approvals',
+            title: 'SSO changes waiting for an owner',
+            keywords: ['sso approvals', 'saml', 'identity provider', 'approval', 'owner'],
+          },
         ],
-      },
-      {
-        // What the verified SSO domains do to accounts on them (api RFC-104):
-        // read by owners and admins, changed by owners only.
-        id: 'domains',
-        section: 'sign-in',
-        title: 'Domains',
-        description: 'Who may join with your domain, and whether it must use single sign-on.',
-        url: '/settings/domains',
-        icon: Globe,
-        permission: Permission.TeamUpdate,
-        keywords: ['domain', 'join', 'sign up', 'sso required', 'workspace', 'claim'],
-      },
-      {
-        id: 'scim',
-        section: 'sign-in',
-        title: 'Directory sync (SCIM)',
-        description: 'Provision members from your identity provider.',
-        url: '/settings/scim',
-        icon: UserCog,
-        permission: Permission.MembersRead,
-        keywords: ['scim', 'provisioning', 'okta', 'entra', 'azure ad', 'directory'],
-      },
-      {
-        // Two-sided trusts with partner organizations (api RFC-058): read by
-        // owners and admins, changed by owners only.
-        id: 'trusted-organizations',
-        section: 'sign-in',
-        title: 'Trusted organizations',
-        description: 'Partner organizations whose people sign in here with their own SSO.',
-        url: '/settings/trusted-organizations',
-        icon: Handshake,
-        permission: Permission.TeamUpdate,
-        keywords: ['trust', 'partner', 'sister company', 'external', 'home realm', 'sso'],
-      },
-      {
-        // Owners approve or reject SSO changes the platform administrator
-        // proposed (RFC-022 revision 8); the page tells admins it is owner only.
-        id: 'sso-approvals',
-        section: 'sign-in',
-        title: 'SSO approvals',
-        description: 'Approve or reject sign-in changes proposed by the platform administrator.',
-        url: '/settings/sso-approvals',
-        icon: ShieldCheck,
-        permission: Permission.TeamUpdate,
-        keywords: ['sso', 'saml', 'identity provider', 'approval', 'owner'],
       },
       {
         // The organization's posture checks and score (api: GET
         // /organization/security-overview, owners and admins): the first page of
         // Oversight.
         id: 'security-overview',
-        section: 'oversight',
         title: 'Security overview',
         description: 'A score and checklist of what to fix first in your organization.',
         url: '/settings/security',
@@ -494,7 +488,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'audit-log',
-        section: 'oversight',
         title: 'Audit log',
         description: 'Who did what, and when, across the organization.',
         url: '/settings/audit-log',
@@ -506,7 +499,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
         // Time-boxed, read-only, audited access for platform support (api
         // RFC-063): owners grant, owners and admins revoke and see history.
         id: 'support-access',
-        section: 'oversight',
         title: 'Support access',
         description: 'Let platform support read your data for a limited time.',
         url: '/settings/support-access',
@@ -517,8 +509,61 @@ const coreSettingsNav: SettingsNavGroup[] = [
     ],
   },
   {
+    id: 'approvals',
+    title: 'Approvals',
+    items: [
+      {
+        id: 'approvals',
+        title: 'Approvals',
+        description: 'Who decides false positives and accepted risks, and who is told.',
+        url: '/settings/approvals',
+        icon: ClipboardCheck,
+        permission: Permission.SettingsRead,
+        keywords: [
+          'approval',
+          'approvals',
+          'approval policy',
+          'finding approvals',
+          'four-eyes',
+          'false positive',
+          'accepted risk',
+          'risk acceptance',
+          'backup contact',
+          'second look',
+        ],
+        anchors: [
+          {
+            id: 'false-positives',
+            title: 'False positives',
+            keywords: ['four-eyes', 'false positive', 'second look', 'tier'],
+          },
+          {
+            id: 'accepted-risks',
+            title: 'Accepted risks',
+            keywords: ['risk acceptance', 'longest acceptance', 'tier'],
+          },
+          {
+            id: 'suppression-rules',
+            title: 'Suppression rules',
+            keywords: ['suppression', 'rule', 'tier'],
+          },
+          {
+            id: 'security-pool',
+            title: 'Approvers',
+            keywords: ['security pool', 'assignee', 're-authentication'],
+          },
+          {
+            id: 'approval-limits',
+            title: 'Deadline and high risk',
+            keywords: ['decision deadline', 'epss'],
+          },
+        ],
+      },
+    ],
+  },
+  {
     id: 'findings',
-    title: 'Findings & assets',
+    title: 'Findings and assets',
     items: [
       {
         id: 'finding-lifecycle',
@@ -534,30 +579,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
             id: 'closing-mode',
             title: 'Closing findings',
             keywords: ['auto close', 'auto-resolve', 'ready to close', 'review', 'critical'],
-          },
-        ],
-      },
-      {
-        id: 'finding-approvals',
-        title: 'Finding approvals',
-        description: 'Who decides false positives and accepted risks, and who is told.',
-        url: '/settings/finding-approvals',
-        icon: ClipboardCheck,
-        permission: Permission.SettingsRead,
-        keywords: [
-          'approval',
-          'approval policy',
-          'four-eyes',
-          'false positive',
-          'accepted risk',
-          'risk acceptance',
-          'backup contact',
-        ],
-        anchors: [
-          {
-            id: 'approval-tiers',
-            title: 'Approval tiers and approvers',
-            keywords: ['four-eyes', 'approvers', 'decision lasts'],
           },
         ],
       },
@@ -819,7 +840,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'scan-profiles',
-        section: 'tools',
         title: 'Scan profiles',
         description: 'Reusable scan configurations: tools, intensity and duration.',
         url: '/settings/scanning/profiles',
@@ -828,9 +848,14 @@ const coreSettingsNav: SettingsNavGroup[] = [
         module: 'scans',
         keywords: ['profiles', 'scan config'],
       },
+    ],
+  },
+  {
+    id: 'tools',
+    title: 'Tools and sensors',
+    items: [
       {
         id: 'tools',
-        section: 'tools',
         title: 'Tools',
         description: 'The tools your sensors have, and whether a scan can run with each.',
         url: '/settings/scanning/tools',
@@ -841,7 +866,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'tool-defaults',
-        section: 'tools',
         title: 'Tool defaults',
         description: 'Default options for each tool on every sensor; a sensor can override them.',
         url: '/settings/scanning/tool-defaults',
@@ -852,7 +876,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'capabilities',
-        section: 'tools',
         title: 'Capabilities',
         description: 'The capability taxonomy that tools are matched on.',
         url: '/settings/scanning/capabilities',
@@ -863,7 +886,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'sensor-products',
-        section: 'sensors',
         title: 'Sensor products',
         description: 'Latest and minimum release of the sensors your organization builds.',
         url: '/settings/scanning/sensor-products',
@@ -874,7 +896,6 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'proxies',
-        section: 'sensors',
         title: 'Proxies',
         description:
           "Send your sensors' scan traffic through proxies, with automatic health checks.",
@@ -888,7 +909,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
         // Signed content packages from the catalog (api RFC-099): read with
         // content:read; installs and approvals need content:install.
         id: 'content',
-        section: 'content',
+        section: 'detection',
         title: 'Content catalog',
         description: 'Signed rules, templates and other packages: install, update and approve.',
         url: '/settings/content',
@@ -898,7 +919,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'scanner-templates',
-        section: 'content',
+        section: 'detection',
         title: 'Scanner templates',
         description: 'Custom Nuclei, Semgrep and Betterleaks templates.',
         url: '/settings/scanning/templates',
@@ -911,7 +932,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
         // Organization detection rules (api docs/architecture/rule-packs.md):
         // read with scans:content:read; changes need scans:content:write.
         id: 'detectionRules',
-        section: 'content',
+        section: 'detection',
         title: 'Detection rules',
         description: 'Rules that name technologies and find exposed secrets in scan results.',
         url: '/settings/scanning/detection-rules',
@@ -923,7 +944,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
         // Organization wordlists (api docs/architecture/wordlists.md): read
         // with scans:content:read; changes need scans:content:write.
         id: 'wordlists',
-        section: 'content',
+        section: 'detection',
         title: 'Wordlists',
         description: 'Words subdomain discovery tries under your domains.',
         url: '/settings/scanning/wordlists',
@@ -1051,7 +1072,7 @@ const coreSettingsNav: SettingsNavGroup[] = [
       },
       {
         id: 'siem',
-        title: 'SIEM',
+        title: 'Event forwarding',
         description: 'Forward security events to Splunk.',
         url: '/settings/integrations/siem',
         icon: Shield,
@@ -1086,7 +1107,7 @@ function underPath(pathname: string, base: string): boolean {
 /** Whether `pathname` renders the settings shell instead of the app sidebar. */
 export function isSettingsShellPath(pathname: string): boolean {
   if (APP_SHELL_UNDER_SETTINGS.some((p) => underPath(pathname, p))) return false
-  if (underPath(pathname, '/settings') || underPath(pathname, '/account')) return true
+  if (underPath(pathname, '/settings')) return true
   return settingsNavItems.some((item) => underPath(pathname, item.url))
 }
 

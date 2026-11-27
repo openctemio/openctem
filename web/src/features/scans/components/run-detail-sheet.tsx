@@ -27,9 +27,8 @@ import {
   DetailSection,
   DetailSections,
   DetailSheet,
-  DetailStat,
-  DetailStatGrid,
   ErrorState,
+  MetaItem,
   RunStatusBadge,
 } from '@/features/shared'
 import { get, post } from '@/lib/api/client'
@@ -52,6 +51,7 @@ import { RunZoneSplitPanel } from './run-zone-split'
 import { WindowWaits } from '@/features/scan-windows'
 import { RunStageLanes } from './run-stage-lanes'
 import { RunTimeline } from './run-timeline'
+import { formatDateTime } from '@/lib/app-locale'
 
 // Lazy: the run flow loads only when a workflow run is opened.
 const RunMap = dynamic(() => import('./run-map').then((m) => m.RunMap), {
@@ -64,7 +64,7 @@ interface RunDetailSheetProps {
 }
 
 function formatTime(ts?: string) {
-  return ts ? new Date(ts).toLocaleString() : '—'
+  return ts ? formatDateTime(new Date(ts)) : '—'
 }
 
 function durationOf(run: ScanRun, t: Translate): string | null {
@@ -189,7 +189,31 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
               run?.started_at
                 ? t('scans.runDetail.started', undefined, { time: formatTime(run.started_at) })
                 : null,
-              duration,
+              // The run's summary in the header's facts line, each label beside
+              // its value: in the body it put every fact on a row of its own
+              // above the sections. The findings count opens the findings this
+              // run reported. Duration and deadline live here only.
+              run ? (
+                <Link
+                  key="findings"
+                  href={seenByFindingsHref('seen_in_run_id', run.id)}
+                  className="underline-offset-2 hover:underline"
+                  data-testid="run-reported-findings"
+                  aria-label={t('scans.runDetail.reportedFindings', 'Findings this run reported')}
+                >
+                  <MetaItem label={t('scans.runDetail.findings')}>{run.total_findings}</MetaItem>
+                </Link>
+              ) : null,
+              progress ? (
+                <MetaItem key="tasks" label={t('scans.runDetail.tasks')}>
+                  {progress.label}
+                </MetaItem>
+              ) : null,
+              duration ? (
+                <MetaItem key="duration" label={t('scans.runDetail.duration')}>
+                  {duration}
+                </MetaItem>
+              ) : null,
               deadline?.relative ?? null,
             ]}
             menu={
@@ -264,23 +288,21 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
               </p>
             )}
 
-            <p className="text-sm">
-              <Link
-                href={seenByFindingsHref('seen_in_run_id', run.id)}
-                className="font-medium underline-offset-2 hover:underline"
-                data-testid="run-reported-findings"
-              >
-                {t('scans.runDetail.reportedFindings', 'Findings this run reported')}
-              </Link>
-            </p>
-
-            <DetailStatGrid aria-label={t('scans.runDetail.keyNumbers')}>
-              <DetailStat label={t('scans.runDetail.findings')} value={run.total_findings} />
-              {progress && <DetailStat label={t('scans.runDetail.tasks')} value={progress.label} />}
-              {duration && <DetailStat label={t('scans.runDetail.duration')} value={duration} />}
-            </DetailStatGrid>
-
             <DetailSections>
+              {/* The run's tasks first: what the run is doing, before its map,
+                stages and timeline. */}
+              <DetailSection title={t('scans.runDetail.tasks')} count={run.task_summary?.total}>
+                {run.tasks && run.tasks.length > 0 ? (
+                  <RunTasksTable
+                    runId={run.id}
+                    tasks={run.tasks}
+                    total={run.task_summary?.total ?? run.tasks.length}
+                    nextCursor={run.tasks_truncated ? run.tasks_next_cursor : undefined}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">{t('scans.runDetail.noTasks')}</p>
+                )}
+              </DetailSection>
               <RunReceiptSection
                 runId={run.id}
                 runState={
@@ -333,18 +355,6 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
               )}
               <DetailSection title={t('scans.runDetail.timeline')}>
                 <RunTimeline runId={run.id} refreshInterval={runRefreshInterval(run)} />
-              </DetailSection>
-              <DetailSection title={t('scans.runDetail.tasks')} count={run.task_summary?.total}>
-                {run.tasks && run.tasks.length > 0 ? (
-                  <RunTasksTable
-                    runId={run.id}
-                    tasks={run.tasks}
-                    total={run.task_summary?.total ?? run.tasks.length}
-                    nextCursor={run.tasks_truncated ? run.tasks_next_cursor : undefined}
-                  />
-                ) : (
-                  <p className="text-sm text-muted-foreground">{t('scans.runDetail.noTasks')}</p>
-                )}
               </DetailSection>
               {isScanRun && (
                 <DetailSection title={t('scans.runDetail.dispatch')}>

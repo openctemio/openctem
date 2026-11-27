@@ -32,6 +32,7 @@ import en_automations from './en/automations.json'
 import en_common from './en/common.json'
 import en_errors from './en/errors.json'
 import en_labels from './en/labels.json'
+import en_legal from './en/legal.json'
 import en_repositories from './en/repositories.json'
 import en_dashboardMetrics from './en/dashboardMetrics.json'
 import en_dashboardKit from './en/dashboardKit.json'
@@ -53,6 +54,7 @@ import en_licensePolicy from './en/licensePolicy.json'
 import en_notificationTypes from './en/notificationTypes.json'
 import en_notifications from './en/notifications.json'
 import en_notificationChannels from './en/notificationChannels.json'
+import en_scmConnections from './en/scmConnections.json'
 import en_scmIntegration from './en/scmIntegration.json'
 import en_notificationPresets from './en/notificationPresets.json'
 import en_lookalikes from './en/lookalikes.json'
@@ -90,6 +92,7 @@ import en_settings from './en/settings.json'
 import en_securityOverview from './en/securityOverview.json'
 import en_supportAccess from './en/supportAccess.json'
 import en_riskScore from './en/riskScore.json'
+import en_serverText from './en/serverText.json'
 import en_severity from './en/severity.json'
 import en_userMenu from './en/userMenu.json'
 import en_validation from './en/validation.json'
@@ -99,7 +102,9 @@ import en_workflowStages from './en/workflowStages.json'
 import en_remediationHub from './en/remediationHub.json'
 import en_remediationClaim from './en/remediationClaim.json'
 import en_remediationCampaigns from './en/remediationCampaigns.json'
+import en_queryFields from './en/queryFields.json'
 import en_queryInput from './en/queryInput.json'
+import en_queue from './en/queue.json'
 import en_remediationQuery from './en/remediationQuery.json'
 import en_myWork from './en/myWork.json'
 import en_threatModel from './en/threatModel.json'
@@ -138,6 +143,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   common: en_common,
   errors: en_errors,
   labels: en_labels,
+  legal: en_legal,
   repositories: en_repositories,
   dashboardMetrics: en_dashboardMetrics,
   dashboardKit: en_dashboardKit,
@@ -159,6 +165,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   notificationTypes: en_notificationTypes,
   notifications: en_notifications,
   notificationChannels: en_notificationChannels,
+  scmConnections: en_scmConnections,
   scmIntegration: en_scmIntegration,
   notificationPresets: en_notificationPresets,
   lookalikes: en_lookalikes,
@@ -196,6 +203,7 @@ export const enNamespaces: Record<string, Dictionary> = {
   settings: en_settings,
   securityOverview: en_securityOverview,
   supportAccess: en_supportAccess,
+  serverText: en_serverText,
   severity: en_severity,
   userMenu: en_userMenu,
   validation: en_validation,
@@ -205,7 +213,9 @@ export const enNamespaces: Record<string, Dictionary> = {
   remediationHub: en_remediationHub,
   remediationClaim: en_remediationClaim,
   remediationCampaigns: en_remediationCampaigns,
+  queryFields: en_queryFields,
   queryInput: en_queryInput,
+  queue: en_queue,
   remediationQuery: en_remediationQuery,
   myWork: en_myWork,
   threatModel: en_threatModel,

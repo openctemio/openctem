@@ -189,6 +189,26 @@ describe('MetricStrip', () => {
     expect(details[0]).toHaveClass('h-4')
     expect(screen.queryByText('4 new this week')).not.toBeInTheDocument()
   })
+
+  it('holds a taller detail with its own loading shape, then shows the detail', () => {
+    const item = {
+      key: 't',
+      label: 'Total',
+      value: 93,
+      detail: <span data-testid="bar">bar and legend</span>,
+      detailLoading: <span data-testid="bar-skeleton" />,
+    }
+    const { container, rerender } = render(<MetricStrip loading items={[item]} />)
+    const detail = container.querySelector('[data-slot="metric-detail"]')
+    // The page's placeholder, not the one-line skeleton.
+    expect(detail).not.toHaveClass('h-4')
+    expect(detail).toHaveAttribute('aria-hidden')
+    expect(screen.getByTestId('bar-skeleton')).toBeInTheDocument()
+    expect(screen.queryByTestId('bar')).not.toBeInTheDocument()
+    rerender(<MetricStrip items={[item]} />)
+    expect(screen.getByTestId('bar')).toBeInTheDocument()
+    expect(screen.queryByTestId('bar-skeleton')).not.toBeInTheDocument()
+  })
 })
 
 describe('MetricStrip warning tone and detail', () => {
@@ -250,5 +270,66 @@ describe('MetricStrip delta and spark', () => {
     rerender(<MetricStrip items={[item]} error="boom" />)
     expect(container.querySelector('[data-slot="delta"]')).toBeNull()
     expect(screen.queryByRole('img')).toBeNull()
+  })
+})
+
+describe('MetricStrip over a list', () => {
+  const zeros = [
+    { key: 'a', label: 'Crown jewels', value: 0 },
+    { key: 'b', label: 'Internet-exposed', value: 0 },
+  ]
+  it('is not drawn when every tile counts zero (the empty state says it)', () => {
+    const { container } = render(<MetricStrip items={zeros} listFirst />)
+    expect(container.querySelector('[data-slot="metric-strip"]')).toBeNull()
+  })
+  it('keeps an all-zero strip whose tile is the filter in use (the way back)', () => {
+    const { container } = render(
+      <MetricStrip items={[{ ...zeros[0], active: true, onClick: () => {} }, zeros[1]]} listFirst />
+    )
+    expect(container.querySelector('[data-slot="metric-strip"]')).not.toBeNull()
+  })
+  it('keeps zeros away from a list (a dashboard strip of zeros stays)', () => {
+    const { container } = render(<MetricStrip items={zeros} />)
+    expect(container.querySelector('[data-slot="metric-strip"]')).not.toBeNull()
+  })
+  it('keeps its place while loading', () => {
+    const { container } = render(<MetricStrip items={zeros} listFirst loading />)
+    expect(container.querySelector('[data-slot="metric-strip"]')).not.toBeNull()
+  })
+  it('is not drawn over an empty list, whatever it counts elsewhere', () => {
+    const { container } = render(
+      <MetricStrip items={[{ key: 'f', label: 'Frameworks', value: 8 }]} listFirst listEmpty />
+    )
+    expect(container.querySelector('[data-slot="metric-strip"]')).toBeNull()
+  })
+  it('a long label wraps on two lines and never puts the strip in phone thirds', () => {
+    const { container } = render(
+      <MetricStrip
+        items={[
+          { key: 'a', label: 'Hành động quản trị bị từ chối (24 giờ)', value: 1 },
+          { key: 'b', label: 'B', value: 2 },
+          { key: 'c', label: 'C', value: 3 },
+        ]}
+      />
+    )
+    const tiles = container.querySelectorAll('[data-slot="metric-tile"]')
+    expect(tiles[0].className).toContain('col-span-6')
+    const label = container.querySelector('[data-slot="metric-label"]') as HTMLElement
+    expect(label.className).not.toContain('sm:truncate')
+    expect(label.className).toContain('min-h-8')
+  })
+  it('never cuts a label by an ellipsis or a line clamp, at any width', () => {
+    const { container } = render(
+      <MetricStrip
+        items={[
+          { key: 'a', label: 'Mất kết nối, SDK, heartbeat cũ', value: 4 },
+          { key: 'b', label: 'Online', value: 2 },
+        ]}
+      />
+    )
+    for (const label of Array.from(container.querySelectorAll('[data-slot="metric-label"]'))) {
+      expect(label.className).not.toMatch(/truncate|line-clamp|text-ellipsis/)
+      expect(label.className).toContain('break-words')
+    }
   })
 })

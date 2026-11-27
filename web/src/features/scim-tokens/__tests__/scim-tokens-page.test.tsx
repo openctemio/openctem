@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { formatDate } from '@/lib/app-locale'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ScimTokensPage from '@/app/(dashboard)/settings/scim/page'
@@ -52,7 +53,7 @@ describe('ScimTokensPage', () => {
 
   it('a member or viewer gets no Generate token and no token request', () => {
     // The API refuses /scim-tokens to anyone but an owner or admin; the page
-    // used to show them an enabled button next to "Failed to load".
+    // used to show them an enabled button next to "Couldn't load".
     tenantAdmin = false
     render(<ScimTokensPage />)
     expect(screen.queryByRole('button', { name: /generate token/i })).toBeNull()
@@ -90,7 +91,7 @@ describe('ScimTokensPage', () => {
   it('is available to tenant admins who are not application administrators', () => {
     render(<ScimTokensPage />)
     expect(screen.queryByText('Application administrator only')).not.toBeInTheDocument()
-    expect(screen.getByText('SCIM endpoint')).toBeInTheDocument()
+    expect(screen.getByText('Directory sync address')).toBeInTheDocument()
   })
 
   it('shows the empty state when there are no tokens', () => {
@@ -100,7 +101,7 @@ describe('ScimTokensPage', () => {
 
   it('renders the SCIM endpoint base URL card', () => {
     render(<ScimTokensPage />)
-    expect(screen.getByText('SCIM endpoint')).toBeInTheDocument()
+    expect(screen.getByText('Directory sync address')).toBeInTheDocument()
   })
 
   it('lists existing tokens with status', () => {
@@ -163,9 +164,7 @@ describe('ScimTokensPage', () => {
     }
     render(<ScimTokensPage />)
     expect(screen.getByText('Expired')).toBeInTheDocument()
-    expect(
-      screen.getByText(new Date('2026-04-01T00:00:00Z').toLocaleDateString())
-    ).toBeInTheDocument()
+    expect(screen.getByText(formatDate(new Date('2026-04-01T00:00:00Z')))).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /rotate okta old/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /revoke okta old/i })).toBeNull()
   })

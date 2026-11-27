@@ -97,13 +97,13 @@ describe('EASMNetworkSeedsPanel', () => {
     wrap(<EASMNetworkSeedsPanel />)
     await screen.findByText('AS3333')
     await userEvent.type(screen.getByLabelText('Value'), 'AS15169')
-    await userEvent.click(screen.getByRole('button', { name: 'Add seed' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add starting point' }))
     expect(api.post).toHaveBeenCalledWith('/api/v1/easm/network-seeds', {
       kind: 'asn',
       value: 'AS15169',
       label: undefined,
     })
-    await userEvent.click(screen.getByRole('button', { name: 'Add as AS seed' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add as AS number' }))
     expect(api.post).toHaveBeenLastCalledWith('/api/v1/easm/network-seeds', {
       kind: 'asn',
       value: 'AS64501',
@@ -115,7 +115,7 @@ describe('EASMNetworkSeedsPanel', () => {
     perms.write = false
     wrap(<EASMNetworkSeedsPanel />)
     await screen.findByText('AS3333')
-    expect(screen.queryByRole('button', { name: 'Add seed' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Add starting point' })).toBeNull()
     expect(screen.queryByRole('button', { name: /^add / })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Remove AS3333' })).toBeNull()
   })

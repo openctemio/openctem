@@ -7,12 +7,24 @@ import { formatLocalized, formatRelative } from '@/lib/format-date'
 
 import type { ClosureEvidence as Evidence } from '../types'
 
-const METHOD_LABEL: Record<string, string> = {
-  covered_scan: 'Covered scan',
+export const METHOD_LABEL: Record<string, string> = {
+  covered_scan: 'Scan checked the asset',
   ci_default_branch: 'Default-branch scan',
   retest: 'Retest',
+  retest_verified: 'Retest confirmed the fix',
+  claimed_fix_scan: 'Fix reported, scan agrees',
   source_reported: 'Reported fixed by its source',
   obsolete_asset: 'Asset gone',
+}
+
+/** The tool that looked, as plain capped text ('' when unknown). */
+export function closureTool(evidence: Evidence): string {
+  return toDisplayText(String(evidence.tool ?? evidence.scanner ?? ''), 60)
+}
+
+/** The scan (or command) behind the close, as plain capped text ('' when unknown). */
+export function closureScanId(evidence: Evidence): string {
+  return toDisplayText(String(evidence.command_id ?? evidence.scan_id ?? ''), 64)
 }
 
 /**
@@ -31,8 +43,8 @@ export function ClosureEvidence({
   at?: string
 }) {
   const { t, locale } = useTranslation()
-  const tool = toDisplayText(String(evidence.tool ?? evidence.scanner ?? ''), 60)
-  const scan = toDisplayText(String(evidence.command_id ?? evidence.scan_id ?? ''), 64)
+  const tool = closureTool(evidence)
+  const scan = closureScanId(evidence)
   return (
     <div className="grid gap-1 text-sm">
       <div className="flex flex-wrap items-center gap-1.5">

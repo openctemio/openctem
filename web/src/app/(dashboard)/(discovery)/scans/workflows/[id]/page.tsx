@@ -563,8 +563,10 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                 <Server className="h-5 w-5 text-muted-foreground shrink-0" />
               )}
               <div className="min-w-0">
-                <h1 className="text-base font-semibold truncate">{workflow.name}</h1>
-                <p className="truncate text-xs text-muted-foreground">
+                <h1 className="text-base font-semibold break-words">{workflow.name}</h1>
+                {/* How to edit the canvas: dragging is for a pointer, so a
+                    phone (which only reads the canvas) shows no hint row. */}
+                <p className="hidden text-xs text-muted-foreground md:block">
                   {isSystemTemplate
                     ? t('workflowStages.builder.hintTemplate')
                     : isReadOnly
@@ -637,22 +639,24 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
                   {t('workflowStages.builder.discardDraft')}
                 </Button>
               )}
-              {!isReadOnly && (
+              {/* One main action, and none at rest: Save draft while there
+                  are changes, then Publish while a saved draft waits. A
+                  workflow with neither shows only its published version. */}
+              {!isReadOnly && hasChanges && (
                 <Button
                   size="sm"
-                  variant="outline"
+                  iconOnlyBelow="sm"
                   onClick={handleSave}
-                  disabled={!hasChanges || isSaving}
+                  disabled={isSaving}
+                  aria-label={t('workflowStages.builder.saveDraft')}
                 >
-                  {isSaving ? (
-                    <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Save className="me-2 h-4 w-4" />
-                  )}
-                  {t('workflowStages.builder.saveDraft')}
+                  {isSaving ? <Loader2 className="animate-spin" /> : <Save />}
+                  <span className="sr-only sm:not-sr-only">
+                    {t('workflowStages.builder.saveDraft')}
+                  </span>
                 </Button>
               )}
-              {!isReadOnly && (
+              {!isReadOnly && hasDraft && !hasChanges && (
                 <Button
                   size="sm"
                   onClick={() => setAskPublish(true)}
@@ -700,9 +704,11 @@ export default function WorkflowBuilderPage({ params }: PageProps) {
           )}
 
           {/* Content */}
-          <div className="flex flex-1 overflow-hidden">
+          {/* The canvas beside its palette (or the step's settings); on a
+              phone they stack, so the canvas keeps the full width. */}
+          <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
             {/* Workflow Canvas */}
-            <div className="flex-1 relative">
+            <div className="relative min-h-0 flex-1">
               <WorkflowBuilder
                 steps={localSteps}
                 availableTools={availableTools}

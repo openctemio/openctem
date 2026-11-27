@@ -19,6 +19,18 @@ vi.mock('@/lib/permissions', () => ({
   },
   useHasPermission: (p: string) => perms.granted.has(p),
 }))
+// The phone drawer loads on demand in the app; these tests render it at once.
+vi.mock('next/dynamic', async () => {
+  const phone = await import('@/features/shared/components/detail-sheet-phone')
+  const actual = await vi.importActual<typeof import('next/dynamic')>('next/dynamic')
+  return {
+    default: (loader: () => Promise<unknown>, options?: object) =>
+      String(loader).includes('detail-sheet-phone')
+        ? phone.PhoneDrawer
+        : actual.default(loader as never, options as never),
+  }
+})
+
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 const phone = vi.hoisted(() => ({ value: false }))
 vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => phone.value }))
@@ -397,7 +409,7 @@ describe('SensorDetailSheet', () => {
         },
       })
       const stats = screen.getByLabelText('Key numbers')
-      expect(within(stats).getByText('1 slots free, host busy')).toBeInTheDocument()
+      expect(within(stats).getByText('1 slot free, host busy')).toBeInTheDocument()
     })
 
     it('more jobs than the capacity it reports now is said as over capacity, never "0 slots free"', () => {

@@ -8,12 +8,11 @@
 
 'use client'
 
-import { useEffect, useEffectEvent, useState, useTransition } from 'react'
+import { useEffect, useId, useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import Link from '@/components/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { KeyRound, Loader2, LogIn } from 'lucide-react'
+import { KeyRound, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
 
@@ -28,9 +27,10 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { EntryBanner, EntryDivider } from '@/components/entry'
+import { TextLink } from '@/components/ui/text-link'
 import { PasswordInput } from '@/components/password-input'
-import { IconGoogle, IconGithub, IconMicrosoft } from '@/assets/brand-icons'
+import { SocialProviderButtons } from './social-provider-buttons'
 
 import { isHttpsUrl, validateRedirectUrl } from '@/lib/redirect'
 import { authErrorText } from '@/features/auth/lib/auth-error-codes'
@@ -93,20 +93,6 @@ interface LoginFormProps extends React.HTMLAttributes<HTMLFormElement> {
   reauth?: boolean
 }
 
-// ============================================
-// SOCIAL PROVIDERS CONFIG
-// ============================================
-
-const socialProviders: {
-  id: SocialProvider
-  name: string
-  icon: React.ComponentType<{ className?: string }>
-}[] = [
-  { id: 'google', name: 'Google', icon: IconGoogle },
-  { id: 'github', name: 'GitHub', icon: IconGithub },
-  { id: 'microsoft', name: 'Microsoft', icon: IconMicrosoft },
-]
-
 /**
  * Full page navigation after login, so the cookies set by the Server Action
  * are picked up (router.push would keep the old auth state). A message is
@@ -149,6 +135,14 @@ export function LoginForm({
   const [captchaToken, setCaptchaToken] = useState('')
   const [captchaReset, setCaptchaReset] = useState(0)
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null)
+  // Why the last attempt failed. It stays in the card above the form (not a
+  // toast that fades) until the next attempt starts; the text is the same one
+  // the page has always shown for that refusal.
+  const [failure, setFailure] = useState<string | null>(null)
+  // The callback error and the session-ended reason describe how the visitor
+  // arrived; they give way once the visitor tries again.
+  const [attempted, setAttempted] = useState(false)
+  const noticeId = useId()
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -156,12 +150,9 @@ export function LoginForm({
   const safeRedirectTo = validateRedirectUrl(redirectTo, '/')
 
   // Fetch which social providers the backend actually has configured, so we
-  // only render buttons that will work (no 404 dead-affordances). Buttons are
-  // hidden while loading (data undefined) and only shown for providers === true.
-  const { data: authProviders } = useAuthProviders()
-  const enabledSocialProviders = authProviders
-    ? socialProviders.filter((provider) => authProviders.social?.[provider.id])
-    : []
+  // only render buttons that will work (no 404 dead-affordances). While it
+  // loads, the block keeps its place (SocialProviderButtons).
+  const { data: authProviders, error: authProvidersError } = useAuthProviders()
 
   // Check for error from OAuth/SSO callback
   // Only a known code's message is shown, never the raw parameter: a crafted
@@ -181,9 +172,7 @@ export function LoginForm({
   const accountExists = errorParam === 'account_exists'
   // A social sign-in hit an identity the organization's single sign-on manages.
   const useOrgSso = errorParam === 'use_org_sso'
-  useEffect(() => {
-    if (errorMessage && !accountExists && !useOrgSso) toast.error(errorMessage)
-  }, [errorMessage, accountExists, useOrgSso])
+  const callbackError = errorMessage && !accountExists && !useOrgSso ? errorMessage : null
 
   // Sent when a session ended because an organization requires two-factor
   // authentication and the session could not set it up. Only the known value
@@ -193,22 +182,32 @@ export function LoginForm({
   // A session the platform ended (reuse, expiry, signed out elsewhere) says
   // why instead of silently showing the form.
   const sessionEnded = sessionEndedMessage(reasonParam)
-  // The notice shows once per reason: a language switch must not toast again.
-  const showReasonNotice = useEffectEvent(() => {
-    if (mfaRequiredReason) {
-      toast.info(
-        t(
-          'auth.login.mfaRequiredReason',
-          'An organization you belong to requires two-factor authentication. Sign in to set it up.'
-        )
+  const reasonNotice = mfaRequiredReason
+    ? t(
+        'auth.login.mfaRequiredReason',
+        'An organization you belong to requires two-factor authentication. Sign in to set it up.'
       )
-    } else if (sessionEnded) {
-      toast.info(t(sessionEnded.key, sessionEnded.fallback))
-    }
-  })
-  useEffect(() => {
-    showReasonNotice()
-  }, [reasonParam])
+    : sessionEnded
+      ? t(sessionEnded.key, sessionEnded.fallback)
+      : null
+
+  // One notice at a time: the last attempt's failure, else how the visitor
+  // arrived (a failed callback, then a session the platform ended).
+  const notice: { text: string; tone: 'danger' | 'info' } | null = failure
+    ? { text: failure, tone: 'danger' }
+    : attempted
+      ? null
+      : callbackError
+        ? { text: callbackError, tone: 'danger' }
+        : reasonNotice
+          ? { text: reasonNotice, tone: 'info' }
+          : null
+
+  /** A new attempt starts: the previous answer leaves the card. */
+  function startAttempt() {
+    setAttempted(true)
+    setFailure(null)
+  }
 
   // Form setup with centralized schema
   const form = useForm<LoginInput>({
@@ -232,6 +231,7 @@ export function LoginForm({
    * Handle form submission for local auth
    */
   function onSubmit(data: LoginInput) {
+    startAttempt()
     startTransition(async () => {
       const result = await loginAction({
         email: data.email,
@@ -293,7 +293,7 @@ export function LoginForm({
         // Otherwise the account space: invitations, the account pages, and
         // creating an organization where the installation allows it. The page
         // decides, so this toast stays neutral.
-        hardNavigate('/welcome', t('auth.login.success', 'Signed in'))
+        hardNavigate('/account/organizations', t('auth.login.success', 'Signed in'))
         return
       }
 
@@ -302,19 +302,19 @@ export function LoginForm({
       // Server Action are picked up properly.
       hardNavigate(safeRedirectTo, t('auth.login.success', 'Signed in'))
     } else if (result.code === 'ORGANIZATION_SUSPENDED') {
-      toast.error(
+      setFailure(
         t('auth.organizationSuspended.message', 'This organization is suspended. Contact support.')
       )
     } else if (result.code === 'EMAIL_NOT_VERIFIED') {
       // The password was right but the address is not verified: say so and
       // offer to send the link again.
       setUnverifiedEmail(form.getValues('email'))
-      toast.error(t('auth.login.emailNotVerified', 'Your email address is not verified yet.'))
+      setFailure(t('auth.login.emailNotVerified', 'Your email address is not verified yet.'))
     } else if (result.code === 'CAPTCHA_REQUIRED') {
       setCaptchaRequired(true)
-      toast.error(t('auth.login.captchaRequired'))
+      setFailure(t('auth.login.captchaRequired'))
     } else {
-      toast.error(authErrorText(result.code, t, t('auth.login.failed', 'Sign-in failed')))
+      setFailure(authErrorText(result.code, t, t('auth.login.failed', 'Sign-in failed')))
     }
   }
 
@@ -322,6 +322,7 @@ export function LoginForm({
    * Handle social login (Google, GitHub, Microsoft)
    */
   async function handleSocialLogin(provider: SocialProvider) {
+    startAttempt()
     setLoadingProvider(provider)
     try {
       const res = await initiateSocialLogin(provider, safeRedirectTo)
@@ -331,9 +332,9 @@ export function LoginForm({
     } catch (error) {
       setLoadingProvider(null)
       console.error(`Social login error (${provider}):`, error)
-      toast.error(
+      setFailure(
         t('auth.login.providerFailed', 'Could not sign in with {provider}. Try again.', {
-          provider: identityProviderLabel(provider),
+          provider: identityProviderLabel(provider, t),
         })
       )
     }
@@ -344,6 +345,7 @@ export function LoginForm({
    */
   async function handleSSOLogin(provider: SSOProviderType) {
     if (!ssoOrg) return
+    startAttempt()
     setLoadingSSOProvider(provider)
     try {
       const res = await initiateSSOLogin(provider, ssoOrg, safeRedirectTo, reauth)
@@ -352,9 +354,9 @@ export function LoginForm({
     } catch (error) {
       setLoadingSSOProvider(null)
       console.error(`SSO login error (${provider}):`, error)
-      toast.error(
+      setFailure(
         t('auth.login.providerFailed', 'Could not sign in with {provider}. Try again.', {
-          provider: identityProviderLabel(provider),
+          provider: identityProviderLabel(provider, t),
         })
       )
     }
@@ -385,15 +387,19 @@ export function LoginForm({
 
   if (mfaPurpose) {
     return (
-      <div className={cn('grid gap-3', className)}>
+      <div className={cn('flex flex-col gap-3.5', className)}>
         {pendingDeletionDialog}
         <MfaStep
+          headingLevel={1}
           purpose={mfaPurpose}
           orgs={mfaOrgs}
           onDone={handleLoginResult}
           onCancel={(message) => {
             setMfaPurpose(null)
-            if (message) toast.error(message)
+            if (message) {
+              setAttempted(true)
+              setFailure(message)
+            }
           }}
         />
       </div>
@@ -406,29 +412,43 @@ export function LoginForm({
       <form
         method="post"
         onSubmit={form.handleSubmit(onSubmit)}
-        className={cn('grid gap-3', className)}
+        className={cn('flex flex-col gap-3.5', className)}
+        aria-describedby={notice ? noticeId : undefined}
         {...props}
       >
+        {notice && (
+          <EntryBanner
+            key={notice.text}
+            id={noticeId}
+            tone={notice.tone}
+            data-testid="login-notice"
+          >
+            <p>{notice.text}</p>
+          </EntryBanner>
+        )}
+
         {accountExists && (
-          <Alert role="alert" data-testid="login-account-exists">
-            <AlertTitle>{t('auth.accountExists.title')}</AlertTitle>
-            <AlertDescription>
-              <p>{errorMessage}</p>
-              <Link href="/forgot-password" className="font-medium underline underline-offset-4">
-                {t('auth.accountExists.resetPassword')}
-              </Link>
-            </AlertDescription>
-          </Alert>
+          <EntryBanner
+            tone="warn"
+            data-testid="login-account-exists"
+            title={t('auth.accountExists.title')}
+          >
+            <p>{errorMessage}</p>
+            <TextLink href="/forgot-password" variant="inline">
+              {t('auth.accountExists.resetPassword')}
+            </TextLink>
+          </EntryBanner>
         )}
 
         {useOrgSso && (
-          <Alert role="alert" data-testid="login-use-org-sso">
-            <AlertTitle>{t('auth.useOrgSso.title')}</AlertTitle>
-            <AlertDescription>
-              <p>{errorMessage}</p>
-              <p>{t('auth.useOrgSso.hint')}</p>
-            </AlertDescription>
-          </Alert>
+          <EntryBanner
+            tone="info"
+            data-testid="login-use-org-sso"
+            title={t('auth.useOrgSso.title')}
+          >
+            <p>{errorMessage}</p>
+            <p>{t('auth.useOrgSso.hint')}</p>
+          </EntryBanner>
         )}
 
         {/* Email Field */}
@@ -457,8 +477,13 @@ export function LoginForm({
           control={form.control}
           name="password"
           render={({ field }) => (
-            <FormItem className="relative">
-              <FormLabel>{t('auth.login.password', 'Password')}</FormLabel>
+            <FormItem>
+              <div className="flex items-baseline justify-between gap-2">
+                <FormLabel>{t('auth.login.password', 'Password')}</FormLabel>
+                <TextLink href="/forgot-password" variant="inline" className="text-dense">
+                  {t('auth.login.forgotPassword', 'Forgot password?')}
+                </TextLink>
+              </div>
               <FormControl>
                 <PasswordInput
                   placeholder={t('auth.login.passwordPlaceholder', 'Enter your password')}
@@ -468,14 +493,6 @@ export function LoginForm({
                 />
               </FormControl>
               <FormMessage />
-
-              {/* Forgot Password Link */}
-              <Link
-                href="/forgot-password"
-                className="text-muted-foreground absolute end-0 -top-0.5 text-sm font-medium hover:opacity-75 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
-              >
-                {t('auth.login.forgotPassword', 'Forgot password?')}
-              </Link>
             </FormItem>
           )}
         />
@@ -491,67 +508,28 @@ export function LoginForm({
         {unverifiedEmail && <ResendVerification email={unverifiedEmail} />}
 
         {/* Submit Button */}
-        <Button className="mt-2" disabled={isLoading} type="submit">
-          {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+        <Button variant="signal" disabled={isLoading} type="submit">
+          {isPending ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
           {t('auth.login.submit', 'Sign in')}
         </Button>
 
-        {/* Social Login Section — only shown for providers the backend has
-            configured. If none are configured (or still loading), the whole
-            block including the "or continue with" divider is hidden. */}
-        {showSocialLogin && enabledSocialProviders.length > 0 && (
-          <>
-            <div className="relative my-2">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background text-muted-foreground px-2">
-                  {t('auth.login.orContinueWith', 'Or continue with')}
-                </span>
-              </div>
-            </div>
-
-            <div
-              className="grid gap-2"
-              style={{
-                gridTemplateColumns: `repeat(${enabledSocialProviders.length}, minmax(0, 1fr))`,
-              }}
-            >
-              {enabledSocialProviders.map((provider) => (
-                <Button
-                  key={provider.id}
-                  variant="outline"
-                  type="button"
-                  disabled={isLoading}
-                  onClick={() => handleSocialLogin(provider.id)}
-                  className="relative"
-                >
-                  {loadingProvider === provider.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <provider.icon className="h-4 w-4" />
-                  )}
-                  <span className="sr-only">{provider.name}</span>
-                </Button>
-              ))}
-            </div>
-          </>
+        {/* Social sign-in: only providers the backend has configured; the
+            block keeps its place while that answer loads. */}
+        {showSocialLogin && (
+          <SocialProviderButtons
+            providers={authProviders}
+            failed={!!authProvidersError}
+            divider={t('auth.login.orContinueWith', 'Or continue with')}
+            disabled={isLoading}
+            loadingProvider={loadingProvider}
+            onSelect={handleSocialLogin}
+          />
         )}
 
         {/* SSO Providers (when ?org= parameter is present) */}
         {ssoOrg && ssoProviders && ssoProviders.length > 0 && (
           <>
-            <div className="relative my-2">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background text-muted-foreground px-2">
-                  {t('auth.login.ssoSection', 'Organization SSO')}
-                </span>
-              </div>
-            </div>
+            <EntryDivider>{t('auth.login.ssoSection', 'Organization SSO')}</EntryDivider>
 
             <div className="grid gap-2">
               {ssoProviders.map((provider) => {
@@ -571,9 +549,9 @@ export function LoginForm({
                     title={label}
                   >
                     {loadingSSOProvider === provider.provider ? (
-                      <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                      <Loader2 aria-hidden className="size-4 animate-spin" />
                     ) : (
-                      <KeyRound className="me-2 h-4 w-4" />
+                      <KeyRound aria-hidden className="size-4" />
                     )}
                     <span className="truncate">{label}</span>
                   </Button>

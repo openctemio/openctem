@@ -173,4 +173,47 @@ describe('ApprovalRuleList', () => {
     )
     expect(screen.queryByRole('button', { name: /Edit|Move|Reorder/ })).not.toBeInTheDocument()
   })
+
+  it('says an off rule once: the switch for an editor, a badge for a reader', () => {
+    const props = {
+      rules: [rule({ enabled: false })],
+      mode: 'on' as const,
+      onMove: () => {},
+      onEdit: () => {},
+      onChange: () => {},
+      onRemove: () => {},
+    }
+    const { unmount } = render(<ApprovalRuleList {...props} canEdit />)
+    expect(screen.getByRole('switch', { name: 'Intrusive scans enabled' })).not.toBeChecked()
+    expect(screen.queryByText('Off')).not.toBeInTheDocument()
+    unmount()
+    render(<ApprovalRuleList {...props} canEdit={false} />)
+    expect(screen.getByText('Off')).toBeInTheDocument()
+  })
+
+  it('lists what a rule needs: approvers, justification and ticket', () => {
+    render(
+      <ApprovalRuleList
+        rules={[
+          rule({
+            requirement: {
+              approvals: 2,
+              approver_roles: ['owner'],
+              require_justification: true,
+              require_ticket: true,
+            },
+          }),
+        ]}
+        mode="on"
+        canEdit
+        onMove={() => {}}
+        onEdit={() => {}}
+        onChange={() => {}}
+        onRemove={() => {}}
+      />
+    )
+    expect(
+      screen.getByText('2 distinct approvers: owners, a justification, a change ticket')
+    ).toBeInTheDocument()
+  })
 })

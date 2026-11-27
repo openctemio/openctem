@@ -3,6 +3,8 @@
 import { HealthStatus } from '@/components/ui/health-status'
 import type { HealthState } from '@/lib/health-colors'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useTranslation } from '@/context/i18n-provider'
+import { formatDate } from '@/lib/app-locale'
 
 type AssetStatus = 'active' | 'stale' | 'inactive' | 'archived' | string
 
@@ -46,7 +48,7 @@ const STATUS_CONFIG: Record<string, { label: string; description: string }> = {
   },
   archived: {
     label: 'Archived',
-    description: 'Archived — requires manual restore to return to active rotation.',
+    description: 'Archived: restore it by hand to return it to active rotation.',
   },
 }
 
@@ -61,7 +63,11 @@ export function AssetStatusBadge({
   snoozedUntil,
   className,
 }: AssetStatusBadgeProps) {
+  const { t } = useTranslation()
+  const known = status in STATUS_CONFIG ? status : 'unknown'
   const config = STATUS_CONFIG[status] ?? UNKNOWN_CONFIG
+  const label = t(`assets.lifecycle.status.${known}`, config.label)
+  const description = t(`assets.lifecycle.status.${known}.hint`, config.description)
   const state = ASSET_LIFECYCLE_HEALTH[status] ?? 'unknown'
 
   const showDays =
@@ -78,22 +84,31 @@ export function AssetStatusBadge({
           <HealthStatus
             state={state}
             value={status}
-            label={config.label}
-            detail={[showDays ? `${daysSinceLastSeen}d` : '', snoozeActive ? 'snoozed' : ''].filter(
-              Boolean
-            )}
+            label={label}
+            detail={[
+              showDays
+                ? t('assets.lifecycle.daysShort', '{days}d', { days: daysSinceLastSeen })
+                : '',
+              snoozeActive ? t('assets.lifecycle.snoozed', 'snoozed') : '',
+            ].filter(Boolean)}
             className={className}
           />
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-xs text-xs">
-        <p>{config.description}</p>
+        <p>{description}</p>
         {showDays && (
-          <p className="mt-1 text-muted-foreground">Last observed {daysSinceLastSeen} days ago.</p>
+          <p className="mt-1 text-muted-foreground">
+            {t('assets.lifecycle.lastObserved', 'Last observed {days} days ago.', {
+              days: daysSinceLastSeen,
+            })}
+          </p>
         )}
         {snoozeActive && (
           <p className="mt-1 text-muted-foreground">
-            Lifecycle worker paused until {new Date(snoozedUntil).toLocaleDateString()}.
+            {t('assets.lifecycle.pausedUntil', 'Lifecycle worker paused until {date}.', {
+              date: formatDate(new Date(snoozedUntil)),
+            })}
           </p>
         )}
       </TooltipContent>

@@ -47,7 +47,6 @@ export function MoreChip({ label, values, mono = true }: MoreChipProps) {
         </button>
       </PopoverTrigger>
       <PopoverContent
-        align="start"
         className="w-auto max-w-[min(360px,calc(100vw-32px))] p-0"
         onClick={(e) => e.stopPropagation()}
       >

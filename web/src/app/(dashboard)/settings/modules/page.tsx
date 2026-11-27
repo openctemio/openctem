@@ -6,20 +6,16 @@
  * impact preview before saving, locks with their reason).
  */
 import { useCallback, useMemo, useState } from 'react'
-import { AlertCircle, AlertTriangle, RotateCcw, SearchX } from 'lucide-react'
+import { AlertTriangle, RotateCcw, SearchX } from 'lucide-react'
 import { toast } from 'sonner'
-import { Main } from '@/components/layout'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
+import { ToolbarAction } from '@/features/shared/components/toolbar-action'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import {
   EmptyState,
   FilterSelect,
   ListToolbar,
-  PageHeader,
-  PageStack,
-  ReadOnlyNotice,
+  SettingsPage,
   SettingsSaveBar,
   SettingsSection,
 } from '@/features/shared'
@@ -375,41 +371,28 @@ export default function ModuleManagementPage() {
     }
   }, [resetModules, mutate, refreshModules, t])
 
-  if (error && !modules.length) {
-    return (
-      <Main>
-        <PageStack>
-          <PageHeader title={pageTitle} description={pageDescription} />
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>{t('settings.modules.loadFailed', 'Failed to load modules')}</AlertTitle>
-            <AlertDescription>
-              <p>
-                {getErrorMessage(
-                  error,
-                  t('settings.modules.requestFailed', 'The modules request failed.')
-                )}
-              </p>
-              <Button variant="outline" size="sm" className="mt-2" onClick={() => void mutate()}>
-                {t('common.retry', 'Retry')}
-              </Button>
-            </AlertDescription>
-          </Alert>
-        </PageStack>
-      </Main>
-    )
-  }
+  // Reset sits at the end of the list's toolbar (an icon on a phone), not in
+  // the header: there it stood alone on a row under the description.
+  const resetAction = (
+    <Can route="POST /api/v1/tenants/{tenant}/settings/modules/reset">
+      <ToolbarAction
+        icon={RotateCcw}
+        label={t('settings.modules.reset', 'Reset to defaults')}
+        onClick={() => setShowReset(true)}
+        disabled={isResetting}
+      />
+    </Can>
+  )
 
-  if (isLoading) {
+  if ((error && !modules.length) || isLoading) {
     return (
-      <Main>
-        <PageStack>
-          <PageHeader title={pageTitle} description={pageDescription} />
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 w-full rounded-xl" />
-          ))}
-        </PageStack>
-      </Main>
+      <SettingsPage
+        title={pageTitle}
+        description={pageDescription}
+        state={isLoading ? 'loading' : 'error'}
+        error={error}
+        onRetry={() => void mutate()}
+      />
     )
   }
 
@@ -421,262 +404,256 @@ export default function ModuleManagementPage() {
       ? (depConflict.blockers?.length ?? 0)
       : (depConflict?.required?.length ?? 0)
 
-  return (
-    <Main>
-      <PageStack>
-        <PageHeader title={pageTitle} description={pageDescription}>
-          <Can route="POST /api/v1/tenants/{tenant}/settings/modules/reset">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowReset(true)}
-              disabled={isResetting}
-            >
-              <RotateCcw className="h-4 w-4" />
-              {t('settings.modules.reset', 'Reset to defaults')}
-            </Button>
-          </Can>
-        </PageHeader>
+  // Who changed the modules last: the first section's meta line.
+  const lastChange = canReadAudit ? <ModulesLastChange /> : null
+  const firstGroup = coreShown.length > 0 ? 'always-on' : groups.find((g) => g.shown.length)?.key
 
-        {!canEdit && (
-          <ReadOnlyNotice
-            reason={t(
+  return (
+    <SettingsPage
+      title={pageTitle}
+      description={pageDescription}
+      readOnly={
+        canEdit
+          ? false
+          : t(
               'settings.modules.readOnly',
               'You can see which modules are on. Only administrators can change them.'
-            )}
+            )
+      }
+    >
+      <ListToolbar
+        search={{
+          value: query,
+          onChange: setQuery,
+          placeholder: t('settings.modules.searchPlaceholder', 'Search modules…'),
+          label: t('settings.modules.searchLabel', 'Search modules'),
+        }}
+        start={
+          <FilterSelect<StateFilter>
+            label={t('settings.modules.filter.label', 'Show')}
+            value={stateFilter}
+            onChange={(v) => setStateParam(v)}
+            allLabel={t('settings.modules.filter.all', 'All')}
+            allCount={featureModules.length}
+            options={[
+              {
+                value: 'on',
+                label: t('settings.modules.filter.on', 'On'),
+                count: stateCounts.on,
+              },
+              {
+                value: 'off',
+                label: t('settings.modules.filter.off', 'Off'),
+                count: stateCounts.off,
+              },
+              {
+                value: 'unavailable',
+                label: t('settings.modules.filter.unavailable', 'Unavailable'),
+                count: stateCounts.unavailable,
+              },
+            ]}
           />
-        )}
-
-        <ListToolbar
-          search={{
-            value: query,
-            onChange: setQuery,
-            placeholder: t('settings.modules.searchPlaceholder', 'Search modules…'),
-            label: t('settings.modules.searchLabel', 'Search modules'),
-          }}
-          start={
-            <FilterSelect<StateFilter>
-              label={t('settings.modules.filter.label', 'Show')}
-              value={stateFilter}
-              onChange={(v) => setStateParam(v)}
-              allLabel={t('settings.modules.filter.all', 'All')}
-              allCount={featureModules.length}
-              options={[
-                {
-                  value: 'on',
-                  label: t('settings.modules.filter.on', 'On'),
-                  count: stateCounts.on,
-                },
-                {
-                  value: 'off',
-                  label: t('settings.modules.filter.off', 'Off'),
-                  count: stateCounts.off,
-                },
-                {
-                  value: 'unavailable',
-                  label: t('settings.modules.filter.unavailable', 'Unavailable'),
-                  count: stateCounts.unavailable,
-                },
-              ]}
-            />
-          }
-          end={
-            <span className="text-sm tabular-nums text-muted-foreground" role="status">
+        }
+        end={
+          <>
+            {/* The count is meta: on a phone each group's heading says it. */}
+            <span
+              className="text-dense tabular-nums text-muted-foreground @max-md/toolbar:sr-only"
+              role="status"
+            >
               {t('settings.modules.onCount', '{on} of {total} on', {
                 on: featureOn,
                 total: featureModules.length,
               })}
             </span>
-          }
-        />
+            {resetAction}
+          </>
+        }
+      />
 
-        {coreShown.length > 0 && (
-          <SettingsSection
-            id="modules-always-on"
-            title={t('settings.modules.alwaysOnTitle', 'Always on')}
-            description={formatList(coreShown.map((m) => text.name(m.id, m.name)))}
-          >
-            {coreWithSubs.length > 0 && (
-              <ul className="divide-y rounded-xl border">
-                {coreWithSubs.map((m) => (
-                  <ModuleRow
-                    key={m.id}
-                    id={m.id}
-                    apiName={m.name}
-                    apiDescription={m.description}
-                    enabled
-                    lock={{ kind: 'always_on' }}
-                    readOnly={!canEdit}
-                    busy={isUpdating}
-                    apiNames={apiNames}
-                    subModules={m.sub_modules}
-                    subEnabled={Object.fromEntries(
-                      (m.sub_modules ?? []).map((s) => [s.id, effective(s.id)])
-                    )}
-                    onToggle={onToggle}
-                  />
-                ))}
-              </ul>
-            )}
-          </SettingsSection>
-        )}
-
-        {groups
-          .filter((g) => g.shown.length > 0)
-          .map((g) => (
-            <SettingsSection
-              key={g.key}
-              id={`modules-${g.key}`}
-              title={g.label}
-              actions={
-                <span className="text-sm tabular-nums text-muted-foreground">
-                  {t('settings.modules.onCount', '{on} of {total} on', {
-                    on: g.on,
-                    total: g.total,
-                  })}
-                </span>
-              }
-            >
-              <ul className="divide-y rounded-xl border">
-                {g.shown.map((m) => (
-                  <ModuleRow
-                    key={m.id}
-                    id={m.id}
-                    apiName={m.name}
-                    apiDescription={m.description}
-                    beta={m.release_status === 'beta'}
-                    enabled={effective(m.id)}
-                    change={changeOf(m.id)}
-                    lock={rowLock(m)}
-                    readOnly={!canEdit}
-                    busy={isUpdating}
-                    requires={listed(index.requires[m.id])}
-                    requiredBy={listed(index.requiredBy[m.id])}
-                    apiNames={apiNames}
-                    health={m.health}
-                    healthDetail={m.health_detail}
-                    subModules={m.sub_modules}
-                    subEnabled={Object.fromEntries(
-                      (m.sub_modules ?? []).map((s) => [s.id, effective(s.id)])
-                    )}
-                    onToggle={onToggle}
-                  />
-                ))}
-              </ul>
-            </SettingsSection>
-          ))}
-
-        {shownCount === 0 && (
-          <EmptyState
-            icon={SearchX}
-            title={t('settings.modules.noMatch', 'No modules match')}
-            description={t(
-              'settings.modules.noMatchHint',
-              'Try another word, or show all modules.'
-            )}
-            action={
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setQuery('')
-                  setStateParam('')
-                }}
-              >
-                {t('settings.modules.clearFilters', 'Show all modules')}
-              </Button>
-            }
-          />
-        )}
-
-        {canReadAudit && <ModulesLastChange />}
-
-        {canEdit && (
-          <SettingsSaveBar
-            dirty={isDirty}
-            saving={isUpdating}
-            onSave={handleSave}
-            onDiscard={() => setPending({})}
-            summary={
-              formatList([
-                toEnable > 0 &&
-                  t('settings.modules.toEnable', '{count} to turn on', { count: toEnable }),
-                toDisable > 0 &&
-                  t('settings.modules.toDisable', '{count} to turn off', { count: toDisable }),
-              ]) || undefined
-            }
-          />
-        )}
-
-        <ModuleImpactDialog
-          open={showImpact}
-          onOpenChange={setShowImpact}
-          plan={plan}
-          apiNames={apiNames}
-          saving={isUpdating}
-          onConfirm={() => void runSave(plan.changes)}
-        />
-
-        <ConfirmDialog
-          open={!!depConflict}
-          onOpenChange={(open) => !open && setDepConflict(null)}
-          title={
-            <span className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-muted-foreground" />
-              {depConflict?.action === 'disable'
-                ? t('settings.modules.cannotDisable', '{name} cannot turn off alone', {
-                    name: conflictName,
-                  })
-                : t('settings.modules.cannotEnable', '{name} cannot turn on alone', {
-                    name: conflictName,
-                  })}
-            </span>
-          }
-          desc={
-            depConflict?.action === 'disable'
-              ? t(
-                  'settings.modules.blockedBody',
-                  '{names} {count, plural, one {needs} other {need}} {name}. Turn them off together, or cancel.',
-                  {
-                    names: conflictNames(depConflict.blockers),
-                    count: conflictCount,
-                    name: conflictName,
-                  }
-                )
-              : t(
-                  'settings.modules.requiredBody',
-                  '{name} needs {names}. Turn them on together, or cancel.',
-                  { names: conflictNames(depConflict?.required), name: conflictName }
-                )
-          }
-          confirmText={
-            depConflict?.action === 'disable'
-              ? t('confirm.modules.offTogether', 'Turn off all {count} together', {
-                  count: conflictCount + 1,
-                })
-              : t('confirm.modules.onTogether', 'Turn on all {count} together', {
-                  count: conflictCount + 1,
-                })
-          }
-          destructive={depConflict?.action === 'disable'}
-          isLoading={isUpdating}
-          handleConfirm={handleConflictResolve}
-        />
-
-        <ConfirmDialog
-          open={showReset}
-          onOpenChange={setShowReset}
-          title={t('confirm.modules.resetTitle', 'Reset modules to the defaults?')}
-          desc={t(
-            'confirm.modules.resetDesc',
-            'Every module available to this organization turns on again, and the choices made on this page are cleared. This cannot be undone.'
+      {coreShown.length > 0 && (
+        <SettingsSection
+          framed
+          id="modules-always-on"
+          title={t('settings.modules.alwaysOnTitle', 'Always on')}
+          description={formatList(coreShown.map((m) => text.name(m.id, m.name)))}
+          meta={firstGroup === 'always-on' ? lastChange : undefined}
+        >
+          {coreWithSubs.length > 0 && (
+            <ul>
+              {coreWithSubs.map((m) => (
+                <ModuleRow
+                  key={m.id}
+                  id={m.id}
+                  apiName={m.name}
+                  apiDescription={m.description}
+                  enabled
+                  lock={{ kind: 'always_on' }}
+                  readOnly={!canEdit}
+                  busy={isUpdating}
+                  apiNames={apiNames}
+                  subModules={m.sub_modules}
+                  subEnabled={Object.fromEntries(
+                    (m.sub_modules ?? []).map((s) => [s.id, effective(s.id)])
+                  )}
+                  onToggle={onToggle}
+                />
+              ))}
+            </ul>
           )}
-          confirmText={t('confirm.modules.reset', 'Reset to defaults')}
-          destructive
-          isLoading={isResetting}
-          handleConfirm={() => void handleReset()}
+        </SettingsSection>
+      )}
+
+      {groups
+        .filter((g) => g.shown.length > 0)
+        .map((g) => (
+          <SettingsSection
+            framed
+            key={g.key}
+            id={`modules-${g.key}`}
+            title={g.label}
+            description={t('settings.modules.onCount', '{on} of {total} on', {
+              on: g.on,
+              total: g.total,
+            })}
+            meta={firstGroup === g.key ? lastChange : undefined}
+          >
+            <ul>
+              {g.shown.map((m) => (
+                <ModuleRow
+                  key={m.id}
+                  id={m.id}
+                  apiName={m.name}
+                  apiDescription={m.description}
+                  beta={m.release_status === 'beta'}
+                  enabled={effective(m.id)}
+                  change={changeOf(m.id)}
+                  lock={rowLock(m)}
+                  readOnly={!canEdit}
+                  busy={isUpdating}
+                  requires={listed(index.requires[m.id])}
+                  requiredBy={listed(index.requiredBy[m.id])}
+                  apiNames={apiNames}
+                  health={m.health}
+                  healthDetail={m.health_detail}
+                  subModules={m.sub_modules}
+                  subEnabled={Object.fromEntries(
+                    (m.sub_modules ?? []).map((s) => [s.id, effective(s.id)])
+                  )}
+                  onToggle={onToggle}
+                />
+              ))}
+            </ul>
+          </SettingsSection>
+        ))}
+
+      {shownCount === 0 && (
+        <EmptyState
+          icon={SearchX}
+          title={t('settings.modules.noMatch', 'No modules match')}
+          description={t('settings.modules.noMatchHint', 'Try another word, or show all modules.')}
+          action={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setQuery('')
+                setStateParam('')
+              }}
+            >
+              {t('settings.modules.clearFilters', 'Show all modules')}
+            </Button>
+          }
         />
-      </PageStack>
-    </Main>
+      )}
+
+      {!firstGroup && lastChange}
+
+      {canEdit && (
+        <SettingsSaveBar
+          dirty={isDirty}
+          saving={isUpdating}
+          onSave={handleSave}
+          onDiscard={() => setPending({})}
+          summary={
+            formatList([
+              toEnable > 0 &&
+                t('settings.modules.toEnable', '{count} to turn on', { count: toEnable }),
+              toDisable > 0 &&
+                t('settings.modules.toDisable', '{count} to turn off', { count: toDisable }),
+            ]) || undefined
+          }
+        />
+      )}
+
+      <ModuleImpactDialog
+        open={showImpact}
+        onOpenChange={setShowImpact}
+        plan={plan}
+        apiNames={apiNames}
+        saving={isUpdating}
+        onConfirm={() => void runSave(plan.changes)}
+      />
+
+      <ConfirmDialog
+        open={!!depConflict}
+        onOpenChange={(open) => !open && setDepConflict(null)}
+        title={
+          <span className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-muted-foreground" />
+            {depConflict?.action === 'disable'
+              ? t('settings.modules.cannotDisable', '{name} cannot turn off alone', {
+                  name: conflictName,
+                })
+              : t('settings.modules.cannotEnable', '{name} cannot turn on alone', {
+                  name: conflictName,
+                })}
+          </span>
+        }
+        desc={
+          depConflict?.action === 'disable'
+            ? t(
+                'settings.modules.blockedBody',
+                '{names} {count, plural, one {needs} other {need}} {name}. Turn them off together, or cancel.',
+                {
+                  names: conflictNames(depConflict.blockers),
+                  count: conflictCount,
+                  name: conflictName,
+                }
+              )
+            : t(
+                'settings.modules.requiredBody',
+                '{name} needs {names}. Turn them on together, or cancel.',
+                { names: conflictNames(depConflict?.required), name: conflictName }
+              )
+        }
+        confirmText={
+          depConflict?.action === 'disable'
+            ? t('confirm.modules.offTogether', 'Turn off all {count} together', {
+                count: conflictCount + 1,
+              })
+            : t('confirm.modules.onTogether', 'Turn on all {count} together', {
+                count: conflictCount + 1,
+              })
+        }
+        destructive={depConflict?.action === 'disable'}
+        isLoading={isUpdating}
+        handleConfirm={handleConflictResolve}
+      />
+
+      <ConfirmDialog
+        open={showReset}
+        onOpenChange={setShowReset}
+        title={t('confirm.modules.resetTitle', 'Reset modules to the defaults?')}
+        desc={t(
+          'confirm.modules.resetDesc',
+          'Every module available to this organization turns on again, and the choices made on this page are cleared. This cannot be undone.'
+        )}
+        confirmText={t('confirm.modules.reset', 'Reset to defaults')}
+        destructive
+        isLoading={isResetting}
+        handleConfirm={() => void handleReset()}
+      />
+    </SettingsPage>
   )
 }

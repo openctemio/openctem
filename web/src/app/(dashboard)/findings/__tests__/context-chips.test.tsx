@@ -134,13 +134,15 @@ describe('Findings context chips', () => {
     expect(primaryRow.querySelector('[data-testid="context-filter-chips"]')).toBeNull()
   })
 
-  it('the row under the toolbar holds the filter chips and Add filter, with no context chips', () => {
+  it('the row under the toolbar holds the filter chips, Add filter sits on the toolbar row', () => {
     openAt('?status=new')
     render(<FindingsPage />)
     const below = screen.getByTestId('data-table-toolbar-below')
     expect(below.querySelector('[data-testid="context-filter-chips"]')).toBeNull()
-    expect(within(below).getByText('Status is New')).toBeInTheDocument()
-    expect(within(below).getByRole('button', { name: /add filter/i })).toBeInTheDocument()
+    expect(within(below).getByText('Status: New')).toBeInTheDocument()
+    expect(within(below).queryByRole('button', { name: /add filter/i })).toBeNull()
+    const toolbar = screen.getByTestId('data-table-toolbar')
+    expect(within(toolbar).getByRole('button', { name: /add filter/i })).toBeInTheDocument()
   })
 
   it('shows the asset name, not the raw id', () => {

@@ -63,7 +63,7 @@ describe('apiClient session end', () => {
       code: 'TENANT_REQUIRED',
     })
     vi.runOnlyPendingTimers()
-    expect(assign).toHaveBeenCalledWith('/welcome')
+    expect(assign).toHaveBeenCalledWith('/account/organizations')
     expect(mocks.endSession).not.toHaveBeenCalled()
     expect(mocks.clearAuth).not.toHaveBeenCalled()
   })

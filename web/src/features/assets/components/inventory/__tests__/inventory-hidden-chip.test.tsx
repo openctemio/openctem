@@ -26,9 +26,7 @@ describe('InventoryHiddenChip', () => {
   it('names the count and offers Show and a Review link', async () => {
     const onShowAll = vi.fn()
     renderChip(80, onShowAll)
-    expect(screen.getByTestId('inventory-hidden-chip')).toHaveTextContent(
-      'Hiding 80 names awaiting review or not ours'
-    )
+    expect(screen.getByTestId('inventory-hidden-chip')).toHaveTextContent('80 names hidden')
     // Not dismissible: the only button shows everything.
     expect(screen.getAllByRole('button')).toHaveLength(1)
     await userEvent.click(screen.getByRole('button', { name: 'Show' }))
@@ -41,8 +39,6 @@ describe('InventoryHiddenChip', () => {
 
   it('uses the singular for one name', () => {
     renderChip(1)
-    expect(screen.getByTestId('inventory-hidden-chip')).toHaveTextContent(
-      'Hiding 1 name awaiting review or not ours'
-    )
+    expect(screen.getByTestId('inventory-hidden-chip')).toHaveTextContent('1 name hidden')
   })
 })

@@ -2,18 +2,25 @@
 
 import dynamic from 'next/dynamic'
 
-// Two branches of the dashboard layout that most sessions never render: the slim
-// account shell (no organization open) and the confirm-a-social-link prompt
-// (only after a refused sign-in). A next/dynamic call in the server layout is
-// still preloaded with it, so the loading happens here, in a client module: the
-// code downloads when the branch first renders, not with every dashboard route.
-// The account shell wraps the page, so it still renders on the server.
-export const LazyAccountShell = dynamic(() =>
-  import('@/features/account/components/account-shell').then((m) => m.AccountShell)
-)
+// A branch of the dashboard layout that most sessions never render: the
+// confirm-a-social-link prompt (only after a refused sign-in). A next/dynamic
+// call in the server layout is still preloaded with it, so the loading happens
+// here, in a client module: the code downloads when the branch first renders,
+// not with every dashboard route.
 
 export const LazyPendingLinkPrompt = dynamic(
   () =>
     import('@/features/account/components/pending-link-prompt').then((m) => m.PendingLinkPrompt),
+  { ssr: false }
+)
+
+// The feed-freshness banner: it renders nothing until the data is known to be
+// stale, and it formats dates (date-fns), which the shell must not download
+// with every route (shell-static-imports.test.ts).
+export const LazyFeedFreshnessBanner = dynamic(
+  () =>
+    import('@/features/threat-intel/components/feed-freshness-banner').then(
+      (m) => m.FeedFreshnessBanner
+    ),
   { ssr: false }
 )

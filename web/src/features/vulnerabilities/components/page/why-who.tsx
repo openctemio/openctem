@@ -2,7 +2,7 @@
 
 import { ArrowUpCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Table,
   TableBody,
@@ -14,6 +14,7 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import type { CveExposure, CveExposureUpgrade } from '../../types/exposure'
 import { share } from '../../lib/vuln-page'
+import { formatNumber } from '@/lib/app-locale'
 
 /**
  * "Why": the installed package versions the active findings name, the fix
@@ -51,7 +52,9 @@ export function WhyCard({
               <TableHeader>
                 <TableRow>
                   <TableHead className="ps-6">{t('vulnPage.why.col.package', 'Package')}</TableHead>
-                  <TableHead>{t('vulnPage.why.col.version', 'Version')}</TableHead>
+                  <TableHead className="hidden sm:table-cell">
+                    {t('vulnPage.why.col.version', 'Version')}
+                  </TableHead>
                   <TableHead>{t('vulnPage.why.col.fixed', 'Fixed in')}</TableHead>
                   <TableHead className="pe-6 text-end">
                     {t('vulnPage.why.col.assets', 'Assets')}
@@ -65,8 +68,11 @@ export function WhyCard({
                       <span className="block truncate font-mono text-xs" title={c.purl || c.name}>
                         {c.purl ? c.purl.replace(/@[^@]*$/, '') : c.name}
                       </span>
+                      <span className="block truncate font-mono text-xs text-muted-foreground sm:hidden">
+                        {c.version || t('vulnPage.why.unknownVersion', 'unknown')}
+                      </span>
                     </TableCell>
-                    <TableCell className="font-mono text-xs">
+                    <TableCell className="hidden font-mono text-xs sm:table-cell">
                       {c.version || t('vulnPage.why.unknownVersion', 'unknown')}
                     </TableCell>
                     <TableCell className="font-mono text-xs text-success">
@@ -77,7 +83,7 @@ export function WhyCard({
                       )}
                     </TableCell>
                     <TableCell className="pe-6 text-end tabular-nums">
-                      {c.assets.toLocaleString()}
+                      {formatNumber(c.assets)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -148,11 +154,7 @@ export function WhoCard({ exposure }: { exposure: CveExposure }) {
     <Card data-slot="who-card" className="min-w-0">
       <CardHeader className="pb-3">
         <CardTitle className="text-base">{t('vulnPage.who.title', 'Who found it')}</CardTitle>
-        <CardAction className="self-center">
-          <span className="text-xs text-muted-foreground">
-            {t('vulnPage.who.hint', 'Source coverage')}
-          </span>
-        </CardAction>
+        <CardDescription>{t('vulnPage.who.hint', 'Source coverage')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
         {sources.length === 0 ? (
@@ -181,8 +183,8 @@ export function WhoCard({ exposure }: { exposure: CveExposure }) {
                   <span className="min-w-0 truncate">{s.name}</span>
                   <span className="ms-auto shrink-0 text-xs tabular-nums text-muted-foreground">
                     {t('vulnPage.who.ofAssets', '{count} of {total} assets', {
-                      count: s.assets.toLocaleString(),
-                      total: assets.impacted.toLocaleString(),
+                      count: formatNumber(s.assets),
+                      total: formatNumber(assets.impacted),
                     })}
                   </span>
                 </li>

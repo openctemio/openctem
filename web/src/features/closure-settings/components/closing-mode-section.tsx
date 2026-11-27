@@ -1,11 +1,9 @@
 'use client'
 
 import { useCallback, useState } from 'react'
-import { Loader2, Save } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ErrorState, SettingsSection } from '@/features/shared'
+import { ErrorState, SettingsSaveBar, SettingsSection } from '@/features/shared'
 import { useTenantSettings } from '@/features/organization/api/use-tenant-settings'
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
@@ -31,6 +29,7 @@ export function ClosingModeSection() {
     canManage ? currentTenant?.id : undefined
   )
   const [status, setStatus] = useState<ClosingModeFormStatus>({ dirty: false, submitting: false })
+  const [resetKey, setResetKey] = useState(0)
   const onStatusChange = useCallback((s: ClosingModeFormStatus) => setStatus(s), [])
   const onSaved = useCallback(() => {
     void mutate()
@@ -40,30 +39,16 @@ export function ClosingModeSection() {
   if (!canManage) return null
 
   return (
+    // The settings reading width: on a wide screen the switch rows keep their
+    // switch beside the text instead of at the far end of the page.
     <SettingsSection
       id="closing-mode"
+      className="max-w-settings"
       title={t('settings.closing.title', 'Closing findings')}
       description={t(
         'settings.closing.description',
         'When the platform may close a finding that a later scan no longer finds.'
       )}
-      actions={
-        data && !error ? (
-          <Button
-            type="submit"
-            form={FORM_ID}
-            size="sm"
-            disabled={!status.dirty || status.submitting}
-          >
-            {status.submitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            {t('settings.closing.save', 'Save changes')}
-          </Button>
-        ) : undefined
-      }
     >
       {error ? (
         <ErrorState
@@ -75,13 +60,25 @@ export function ClosingModeSection() {
         <Skeleton className="h-64 w-full rounded-xl" />
       ) : (
         <ClosingModeForm
-          key={JSON.stringify(data)}
+          key={`${JSON.stringify(data)}:${resetKey}`}
           initial={data}
           etag={settings?.etags?.closure}
           isOwner={isOwner()}
           onSaved={onSaved}
           formId={FORM_ID}
           onStatusChange={onStatusChange}
+        />
+      )}
+      {data && !error && (
+        <SettingsSaveBar
+          dirty={status.dirty}
+          saving={status.submitting}
+          form={FORM_ID}
+          onDiscard={() => {
+            // A fresh form shows the saved values again.
+            setResetKey((k) => k + 1)
+            setStatus({ dirty: false, submitting: false })
+          }}
         />
       )}
     </SettingsSection>

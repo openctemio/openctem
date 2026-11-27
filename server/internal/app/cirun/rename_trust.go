@@ -77,7 +77,13 @@ func (s *Service) noteRenamedRepository(ctx context.Context, tenantID shared.ID,
 	body := fmt.Sprintf("The repository %s is now named %s on %s, and no CI trust configuration admits the new name, so its CI uploads are refused. "+
 		"Edit the repository patterns of the trust configuration%s to include the new name.",
 		oldName, now, claims.Provider, quotedNames(names))
+	msg := notificationdom.Msg("ci.repository_renamed_any", "old", oldName, "new", now, "provider", string(claims.Provider))
+	if len(names) > 0 {
+		msg = notificationdom.Msg("ci.repository_renamed", "old", oldName, "new", now, "provider", string(claims.Provider),
+			"trusts", strings.TrimSpace(quotedNames(names)))
+	}
 	alert := AdminAlert{
+		Message:   msg,
 		EventType: string(integration.EventTypeCITokenRefusals), Severity: notificationdom.SeverityHigh,
 		Title: "CI repository renamed, upload refused: " + now,
 		Body:  body, URL: trustSettingsPath, Aggregate: "ci_trust_config", AggregateID: only,

@@ -9,6 +9,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/feedsync"
 	vulneventapp "github.com/openctemio/openctem/server/internal/app/vulnevent"
 	"github.com/openctemio/openctem/server/internal/app/vulnfeed"
+	"github.com/openctemio/openctem/server/internal/app/vulnfeedsources"
 	"github.com/openctemio/openctem/server/internal/config"
 	"github.com/openctemio/openctem/server/internal/infra/controller"
 	"github.com/openctemio/openctem/server/pkg/httpsec"
@@ -63,6 +64,10 @@ func newFeedControllers(cfg *config.Config, svc *Services, repos *Repositories, 
 				log.Warn("vulnerability bundle import: start-up failure not recorded", "error", rerr)
 			}
 			return f
+		}
+		// The console setting of the feed address applies at every run.
+		if svc.VulnFeedSources != nil {
+			im.WithSources(svc.VulnFeedSources)
 		}
 		// Relay mode (RFC-142): the relay working directory is the only origin.
 		if svc.FeedRelay != nil {
@@ -133,4 +138,29 @@ func newVulnFeedImporter(cfg *config.Config, repos *Repositories, log *logger.Lo
 	im.WithChunks(repos.CVECorpus, vulnfeed.Transfer{Mirrors: cfg.Worker.VulnFeedMirrors, CacheDir: cfg.Scope.FeedCacheDir,
 		Client: httpsec.FeedHTTPClient(0), Registerer: prometheus.DefaultRegisterer})
 	return im, nil
+}
+
+// initVulnFeedSources builds the console setting of the vulnerability feed
+// address (release base URL and mirrors; the environment is the default and
+// pins it when set). Its test fetch uses an importer of its own that only
+// probes: it never imports.
+func (s *Services) initVulnFeedSources(cfg *config.Config, repos *Repositories, log *logger.Logger) {
+	if repos.PlatformSetting == nil {
+		return
+	}
+	s.VulnFeedSources = vulnfeedsources.NewService(repos.PlatformSetting, s.SettingRecorder, vulnfeedsources.Env{
+		BaseURL: cfg.Worker.VulnFeedBaseURL, Mirrors: cfg.Worker.VulnFeedMirrors, Pinned: cfg.Worker.VulnFeedSourcesPinned,
+		RootKeyID: cfg.Worker.VulnFeedRootKeyID, OfficialRootKeyID: config.VulnFeedOfficialRootKeyID,
+		BundleDirSet: cfg.Worker.VulnFeedBundleDir != "",
+	}, log)
+	// Relay mode is read at the time of a test (the relay service is built
+	// later; nil: direct).
+	s.VulnFeedSources.SetRelayMode(func(ctx context.Context) bool {
+		return s.FeedRelay != nil && s.FeedRelay.RelayMode(ctx)
+	})
+	if repos.ThreatIntel != nil && repos.CVECorpus != nil && repos.Software != nil {
+		if im, err := newVulnFeedImporter(cfg, repos, log.With("component", "vulnfeed_probe")); err == nil {
+			s.VulnFeedSources.SetProber(im)
+		}
+	}
 }

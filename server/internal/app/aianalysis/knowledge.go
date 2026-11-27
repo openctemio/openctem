@@ -139,7 +139,7 @@ func sourcesLine(ev []aidom.Evidence, r *retrieval) string {
 		if h.Visibility == kdom.VisibilityOrganization {
 			name = h.DocumentTitle
 		}
-		names = append(names, x.Ref+" "+name)
+		names = append(names, x.Ref+" "+plainText(name))
 	}
 	if len(names) == 0 {
 		return ""

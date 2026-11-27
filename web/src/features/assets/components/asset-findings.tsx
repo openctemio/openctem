@@ -33,6 +33,7 @@ import { assetFindingsHref } from './service-cells/open-findings-link'
 import type { FindingStatus } from '@/features/findings/types'
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
 import type { ApiFinding } from '@/features/findings/api/finding-api.types'
+import { formatDate } from '@/lib/app-locale'
 
 interface AssetFindingsProps {
   assetId: string
@@ -258,7 +259,7 @@ export function AssetFindings({
                     {finding.rule && <span className="font-mono break-all">{finding.rule}</span>}
                     <span>
                       {t('assets.findings.firstSeen', 'First seen {date}', {
-                        date: new Date(finding.firstSeen).toLocaleDateString(),
+                        date: formatDate(new Date(finding.firstSeen)),
                       })}
                     </span>
                   </div>

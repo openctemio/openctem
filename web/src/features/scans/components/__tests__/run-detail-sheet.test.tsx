@@ -88,7 +88,8 @@ describe('RunDetailSheet: cancel a run in progress', () => {
     getMock.mockResolvedValue({ ...apiRun, status: 'completed' })
     const { unmount } = renderSheet(apiRun.id)
     await screen.findByText('Timeline')
-    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    // No cancel to offer and the full-page link is its own icon: no menu at all.
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Cancel run' })).not.toBeInTheDocument()
     unmount()
 
@@ -96,7 +97,8 @@ describe('RunDetailSheet: cancel a run in progress', () => {
     getMock.mockResolvedValue({ ...apiRun, status: 'running' })
     renderSheet(apiRun.id)
     await screen.findByText('Timeline')
-    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    // No cancel to offer and the full-page link is its own icon: no menu at all.
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Cancel run' })).not.toBeInTheDocument()
   })
 })

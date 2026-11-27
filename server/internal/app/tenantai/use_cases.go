@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"strings"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	aidom "github.com/openctemio/openctem/server/pkg/domain/aianalysis"
 	"github.com/openctemio/openctem/server/pkg/domain/audit"
@@ -164,9 +166,9 @@ func (s *Service) SaveUseCase(ctx context.Context, tenantID, useCase string, in 
 		WithMessage(useCaseMessage(uc, before, next, loosened)).
 		WithSeverity(severity))
 	if len(loosened) > 0 && s.notifier != nil {
-		s.notifier.NotifyPolicyLoosened(ctx, tenantID, actx, "AI use case widened",
+		s.notifier.NotifyPolicyLoosenedWith(ctx, tenantID, actx, "settings.ai_use_case_widened", "AI use case widened",
 			fmt.Sprintf("AI use case %s: %s", uc, strings.Join(loosenedText(loosened, next), "; ")),
-			"/settings/ai?tab=use-cases")
+			"/settings/ai?tab=use-cases", "use_case", string(uc), "changes", loosenedMessage(loosened, next))
 	}
 	return UseCaseView{UseCase: uc, UseCaseSetting: next, Effective: next.Mode, Loosened: loosened}, nil
 }
@@ -180,6 +182,23 @@ func useCaseMessage(uc aidom.UseCase, before, next aidom.UseCaseSetting, loosene
 	default:
 		return fmt.Sprintf("AI use case %s settings changed", uc)
 	}
+}
+
+// loosenedMessage is the language-neutral form of loosenedText: one coded
+// line per change.
+func loosenedMessage(reasons []string, next aidom.UseCaseSetting) *notificationdom.Message {
+	items := make([]*notificationdom.Message, 0, len(reasons))
+	for _, r := range reasons {
+		switch r {
+		case aidom.LoosenAutoApplyOn:
+			items = append(items, notificationdom.Msg("settings.ai_use_case.auto_apply_on"))
+		case aidom.LoosenCeilingRaised:
+			items = append(items, notificationdom.Msg("settings.ai_use_case.ceiling_raised", "ceiling", string(next.Ceiling)))
+		case aidom.LoosenConfidenceLower:
+			items = append(items, notificationdom.Msg("settings.ai_use_case.confidence_lower", "confidence", fmt.Sprintf("%.2f", next.MinConfidence)))
+		}
+	}
+	return notificationdom.Lines("settings.ai_use_case.changes", items)
 }
 
 func loosenedText(reasons []string, next aidom.UseCaseSetting) []string {

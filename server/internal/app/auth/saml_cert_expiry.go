@@ -134,11 +134,15 @@ func (s *SAMLService) alertCertificateExpiry(ctx context.Context, tenantID share
 	}
 	date := cert.NotAfter.UTC().Format("2006-01-02")
 	var title, body string
+	var msg *notificationdom.Message
+	expiresAt := cert.NotAfter.UTC().Format(time.RFC3339)
 	if !cert.NotAfter.After(now) {
+		msg = notificationdom.Msg("saml.cert_expired", "org", orgName, "expires_at", expiresAt)
 		title = "The SAML identity provider certificate has expired"
 		body = fmt.Sprintf("The signing certificate of %s's SAML identity provider expired on %s. "+
 			"SAML sign-in fails until the identity provider's current certificate is uploaded in the SAML settings.", orgName, date)
 	} else {
+		msg = notificationdom.Msg("saml.cert_expiring", "org", orgName, "expires_at", expiresAt, "days", max(level, 1))
 		title = fmt.Sprintf("The SAML identity provider certificate expires in %d day(s)", max(level, 1))
 		body = fmt.Sprintf("The signing certificate of %s's SAML identity provider expires on %s. "+
 			"SAML sign-in stops working when it expires: ask the identity provider's administrator for the new certificate "+
@@ -154,6 +158,7 @@ func (s *SAMLService) alertCertificateExpiry(ctx context.Context, tenantID share
 				NotificationType: notificationdom.TypeSystemAlert,
 				Title:            title,
 				Body:             body,
+				Message:          msg,
 				Severity:         notificationdom.SeverityHigh,
 				ResourceType:     "saml_provider",
 				URL:              "/settings/authentication",

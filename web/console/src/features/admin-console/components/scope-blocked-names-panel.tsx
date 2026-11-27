@@ -11,9 +11,9 @@
  * caps are not part of this page and never change.
  */
 
-import { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { AlertTriangle, Loader2, Lock } from 'lucide-react'
+import { AlertTriangle, Loader2, Lock, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -35,7 +35,15 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
-import { DataTable, ErrorState, PageStack } from '@/features/shared'
+import {
+  DataTable,
+  DataTableRowActions,
+  EmptyState,
+  ErrorState,
+  MetaLine,
+  PageStack,
+} from '@/features/shared'
+import { ListCount, ListToolbarTitle } from '@/features/shared/components/list-title-row'
 import { ListSearch } from '@/features/shared/components/list-search'
 import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
 import { useSearchQuery } from '@/hooks/use-search-query'
@@ -202,6 +210,28 @@ function ReasonCodeConfirmDialog({
   )
 }
 
+/**
+ * Shown above the exceptions while the government and military rule is off:
+ * the one state of this page an administrator must not miss.
+ */
+function GovernmentRuleOffWarning() {
+  const { t } = useTranslation()
+  return (
+    <Alert variant="destructive" data-testid="government-rule-off-warning">
+      <AlertTriangle className="size-4" aria-hidden />
+      <AlertTitle>
+        {t('admin.blockedNames.offWarningTitle', 'Government and military names are not blocked')}
+      </AlertTitle>
+      <AlertDescription>
+        {t(
+          'admin.blockedNames.offWarning',
+          'Any organization on this installation may add a government or military domain to its scope. Turn the rule back on unless this installation serves only authorised testing of such domains.'
+        )}
+      </AlertDescription>
+    </Alert>
+  )
+}
+
 /** The rule switch, the operator's names and the longest exception. */
 function PolicyCard({
   data,
@@ -250,23 +280,6 @@ function PolicyCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        {!data.government_rule && (
-          <Alert variant="destructive" data-testid="government-rule-off-warning">
-            <AlertTriangle className="size-4" aria-hidden />
-            <AlertTitle>
-              {t(
-                'admin.blockedNames.offWarningTitle',
-                'Government and military names are not blocked'
-              )}
-            </AlertTitle>
-            <AlertDescription>
-              {t(
-                'admin.blockedNames.offWarning',
-                'Any organization on this installation may add a government or military domain to its scope. Turn the rule back on unless this installation serves only authorised testing of such domains.'
-              )}
-            </AlertDescription>
-          </Alert>
-        )}
         <div className="flex items-start justify-between gap-4">
           <Label htmlFor={`${id}-rule`} className="grid min-w-0 gap-1 font-normal">
             <span className="font-medium">
@@ -589,14 +602,73 @@ function stateBadge(state: ScopeNameException['state'], t: (k: string, f: string
   }
 }
 
-function ExceptionsCard({
+/**
+ * An exception on a phone. Fixed slots, never a label/value grid:
+ *
+ *   Example Ministry                         Active  [...]
+ *   *.portal.example.gov.xx
+ *   Expires 2027-01-31   By owner@example.com
+ *   the reason, cut to one line (whole in its hover text)
+ */
+function ExceptionMobileCard({ item, actions }: { item: ScopeNameException; actions?: ReactNode }) {
+  const { t } = useTranslation()
+  const name = item.include_subdomains ? `*.${item.name}` : item.name
+  return (
+    <div data-slot="exception-card" className="flex w-full min-w-0 items-start gap-2 px-3 py-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 flex-1 truncate font-medium" title={item.organization_name}>
+            {item.organization_name}
+          </span>
+          {stateBadge(item.state, t)}
+        </div>
+        <span className="truncate font-mono text-code" title={name}>
+          {name}
+        </span>
+        <MetaLine
+          items={[
+            <span key="expires" className="tabular-nums">
+              {t('admin.blockedNames.card.expires', 'Expires {date}', {
+                date: shortDate(item.expires_at),
+              })}
+            </span>,
+            item.granted_by ? (
+              <span key="by">
+                {t('admin.blockedNames.card.grantedBy', 'By {name}', { name: item.granted_by })}
+              </span>
+            ) : null,
+          ]}
+        />
+        {item.reason ? (
+          <p className="truncate text-meta text-muted-foreground" title={item.reason}>
+            {item.reason}
+          </p>
+        ) : null}
+      </div>
+      {actions && <div className="-my-1 shrink-0">{actions}</div>}
+    </div>
+  )
+}
+
+/**
+ * The exceptions as the tab's list, before the policy: its title row (name,
+ * one count, Grant exception), the table, then the one line on what an
+ * exception lifts.
+ */
+function ExceptionsList({
   items,
+  isLoading,
+  error,
+  onRetry,
   maxDays,
   secondApproval,
   canEdit,
   onChanged,
 }: {
   items: ScopeNameException[]
+  isLoading: boolean
+  error: unknown
+  onRetry: () => void
   maxDays: number
   secondApproval: boolean
   canEdit: boolean
@@ -614,27 +686,77 @@ function ExceptionsCard({
     if (extend) setNewExpiry(isoDay(new Date(Date.now() + 90 * DAY_MS)))
   }, [extend])
 
+  // The row menu: the same items in a table row and on a phone card.
+  const rowMenu = useCallback(
+    (e: ScopeNameException) =>
+      !canEdit || e.state === 'revoked' ? null : (
+        <DataTableRowActions
+          label={t('admin.blockedNames.rowActions', 'Actions for the exception {name} of {org}', {
+            name: e.name,
+            org: e.organization_name,
+          })}
+          actions={[
+            {
+              label: t('admin.blockedNames.extend', 'Extend'),
+              onClick: () => setExtend(e),
+            },
+            {
+              label: t('admin.blockedNames.revoke', 'Revoke'),
+              onClick: () => setRevoke(e),
+              destructive: true,
+              separatorBefore: true,
+            },
+          ]}
+        />
+      ),
+    [canEdit, t]
+  )
+
   const columns = useMemo<ColumnDef<ScopeNameException>[]>(() => {
     const cols: ColumnDef<ScopeNameException>[] = [
       {
         accessorKey: 'organization_name',
         header: t('admin.blockedNames.organization', 'Organization'),
-        cell: ({ row }) => <span className="font-medium">{row.original.organization_name}</span>,
-      },
-      {
-        accessorKey: 'name',
-        header: t('admin.blockedNames.name', 'Domain'),
+        // The organization is the row's name; it stays in view while the
+        // table scrolls sideways.
+        meta: {
+          kind: 'name',
+          pin: 'start',
+          minWidth: 160,
+          label: t('admin.blockedNames.organization', 'Organization'),
+        },
         cell: ({ row }) => (
-          <span className="font-mono text-xs">
-            {row.original.include_subdomains ? `*.${row.original.name}` : row.original.name}
+          <span className="block truncate font-medium" title={row.original.organization_name}>
+            {row.original.organization_name}
           </span>
         ),
       },
       {
+        accessorKey: 'name',
+        header: t('admin.blockedNames.name', 'Domain'),
+        meta: { kind: 'text', width: 176, label: t('admin.blockedNames.name', 'Domain') },
+        cell: ({ row }) => {
+          const name = row.original.include_subdomains
+            ? `*.${row.original.name}`
+            : row.original.name
+          return (
+            <span className="block truncate font-mono text-code" title={name}>
+              {name}
+            </span>
+          )
+        },
+      },
+      {
         accessorKey: 'reason',
         header: t('admin.blockedNames.reasonCol', 'Reason'),
+        meta: {
+          kind: 'text',
+          width: 160,
+          hideBelow: 1000,
+          label: t('admin.blockedNames.reasonCol', 'Reason'),
+        },
         cell: ({ row }) => (
-          <span className="block max-w-56 truncate" title={row.original.reason}>
+          <span className="block truncate" title={row.original.reason}>
             {row.original.reason}
           </span>
         ),
@@ -642,8 +764,14 @@ function ExceptionsCard({
       {
         accessorKey: 'authorization_ref',
         header: t('admin.blockedNames.referenceCol', 'Authorisation'),
+        meta: {
+          kind: 'text',
+          width: 136,
+          hideBelow: 1060,
+          label: t('admin.blockedNames.referenceCol', 'Authorisation'),
+        },
         cell: ({ row }) => (
-          <span className="block max-w-48 truncate" title={row.original.authorization_ref}>
+          <span className="block truncate" title={row.original.authorization_ref}>
             {row.original.authorization_ref}
           </span>
         ),
@@ -651,74 +779,101 @@ function ExceptionsCard({
       {
         accessorKey: 'granted_by',
         header: t('admin.blockedNames.grantedBy', 'Granted by'),
-        cell: ({ row }) => <span className="text-xs">{row.original.granted_by}</span>,
+        meta: {
+          kind: 'text',
+          width: 152,
+          hideBelow: 900,
+          label: t('admin.blockedNames.grantedBy', 'Granted by'),
+        },
+        cell: ({ row }) => (
+          <span className="block truncate" title={row.original.granted_by}>
+            {row.original.granted_by}
+          </span>
+        ),
       },
       {
         accessorKey: 'expires_at',
         header: t('admin.blockedNames.expires', 'Expires'),
+        meta: { kind: 'date', width: 112, label: t('admin.blockedNames.expires', 'Expires') },
         cell: ({ row }) => (
-          <span className="whitespace-nowrap text-xs">{shortDate(row.original.expires_at)}</span>
+          <span className="tabular-nums">{shortDate(row.original.expires_at)}</span>
         ),
       },
       {
         accessorKey: 'state',
         header: t('admin.blockedNames.stateCol', 'State'),
+        meta: { kind: 'status', width: 112, label: t('admin.blockedNames.stateCol', 'State') },
         cell: ({ row }) => stateBadge(row.original.state, t),
       },
     ]
     if (canEdit) {
       cols.push({
         id: 'actions',
-        header: () => <span className="sr-only">{t('admin.blockedNames.actions', 'Actions')}</span>,
-        cell: ({ row }) =>
-          row.original.state === 'revoked' ? null : (
-            <div className="flex justify-end gap-1 whitespace-nowrap">
-              <Button variant="ghost" size="sm" onClick={() => setExtend(row.original)}>
-                {t('admin.blockedNames.extend', 'Extend')}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setRevoke(row.original)}>
-                {t('admin.blockedNames.revoke', 'Revoke')}
-              </Button>
-            </div>
-          ),
+        header: '',
+        enableSorting: false,
+        meta: { kind: 'actions' },
+        cell: ({ row }) => rowMenu(row.original),
       })
     }
     return cols
-  }, [canEdit, t])
+  }, [canEdit, rowMenu, t])
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
-        <div className="grid gap-1.5">
-          <CardTitle>{t('admin.blockedNames.exceptionsTitle', 'Exceptions')}</CardTitle>
-          <CardDescription>
-            {t(
-              'admin.blockedNames.exceptionsDesc',
-              'One organization, one name, until a date. An exception lifts only the government and military rule; organizations never see each other’s exceptions.'
-            )}
-          </CardDescription>
-        </div>
-        {canEdit && (
-          <Button onClick={() => setGrant(true)}>
-            {t('admin.blockedNames.grant', 'Grant exception')}
-          </Button>
+    <div className="flex min-w-0 flex-col gap-3" data-testid="blocked-names-exceptions">
+      <DataTable
+        columns={columns}
+        data={items}
+        caption={t('admin.blockedNames.exceptionsTitle', 'Exceptions')}
+        // The name and count lead the toolbar row; Grant exception and
+        // Display share its line, so no control sits alone under the name.
+        toolbarTitle={
+          <ListToolbarTitle
+            title={t('admin.blockedNames.exceptionsTitle', 'Exceptions')}
+            count={
+              <ListCount
+                total={items.length}
+                loading={isLoading}
+                label={t('admin.blockedNames.exceptionsCount', undefined, { count: items.length })}
+              />
+            }
+          />
+        }
+        toolbarEnd={
+          canEdit ? (
+            <Button onClick={() => setGrant(true)}>
+              {t('admin.blockedNames.grant', 'Grant exception')}
+            </Button>
+          ) : undefined
+        }
+        // When the table scrolls sideways the row menu stays in view.
+        pinActions
+        getRowId={(e) => e.id}
+        error={error}
+        onRetry={onRetry}
+        errorTitle={t('admin.blockedNames.exceptionsErrorTitle', 'Could not load the exceptions')}
+        isLoading={isLoading}
+        showSearch={false}
+        showSelectionCount={false}
+        showPagination={items.length > 20}
+        paginationNoun={t('admin.blockedNames.exceptionsNoun', 'exceptions')}
+        // A phone card with fixed slots, not the automatic label/value card.
+        mobileRow={(e) => <ExceptionMobileCard item={e} actions={rowMenu(e)} />}
+        emptyState={{
+          nothingYet: (
+            <EmptyState
+              icon={ShieldCheck}
+              title={t('admin.blockedNames.noExceptions', 'No exceptions.')}
+            />
+          ),
+        }}
+      />
+      <p className="text-body text-muted-foreground">
+        {t(
+          'admin.blockedNames.exceptionsDesc',
+          'One organization, one name, until a date. An exception lifts only the government and military rule; organizations never see each other’s exceptions.'
         )}
-      </CardHeader>
-      <CardContent>
-        <DataTable
-          columns={columns}
-          data={items}
-          showSearch={false}
-          showColumnToggle={false}
-          showPagination={items.length > 20}
-          emptyMessage={t('admin.blockedNames.noExceptions', 'No exceptions.')}
-        />
-        {!canEdit && (
-          <div className="mt-4">
-            <RoleRequiredNotice permission={SCOPE_GUARDRAILS_PERMISSION} />
-          </div>
-        )}
-      </CardContent>
+      </p>
+      {!canEdit && <RoleRequiredNotice permission={SCOPE_GUARDRAILS_PERMISSION} />}
       <GrantDialog
         open={grant}
         onOpenChange={setGrant}
@@ -782,7 +937,7 @@ function ExceptionsCard({
           toast.success(t('admin.blockedNames.revoked', 'Exception revoked'))
         }}
       />
-    </Card>
+    </div>
   )
 }
 
@@ -804,24 +959,20 @@ export function ScopeBlockedNamesPanel({ canEdit }: { canEdit: boolean }) {
   const data = policy.data
   return (
     <PageStack>
+      {/* The list first, the policy after it. The one warning that must not be
+          missed stays above both. */}
+      {!data.government_rule && <GovernmentRuleOffWarning />}
+      <ExceptionsList
+        items={exceptions.data?.items ?? []}
+        isLoading={!exceptions.data && !exceptions.error}
+        error={exceptions.error}
+        onRetry={() => void exceptions.mutate()}
+        maxDays={data.max_exception_days}
+        secondApproval={data.second_approval}
+        canEdit={canEdit}
+        onChanged={() => exceptions.mutate()}
+      />
       <PolicyCard data={data} canEdit={canEdit} onSaved={() => policy.mutate()} />
-      {exceptions.error ? (
-        <ErrorState
-          title={t('admin.blockedNames.exceptionsErrorTitle', 'Could not load the exceptions')}
-          error={exceptions.error}
-          onRetry={() => void exceptions.mutate()}
-        />
-      ) : !exceptions.data ? (
-        <Skeleton className="h-40 w-full" />
-      ) : (
-        <ExceptionsCard
-          items={exceptions.data.items}
-          maxDays={data.max_exception_days}
-          secondApproval={data.second_approval}
-          canEdit={canEdit}
-          onChanged={() => exceptions.mutate()}
-        />
-      )}
     </PageStack>
   )
 }

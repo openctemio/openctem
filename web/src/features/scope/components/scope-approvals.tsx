@@ -125,19 +125,31 @@ export type PendingChange =
 export function approveBlocker(
   c: PendingChange,
   userId: string | undefined,
-  perms: { entries: boolean; exclusions: boolean }
+  perms: { entries: boolean; exclusions: boolean },
+  t: Translate = english
 ): string | null {
+  const own = () =>
+    t('scope.approvals.blocker.own', 'You requested this; another approver must approve it.')
   if (c.kind === 'entry') {
-    if (!perms.entries) return 'Only a scope approver can approve scope entries.'
-    if (c.item.created_by?.id === userId)
-      return 'You requested this; another approver must approve it.'
+    if (!perms.entries)
+      return t(
+        'scope.approvals.blocker.entries',
+        'Only a scope approver can approve scope entries.'
+      )
+    if (c.item.created_by?.id === userId) return own()
     if (!canApproveEntry(c.item, userId))
-      return 'You already approved this; it waits for another approver.'
+      return t(
+        'scope.approvals.blocker.already',
+        'You already approved this; it waits for another approver.'
+      )
     return null
   }
-  if (!perms.exclusions) return 'Only an exclusion approver can approve exclusions.'
-  if (c.item.created_by?.id === userId)
-    return 'You requested this; another approver must approve it.'
+  if (!perms.exclusions)
+    return t(
+      'scope.approvals.blocker.exclusions',
+      'Only an exclusion approver can approve exclusions.'
+    )
+  if (c.item.created_by?.id === userId) return own()
   return null
 }
 
@@ -264,7 +276,7 @@ export function ScopeApprovals() {
     )
   }
 
-  const decidable = changes.filter((c) => !approveBlocker(c, user?.id, perms))
+  const decidable = changes.filter((c) => !approveBlocker(c, user?.id, perms, t))
   const chosen = decidable.filter((c) => selected.has(`${c.kind}:${c.id}`))
 
   return (
@@ -315,7 +327,7 @@ export function ScopeApprovals() {
       >
         {changes.map((c) => {
           const key = `${c.kind}:${c.id}`
-          const blocker = approveBlocker(c, user?.id, perms)
+          const blocker = approveBlocker(c, user?.id, perms, t)
           const mayDecide = isEntryKind(c) ? perms.entries : perms.exclusions
           const isEntry = c.kind === 'entry'
           const e = c.item
@@ -333,7 +345,9 @@ export function ScopeApprovals() {
                       else next.delete(key)
                       setSelected(next)
                     }}
-                    aria-label={`Select ${e.pattern}`}
+                    aria-label={t('scope.approvals.selectOne', 'Select {pattern}', {
+                      pattern: e.pattern ?? '',
+                    })}
                     className="mt-1"
                   />
                 )}
@@ -341,29 +355,65 @@ export function ScopeApprovals() {
                   <div className="flex flex-wrap items-center gap-2">
                     <TonePill
                       tone={isEntry ? 'info' : 'muted'}
-                      label={isEntry ? 'Adds to scope' : 'Puts out of scope'}
+                      label={
+                        isEntry
+                          ? t('scope.approvals.adds', 'Adds to scope')
+                          : t('scope.approvals.putsOut', 'Puts out of scope')
+                      }
                     />
                     <code className="break-all text-sm font-medium">{e.pattern}</code>
                   </div>
                   <p className="text-sm text-muted-foreground">
                     {isEntry
-                      ? `Covers ${coversText(c.item)}, ${scopeTargetTypeLabel(c.item.target_type ?? '')}, ${TIER_LABEL[c.item.max_tier ?? 't1'] ?? ''}, ${c.item.expires_at ? expiryText(c.item.expires_at) : 'permanent'}`
-                      : `Scans would never touch ${coversText({ pattern: c.item.pattern, target_type: c.item.exclusion_type })}${c.item.expires_at ? `, ${expiryText(c.item.expires_at).toLowerCase()}` : ''}`}
+                      ? t('scope.approvals.entryLine', 'Covers {what}, {kind}, {tier}, {until}', {
+                          what: coversText(c.item, t),
+                          kind: scopeTargetTypeLabel(c.item.target_type ?? '', t),
+                          tier: t(
+                            `scope.tier.label.${c.item.max_tier ?? 't1'}`,
+                            TIER_LABEL[c.item.max_tier ?? 't1'] ?? ''
+                          ),
+                          until: c.item.expires_at
+                            ? expiryText(c.item.expires_at, undefined, t)
+                            : t('scope.approvals.permanent', 'permanent'),
+                        })
+                      : c.item.expires_at
+                        ? t(
+                            'scope.approvals.exclusionLineUntil',
+                            'Scans would never touch {what}, {until}',
+                            {
+                              what: coversText(
+                                { pattern: c.item.pattern, target_type: c.item.exclusion_type },
+                                t
+                              ),
+                              until: expiryText(c.item.expires_at, undefined, t),
+                            }
+                          )
+                        : t('scope.approvals.exclusionLine', 'Scans would never touch {what}', {
+                            what: coversText(
+                              { pattern: c.item.pattern, target_type: c.item.exclusion_type },
+                              t
+                            ),
+                          })}
                   </p>
                   {e.reason && <p className="text-sm">&ldquo;{e.reason}&rdquo;</p>}
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
-                      Asked by <ActorChip actor={e.created_by} compact />
+                      {t('scope.approvals.askedBy', 'Asked by')}{' '}
+                      <ActorChip actor={e.created_by} compact />
                     </span>
                     {e.created_at && <RelativeTime date={e.created_at} />}
                     {isEntry && (
                       <span>
-                        {approvals.length} of {required} approvals
+                        {t('scope.approvals.progress', '{count} of {required} approvals', {
+                          count: approvals.length,
+                          required,
+                        })}
                       </span>
                     )}
                     {approvals.map((a) => (
                       <span key={a.user_id} className="inline-flex items-center gap-1">
-                        approved by <ActorChip actor={a.user_id} at={a.approved_at} compact />
+                        {t('scope.approvals.approvedBy', 'approved by')}{' '}
+                        <ActorChip actor={a.user_id} at={a.approved_at} compact />
                       </span>
                     ))}
                   </div>
@@ -378,7 +428,7 @@ export function ScopeApprovals() {
                       {c.item.approval?.self_approval_available && (
                         <Button size="sm" variant="outline" onClick={() => setSelfApprove(c.item)}>
                           <ShieldCheck className="h-4 w-4" />
-                          Approve as the only owner
+                          {t('scope.approvals.selfApprove', 'Approve as the only owner')}
                         </Button>
                       )}
                     </div>
@@ -420,8 +470,11 @@ export function ScopeApprovals() {
                   // say where it stands instead of showing dead buttons.
                   <p className="shrink-0 text-xs text-muted-foreground sm:max-w-56 sm:text-end">
                     {e.created_by?.id === user?.id
-                      ? 'You asked for this. It waits for an approver.'
-                      : 'Waiting for an approver.'}
+                      ? t(
+                          'scope.approvals.youAsked',
+                          'You asked for this. It waits for an approver.'
+                        )
+                      : t('scope.approvals.waiting', 'Waiting for an approver.')}
                   </p>
                 )}
               </div>

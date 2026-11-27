@@ -48,7 +48,7 @@ function without(...keys: (keyof InventoryFilters)[]) {
 export function inventoryChips(filters: InventoryFilters, ctx: ChipContext): InventoryChip[] {
   const t = ctx.t as Tw
   const is = (field: string, values: string[]) =>
-    t('assets.chip.is', '{field} is {values}', { field, values: list(values) })
+    t('assets.chip.is', '{field}: {values}', { field, values: list(values) })
   const chips: InventoryChip[] = []
 
   for (const facet of ctx.groups.flatMap((g) => g.facets)) {

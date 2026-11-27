@@ -2,8 +2,9 @@ import type { Locator, Page } from '@playwright/test'
 import { test, expect } from '../fixtures/authenticated-page'
 
 /**
- * Phone cards of every list without its own card (DataTable's automatic card:
- * a title, then label/value fields in two columns).
+ * Phone cards of every list: DataTable's automatic card (a title, then
+ * label/value fields in two columns) and a list's own card (`mobileRow`; the
+ * runs list has one since 2026-11-17).
  *
  * Regression guarded (owner report 2026-10-30, /scans/runs on an iPhone): a
  * partial run's status read "Partial 9 unreachable, 373 skipped" on one line
@@ -34,7 +35,32 @@ async function textBoxes(root: Locator): Promise<Box[]> {
       range.selectNodeContents(n)
       for (const r of Array.from(range.getClientRects())) {
         if (r.width < 1 || r.height < 1) continue
-        out.push({ x: r.left, y: r.top, right: r.right, bottom: r.bottom, text, owner: i })
+        // A line cut off by a clipping box (a text clamped to two lines) is
+        // not drawn: it cannot overlap anything. A value cut at its end (one
+        // line with an ellipsis, as a compact card draws every value: #4147,
+        // ui-style-contract "An automatic phone card is compact") draws only
+        // the part inside its box.
+        let hidden = false
+        let left = r.left
+        let right = r.right
+        for (let a: Element | null = parent; a && a !== el; a = a.parentElement) {
+          const style = getComputedStyle(a)
+          if (style.overflowY === 'visible' && style.overflowX === 'visible') continue
+          const box = a.getBoundingClientRect()
+          if (
+            style.overflowY !== 'visible' &&
+            (r.top >= box.bottom - 1 || r.bottom <= box.top + 1)
+          ) {
+            hidden = true
+            break
+          }
+          if (style.overflowX !== 'visible') {
+            left = Math.max(left, box.left)
+            right = Math.min(right, box.right)
+          }
+        }
+        if (hidden || right - left < 1) continue
+        out.push({ x: left, y: r.top, right, bottom: r.bottom, text, owner: i })
       }
       i += 1
     }
@@ -66,7 +92,7 @@ async function spills(field: Locator): Promise<string[]> {
 }
 
 async function checkCards(page: Page, at: string) {
-  const cards = page.locator('[data-slot="mobile-card"]')
+  const cards = page.locator('[data-phone-card]')
   const n = Math.min(await cards.count(), 10)
   for (let i = 0; i < n; i++) {
     const card = cards.nth(i)
@@ -125,7 +151,7 @@ for (const width of [390, 360] as const) {
       test.skip((body.data?.length ?? 0) === 0, 'Needs at least one scan run')
 
       const partial = page
-        .locator('[data-slot="mobile-card"]')
+        .locator('[data-phone-card]')
         .filter({ hasText: '9 unreachable, 373 skipped' })
         .first()
       await expect(partial).toBeVisible({ timeout: 45_000 })

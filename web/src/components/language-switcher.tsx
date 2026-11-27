@@ -13,7 +13,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 
 // Native language names — always shown in their own language, never translated.
-const LOCALE_LABELS: Record<string, string> = {
+export const LOCALE_LABELS: Record<string, string> = {
   en: 'English',
   vi: 'Tiếng Việt',
   ar: 'العربية',

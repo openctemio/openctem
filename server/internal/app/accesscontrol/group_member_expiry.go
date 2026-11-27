@@ -152,6 +152,7 @@ func (s *GroupService) ExpireMemberships(ctx context.Context, now time.Time, bat
 				NotificationType: notification.TypeRoleChanged,
 				Title:            fmt.Sprintf("Your membership of team %q has ended", e.GroupName),
 				Body:             fmt.Sprintf("Your membership of the team %q reached its end date.", e.GroupName),
+				Message:          notification.Msg("team.membership_ended", "team", e.GroupName),
 				Severity:         notification.SeverityInfo,
 				ResourceType:     "group",
 				ResourceID:       &groupID,

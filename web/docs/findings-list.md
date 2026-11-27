@@ -4,39 +4,158 @@ How `/findings` behaves. The code is in `src/app/(dashboard)/findings/page.tsx`,
 `src/features/findings/components/` (`finding-row-menu.tsx`, `finding-phone-card.tsx`) and the shared
 `src/features/shared/components/data-table/`.
 
+## Columns
+
+- Priority, the title (a real link to `/findings/{id}`: a plain click opens the drawer, Ctrl/Cmd/Shift or a
+  middle click opens the page in a new tab; the shared `RowNameLink`), Location (the asset), Severity, Signals and EPSS, Status and
+  Due / SLA show by default in every view; Source and Created are under Display. Columns and their widths:
+  select 40, Priority 76 (its header word and sort arrow in English and Vietnamese), title at least 280 (it
+  takes the rest), Location 112 to 160, Severity 88, Signals and EPSS 140, Status 120, Due / SLA 112, Source
+  130, Created 120, actions 48.
+- Every row is one line, so rows are the table's density heights: 40, 32 compact, 52 comfortable. The
+  title cell is the title then its id (the CVE, linked to its vulnerability page, else the rule id); the
+  title gives way first and its whole text is the link's tooltip and name. Location is the asset name with
+  its markers; the path or URL on the asset is in the name's tooltip and accessible name (the place itself
+  when there is no asset name). Status is one line (a sub-status beside it gives way first). Due / SLA is
+  the time left ("In 5 d") as plain text while on track and as a pill in the SLA colour when at risk or late
+  ("3 d overdue"); the SLA state is in its name and tooltip, the state word shows when there is no
+  deadline, and a shield marks a deadline the known-exploited cap shortened. The scanner is in the drawer.
+  The drawer, opened by a click or tap on the row, shows everything a cell cuts.
+- Column priority keeps the title at 280 or more: the table drops Severity below a 1,170 px frame (a 1496
+  screen with the sidebar open), Signals and EPSS below 1,010 (1336) and Due / SLA below 850 (1176). Turning
+  a dropped column on under Display shows it again while the list is open; the saved columns are not
+  changed by the width.
+- With no `sort` in the URL the list is in the server's order (priority first), and the Priority header
+  says so (`aria-sort`). The footer counts "findings".
+
+## Sensitive values in rows
+
+A row, a phone card and a group header never show an e-mail address, a URL credential or a secret in clear,
+whatever a scanner, an importer or a person wrote into a title, a location, a rule id or a group label.
+Nothing is discarded: the list shows the value masked, and "Show" exists only on the finding page
+(`findings:reveal`, with step-up for secrets). Rows and cards have no "Show".
+
+- One function does it, `maskSensitiveText` in `src/lib/mask-sensitive.ts`; its comment is the rule of record.
+  It mirrors the server's display masking (`server/pkg/safetext`): an address keeps its domain
+  (`***@example.com`), a URL keeps its host (`https://••••••••@git.example.com/a.git`), a secret keeps at
+  most its first and last 4 characters (`AKIA••••••••MPLE`). Known token formats, private key blocks, a
+  `Bearer` token, the value of `password=` / `secret=` / `token=` / `api_key=`, and any other long run that
+  mixes lower case, upper case and digits are secrets. CVE, CWE and GHSA ids, UUIDs, versions and one-case
+  hashes stay readable.
+- It runs where the API row becomes the list row (`transformApiToUiFinding`: the title, the location and
+  the asset name) and again in the cells that draw list text, so every list of findings has it: the title,
+  its tooltip and accessible name (`FindingTitleCell`), the id after it (`FindingRowId`), the Location cell
+  with its tooltip (`FindingAssetCell`), the phone card, the row menu's title and name, the selection
+  checkbox's name and the group headers of the grouped table (an owner group is a member's name and is not
+  masked). The text is masked before it is cut for display.
+- Ids, hrefs, filters and the search text are never masked: requests and links use the API's own values.
+  Copy ID and Copy link copy the id and the link, never the title. A finding whose title holds a masked
+  secret is deleted by typing its short id, since the mask cannot be typed.
+- This is a display guarantee of the list: the list response still carries the text as stored. The drawer and
+  the finding page show their own masked evidence.
+- `src/lib/__tests__/mask-sensitive.test.ts`, `finding-masked-rows.test.tsx` and
+  `e2e/specs/64-findings-masked-rows.spec.ts` check it.
+
 ## Selection
 
 - A selection belongs to the rows on screen. Changing the page, the page size, the sort, the search, a
   filter, the view or the grouping clears it, so a bulk action never reaches a row the user cannot see. The
   flat table does this itself for page, page size and sort (`DataTable`), and the page adds the filters,
   search and view to `resetSelectionKey`.
-- Phone cards carry the same checkbox and the same action menu as a table row. The menu is one component
-  (`FindingRowMenu`) used by both, so the two never offer different actions. Selecting a card is a
-  separate control from opening it.
+- Phone cards carry the same action menu as a table row. The menu is one component (`FindingRowMenu`)
+  used by both, so the two never offer different actions. A phone has no header checkbox, so selection is a
+  mode: "Select" in the toolbar's More (the shared `DataTable` adds it wherever the list has bulk actions)
+  shows a checkbox on every card and opens the bulk bar with nothing selected yet. The bar's count is a menu:
+  "Select all on this page (25)", then "Select all N that match" (the same server-side change by filter as
+  on a desktop, with the same limit note above 10,000) and "Clear selection". X or Escape ends select
+  mode. On a phone the bar is a full-width bottom row of two lines (the count and X, then the actions), every
+  control 36, and the page keeps room for it under the last card. Selecting a card is a separate control
+  from opening it.
+- A phone card reads top to bottom (`FindingPhoneCard`): the priority, with the row menu (36, touch target 44)
+  at the end of its line and the checkbox (its own 44 target) at its start in select mode; the title on up to
+  two lines, a link named by the whole title; the asset and the place on it on one line; the id (the CVE, else the rule id, the
+  same `FindingRowId` as the table row) and the time left (the same `SlaDueChip`; nothing when the finding has
+  no deadline); the severity, the status and one exploit mark, then the branch-only and duplicates marks
+  when set. A tap anywhere else on the card opens the finding.
+- A phone has no numbered pager. The list's footer (the shared `DataTable`, for every list drawn as cards) is
+  one full-width "Show 25 more" button and a line "50 of 418" ("50 shown" when the total is capped or could
+  not be counted). The button grows `per_page` in the URL by one step (25, 50, 75, 100), so the cards on
+  screen stay where they are, the new ones come under them, the first new card takes the focus and a reload
+  shows the same number. The button names what is left when that is less than a step ("Show 10 more") and
+  goes when everything is shown. 100 is the largest page the API returns: there the button gives way to
+  "These are the first 100. Narrow the filters to see the rest." A link to a later page opens on the first
+  one on a phone. Growing the list clears the selection, as a page-size change does on a desktop.
+- The assignee picker (the bulk bar's "Assign to…", the finding drawer and page, triage) is the shared
+  `AssigneeSelect` on `ResponsivePopover`: a 224 px anchored popover from 768 px up with its search field focused;
+  on a phone a bottom sheet titled "Select a person", the search field pinned under the title, rows 44, no keyboard
+  until the field is tapped, and the sheet then sits on the keyboard (`e2e/specs/61-picker-touch-keyboard.spec.ts`).
 - Bulk assign goes through the shared client `post()`, so a step-up challenge is answered by the
   re-authentication dialog and an error body becomes the message.
 - A click anywhere on a row opens the finding drawer, except on the row's own controls.
-- `j` and `k` open the next and previous finding while the drawer is open, and are listed in Help,
-  Keyboard shortcuts.
-- The row menu items that need the full flow (assign, change status, mark as false positive) say they open
-  it ("Open to assign…").
+- The drawer is an overlay over the list (never a permanent side panel). Opened from a row, its header
+  shows the finding's place in the list, "3 of 418" (`findings.drawer.position`, `FindingListPosition` from
+  `findingListPosition`): the row's place on the page plus the page's offset, of the total the title row
+  counts. It is announced politely when it changes. Previous and next buttons beside it move through the
+  rows of the page shown and are disabled at its first and last row; they do not load another page. `j`
+  and `k` make the same moves while the drawer is open (not while typing or inside a menu), and are listed
+  in Help, Keyboard shortcuts; Escape closes the drawer. A finding that is not a row of the page (a shared
+  `#finding=` link, a row of a grouped view) shows no position.
+- The row menu has one set and one order on a desktop and a phone: View details, Open to assign…, Open to
+  change status…, Create ticket, Add to remediation, then Copy ID, Copy link, then Open to mark as false
+  positive…, then Delete. The items that need the full flow (assign, change status, mark as false
+  positive) say they open it ("Open to assign…").
+- An item the user has no permission for is hidden. An item that does not apply to this finding's state
+  stays in its place, disabled, with the reason (a tooltip on a desktop, a line under the label on a phone
+  or a touch screen); no item is disabled without one. The rules read only what the list row carries
+  (`rowMenuBlocks` in `lib/row-menu-state.ts`), never a request per row:
+
+  | Item                                                                     | Disabled when                                                                                                     | Reason key                                 |
+  | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+  | Create ticket                                                            | the finding has a linked ticket (`work_item_uris`)                                                                | `findings.row.reason.ticketLinked`         |
+  | Open to mark as false positive…                                          | it is already a false positive                                                                                    | `findings.row.reason.alreadyFalsePositive` |
+  | Open to mark as false positive…                                          | it is closed (resolved, risk accepted, duplicate): a closed finding only reopens                                  | `findings.row.reason.closed`               |
+  | Open to assign…, Open to change status…, Open to mark as false positive… | people reported it (pentest, bug bounty, red team, manual): the drawer locks the same controls (`isTriageLocked`) | `findings.row.reason.managedElsewhere`     |
+
+  The list row does not say whether an approval request is pending or whether the finding is in an open
+  remediation task, so the menu does not disable for those; the drawer's status menu (the API's moves for
+  this finding, each blocked one with its reason) and the remediation dialog decide there.
 
 ## Empty and error states
 
 The list is in exactly one of these, and each says what to do next
-(`src/features/findings/lib/empty-kind.ts`, `findings-empty-state.tsx`):
+(`src/features/findings/lib/empty-kind.ts`, `findings-empty-state.tsx`, drawn with the shared `EmptyState`):
 
-| Kind        | When                                                            | Next action                                      |
-| ----------- | --------------------------------------------------------------- | ------------------------------------------------ |
-| Nothing yet | the organization has no findings and nothing narrows the list   | Import results, Set up a scan, Integrations      |
-| No match    | filters, the search, a context scope or the state hide findings | Clear filters or search, Search all statuses     |
-| No access   | the list read was refused (403)                                 | names the missing permission when the server did |
+| Kind           | When                                                               | What shows                                                                     |
+| -------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| First run      | the organization has no findings and nothing narrows the list      | "No findings yet": Run a scan, Import results, Connect a tool                  |
+| Practice first | the chosen practice has no findings in any state, nothing narrowed | what the practice covers, Import results                                       |
+| No match       | filters, the search, a context scope or the state hide findings    | Clear filters (or Clear search), Search all states; the count reads 0          |
+| No access      | the list read was refused (403)                                    | "You cannot read findings here", the missing permission when named, one action |
+| Load error     | the read failed and there are no rows of that request to keep      | an inline alert with Retry and Copy request ID; no count, no footer            |
+| Stale          | the rows are older than 5 minutes, or a refresh of them failed     | the rows stay; the footer says "Updated 12 minutes ago" with a refresh button  |
+| Partial counts | the list answered without a usable total                           | "Could not count" and Retry beside the view name; the pager has no total       |
 
+- A state has at most one filled button: the first action the viewer may use. The buttons are kit buttons at
+  the default control height, in a row on a desktop and stacked full width on a phone.
+- First run: the page shows the state alone, with no title row, toolbar or chips row, and the table header
+  offers neither select-all nor sorting. Run a scan opens the scan form (`/scans?new=scan`, `scans:write`),
+  Import results opens the import dialog (the gate of the header's Import results) and Connect a tool opens
+  the integrations settings (`integrations:read`). An action the viewer may not use is not shown; the sentence
+  stays. The header keeps Add finding and Triage.
 - The total comes from the scope-only stats. When it is unknown, the list never claims the organization is empty.
-- A failed list is an inline alert in the table area with Retry and the server's request id (Copy request ID).
-  The heading, search, filters and chips stay, and there is no toast on top of it.
-- A refetch keeps the rows on screen with a thin progress bar above the table.
-- Set up a scan and Integrations show only to someone who can open those pages (`scans:read`, `integrations:read`).
+- No match: the toolbar and the chips stay. "Search all states" switches the State lens to All and is not
+  offered when the lens is already All.
+- No access: the header shows no Add finding and no Triage (the `t` key does nothing), there is no title row
+  or toolbar, rows from an earlier answer are removed, and the one action is "Go to the dashboard".
+- Load error: the heading, search, filters and chips stay, and there is no toast on top of the alert.
+- Stale: the page records when the list last answered, from the list's own responses (no extra request). A
+  refetch keeps the rows on screen with a thin progress bar above the table. When the refetch of the request
+  on screen fails, the rows stay and the footer says how old they are at once; a failure of a different
+  request (a new filter, another page) is a load error. Only the footer note re-renders as time passes.
+- Partial counts: the list API sends a total with every answer today. The page reads a missing or negative
+  total as "not known": the count slot says "Could not count" ("Not counted" on a phone, the full sentence in
+  its tooltip) with Retry, the pager reads "Showing 1 to 25" and "Page 1", and Last page is disabled with its
+  reason ("The total is not known yet").
 
 ## Export
 
@@ -47,6 +166,22 @@ Export runs on the server only (`GET /api/v1/findings/export`, `src/features/fin
 - When the list total is above the `X-Export-Max-Rows` cap, the toast says how many findings were exported and
   asks to narrow the filters. The `/api/v1` proxy passes the export headers through.
 - A 403 names the missing permission. A 429 says an export of yours is still running.
+
+## More menu
+
+The page has one overflow ("More") menu at a time.
+
+- Wide, the view's title row ends with Refresh, Export and Task from filters and has no More. Copy link is in the page
+  header's More under "This view", after Import results and Approvals.
+- Narrow and on a phone, Export and Task from filters fold into the title row's More together with Copy link, and the
+  page header's More does not repeat it. A header menu left with a single item merges into the title row's More.
+- No menu opens with a single item: when one action is left and it has an icon, the More button becomes that action in
+  the same place and size (the bulk bar's "Remediation task" is one). This is a rule of the shared action menu, so it
+  holds on every list page.
+- The exception is a lone destructive action (Delete, Remove, Revoke, Disable): it never becomes a bare button, so a
+  row cannot be mis-tapped into it. It stays behind the More trigger, the one menu that may hold a single item, and
+  the one-item console error does not fire for it. Where the row already has another direct action (Test on a
+  control), that action joins the menu, so the row has one More with both.
 
 ## Translation
 
@@ -64,17 +199,58 @@ the dashboard owns the KPI tiles.
 - The API defines the views (`GET /findings/quick-views`). Each view carries the exact `GET /findings` query
   string, so a view's count equals the total of the list it opens, in the viewer's own data scope. The web keeps
   no second definition (`src/features/findings/lib/quick-views.ts`).
-- A view is a plain link: `/findings?<params>`. A view with no `state` of its own is opened with `state=all`,
+- A view is a plain link: `/findings?<params>`. Pending approval is the exception: it links to the approvals inbox
+  (`/findings/approvals`), where the requests are approved, rejected, reminded or cancelled; the sidebar, a pinned
+  view and the command palette all use that link (`quickViewLink`), and its row is never marked as the current view. A view with no `state` of its own is opened with `state=all`,
   because the page's default is the Open lens and the count counted every state.
 - A row is active when the URL is exactly that view (page, sort, search and grouping do not count).
 - The views show, and their counts are requested, only on the list page. Other pages pay nothing.
 - A zero count shows nothing. SLA breached is in the error colour when above zero. Awaiting verification, which
   was a metric card, is a button in the list's first row while something waits and the viewer can verify.
-- The first row names the view and its total. A URL that is no quick view reads "Custom view".
+- The first row (the shared `ListTitleRow`) names the view and its total, and the name is always a real view's:
+  the open saved view's own name; else the quick view the URL is exactly; else the base view the URL was derived
+  from, which is the quick view whose own params are all in the URL with the same values (the one with the most
+  params wins), and otherwise "All findings" (every state, no filter). Code: `src/features/findings/lib/view-base.ts`.
+- A changed view says so right after the count: a dashed "Modified" lozenge, then **Save view** and **Reset**. A view
+  is changed when it is a saved view with unsaved changes (filters, search, sort, grouping, columns, density), or a
+  quick view or All findings with a filter or search text on top. The practice is the list's scope and the search
+  mode is presentation: neither marks the view changed.
+  - Save view opens the save dialog of the Views menu. On a saved view the viewer owns it is a menu: Save changes
+    (updates the view) or Save as new view. The API decides whether a save is allowed.
+  - Reset returns to exactly the base view: the saved view as stored, the quick view's link, or every state with
+    no filter for All findings. The practice is kept.
+  - On a title row under 42rem and on a phone, Save view and Reset are in the row's More and only the lozenge stays.
+- The count is a pill whose tooltip reads "Counted in your data scope" (and that the count stopped, when capped).
 
 ## Filters
 
-Every active filter is a chip, then **Add filter** (shortcut `f`). Code: `src/features/findings/filters/`.
+The toolbar row reads: the search field, the two fixed scopes **Practice** and **State**, then **Add filter**
+(shortcut `f`, the shared `useAddFilterShortcut`): an icon-only square at the toolbar's control height (the shared `AddFilterButton`). Every
+active filter is a chip in the row under it. Code: `src/features/findings/filters/`.
+
+- **Practice** ("Practice: Vulnerabilities", the default: every practice but compliance; Compliance, each
+  other practice that holds findings, All) and **State** ("State: Open", the default; Fixed, Dismissed,
+  Closed, All) are base chips (`FindingsBaseChips`, the shared `FilterSelect` with `clearable={false}`): first
+  after the search, never removed, no counts (the count shows once, beside the view name). They write the
+  `practice` and `state` params. While an open saved view sets a scope itself, the chip reads "Set by the
+  view" until one is picked. Each keeps one width per language whatever its value (sized by every value it can
+  show, Practice by every practice; "Set by the view" is cut to that width with its full text in the
+  tooltip), so picking a value moves nothing. On a narrow toolbar the key ("Practice:") folds away and stays
+  in the accessible name. On a phone they move to the top of the Filters sheet. In Query mode they stay in place with Add filter, dimmed and inactive (the text owns the filter), so the switch moves nothing.
+- There is no Filters button from 1024px up: Add filter is the one filter entry, and its last row, **Show the
+  filter panel**, opens the facet panel beside the list (closed from its own header). Below 1024px the Filters
+  button opens the same facets in a sheet.
+- Chips read as label and value ("Severity: Critical, High"); other operators keep their word ("Severity is
+  not Low", "EPSS score ≥ 0.5").
+- A chip's text is a button (Enter or Space; its X stays the remove button): it opens the editor Add filter
+  shows for that field (`FieldEditor`, `filters/field-editor.tsx`) on the chip's own operator and values,
+  anchored to the chip, a bottom sheet on a phone (`ResponsivePopover`). The operators and values come from
+  the filter contract, which is fetched when the editor opens. Changing between two operators of one kind
+  ("is" and "is not", "≥" and "≤") keeps the values. Apply rewrites the filter in the URL in its place
+  (`withFilterReplaced`: the param and value Add filter would write, the page reset) and focus goes to the
+  chip; Escape or a click outside changes nothing. A chip in "+N more" is edited the same way. Not editable:
+  the locked chips of the open saved view (lock and tooltip as before), unknown filters, the Advanced chip,
+  and fields Add filter does not offer.
 
 - The page URL carries the API's own filter params (`severity`, `severity_not`, `epss_score_gte`...), so a
   filter is a URL param and a chip is a reading of one. The facet panel and Add filter write the same params.
@@ -95,12 +271,75 @@ Every active filter is a chip, then **Add filter** (shortcut `f`). Code: `src/fe
   the API refuses one (a 400 `INVALID_FILTER` naming the param) the list says "This link has a filter we do not
   know" and offers to remove it, instead of a failed load.
 - Chip text is escaped, isolated text; a value from a link never becomes markup.
-- The row is the shared `FilterChipsRow`: the quiet locked chip for what the list leaves out (informational
-  findings, drawn with the shared `LockedChip`) first, the chips (the ones that do not fit fold into "+N
-  more"), Add filter, then the count at the end. Nothing in the row shrinks under its content. When the locked
-  chip, Add filter, the count and "+N more" do not fit on one line (a phone), the locked chip takes a line of
-  its own above the rest. On a phone the search box takes the toolbar's first line and the saved views and
-  group buttons sit under it.
+- The row is the shared `FilterChipsRow`, exactly one line of one height (32): the quiet locked chip for what
+  the list leaves out (informational findings, drawn with the shared `LockedChip`, at most half the row) first,
+  the chips (the ones that do not fit fold into "+N more", a popover listing them, each removable), and Clear
+  filters pinned at the row's end (going back to the view is the title row's Reset). The count is said once, beside the view name in the first row,
+  never on the chips row. The row shows only when it holds something: the list moves down once when it
+  appears, and never again while filters change.
+- Nothing in the list's header moves while it is used: Practice, State, Group and Views keep one width per
+  language (a value or a view's own name is cut, in full in the tooltip and the accessible name; the
+  unsaved-changes dot has its room kept), so the search field beside them takes one width per toolbar width
+  (and holds it in Query mode), and Export and Task from filters stay in the title row while grouped. `e2e/specs/62-list-toolbar-stability`
+  checks every toolbar and title-row box (0 px) through filters, grouping, views, the mode switch and typing on
+  Findings, Assets and Scans at 1440, 1024, 768 and 390 px in both languages.
+- On a phone every list toolbar (the shared `ListToolbar`) is two lines, never more: the search field alone on
+  the first; on the second the chips (the locked chip first) own the start, the filter tokens are anchored to
+  the end, and the icon actions (saved views, group, refresh) are pinned after them, all 36 tall on one centre
+  line. The chips and the tokens each scroll sideways in their strip, with a fade on an edge that has more past
+  it. With no chip the start of the line is empty room, so the first chip moves nothing. Nothing folds into "+N
+  more" and nothing wraps.
+
+## Query mode
+
+A Basic | Query switch is the first control of the toolbar row, its own control right before the search field
+(a two-segment switch, 32 tall, of a fixed width per language on a toolbar of 64rem and more, as at 1440 px with
+the sidebar; one code icon toggle below that, 32 px, 36 on a phone, where it sits before the joined Filters button;
+which one shows follows the toolbar's width only; Ctrl+/ switches too). The field's end holds only its own controls (clear in
+Basic; help, expand and run in Query), and the field holds its width when the mode switches (Query mode takes the
+filter tokens away; the field does not grow into their room until the toolbar itself is resized), so switching
+modes moves and resizes nothing: one field, two ways to write the same filter (`ListSearch` `query`, `useListQueryMode` in
+`features/query`). Assets and scans use the same field.
+
+- Basic to Query shows the whole filter as text printed by the server (`POST /query/parse` with the page's
+  params), the State lens and the Practice switch included as the list applies them (`state=open
+practice!=compliance`). The client never builds query text itself.
+- Enter applies a valid text and the field stays in Query mode: a filter chips can show is written back as the
+  flat params (links keep their form), anything else as one `fq` text. The text owns the State lens and the
+  Practice switch: what it leaves out is not restricted (`state=all`, `practice=all`), and a practice set the
+  switch cannot show keeps the whole text as `fq`. A round trip without an edit changes nothing.
+- Escape puts back the applied text. Switching to Basic with an edit not applied yet applies it first; a text
+  the parser refuses keeps Query mode.
+- A refused text shows one line with the problem, its column and its fixes, and the field selects the problem
+  (it scrolls there). The list keeps the last valid result. The line is drawn in the toolbar's status row, under
+  the toolbar (`ListToolbar`, `data-slot="list-toolbar-status"`), never inside the toolbar row: the toolbar row
+  keeps its height whatever the text's state. The row is one line of the chips row's height (32, 36 on a phone);
+  the text is cut there with the whole of it in its title, and the fix buttons keep their size. It shares the
+  line of a context chip row or a view's locked chips when one is there (the list does not move), and otherwise
+  the list moves down once by the row and its gap and back when the text is put right; on a phone it is the last
+  line of the toolbar. The line is the field's own description (`aria-describedby`) and one polite live region
+  from the moment Query mode opens, so the problem is announced as before. Assets and scans show it the same way.
+- The suggestions are as wide as the field from 768 px. Below 768 px they span the screen from the left gutter to
+  the right one (16 px each), under the field (above it when there is no room), about eight one-line rows.
+- Enter on the text that is already in force writes nothing (the run icon is off then too).
+- In Query mode the chips and Clear step aside (the context chips stay; Add filter and the base chips stay dimmed and inactive); in Basic mode an `fq`
+  filter is one Advanced chip whose text opens Query mode.
+- With a saved view open (`view=<id>`), Query mode shows the view's own conditions as text in the field, printed by
+  the server from the view's filter (`POST /query/parse` with the view's `document`, one request when the mode opens,
+  none while typing); filters the URL adds on top follow it, the view's text in parentheses. No chip repeats the
+  text. While the text is unchanged the URL stays `view=<id>` and nothing is Modified (Enter writes nothing).
+- Applying another text makes that text the whole filter: the URL drops `view=<id>` and keeps the view only as
+  `from_view=<id>`, page state that no request sends, so the view's conditions are never applied a second time
+  under the text. The text is written as usual (flat params when chips can show it, `fq` otherwise, the state and
+  the practice explicit). The title keeps the view's name with Modified ("query text changed"); **Save changes**
+  (the view's owner) stores the text in the view (a text chips cannot show is stored as its checked document) and
+  opens the view again; **Save as new view** is offered to everyone; **Reset** goes back to `view=<id>`.
+- In Basic mode a view's conditions show as locked chips, as before. Conditions chips cannot show (an OR across
+  fields, a group) are one locked chip, **Advanced filter**, that opens Query mode with the view's text.
+- A saved view stores the search mode as the page param `mode=query`. Basic is the default, so a view saved in Basic
+  mode sends no `page_params` at all (`savedViewBody` in `src/features/saved-views/api/use-saved-views.ts` is the one
+  place that decides); a view without it opens in Basic. When a save fails, the Save view dialog stays open with the
+  name kept and shows the reason.
 
 ## Request budget
 
@@ -108,3 +347,15 @@ A cold load of `/findings` sends at most 5 API requests: the session bootstrap, 
 stats response (the organization total, for the empty state), one quick-views response and the list. The source
 catalog loads when the Source filter opens (or a source is already picked). Refresh sends each request once.
 `e2e/request-budget.json` holds the number.
+
+## First load
+
+While the first page of rows loads, the list shows its real title row, toolbar and chips row over placeholder
+rows (`DataTable` `isLoading`), so nothing above the rows moves when they arrive. Before the page knows its
+URL, a placeholder of the title row's own height stands in for it. A table without a bulk bar says "N of M
+selected" under its rows, in the pager's line, never in the toolbar.
+
+Under the Compliance practice the list shows its benchmarks (pass rate per benchmark, failing controls, the
+assets of each control) under the chips row and above the rows (`DataTable` `beforeRows`): it is content of the
+list, not chrome, so the title row and the toolbar never move while it loads. It folds to its heading (the
+browser remembers it) and draws nothing when there are no checks.

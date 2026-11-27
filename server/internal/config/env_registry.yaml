@@ -1561,23 +1561,23 @@ vars:
     group: "Discovery feeds and background jobs"
     type: url
     default: "https://github.com/openctemio/vulnfeed-bundles/releases"
-    description: "Release base URL of the signed vulnerability bundles. Compose passes it from `.env`."
+    description: "Release base URL of the signed vulnerability bundles. Unset: the platform owner may change it in the console (System > Threat intelligence > Vulnerability feed address); set: it pins the address and the console shows it locked. A mirror on a private address needs its range in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`, checked at start-up. Compose passes it from `.env`."
   - name: VULNFEED_BUNDLE_DIR
     component: api
     group: "Discovery feeds and background jobs"
     type: path
-    description: "Air-gapped platforms: local directory holding a vulnerability bundle release's files. Compose passes it from `.env` but does not mount the folder: add a read-only volume in an extra compose file."
+    description: "Air-gapped platforms: local directory holding a vulnerability bundle release's files. Server only: the console shows whether it is set, never the path. Compose passes it from `.env` but does not mount the folder: add a read-only volume in an extra compose file."
   - name: VULNFEED_MIRRORS
     component: api
     group: "Discovery feeds and background jobs"
     type: list
-    description: "Comma-separated https mirrors tried after the release for chunked vulnerability bundles. Compose passes it from `.env`."
+    description: "Comma-separated https mirrors tried after the release for chunked vulnerability bundles (direct mode only). Setting it, like `VULNFEED_BASE_URL`, pins the feed address; unset, the console manages the mirrors. A mirror on a private address needs its range in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`, checked at start-up."
   - name: VULNFEED_ROOT_KEY_ID
     component: api
     group: "Discovery feeds and background jobs"
     type: string
     default: "official root"
-    description: "Pinned root key id of the vulnerability bundles. Defaults to the root of the official feed (openctemio/vulnfeed-bundles releases); set it only for a private collector. Compose passes it from `.env`."
+    description: "Pinned root key id of the vulnerability bundles. Defaults to the root of the official feed (openctemio/vulnfeed-bundles releases); set it only for a private collector. A trust anchor: server only, the console shows it read-only. Compose passes it from `.env`."
   - name: GITHUB_APP_ID
     component: api
     group: "Integrations"
@@ -1652,7 +1652,7 @@ vars:
     component: api
     group: "Internal entitlements API"
     type: url
-    description: "A hosted service's account page (absolute https URL). When set, Settings > Usage & limits links to it for owners and admins whenever a limit applies to their organization. Empty (the default): no link."
+    description: "A hosted service's account page (absolute https URL). When set, Settings > Usage and limits links to it for owners and admins whenever a limit applies to their organization. Empty (the default): no link."
   - name: INTERNAL_API_ADDR
     component: api
     group: "Internal entitlements API"
@@ -2203,7 +2203,7 @@ vars:
     group: "Web console"
     type: string
     default: "false"
-    description: "Forward `X-Real-IP` / `X-Forwarded-For` to the API. Set `true` only when a proxy in front of the console overwrites those headers (the gateway does), otherwise a browser could choose its own address."
+    description: "Pass the client address on to the API (audit log, sessions, IP allowlists, request limits). Set `true` only when every request reaches the console through a proxy that sets `X-Forwarded-For` (the gateway does). The console then sends the API one address, the right-most `X-Forwarded-For` entry (the one that proxy wrote; `X-Real-IP` only when `X-Forwarded-For` is absent); entries to its left are never passed on. Off: no address is sent and the API sees the console's own."
   - name: COOKIE_MAX_AGE
     component: web
     group: "Web console"

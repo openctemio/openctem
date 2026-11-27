@@ -5,6 +5,7 @@ import { useSearch } from '@/context/search-provider'
 import { Button } from './ui/button'
 import { DecorativeText } from './ui/decorative-text'
 import { useTranslation } from '@/context/i18n-provider'
+import { HEADER_ICON_COLOUR, PHONE_TOUCH_SQUARE } from '@/components/layout/header-controls'
 
 type SearchProps = {
   className?: string
@@ -15,7 +16,7 @@ type SearchProps = {
 export function Search({ className = '', placeholder }: SearchProps) {
   const { setOpen } = useSearch()
   const { t } = useTranslation()
-  const label = placeholder ?? t('nav.header.searchOrGo', 'Search or go to')
+  const label = placeholder ?? t('nav.header.searchOrRun', 'Search or run a command')
   // The shortcut as this platform writes it (read after mount: the server
   // does not know the platform).
   const [mac, setMac] = useState(false)
@@ -24,31 +25,41 @@ export function Search({ className = '', placeholder }: SearchProps) {
   }, [])
   return (
     <Button
-      variant="outline"
+      variant="ghost"
       className={cn(
-        'bg-muted/25 group text-muted-foreground hover:bg-accent relative h-8 rounded-md text-sm font-normal shadow-none',
-        // Mobile: icon only
-        'w-8 justify-center p-0',
-        // Small screens and up: show full search bar
-        'sm:w-40 sm:justify-start sm:px-3 sm:pe-12',
-        'md:flex-none lg:w-52 xl:w-64',
+        'group hover:bg-hov hover:text-foreground relative rounded-md font-normal shadow-none',
+        // Below 1024px an icon-only ghost square in the ink colour as the other
+        // top-bar icons (32; 36 below 768px with a 20 px icon and a 44 x 44
+        // touch area, as every phone-bar control); from 1024 a field whose
+        // placeholder text and icon are dim.
+        HEADER_ICON_COLOUR,
+        'lg:text-fg-dim',
+        'size-control max-md:size-control-touch justify-center p-0',
+        PHONE_TOUCH_SQUARE,
+        // 1024-1279: 200 wide with the label; from 1280: 420 with the Ctrl K
+        // hint. The field never gives room to the breadcrumb: the breadcrumb
+        // folds its levels into the "…" menu by measured width instead.
+        // Transparent with the field border (shell package (c)).
+        'lg:border-border-strong lg:text-dense lg:w-50 lg:justify-start lg:gap-2 lg:border lg:px-2 xl:w-105',
         className
       )}
       onClick={() => setOpen(true)}
-      // Below sm the button is an icon: the label is its only accessible name.
+      // Below lg the button is an icon: the label is its only accessible name.
       aria-label={label}
+      title={label}
       aria-keyshortcuts={mac ? 'Meta+K' : 'Control+K'}
     >
-      <SearchIcon
-        aria-hidden="true"
-        className="sm:absolute sm:start-1.5 sm:top-1/2 sm:-translate-y-1/2"
-        size={16}
-      />
-      <span className="ms-4 hidden truncate sm:inline">{label}</span>
+      <SearchIcon aria-hidden="true" className="size-4 shrink-0 max-md:size-5" strokeWidth={1.75} />
+      {/* 1024-1279 (200 wide): the short label, so it fits in every language;
+          the full label from 1280 and always as the accessible name. */}
+      <span className="hidden min-w-0 flex-1 truncate text-start lg:inline xl:hidden">
+        {placeholder ?? t('nav.header.searchShort', 'Search')}
+      </span>
+      <span className="hidden min-w-0 flex-1 truncate text-start xl:inline">{label}</span>
       <DecorativeText
         as="kbd"
         text={mac ? '⌘K' : 'Ctrl K'}
-        className="bg-muted group-hover:bg-accent pointer-events-none absolute end-[0.3rem] top-[0.3rem] hidden h-5 items-center gap-1 rounded border px-1.5 font-mono text-xs font-medium opacity-100 select-none sm:flex"
+        className="bg-muted text-muted-foreground pointer-events-none hidden h-5 shrink-0 items-center rounded border px-1.5 font-mono text-cap select-none xl:flex"
       />
     </Button>
   )

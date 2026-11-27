@@ -78,7 +78,7 @@ export function InstanceScanZonesCard({ zones, canEdit, onChanged }: InstanceSca
             <CardDescription>{t('admin.instanceZones.desc')}</CardDescription>
           </div>
           {canEdit && (
-            <Button size="sm" onClick={() => setEditing('new')}>
+            <Button size="sm" variant="outline" onClick={() => setEditing('new')}>
               <Plus className="me-2 size-4" />
               {t('admin.instanceZones.add')}
             </Button>
@@ -94,7 +94,9 @@ export function InstanceScanZonesCard({ zones, canEdit, onChanged }: InstanceSca
               <li key={z.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
                 <div className="min-w-0 space-y-1">
                   <p className="font-medium break-words">{z.name}</p>
-                  <p className="text-sm break-all text-muted-foreground">{z.ranges.join(', ')}</p>
+                  <p className="text-body break-words text-muted-foreground">
+                    {z.ranges.join(', ')}
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="secondary">
                       {t('admin.instanceZones.sensorCount', undefined, {

@@ -13,16 +13,18 @@ import {
 import { SkipToMain } from '@/components/skip-to-main'
 import { RouteGuard } from '@/components/route-guard'
 import { OrgLinkGate } from '@/components/layout/org-link-gate'
-import { StepUpDialogHost } from '@/components/step-up-dialog'
+import { LazyStepUpDialogHost } from '@/components/step-up-dialog-lazy'
 import { SettingsAnchorHighlighter } from '@/components/layout/settings-anchor-highlighter'
+import { RecentPagesRecorder } from '@/features/command-palette/recent-pages-recorder'
 import { PlatformAnnouncementBanner } from '@/features/announcements/components/platform-announcement-banner'
 import { SupportAccessBanner } from '@/features/support-access/components/support-access-banner'
-import { LazyAccountShell, LazyPendingLinkPrompt } from '@/components/layout/lazy-shell-branches'
+import {
+  LazyFeedFreshnessBanner,
+  LazyPendingLinkPrompt,
+} from '@/components/layout/lazy-shell-branches'
 import { ShellBannerSlot } from '@/components/layout/shell-banner-slot'
-import { FeedFreshnessBanner } from '@/features/threat-intel/components/feed-freshness-banner'
 import { pendingLinkCookieName } from '@/features/auth/lib/oauth-cookies'
 import { OwnershipInvitationBanner } from '@/features/account/components/ownership-invitation-banner'
-import { env } from '@/lib/env'
 
 type SiteLayoutProps = {
   children?: React.ReactNode
@@ -35,14 +37,6 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
   const defaultOpen = sidebarState !== 'false'
   // A refused social sign-in left a pending link: ask to confirm it.
   const hasPendingLink = !!cookieStore.get(pendingLinkCookieName())?.value
-  // No organization open (api RFC-141): the proxy lets only /account,
-  // /account/security and /account/preferences through for such a session, and
-  // they render in the slim account shell: no tenant providers, no sidebar.
-  const accountOnly =
-    !!cookieStore.get(env.cookies.accountOnly)?.value && !cookieStore.get(env.cookies.tenant)?.value
-  if (accountOnly) {
-    return <LazyAccountShell>{children}</LazyAccountShell>
-  }
   return (
     <DashboardProviders>
       <SearchProvider>
@@ -76,7 +70,7 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
                       {/* The platform operator's notices (maintenance, warnings). */}
                       <PlatformAnnouncementBanner />
                       {/* The platform's vulnerability data is out of date: every user is told. */}
-                      <FeedFreshnessBanner />
+                      <LazyFeedFreshnessBanner />
                       {/* Platform support can read this organization's data now (RFC-063). */}
                       <SupportAccessBanner />
                       {/* An organization created for this account waits for it to accept ownership. */}
@@ -104,9 +98,11 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
             </SidebarProvider>
           </TenantGate>
           {/* Re-authentication prompt for sensitive actions (STEP_UP_REQUIRED). */}
-          <StepUpDialogHost />
+          <LazyStepUpDialogHost />
           {hasPendingLink && <LazyPendingLinkPrompt />}
           <SettingsAnchorHighlighter />
+          {/* Pages opened, for the command palette's Recent group. */}
+          <RecentPagesRecorder />
         </LayoutProvider>
       </SearchProvider>
     </DashboardProviders>

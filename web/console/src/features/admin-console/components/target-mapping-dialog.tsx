@@ -26,7 +26,6 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import {
   createTargetMapping,
@@ -76,7 +75,7 @@ export function TargetMappingDialog({
     label: text.label(v),
   }))
   const assetTypeOptions = (types?.asset_types ?? [])
-    .map((v) => ({ value: v, label: getAssetTypeLabel(v) }))
+    .map((v) => ({ value: v, label: text.asset(v) }))
     .sort((a, b) => a.label.localeCompare(b.label))
 
   const editing = !!mapping
@@ -94,7 +93,7 @@ export function TargetMappingDialog({
   // On edit, a stored priority from before the API's bounds existed must not
   // block an unrelated change, so it is only checked once it is edited.
   const priorityChanged = !editing || priority.trim() !== String(mapping.priority)
-  const formErrors = validateTargetMappingForm({ priority, description })
+  const formErrors = validateTargetMappingForm({ priority, description }, t)
   const errors = priorityChanged ? formErrors : { description: formErrors.description }
   const isPrimary = priority.trim() === String(PRIMARY_PRIORITY)
   const pairMissing = !editing && (!targetType || !assetType)
@@ -118,10 +117,14 @@ export function TargetMappingDialog({
       const saved = editing
         ? await updateTargetMapping(mapping.id, fields)
         : await createTargetMapping({ target_type: targetType, asset_type: assetType, ...fields })
+      const pair = {
+        target: text.label(saved.target_type),
+        asset: text.asset(saved.asset_type),
+      }
       toast.success(
-        `${text.label(saved.target_type)} → ${getAssetTypeLabel(saved.asset_type)} ${
-          editing ? 'updated' : 'created'
-        }`
+        editing
+          ? t('admin.targetMappingDialog.updatedToast', '{target} to {asset} mapping updated', pair)
+          : t('admin.targetMappingDialog.createdToast', '{target} to {asset} mapping created', pair)
       )
       onSaved(saved)
       onOpenChange(false)
@@ -129,9 +132,12 @@ export function TargetMappingDialog({
       setError(
         err instanceof AdminApiError
           ? err.status === 409
-            ? 'This target type is already mapped to this asset type.'
+            ? t(
+                'admin.targetMappingDialog.duplicatePair',
+                'This target type is already mapped to this asset type.'
+              )
             : err.message
-          : 'The mapping could not be saved'
+          : t('admin.targetMappingDialog.saveFailed', 'The mapping could not be saved')
       )
     } finally {
       setBusy(false)
@@ -169,7 +175,7 @@ export function TargetMappingDialog({
                     <p className="text-sm font-medium">
                       {t('admin.targetMappingDialog.assetType', 'Asset type')}
                     </p>
-                    <p className="text-sm">{getAssetTypeLabel(mapping.asset_type)}</p>
+                    <p className="text-body">{text.asset(mapping.asset_type)}</p>
                   </div>
                   <p className="col-span-2 text-xs text-muted-foreground">
                     {t(
@@ -242,7 +248,7 @@ export function TargetMappingDialog({
                         '{target} is already mapped to {asset}. Edit that mapping instead.',
                         {
                           target: text.label(existing.target_type),
-                          asset: getAssetTypeLabel(existing.asset_type),
+                          asset: text.asset(existing.asset_type),
                         }
                       )}
                     </p>
@@ -253,12 +259,12 @@ export function TargetMappingDialog({
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-0.5">
                   <Label htmlFor="tm-primary">
-                    {t('admin.targetMappingDialog.primaryMapping', 'Primary mapping')}
+                    {t('admin.targetMappingDialog.primaryMapping', 'First choice')}
                   </Label>
                   <p className="text-xs text-muted-foreground">
                     {t(
                       'admin.targetMappingDialog.theMainAssetTypeFor',
-                      'The main asset type for this target type. Sets the priority to {priority}.',
+                      'Used first for this target type. Sets the priority to {priority}.',
                       { priority: PRIMARY_PRIORITY }
                     )}
                   </p>
@@ -296,7 +302,7 @@ export function TargetMappingDialog({
                   {errors.priority ??
                     t(
                       'admin.targetMappingDialog.lowerComesFirstIsPrimary',
-                      '{min}–{max}. Lower comes first; {primary} is primary, {fallback} is the default.',
+                      '{min} to {max}. A lower number is used first.',
                       {
                         min: MIN_PRIORITY,
                         max: MAX_PRIORITY,

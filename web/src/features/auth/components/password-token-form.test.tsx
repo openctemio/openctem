@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { toast } from 'sonner'
 
 import { resetPasswordAction } from '../actions/local-auth-actions'
 import { PasswordTokenForm } from './password-token-form'
@@ -18,7 +19,10 @@ const policy = vi.hoisted(() => ({
     reset_link_valid_minutes: 60,
   } as Record<string, unknown> | undefined,
 }))
-vi.mock('../api/use-auth-providers', () => ({ usePasswordPolicy: () => policy.current }))
+vi.mock('../api/use-auth-providers', () => ({
+  usePasswordPolicy: () => policy.current,
+  useEmailUnavailable: () => false,
+}))
 
 // The checkbox measures itself with ResizeObserver, which jsdom lacks.
 vi.stubGlobal(
@@ -91,7 +95,7 @@ describe('PasswordTokenForm', () => {
 
   it('setup mode without a token says to ask the administrator (no self-service reset link)', () => {
     render(<PasswordTokenForm mode="setup" token="" />)
-    expect(screen.getByText('Invalid setup link')).toBeInTheDocument()
+    expect(screen.getByText('This setup link does not work')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /request a new reset link/i })).toBeNull()
     expect(screen.getByRole('link', { name: /back to sign in/i })).toHaveAttribute('href', '/login')
   })
@@ -112,9 +116,14 @@ describe('PasswordTokenForm', () => {
     })
     render(<PasswordTokenForm mode="setup" token="tok-3" />)
     await fillAndSubmit(/^set password$/i)
-    expect(await screen.findByText(/reset link is invalid or has expired/i)).toBeInTheDocument()
+    const banner = await screen.findByRole('alert')
+    expect(banner).toHaveTextContent('This setup link does not work')
+    expect(banner).toHaveTextContent(/ask your administrator for a new one/i)
+    // No self-service advice: a setup link only comes from an administrator.
+    expect(banner).not.toHaveTextContent(/request a new one/i)
     expect(screen.queryByText(/SERVER SENTENCE/)).not.toBeInTheDocument()
-    expect(screen.getByText(/ask your administrator for a new one/i)).toBeInTheDocument()
+    // One message: the banner, no toast on top of it (MVP v2 batch 9).
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled()
   })
 })
 

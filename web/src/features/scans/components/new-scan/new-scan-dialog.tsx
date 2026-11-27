@@ -16,6 +16,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { Clock, Loader2, Play, RotateCcw, ShieldCheck } from 'lucide-react'
+import { useMyUserId } from '@/hooks/use-my-user-id'
 import { submitScanApproval, useScanApprovalPreview } from '@/lib/api/scan-approval-hooks'
 import { ApprovalRequirement, missingEvidence } from '../approval/approval-requirement'
 import { toZonePreviewRequest, triggerErrorHint } from '@/features/scan-zones'
@@ -24,7 +25,6 @@ import { useScanReview } from '../../hooks/use-scan-review'
 import { useScanWorkflow, useScanWorkflows } from '@/lib/api/scan-workflow-hooks'
 import { useScanZones } from '@/lib/api/scan-zone-hooks'
 import { Permission, useHasPermission } from '@/lib/permissions'
-import { useAuthStore } from '@/stores/auth-store'
 import { useDebounce } from '@/hooks/use-debounce'
 
 import { type ScanWizardStep } from './scan-stepper'
@@ -66,6 +66,7 @@ import {
   saveNewScanDraft,
 } from '../../hooks/use-new-scan-draft'
 import { onlyAwaitingApproval } from '../../lib/scope-wait'
+import { formatDateTime } from '@/lib/app-locale'
 
 interface NewScanDialogProps {
   open: boolean
@@ -102,7 +103,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const tenantId = currentTenant?.id
-  const userId = useAuthStore((s) => s.user?.id)
+  const userId = useMyUserId()
 
   // Keep the wizard while the user leaves it (to approve a scope entry,
   // verify a domain) and give it back on the next open.
@@ -419,7 +420,7 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
           at
             ? t('scans.new.willRunOn', undefined, {
                 name: formData.name,
-                time: at.toLocaleString(),
+                time: formatDateTime(at),
               })
             : t('scans.new.scheduled', undefined, { name: formData.name })
         )
@@ -469,7 +470,13 @@ export function NewScanDialog({ open, onOpenChange, onSubmit }: NewScanDialogPro
   const renderStep = () => {
     switch (currentStep) {
       case 'basic':
-        return <BasicInfoStep data={formData} onChange={handleDataChange} />
+        return (
+          <BasicInfoStep
+            data={formData}
+            onChange={handleDataChange}
+            showErrors={nav.attempted || nav.seen.has('basic')}
+          />
+        )
       case 'targets':
         return (
           <>

@@ -75,12 +75,21 @@ export function AssetPeekLink({
   className?: string
 }) {
   const peek = useAssetPeek()
+  // An asset's name: a caller may cut it to one line (`truncate`); its whole
+  // text is then the title.
+  const title = typeof children === 'string' ? children : undefined
   if (!isLinkableAssetId(assetId ?? undefined)) {
-    return <span className={cn('min-w-0', className)}>{children}</span>
+    return (
+      <span className={cn('min-w-0', className)} title={title} data-cut-tooltip="">
+        {children}
+      </span>
+    )
   }
   const id = assetId as string
   return (
     <Link
+      title={title}
+      data-cut-tooltip=""
       href={assetDetailHref(id)}
       onClick={(e: MouseEvent) => {
         if (!peek || !plainClick(e)) return

@@ -1,0 +1,195 @@
+/**
+ * A chip value on the automatic phone card is never cut. Acceptance review
+ * (2026-11-18): the Vietnamese criticality chip "Trung bình" was clipped to
+ * "Trung b" in its half-width field, since a chip has no ellipsis. A field
+ * whose chip overflows its half of the line takes the whole line; the other
+ * field moves to the line under it and stays shown.
+ */
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { act, render } from '@testing-library/react'
+import type { ColumnDef } from '@tanstack/react-table'
+import { Badge } from '@/components/ui/badge'
+import { DataTable } from '../data-table'
+
+type Row = { id: string; name: string; criticality: string; owner: string }
+
+const columns: ColumnDef<Row>[] = [
+  { accessorKey: 'name', header: 'Name', meta: { kind: 'name', label: 'Name' } },
+  {
+    id: 'criticality',
+    header: 'Criticality',
+    meta: { label: 'Criticality' },
+    cell: ({ row }) => <Badge>{row.original.criticality}</Badge>,
+  },
+  {
+    id: 'owner',
+    header: 'Owner',
+    meta: { label: 'Owner' },
+    cell: ({ row }) => <span>{row.original.owner}</span>,
+  },
+]
+
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+const setWidth = (value: number) =>
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value })
+
+// jsdom has no layout: a value cell that holds a chip reports a content width
+// wider than its box when the chip text is long.
+const proto = HTMLElement.prototype
+const saved = {
+  scroll: Object.getOwnPropertyDescriptor(proto, 'scrollWidth'),
+  client: Object.getOwnPropertyDescriptor(proto, 'clientWidth'),
+}
+const hasLongChip = (el: HTMLElement) =>
+  el.tagName === 'DD' &&
+  (el.querySelector('[data-slot=badge],[data-slot$=-badge]')?.textContent ?? '').length > 8
+
+beforeEach(() => {
+  setWidth(390)
+  Object.defineProperty(proto, 'scrollWidth', {
+    configurable: true,
+    get(this: HTMLElement) {
+      return hasLongChip(this) ? 96 : 60
+    },
+  })
+  Object.defineProperty(proto, 'clientWidth', {
+    configurable: true,
+    get(this: HTMLElement) {
+      // A label (DT) has a box of its own too: it fits it.
+      return this.tagName === 'DD' || this.tagName === 'DT' ? 72 : 0
+    },
+  })
+})
+afterEach(() => {
+  setWidth(1440)
+  if (saved.scroll) Object.defineProperty(proto, 'scrollWidth', saved.scroll)
+  if (saved.client) Object.defineProperty(proto, 'clientWidth', saved.client)
+})
+
+const field = (container: HTMLElement, id: string) =>
+  container.querySelector<HTMLElement>(`[data-slot="mobile-card-field"][data-column="${id}"]`)
+
+describe('automatic phone card: a chip value is never cut', () => {
+  it('gives a field whose chip overflows half the line the whole line', () => {
+    const { container } = render(
+      <DataTable
+        columns={columns}
+        data={[{ id: '1', name: 'web-01', criticality: 'Trung bình', owner: 'Ana' }]}
+        getRowId={(r) => r.id}
+      />
+    )
+    expect(field(container, 'criticality')?.className).toContain('col-span-2')
+    // The other field is still shown, on the line under it.
+    expect(field(container, 'owner')?.textContent).toContain('Ana')
+    // On the whole line too: its value ends at the card's edge, not mid-line.
+    expect(field(container, 'owner')?.className).toContain('col-span-2')
+    expect(field(container, 'owner')?.querySelector('dd')?.getAttribute('title')).toBe('Ana')
+    const dl = container.querySelector('[data-slot="mobile-card"] dl')!
+    // Shown fields have no fixed line height: a long value wraps.
+    expect(dl.className).not.toContain('h-5')
+    expect(dl.className).not.toContain('auto-rows-[1.25rem]')
+  })
+
+  it('measures again once the web font arrives (owner report 2026-11-20: a chip cut at its border)', async () => {
+    // First measured with the fallback font: the chip fits its half line.
+    let long = false
+    Object.defineProperty(proto, 'scrollWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return long && hasLongChip(this) ? 96 : 60
+      },
+    })
+    let loaded: () => void = () => {}
+    const ready = new Promise<void>((r) => (loaded = r))
+    Object.defineProperty(document, 'fonts', {
+      configurable: true,
+      value: { status: 'loading', ready },
+    })
+    try {
+      const { container } = render(
+        <DataTable
+          columns={columns}
+          data={[{ id: '1', name: 'web-01', criticality: 'Internet-facing', owner: 'Ana' }]}
+          getRowId={(r) => r.id}
+        />
+      )
+      expect(field(container, 'criticality')?.className).not.toContain('col-span-2')
+      // The web font is wider: the chip no longer fits its half line.
+      long = true
+      await act(async () => {
+        loaded()
+        await ready
+      })
+      expect(field(container, 'criticality')?.className).toContain('col-span-2')
+    } finally {
+      Reflect.deleteProperty(document, 'fonts')
+    }
+  })
+
+  it('lets a text chip that still does not fit end in an ellipsis, its border whole', () => {
+    const { container } = render(
+      <DataTable
+        columns={columns}
+        data={[{ id: '1', name: 'web-01', criticality: 'Trung bình', owner: 'Ana' }]}
+        getRowId={(r) => r.id}
+      />
+    )
+    const dd = field(container, 'criticality')!.querySelector('dd')!
+    expect(dd.className).toContain('[&>span>*]:max-w-full')
+    expect(dd.className).toContain('[&_[data-slot=badge]:not(:has(svg))]:truncate')
+    // Not on a half line: there the chip overflows, which moves it to the whole line.
+    const owner = field(container, 'owner')!.querySelector('dd')!
+    expect(owner.className).not.toContain('[&>span>*]:max-w-full')
+  })
+
+  it('does the same for a named chip that is not the kit Badge', () => {
+    const named: ColumnDef<Row>[] = [
+      columns[0],
+      {
+        id: 'criticality',
+        header: 'Criticality',
+        meta: { label: 'Criticality' },
+        cell: ({ row }) => <span data-slot="criticality-badge">{row.original.criticality}</span>,
+      },
+      columns[2],
+    ]
+    const { container } = render(
+      <DataTable
+        columns={named}
+        data={[{ id: '1', name: 'web-01', criticality: 'Trung bình', owner: 'Ana' }]}
+        getRowId={(r) => r.id}
+      />
+    )
+    expect(field(container, 'criticality')?.className).toContain('col-span-2')
+  })
+
+  it('keeps two half-line fields on one line when the chip fits', () => {
+    const { container } = render(
+      <DataTable
+        columns={columns}
+        data={[{ id: '1', name: 'web-01', criticality: 'High', owner: 'Ana' }]}
+        getRowId={(r) => r.id}
+      />
+    )
+    expect(field(container, 'criticality')?.className).not.toContain('col-span-2')
+    expect(field(container, 'criticality')?.className).toContain('flex-wrap')
+    expect(field(container, 'owner')?.className).not.toContain('col-span-2')
+  })
+
+  it('gives a lone field the whole line', () => {
+    const { container } = render(
+      <DataTable
+        columns={columns}
+        data={[{ id: '1', name: 'web-01', criticality: 'High', owner: '' }]}
+        getRowId={(r) => r.id}
+      />
+    )
+    expect(field(container, 'owner')).toBeNull()
+    expect(field(container, 'criticality')?.className).toContain('col-span-2')
+  })
+})

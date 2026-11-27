@@ -8,8 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Switch } from '@/components/ui/switch'
-import { SettingsSection } from '@/features/shared'
+import { SettingsSection, SettingsSwitchRow } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatLocalized } from '@/lib/format-date'
 import { useTranslation } from '@/context/i18n-provider'
@@ -204,33 +203,27 @@ export function ClosingModeForm({
           'Critical, P0 and known exploited findings wait for review in auto mode: a person confirms the close in Ready to close.'
         )}
       >
-        <div className="flex items-center justify-between gap-4 rounded-lg border p-4">
-          <div>
-            <Label htmlFor="closing-critical">
-              {t(
-                'settings.closing.criticalAutoClose',
-                'Let a covered scan close critical findings without review'
-              )}
-            </Label>
-            <p className="text-sm text-muted-foreground">
-              {isOwner
-                ? t(
-                    'settings.closing.criticalAutoCloseHint',
-                    'Applies in auto mode only. Turning it on takes effect after 24 hours.'
-                  )
-                : t(
-                    'settings.closing.criticalOwnerOnly',
-                    'Only the organization owner can turn this on.'
-                  )}
-            </p>
-          </div>
-          <Switch
-            id="closing-critical"
-            checked={critical}
-            onCheckedChange={setCritical}
-            disabled={(!isOwner && !critical) || mode !== 'auto'}
-          />
-        </div>
+        <SettingsSwitchRow
+          id="closing-critical"
+          label={t(
+            'settings.closing.criticalAutoClose',
+            'Let a covered scan close critical findings without review'
+          )}
+          hint={
+            isOwner
+              ? t(
+                  'settings.closing.criticalAutoCloseHint',
+                  'Applies in auto mode only. Turning it on takes effect after 24 hours.'
+                )
+              : t(
+                  'settings.closing.criticalOwnerOnly',
+                  'Only the organization owner can turn this on.'
+                )
+          }
+          checked={critical}
+          onCheckedChange={setCritical}
+          disabled={(!isOwner && !critical) || mode !== 'auto'}
+        />
       </SettingsSection>
 
       {willWait && (

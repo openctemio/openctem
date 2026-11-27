@@ -20,10 +20,18 @@ import { PageStack } from '@/features/shared/components/page-stack'
 import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { formatEpssScore } from '@/lib/epss'
 import { useEmergingThreat } from '../api'
-import type { EmergingThreatDetail, EtsBreakdown } from '../types'
+import type { EmergingThreatDetail } from '../types'
 import { AffectedAssets } from './affected-assets'
 import { AlertActions, OutOfScopeHint, TaskCoverageNote } from './alert-actions'
-import { EtsCell, LevelBadge, StateBadge, useEventDetail, useEventKindLabel } from './bits'
+import {
+  EtsBreakdownBars,
+  EtsCell,
+  LevelBadge,
+  StateBadge,
+  useEventDetail,
+  useEventKindLabel,
+} from './bits'
+import { formatDate } from '@/lib/app-locale'
 
 export function EmergingThreatDetailView({ id }: { id: string }) {
   const { t } = useTranslation()
@@ -59,12 +67,44 @@ function DetailBody({ alert }: { alert: EmergingThreatDetail }) {
   const { t } = useTranslation()
   return (
     <>
+      {/* The alert's level, state, tier and the recommended action are the
+          header's facts, under its title: no rows of their own above the
+          cards and the affected assets. */}
       <PageHeader
         title={alert.vuln_id}
         description={
-          <span className="flex flex-wrap items-center gap-2">
-            {alert.title && <span>{alert.title}</span>}
-            <FeedDataAsOf className="text-muted-foreground" />
+          <span className="flex flex-col gap-2">
+            <span className="flex flex-wrap items-center gap-2">
+              {alert.title && <span>{alert.title}</span>}
+              <FeedDataAsOf className="text-muted-foreground" />
+            </span>
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <LevelBadge level={alert.level} />
+              <StateBadge state={alert.state} />
+              <span>{t(`emergingThreats.tier.${alert.tier}`)}</span>
+              {alert.state === 'not_affected' && (
+                <span>
+                  {t(
+                    `emergingThreats.notAffected.reasons.${alert.state_reason}`,
+                    alert.state_reason
+                  )}
+                  {alert.suppressed_until && (
+                    <>
+                      {', '}
+                      {t('emergingThreats.suppressedUntil', undefined, {
+                        date: formatDate(new Date(alert.suppressed_until)),
+                      })}
+                    </>
+                  )}
+                </span>
+              )}
+            </span>
+            {alert.state === 'not_affected' && alert.state_note && (
+              <span className="block">{alert.state_note}</span>
+            )}
+            <span className="block text-foreground">
+              {t(`emergingThreats.action.${alert.recommended_action}`)}
+            </span>
           </span>
         }
       >
@@ -72,34 +112,6 @@ function DetailBody({ alert }: { alert: EmergingThreatDetail }) {
       </PageHeader>
       <OutOfScopeHint alert={alert} />
       <TaskCoverageNote alert={alert} />
-
-      <div className="flex flex-wrap items-center gap-3">
-        <LevelBadge level={alert.level} />
-        <StateBadge state={alert.state} />
-        <span className="text-sm text-muted-foreground">
-          {t(`emergingThreats.tier.${alert.tier}`)}
-        </span>
-        {alert.state === 'not_affected' && (
-          <span className="text-sm text-muted-foreground">
-            {t(`emergingThreats.notAffected.reasons.${alert.state_reason}`, alert.state_reason)}
-            {alert.suppressed_until && (
-              <>
-                {', '}
-                {t('emergingThreats.suppressedUntil', undefined, {
-                  date: new Date(alert.suppressed_until).toLocaleDateString(),
-                })}
-              </>
-            )}
-          </span>
-        )}
-      </div>
-      {alert.state === 'not_affected' && alert.state_note && (
-        <p className="text-sm text-muted-foreground">{alert.state_note}</p>
-      )}
-
-      <p className="rounded-lg border bg-muted/40 p-3 text-sm">
-        {t(`emergingThreats.action.${alert.recommended_action}`)}
-      </p>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ScoreCard alert={alert} />
@@ -117,22 +129,15 @@ function DetailBody({ alert }: { alert: EmergingThreatDetail }) {
         </Card>
       )}
 
-      <Timeline alert={alert} />
+      {/* No events: no card that only says so. */}
+      {alert.timeline.length > 0 && <Timeline alert={alert} />}
       <AffectedAssets groups={alert.asset_groups ?? []} />
     </>
   )
 }
 
-const PARTS: (keyof Omit<EtsBreakdown, 'total' | 'confidence'>)[] = [
-  'exploitation',
-  'severity',
-  'exposure',
-  'freshness',
-]
-
 function ScoreCard({ alert }: { alert: EmergingThreatDetail }) {
   const { t } = useTranslation()
-  const b = alert.ets_breakdown
   return (
     <Card>
       <CardHeader>
@@ -141,22 +146,7 @@ function ScoreCard({ alert }: { alert: EmergingThreatDetail }) {
       </CardHeader>
       <CardContent className="space-y-3">
         <EtsCell ets={alert.ets} />
-        <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm">
-          {PARTS.map((k) => (
-            <div key={k} className="contents">
-              <dt className="text-muted-foreground">{t(`emergingThreats.breakdown.${k}`)}</dt>
-              <dd className="text-end tabular-nums">{b[k]}</dd>
-            </div>
-          ))}
-          <dt className="text-muted-foreground">{t('emergingThreats.breakdown.confidence')}</dt>
-          <dd className="text-end tabular-nums">
-            {t('emergingThreats.breakdown.multiplier', undefined, {
-              value: Number(b.confidence.toFixed(2)),
-            })}
-          </dd>
-          <dt className="font-medium">{t('emergingThreats.breakdown.total')}</dt>
-          <dd className="text-end font-semibold tabular-nums">{b.total}</dd>
-        </dl>
+        <EtsBreakdownBars ets={alert.ets} breakdown={alert.ets_breakdown} />
       </CardContent>
     </Card>
   )
@@ -191,7 +181,7 @@ function ExploitCard({ alert }: { alert: EmergingThreatDetail }) {
     ],
     [
       t('emergingThreats.detail.published'),
-      alert.published_at ? new Date(alert.published_at).toLocaleDateString() : '—',
+      alert.published_at ? formatDate(new Date(alert.published_at)) : '—',
     ],
   ]
   return (
@@ -200,7 +190,7 @@ function ExploitCard({ alert }: { alert: EmergingThreatDetail }) {
         <CardTitle className="text-base">{t('emergingThreats.detail.exploitStatus')}</CardTitle>
       </CardHeader>
       <CardContent>
-        <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm">
+        <dl className="grid max-w-sm grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm">
           {rows.map(([label, value]) => (
             <div key={label} className="contents">
               <dt className="text-muted-foreground">{label}</dt>

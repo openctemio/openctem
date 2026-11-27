@@ -1,5 +1,12 @@
 import { chromium, expect, type Page } from '@playwright/test'
-import { AUTH_DIR, credentials, STATE_FILE, answerCode, saveCredentials } from './helpers/session'
+import {
+  AUTH_DIR,
+  credentials,
+  ensureElevated,
+  STATE_FILE,
+  answerCode,
+  saveCredentials,
+} from './helpers/session'
 import fs from 'node:fs'
 
 /**
@@ -33,6 +40,7 @@ async function openLogin(page: Page) {
  *
  * CONSOLE_E2E_EMAIL, CONSOLE_E2E_PASSWORD (the temporary one is changed), and,
  * for an administrator who is already enrolled, CONSOLE_E2E_TOTP_SECRET.
+ * CONSOLE_E2E_ELEVATE=1 also elevates the saved session (specs/layout-matrix.spec.ts).
  */
 export default async function globalSetup() {
   const baseURL = process.env.CONSOLE_E2E_BASE_URL ?? 'http://127.0.0.1:3001'
@@ -65,10 +73,9 @@ export default async function globalSetup() {
     const signIn = async (pw: string) => {
       await openLogin(page)
       // The form is server-rendered, then hydrated: text typed before React
-      // has taken the inputs over is lost, and typing the same text again is
-      // ignored (React compares it with the value it saw), so Continue stays
-      // disabled for good. Empty the fields first, then fill, until the button
-      // is enabled: that is the proof the page is live.
+      // has taken the inputs over is lost. Continue is enabled once the page
+      // is live; empty the fields, fill them, and retry until the page is
+      // live and still holds what was typed.
       const next = page.getByRole('button', { name: 'Continue' })
       const emailField = page.getByLabel('Email')
       const passwordField = page.getByLabel('Password', { exact: true })
@@ -78,6 +85,8 @@ export default async function globalSetup() {
         await emailField.fill(email)
         await passwordField.fill(pw)
         await expect(next).toBeEnabled({ timeout: 1_000 })
+        await expect(emailField).toHaveValue(email, { timeout: 500 })
+        await expect(passwordField).toHaveValue(pw, { timeout: 500 })
       }).toPass({ timeout: 30_000 })
       await next.click()
       await answerCode(page, () => secret)
@@ -117,6 +126,9 @@ export default async function globalSetup() {
     }
     saveCredentials({ email, password: current, totpSecret: secret })
     await context.storageState({ path: STATE_FILE })
+    // The layout matrix runs many workers on this one session: it is elevated
+    // here, once, instead of by each worker (one authenticator code each).
+    if (process.env.CONSOLE_E2E_ELEVATE) await ensureElevated(browser, baseURL)
   } catch (err) {
     // The picture is a courtesy: when the page is closed or mid-navigation the
     // capture itself fails, and that failure must never replace the real error.

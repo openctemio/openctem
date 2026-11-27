@@ -266,8 +266,7 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
     evidence: [],
 
     remediation: {
-      description:
-        (meta?.remediation_guidance as string) || api.recommendation || api.resolution || '',
+      description: (meta?.remediation_guidance as string) || api.recommendation || '',
       steps: [],
       references: (meta?.references as string[]) || [],
       progress: api.status === 'resolved' ? 100 : 0,
@@ -291,7 +290,9 @@ export function toFindingDetail(api: ApiFinding): FindingDetail {
 
     discoveredAt: api.first_detected_at || api.created_at,
     resolvedAt: api.resolved_at,
+    acceptanceExpiresAt: api.acceptance_expires_at,
     closureReason: api.closure_reason,
+    closeNote: api.resolution || undefined,
     subStatusId: api.sub_status_id,
     maxAcceptanceDays: api.max_acceptance_days,
     verification: api.verification,

@@ -1,7 +1,7 @@
 /**
  * The Findings list's saved-view state and its primary action: columns and
  * density live in the URL and are saved with a view, Priority is always shown,
- * Severity starts hidden in the Active view, the unsaved-changes dot compares
+ * Severity shows in every view (only a narrow frame drops it), the unsaved-changes dot compares
  * the list with the open view, and Triage opens triage mode on the Needs
  * triage queue (or, with nothing to triage, the Needs triage view).
  */
@@ -189,11 +189,12 @@ describe('Findings columns', () => {
     expect(headers()).toContain('Title')
   })
 
-  it('Severity starts hidden in the Active view and shown in Needs triage', () => {
+  it('Severity and the asset show by default in every view', () => {
     listState.rows = [row('1')]
     openAt('')
     const { unmount } = render(<FindingsPage />)
-    expect(headers()).not.toContain('Severity')
+    expect(headers()).toContain('Severity')
+    expect(headers()).toContain('Location')
     unmount()
     openAt('?status=new&state=all')
     render(<FindingsPage />)
@@ -245,7 +246,7 @@ describe('Findings columns', () => {
     render(<FindingsPage />)
     await userEvent.click(screen.getByRole('button', { name: /^display: density/i }))
     await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Severity' }))
-    expect(params().get('columns')).toBe('status,slaStatus')
+    expect(params().get('columns')).toBe('asset,status,slaStatus')
     await userEvent.click(screen.getByRole('button', { name: /^display: density/i }))
     await userEvent.click(await screen.findByRole('menuitemcheckbox', { name: 'Severity' }))
     expect(params().has('columns')).toBe(false)
@@ -300,22 +301,21 @@ describe('Findings Triage', () => {
     expect(screen.queryByRole('button', { name: /^Triage/ })).toBeNull()
   })
 
-  it('is the primary button, with the Needs triage count', () => {
+  it('is the primary button while findings wait, with no count on it', () => {
     quickViewsState.views = [{ key: 'needs_triage', count: 86, params: 'status=new' }]
     openAt('')
     render(<FindingsPage />)
     const button = screen.getByRole('button', { name: /^Triage/ })
-    expect(button).toHaveTextContent('86')
+    expect(button).not.toHaveTextContent('86')
     expect(button.getAttribute('data-variant') ?? button.className).toMatch(/default|bg-primary/)
   })
 
-  it('turns secondary, "Triage view", with nothing to triage', () => {
+  it('turns secondary with nothing to triage', () => {
     quickViewsState.views = [{ key: 'needs_triage', count: 0, params: 'status=new' }]
     openAt('')
     render(<FindingsPage />)
-    const button = screen.getByRole('button', { name: /Triage view/ })
-    expect(screen.queryByTestId('triage-count')).toBeNull()
-    expect(button.className).not.toMatch(/bg-primary /)
+    const button = screen.getByRole('button', { name: /^Triage/ })
+    expect(button.getAttribute('data-variant') ?? button.className).toMatch(/outline|border/)
   })
 
   it('opens triage mode on the Needs triage queue and remembers the list', () => {
@@ -338,7 +338,7 @@ describe('Findings Triage', () => {
     openAt('')
     render(<FindingsPage />)
     act(() => {
-      fireEvent.click(screen.getByRole('button', { name: /Triage view/ }))
+      fireEvent.click(screen.getByRole('button', { name: /^Triage/ }))
     })
     expect(routerPush).not.toHaveBeenCalledWith(expect.stringContaining('/findings/triage'))
     expect(params().get('status')).toBe('new')
@@ -360,11 +360,13 @@ describe('Findings Triage', () => {
     expect(routerPush).toHaveBeenCalledWith('/findings/triage?status=new')
   })
 
-  it('Add is a menu of Add finding and Import results', async () => {
+  it('Finding is a single button; Import results is under More, never a split button', async () => {
     openAt('')
     render(<FindingsPage />)
-    await userEvent.click(screen.getByRole('button', { name: 'Add' }))
-    expect(await screen.findByRole('menuitem', { name: 'Add finding' })).toBeInTheDocument()
-    expect(screen.getByRole('menuitem', { name: 'Import results' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add finding' })).toBeInTheDocument()
+    // The header's More comes first (the narrow primary row has its own).
+    await userEvent.click(screen.getAllByRole('button', { name: 'More actions' })[0])
+    expect(await screen.findByRole('menuitem', { name: 'Import results' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Add finding' })).toBeNull()
   })
 })

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { Server } from 'lucide-react'
 import {
@@ -12,6 +12,18 @@ import {
   DetailCallout,
 } from '../detail-sheet'
 import { DetailHeader, DetailSheet } from '../detail-sheet-layout'
+
+// The phone drawer loads on demand in the app; these tests render it at once.
+vi.mock('next/dynamic', async () => {
+  const phone = await import('../detail-sheet-phone')
+  const actual = await vi.importActual<typeof import('next/dynamic')>('next/dynamic')
+  return {
+    default: (loader: () => Promise<unknown>, options?: object) =>
+      String(loader).includes('detail-sheet-phone')
+        ? phone.PhoneDrawer
+        : actual.default(loader as never, options as never),
+  }
+})
 
 describe('DetailSheetHeader', () => {
   it('renders title, subtitle, status, badges and actions', () => {
@@ -165,18 +177,34 @@ describe('DetailStatGrid / DetailStat', () => {
     )
   })
 
-  it('is two per row on phones and one row of N from sm', () => {
+  it('is two per row and one row of N where its own width fits them', () => {
     const { container } = render(
-      <DetailStatGrid>
+      <DetailStatGrid className="max-w-sm">
         <DetailStat label="A" value={1} />
         <DetailStat label="B" value={2} />
         <DetailStat label="C" value={3} />
         {null}
       </DetailStatGrid>
     )
-    const grid = container.firstChild as HTMLElement
-    expect(grid).toHaveClass('grid-cols-2')
+    // The wrapper is the query container and takes the caller's classes.
+    const frame = container.firstChild as HTMLElement
+    expect(frame).toHaveClass('@container', 'max-w-sm')
+    const grid = container.querySelector('[data-slot="detail-stat-grid"]') as HTMLElement
+    expect(grid).toHaveClass('grid-cols-2', '@min-[30rem]:grid-cols-3')
+    expect(grid.className).not.toMatch(/(^|\s)sm:/)
     expect(grid.style.getPropertyValue('--detail-stat-cols')).toBe('3')
+  })
+
+  it('wraps a long caption instead of cutting it', () => {
+    render(
+      <DetailStatGrid>
+        <DetailStat label="Hosts confirmed" value={0} caption="+1 possibly affected" />
+        <DetailStat label="B" value={2} />
+      </DetailStatGrid>
+    )
+    const caption = screen.getByText('+1 possibly affected')
+    expect(caption).not.toHaveClass('truncate')
+    expect(caption).toHaveClass('break-words')
   })
 
   it('renders nothing without stats', () => {
@@ -290,5 +318,17 @@ describe('in a phone DetailSheet', () => {
       expect(body.classList.contains(c)).toBe(false)
     }
     expect(body.firstElementChild).toHaveAttribute('data-slot', 'detail-callout')
+  })
+})
+
+describe('DetailChipList', () => {
+  it('keeps a long name on one line inside the chip and names it in a title', async () => {
+    const { DetailChipList } = await import('../detail-sheet')
+    const long = 'Payments platform external perimeter: every production hostname'
+    render(<DetailChipList label="Roles" chips={[{ key: 'a', label: long }]} />)
+    const name = screen.getByText(long)
+    expect(name).toHaveClass('truncate', 'min-w-0')
+    expect(name).toHaveAttribute('title', long)
+    expect(name.closest('li')).toHaveClass('max-w-full')
   })
 })

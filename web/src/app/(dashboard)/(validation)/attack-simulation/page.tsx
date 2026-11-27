@@ -48,7 +48,7 @@ function StatusBadge({ status }: { status: string }) {
   const { t } = useTranslation()
   const value = status || 'draft'
   return (
-    <Badge variant={status === 'active' ? 'default' : 'secondary'} className="capitalize">
+    <Badge variant={status === 'active' ? 'outline' : 'secondary'} className="capitalize">
       {t(`validation.simulation.status.${value}`, value)}
     </Badge>
   )
@@ -218,6 +218,8 @@ export default function AttackSimulationPage() {
       },
       {
         id: 'actions',
+        // Labelled buttons: as wide as they need (the 48 px actions column cut them).
+        meta: { kind: 'decisions' },
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => (
@@ -308,7 +310,7 @@ export default function AttackSimulationPage() {
           }}
         />
 
-        <MetricStrip items={metrics} />
+        <MetricStrip items={metrics} listFirst />
 
         {simulations.length === 0 && !error ? (
           <EmptyState
