@@ -1534,6 +1534,9 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   keep the full width; a form page uses the settings column. The layout
   matrix fails a text line or a field wider than 960 px, or a rail 400 px
   from its content, from 1900 px up.
+- A notice (`Alert`) is as wide as its column up to 56rem, and from 1536 px
+  it stops there: its sentences use the box's width, never a capped line
+  inside a wider box, and never one line wider than the 960 px rule above.
 - An ellipsis or a line clamp never hides meaning. A status reason, a metric's
   label, a sentence or a value shows in full: wrap it (two lines), or give it a
   shorter plain label. Only a name or title (a DataTable column of kind `name`,

@@ -855,7 +855,9 @@ export function SensorsSection({
         aria-label={t('sensors.list.groupBy.label')}
       >
         <Layers className="h-4 w-4 text-muted-foreground" />
-        <span className="sr-only sm:not-sr-only">
+        {/* The value shows exactly while the select is not drawn as an icon
+            (the toolbar's own width, not the window's). */}
+        <span className="sr-only @2xl/toolbar:not-sr-only">
           <SelectValue />
         </span>
       </SelectTrigger>
