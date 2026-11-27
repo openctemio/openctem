@@ -160,7 +160,7 @@ func (j *DigestJob) RunTenant(ctx context.Context, tenantID shared.ID) (bool, er
 			return false, fmt.Errorf("enqueue easm digest: %w", err)
 		}
 	}
-	j.notifyAdmins(ctx, tenantID, title, body, link)
+	j.notifyAdmins(ctx, tenantID, title, body, link, digestCoded(counts, total, page.Items, slot))
 	return true, nil
 }
 
@@ -171,7 +171,7 @@ func (j *DigestJob) release(ctx context.Context, tenantID shared.ID, slot time.T
 	}
 }
 
-func (j *DigestJob) notifyAdmins(ctx context.Context, tenantID shared.ID, title, body, link string) {
+func (j *DigestJob) notifyAdmins(ctx context.Context, tenantID shared.ID, title, body, link string, msg *notificationdom.Message) {
 	if j.inApp == nil || j.admins == nil {
 		return
 	}
@@ -185,7 +185,7 @@ func (j *DigestJob) notifyAdmins(ctx context.Context, tenantID shared.ID, title,
 		uid := id
 		if err := j.inApp.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-			NotificationType: notificationdom.TypeAttackSurfaceDigest, Title: title, Body: body,
+			NotificationType: notificationdom.TypeAttackSurfaceDigest, Title: title, Body: body, Message: msg,
 			Severity: notificationdom.SeverityInfo, URL: link,
 		}); err != nil {
 			j.log.Warn("easm digest: in-app notice failed", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
@@ -247,4 +247,24 @@ func digestMessage(counts map[easmchange.Kind]int, total int, items []easmchange
 	q.Set("from", from.Format(time.RFC3339))
 	q.Set("to", to.Format(time.RFC3339))
 	return title, b.String(), ChangesURL + "?" + q.Encode()
+}
+
+// digestCoded is the digest as a message code for the web: the total and the
+// end of the week as values, and one coded line per kind with its count
+// followed by one per named change (params.lines).
+func digestCoded(counts map[easmchange.Kind]int, total int, items []easmchange.Change, to time.Time) *notificationdom.Message {
+	lines := make([]*notificationdom.Message, 0, len(counts)+len(items))
+	for _, k := range easmchange.AllKinds() {
+		if n := counts[k]; n > 0 {
+			lines = append(lines, notificationdom.Msg("easm.digest.kind."+string(k), "count", n))
+		}
+	}
+	for _, c := range items {
+		name := c.AssetName
+		if name == "" {
+			name = c.New
+		}
+		lines = append(lines, notificationdom.Msg("easm.digest.change."+string(c.Kind), "name", name))
+	}
+	return notificationdom.Lines("easm.digest", lines, "count", total, "to_at", to.Format(time.RFC3339))
 }

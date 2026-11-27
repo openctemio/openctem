@@ -40,6 +40,7 @@ import {
   scopeFixLabel,
   scopeRefusalLabel,
   scopeRefusalMessage,
+  type Translate,
 } from '../lib/scope-codes'
 import { ScopeEntryDialog, type ScopeEntryDraft } from './scope-entry-dialog'
 import { ScopePendingEntry } from './scope-pending-entry'
@@ -248,21 +249,35 @@ export function ScopeFixButtons({ fixes, rule, onApplied, size = 'xs' }: ScopeFi
   )
 }
 
+const english: Translate = (_key, fallback = '', vars = {}) =>
+  fallback.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m))
+
 /** Where an allowed target's authority comes from, in words. */
-export function viaText(via: ApiScopeCheckResult['via']): string {
-  if (!via) return 'Allowed'
-  const proof = via.proof === 'verified' ? ', verified' : ''
+export function viaText(via: ApiScopeCheckResult['via'], t: Translate = english): string {
+  if (!via) return t('scope.check.via.allowed', 'Allowed')
+  const pattern = via.pattern ?? ''
+  const verified = via.proof === 'verified'
   switch (via.kind) {
     case 'scope_target':
-      return `Allowed by ${via.pattern ?? 'a scope entry'}${proof}`
+      return pattern
+        ? verified
+          ? t('scope.check.via.entryVerified', 'Allowed by {pattern}, verified', { pattern })
+          : t('scope.check.via.entry', 'Allowed by {pattern}', { pattern })
+        : t('scope.check.via.anEntry', 'Allowed by a scope entry')
     case 'seed':
-      return `Allowed under the seed ${via.pattern ?? ''}${proof}`.trim()
+      return verified
+        ? t('scope.check.via.seedVerified', 'Allowed under the seed {pattern}, verified', {
+            pattern,
+          })
+        : t('scope.check.via.seed', 'Allowed under the seed {pattern}', { pattern })
     case 'verified_domain':
-      return `Allowed under the verified domain ${via.pattern ?? ''}`.trim()
+      return t('scope.check.via.domain', 'Allowed under the verified domain {pattern}', {
+        pattern,
+      })
     case 'internal':
-      return 'Private target: routed by its scan zone'
+      return t('scope.check.via.internal', 'Private target: routed by its scan zone')
     default:
-      return 'Allowed'
+      return t('scope.check.via.allowed', 'Allowed')
   }
 }
 
@@ -295,12 +310,19 @@ export function ScopeCheckRow({
     const r = result as ApiScopeCheckResult
     return (
       <li className={cn('flex min-w-0 items-start gap-2 py-1.5 text-sm', className)}>
-        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-label="Allowed" />
+        <CheckCircle2
+          className="mt-0.5 h-4 w-4 shrink-0 text-success"
+          aria-label={t('scope.check.allowed', 'Allowed')}
+        />
         <div className="min-w-0">
           <span className="break-all font-mono text-xs">{target}</span>
           <p className="text-xs text-muted-foreground">
-            {viaText(r.via)}
-            {r.zone?.name ? `, zone ${r.zone.name}` : ''}
+            {r.zone?.name
+              ? t('scope.check.viaZone', '{via}, zone {zone}', {
+                  via: viaText(r.via, t),
+                  zone: r.zone.name,
+                })
+              : viaText(r.via, t)}
           </p>
         </div>
       </li>
@@ -310,9 +332,15 @@ export function ScopeCheckRow({
   return (
     <li className={cn('flex min-w-0 items-start gap-2 py-1.5 text-sm', className)}>
       {code === 'deny_list' || code === 'invalid_target' ? (
-        <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-label="Refused" />
+        <XCircle
+          className="mt-0.5 h-4 w-4 shrink-0 text-destructive"
+          aria-label={t('scope.check.refused', 'Refused')}
+        />
       ) : (
-        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-label="Refused" />
+        <ShieldAlert
+          className="mt-0.5 h-4 w-4 shrink-0 text-warning"
+          aria-label={t('scope.check.refused', 'Refused')}
+        />
       )}
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-baseline gap-x-2">
@@ -400,6 +428,7 @@ export function ScopeCheckList({
   probeTier,
   sensorPreference,
 }: ScopeCheckListProps) {
+  const { t } = useTranslation()
   const refused = results.filter((r) => !('allowed' in r && r.allowed))
   const allowed = showAllowed ? results.filter((r) => 'allowed' in r && r.allowed) : []
   const rows = [...refused, ...allowed]
@@ -407,7 +436,7 @@ export function ScopeCheckList({
   if (rows.length === 0) return null
   return (
     <div className={className}>
-      <ul className="divide-y" aria-label="Scope check per target">
+      <ul className="divide-y" aria-label={t('scope.check.results', 'Scope check per target')}>
         {shown.map((r, i) => (
           <ScopeCheckRow
             key={`${r.target}-${i}`}
@@ -419,7 +448,9 @@ export function ScopeCheckList({
         ))}
       </ul>
       {rows.length > shown.length && (
-        <p className="pt-1 text-xs text-muted-foreground">and {rows.length - shown.length} more</p>
+        <p className="pt-1 text-xs text-muted-foreground">
+          {t('scope.check.more', 'and {count} more', { count: rows.length - shown.length })}
+        </p>
       )}
     </div>
   )

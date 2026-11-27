@@ -24,6 +24,7 @@ import { usePermissions, Permission } from '@/lib/permissions'
 import { invalidateGroupMembership, pasteIntoGroup } from '../../api/use-group-rule-api'
 import { countPasteLines, MAX_PASTE_LINES } from '../../lib/group-paste'
 import { ImpactNotice } from './impact-notice'
+import { formatNumber } from '@/lib/app-locale'
 
 interface PasteEditorProps {
   text: string
@@ -111,11 +112,11 @@ export function PasteEditor({
         >
           {tooLong
             ? t('assetGroups.members.paste.tooLong', 'A list has at most {max} lines.', {
-                max: MAX_PASTE_LINES.toLocaleString(),
+                max: formatNumber(MAX_PASTE_LINES),
               })
             : t('assetGroups.members.paste.lines', '{count} lines, at most {max}', {
-                count: lines.toLocaleString(),
-                max: MAX_PASTE_LINES.toLocaleString(),
+                count: formatNumber(lines),
+                max: formatNumber(MAX_PASTE_LINES),
               })}
         </p>
       </div>

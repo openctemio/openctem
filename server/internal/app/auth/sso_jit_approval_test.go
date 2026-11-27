@@ -5,14 +5,19 @@ import (
 	"errors"
 	"testing"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	tenantdom "github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
-type fakeApprovalNotifier struct{ calls int }
+type fakeApprovalNotifier struct {
+	calls int
+	msg   *notificationdom.Message
+}
 
-func (f *fakeApprovalNotifier) NotifyAdmins(_ context.Context, _ shared.ID, _, _, _ string) {
+func (f *fakeApprovalNotifier) NotifyAdminsMsg(_ context.Context, _ shared.ID, msg *notificationdom.Message, _, _, _ string) {
 	f.calls++
+	f.msg = msg
 }
 
 func requireApproval(t *testing.T, tn *tenantdom.Tenant) {
@@ -42,6 +47,9 @@ func TestJITApproval_HoldsNewcomer(t *testing.T) {
 	}
 	if n.calls != 1 {
 		t.Fatalf("administrators notified %d times, want 1", n.calls)
+	}
+	if n.msg == nil || n.msg.Code != "sso.awaiting_approval" || n.msg.Params["email"] != "jit@corp.com" {
+		t.Fatalf("message = %+v", n.msg)
 	}
 
 	// The next sign-in, still waiting: refused again, nothing created.

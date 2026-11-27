@@ -2,6 +2,7 @@ package querylang
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -48,6 +49,9 @@ type Entity struct {
 	// mandatory are leaves ANDed to every query (exclusions the language
 	// cannot override), with a plain description each.
 	mandatory []Mandatory
+	// suggested are the paths people filter by most, in the order an
+	// editor offers them first.
+	suggested []string
 }
 
 // Mandatory is a server-side filter of an entity.
@@ -79,6 +83,11 @@ type EntityDef struct {
 	// the entity's search columns) that `text ~ "..."` compiles to; empty
 	// when the entity has no text search.
 	TextField string
+	// Suggested are the canonical paths people filter by most, in the
+	// order an editor offers them before every other field (Schema's
+	// "common" group). It orders suggestions only: every path stays
+	// usable whether it is listed or not.
+	Suggested []string
 }
 
 // NewEntity validates a declaration: every path, dimension, measure and
@@ -93,6 +102,9 @@ func NewEntity(d EntityDef) (*Entity, error) {
 		dims: map[string]string{}, measures: map[string]string{}, times: map[string]string{},
 		mandatory: d.Mandatory, text: d.TextField, bareIP: d.BareAddress, bareCVE: d.BareCVE}
 	if err := e.declareFields(d); err != nil {
+		return nil, err
+	}
+	if err := e.declareSuggested(d); err != nil {
 		return nil, err
 	}
 	add := func(kind string, dst map[string]string, list []string, ok func(*filterspec.Field) bool) error {
@@ -184,6 +196,21 @@ func (e *Entity) declareFields(d EntityDef) error {
 			return fmt.Errorf("querylang: %s: alias %q must name a canonical path, not %q", d.Name, a, p)
 		}
 		e.aliases[a] = p
+	}
+	return nil
+}
+
+// declareSuggested records the suggestion order: each entry a canonical,
+// non-internal path, listed once.
+func (e *Entity) declareSuggested(d EntityDef) error {
+	seen := map[string]bool{}
+	for _, p := range d.Suggested {
+		f := e.fieldName(p)
+		if _, ok := d.Registry.Field(f); !ok || f == "" || e.internal[f] || e.pathOf(f) != p || seen[p] {
+			return fmt.Errorf("querylang: %s: suggested %q must name a canonical path once", d.Name, p)
+		}
+		seen[p] = true
+		e.suggested = append(e.suggested, p)
 	}
 	return nil
 }
@@ -307,11 +334,29 @@ type FieldInfo struct {
 	GroupBy   bool     `json:"group_by,omitempty"`
 	Aggregate bool     `json:"aggregate,omitempty"`
 	Bucket    bool     `json:"bucket,omitempty"`
+	// Aliases are the other names a query may use for the path, shortest
+	// first ("kev" for is_in_kev); the printer prints the path.
+	Aliases []string `json:"aliases,omitempty"`
+	// Group places the path in the editor's suggestions: "common" (the
+	// entity's suggested paths), a relation ("asset" for asset.type),
+	// "more", or "identifier" (record ids nobody types by hand).
+	Group string `json:"group"`
 }
+
+// The groups of Schema's fields, in the order Schema lists them (relation
+// groups, named after the relation, sit between common and more).
+const (
+	GroupCommon     = "common"
+	GroupMore       = "more"
+	GroupIdentifier = "identifier"
+)
 
 // Schema is what a caller may use in queries on an entity.
 type Schema struct {
-	Entity     string      `json:"entity"`
+	Entity string `json:"entity"`
+	// Fields come in the order an editor offers them: the common group in
+	// the entity's suggested order, then relation groups, more and
+	// identifiers, each by path.
 	Fields     []FieldInfo `json:"fields"`
 	TextSearch bool        `json:"text_search"`
 }
@@ -322,17 +367,84 @@ type Schema struct {
 func (e *Entity) Schema(has func(string) bool) Schema {
 	may := func(p string) bool { return has != nil && has(p) }
 	s := Schema{Entity: e.Name, TextSearch: e.text != ""}
+	aliases := e.aliasesByPath()
 	for _, f := range e.Registry.Fields() {
 		path := e.pathOf(f.Name)
 		if _, ok := e.field(path, may); !ok {
 			continue
 		}
 		fi := FieldInfo{Path: path, Type: f.Type.String(), Enum: append([]string(nil), f.Enum...),
-			GroupBy: e.dims[path] != "", Aggregate: e.measures[path] != "", Bucket: e.times[path] != ""}
+			GroupBy: e.dims[path] != "", Aggregate: e.measures[path] != "", Bucket: e.times[path] != "",
+			Aliases: aliases[path]}
 		fi.Operators = textOperators(f)
+		fi.Group = e.groupOf(path, f, len(fi.Aliases) > 0)
 		s.Fields = append(s.Fields, fi)
 	}
+	e.sortForSuggestions(s.Fields)
 	return s
+}
+
+// aliasesByPath lists each path's aliases, shortest first, then by name.
+func (e *Entity) aliasesByPath() map[string][]string {
+	out := map[string][]string{}
+	for a, p := range e.aliases {
+		out[p] = append(out[p], a)
+	}
+	for _, list := range out {
+		sort.Slice(list, func(i, j int) bool {
+			if len(list[i]) != len(list[j]) {
+				return len(list[i]) < len(list[j])
+			}
+			return list[i] < list[j]
+		})
+	}
+	return out
+}
+
+// groupOf places a path: suggested paths are common; a relation path is
+// its relation's group; a record id (an id-typed field, or a *_id field
+// without a short name) is an identifier; the rest is more.
+func (e *Entity) groupOf(path string, f *filterspec.Field, aliased bool) string {
+	if slices.Contains(e.suggested, path) {
+		return GroupCommon
+	}
+	if rel, _, ok := strings.Cut(path, "."); ok {
+		return rel
+	}
+	if f.Type == filterspec.TypeID || (strings.HasSuffix(path, "_id") && !aliased) {
+		return GroupIdentifier
+	}
+	return GroupMore
+}
+
+// sortForSuggestions orders fields as Schema documents.
+func (e *Entity) sortForSuggestions(fields []FieldInfo) {
+	rank := func(fi FieldInfo) (int, string) {
+		switch fi.Group {
+		case GroupCommon:
+			return 0, ""
+		case GroupMore:
+			return 2, ""
+		case GroupIdentifier:
+			return 3, ""
+		default:
+			return 1, fi.Group
+		}
+	}
+	sort.SliceStable(fields, func(i, j int) bool {
+		ri, gi := rank(fields[i])
+		rj, gj := rank(fields[j])
+		if ri != rj {
+			return ri < rj
+		}
+		if ri == 0 {
+			return slices.Index(e.suggested, fields[i].Path) < slices.Index(e.suggested, fields[j].Path)
+		}
+		if gi != gj {
+			return gi < gj
+		}
+		return fields[i].Path < fields[j].Path
+	})
 }
 
 // textOperators lists the text operators a field accepts.

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck source-path=SCRIPTDIR
 # Tests for install.sh, setup.sh and lib/common.sh with a stub docker and stub
 # host tools (no containers, no network, no real keys).
 # Run: bash server/deploy/install.test.sh
@@ -314,7 +315,14 @@ check "sensor running, .env edited without it, no flag: kept (rerun keeps the ru
 rc="$(STUB_PS_DIR="$d/deploy" STUB_PS_FILES="$running" run_install "$d" --yes --no-sensor)"
 check "sensor running, explicit --no-sensor: allowed" bash -c "[ '$rc' = 0 ] && grep -qx 'COMPOSE_FILE=docker-compose.yml' '$d/deploy/.env'"
 
-# 23. docker-compose.override.yml: listed last when it exists, never when absent.
+# 23. A sensor profile image is verified against its release tag's identity.
+# shellcheck source=lib/common.sh
+id_of() { (source "$src/lib/common.sh" >/dev/null 2>&1; signing_identity "$1"); }
+check "relay profile image: release tag identity" [ "$(id_of ghcr.io/openctemio/sensor:v0.42.0-relay)" = "https://github.com/openctemio/sensor/.github/workflows/docker-publish.yml@refs/tags/v0.42.0" ]
+check "plain sensor image: unchanged identity" [ "$(id_of ghcr.io/openctemio/sensor:v0.41.1)" = "https://github.com/openctemio/sensor/.github/workflows/docker-publish.yml@refs/tags/v0.41.1" ]
+check "server image: unchanged identity" [ "$(id_of ghcr.io/openctemio/openctem-server:v0.24.1)" = "https://github.com/openctemio/openctem/.github/workflows/docker-publish.yml@refs/tags/v0.24.1" ]
+
+# 24. docker-compose.override.yml: listed last when it exists, never when absent.
 d="$(fixture)"
 printf 'services: {}\n' >"$d/deploy/docker-compose.override.yml"
 rc="$(run_install "$d" --yes --host ctem.example.com --version v9.9.9)"
@@ -331,7 +339,7 @@ rm -f "$d/deploy/docker-compose.override.yml"
 rc="$(run_install "$d" --yes --no-sensor)"
 check "override file removed: rerun does not list it" bash -c "[ '$rc' = 0 ] && grep -qx 'COMPOSE_FILE=docker-compose.yml' '$d/deploy/.env'"
 
-# 24. The summary names the feed mode and what it needs.
+# 25. The summary names the feed mode and what it needs.
 d="$(fixture)"
 rc="$(run_install "$d" --yes --host ctem.example.com --version v9.9.9)"
 check "summary, sensor on: relay through the bundled sensor, hosts named" bash -c "[ '$rc' = 0 ] && grep -q 'Vulnerability feed: the bundled sensor relays the feed' '$d/out' && grep -q 'github.com, release-assets.githubusercontent.com and objects.githubusercontent.com' '$d/out' && grep -q 'docs.openctem.io/operations/vulnerability-feed-setup/' '$d/out'"

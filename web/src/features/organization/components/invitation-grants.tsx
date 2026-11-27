@@ -5,6 +5,7 @@ import { CalendarClock, Globe, ShieldCheck, Users } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { RoleRiskBadge, RoleSummaryLine } from '@/features/access-control/components/role-risk'
 import type { RoleSummary } from '@/features/access-control/types/role.types'
+import { formatDate } from '@/lib/app-locale'
 
 /** What an invitation gives, as the public lookup returns it (api RFC-095 §5). */
 export interface InvitationGrants {
@@ -16,10 +17,10 @@ export interface InvitationGrants {
   mfa_reason?: 'outside_privileged' | 'organization_policy' | string
 }
 
-function formatDay(iso: string, locale: string): string {
+function formatDay(iso: string, _locale: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' })
+  return formatDate(d, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 /**
@@ -50,7 +51,7 @@ export function InvitationGrantsNotice({
 
       {roles.length > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="text-cap font-medium text-muted-foreground">
             {roles.length === 1 ? t('org.acceptInvite.role') : t('org.acceptInvite.roles')}
           </p>
           <ul className="space-y-2">
@@ -68,7 +69,7 @@ export function InvitationGrantsNotice({
       )}
 
       <div className="space-y-1">
-        <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="flex items-center gap-2 text-cap font-medium text-muted-foreground">
           <Users className="h-3.5 w-3.5" aria-hidden />
           {t('org.acceptInvite.teams')}
         </p>

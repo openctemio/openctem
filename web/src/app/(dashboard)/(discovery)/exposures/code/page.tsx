@@ -1,6 +1,8 @@
 'use client'
 
 import { Main } from '@/components/layout'
+import Link from '@/components/link'
+import { Button } from '@/components/ui/button'
 import { PageHeader, PageStack, EmptyState, ErrorState } from '@/features/shared'
 import { useDashboardStats } from '@/features/dashboard/hooks/use-dashboard-stats'
 import { useFindingTypeStats } from '@/features/exposures/hooks'
@@ -18,6 +20,7 @@ import { CODE_SOURCES } from '@/features/exposures/lib/type-sources'
 import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { FileCode } from 'lucide-react'
+import { formatNumber } from '@/lib/app-locale'
 
 export default function CodeWeaknessesPage() {
   const { t } = useTranslation()
@@ -38,10 +41,10 @@ export default function CodeWeaknessesPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('exposures.code.title', 'Code weaknesses')}
+          title={t('exposures.page.title', 'Exposures')}
           description={t(
             'exposures.code.description',
-            'Weaknesses in your source code found by static analysis (SAST), by severity and over time.'
+            'Weaknesses found in your source code by code scans, by severity and over time.'
           )}
         >
           <ViewFindingsButton stats={typeStats} sources={CODE_SOURCES} isLoading={typeLoading} />
@@ -64,8 +67,13 @@ export default function CodeWeaknessesPage() {
             title={t('exposures.code.emptyTitle', 'No code weaknesses yet')}
             description={t(
               'exposures.code.emptyDescription',
-              'Configure static analysis (SAST) scanners to detect security weaknesses in your code.'
+              'Scan your code repositories to find security weaknesses in the code.'
             )}
+            action={
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/scans">{t('exposures.empty.setUpScan', 'Set up a scan')}</Link>
+              </Button>
+            }
           />
         ) : !typeStats.scoped ? (
           <TypeBreakdownUnavailable
@@ -85,7 +93,7 @@ export default function CodeWeaknessesPage() {
                 description={t(
                   'exposures.code.severityDescription',
                   '{count} code findings by severity',
-                  { count: typeStats.total.toLocaleString() }
+                  { count: formatNumber(typeStats.total) }
                 )}
               >
                 <SeverityDonut bySeverity={typeStats.bySeverity} />
@@ -101,7 +109,7 @@ export default function CodeWeaknessesPage() {
                   data={stats.findingTrend}
                   emptyDescription={t(
                     'exposures.code.trendEmpty',
-                    'Run SAST scans to start tracking trends.'
+                    'Run code scans to start tracking trends.'
                   )}
                 />
               </ChartCard>

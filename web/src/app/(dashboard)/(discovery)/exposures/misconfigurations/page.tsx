@@ -3,6 +3,8 @@
 import { useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { Main } from '@/components/layout'
+import Link from '@/components/link'
+import { Button } from '@/components/ui/button'
 import { PageHeader, PageStack, EmptyState, ErrorState } from '@/features/shared'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDashboardStats } from '@/features/dashboard/hooks/use-dashboard-stats'
@@ -23,6 +25,7 @@ import { MISCONFIG_SOURCES } from '@/features/exposures/lib/type-sources'
 import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { Settings2 } from 'lucide-react'
+import { formatNumber } from '@/lib/app-locale'
 
 const AssetTypePie = dynamic(() => import('@/features/exposures/components/asset-type-pie'), {
   ssr: false,
@@ -61,10 +64,10 @@ export default function MisconfigurationsPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('exposures.misconfigurations.title', 'Misconfigurations')}
+          title={t('exposures.page.title', 'Exposures')}
           description={t(
             'exposures.misconfigurations.description',
-            'Infrastructure and cloud misconfigurations found by IaC and cloud posture scanning, by severity.'
+            'Infrastructure and cloud misconfigurations found by infrastructure-as-code and cloud scans, by severity.'
           )}
         >
           <ViewFindingsButton
@@ -91,8 +94,13 @@ export default function MisconfigurationsPage() {
             title={t('exposures.misconfigurations.emptyTitle', 'No misconfigurations yet')}
             description={t(
               'exposures.misconfigurations.emptyDescription',
-              'Run IaC or cloud posture scans to identify infrastructure and cloud misconfigurations.'
+              'Scan your infrastructure code and cloud accounts to find unsafe settings.'
             )}
+            action={
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/scans">{t('exposures.empty.setUpScan', 'Set up a scan')}</Link>
+              </Button>
+            }
           />
         ) : !typeStats.scoped ? (
           <TypeBreakdownUnavailable
@@ -112,7 +120,7 @@ export default function MisconfigurationsPage() {
                 description={t(
                   'exposures.misconfigurations.severityDescription',
                   '{count} misconfigurations by severity',
-                  { count: typeStats.total.toLocaleString() }
+                  { count: formatNumber(typeStats.total) }
                 )}
               >
                 <SeverityBars bySeverity={typeStats.bySeverity} />
@@ -122,7 +130,7 @@ export default function MisconfigurationsPage() {
                 description={t(
                   'exposures.misconfigurations.assetsDescription',
                   'Your asset mix across {count} assets',
-                  { count: stats.assets.total.toLocaleString() }
+                  { count: formatNumber(stats.assets.total) }
                 )}
               >
                 {assetTypeData.length > 0 ? (

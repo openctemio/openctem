@@ -49,9 +49,9 @@ import {
   CREDENTIAL_TYPE_DISPLAY_NAMES,
   isCredentialExpired,
   isCredentialExpiringSoon,
-  formatLastUsed,
 } from '@/lib/api/secret-store-types'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatRelative } from '@/lib/format-date'
 
 const CREDENTIAL_TYPE_ICONS: Record<CredentialType, React.ElementType> = {
   api_key: Key,
@@ -66,11 +66,12 @@ const CREDENTIAL_TYPE_ICONS: Record<CredentialType, React.ElementType> = {
 }
 
 function CredentialStatusBadge({ credential }: { credential: SecretStoreCredential }) {
+  const { t } = useTranslation()
   if (isCredentialExpired(credential)) {
     return (
       <Badge variant="destructive" className="gap-1">
         <AlertCircle className="h-3 w-3" />
-        Expired
+        {t('scans.credentials.status.expired', 'Expired')}
       </Badge>
     )
   }
@@ -78,15 +79,15 @@ function CredentialStatusBadge({ credential }: { credential: SecretStoreCredenti
     return (
       <Badge variant="secondary" className="gap-1">
         <AlertTriangle className="h-3 w-3" />
-        Expiring soon
+        {t('scans.credentials.status.expiringSoon', 'Expiring soon')}
       </Badge>
     )
   }
-  return <Badge variant="outline">Active</Badge>
+  return <Badge variant="outline">{t('scans.credentials.status.active', 'Active')}</Badge>
 }
 
 export function SecretStoreSection() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   // Dialog states
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -111,8 +112,8 @@ export function SecretStoreSection() {
   const handleRefresh = useCallback(async () => {
     await invalidateSecretStoreCache()
     await mutate()
-    toast.success('Credentials refreshed')
-  }, [mutate])
+    toast.success(t('scans.credentials.refreshed', 'Credentials refreshed'))
+  }, [mutate, t])
 
   const handleEditCredential = useCallback((credential: SecretStoreCredential) => {
     setSelectedCredential(credential)
@@ -128,21 +129,32 @@ export function SecretStoreSection() {
     if (!selectedCredential) return
     try {
       await deleteCredential()
-      toast.success(`Credential "${selectedCredential.name}" deleted`)
+      toast.success(
+        t('scans.credentials.deleted', 'Credential "{name}" deleted', {
+          name: selectedCredential.name,
+        })
+      )
       await invalidateSecretStoreCache()
       setDeleteDialogOpen(false)
       setSelectedCredential(null)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to delete credential'))
+      toast.error(
+        getErrorMessage(err, t('scans.credentials.deleteFailed', 'Failed to delete credential'))
+      )
     }
-  }, [selectedCredential, deleteCredential])
+  }, [selectedCredential, deleteCredential, t])
 
   const columns = useMemo<ColumnDef<SecretStoreCredential>[]>(
     () => [
       {
         id: 'name',
         accessorFn: (c) => `${c.name} ${c.description ?? ''}`,
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Credential" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scans.credentials.col.credential', 'Credential')}
+          />
+        ),
         cell: ({ row }) => {
           const credential = row.original
           const Icon = CREDENTIAL_TYPE_ICONS[credential.credential_type] || Key
@@ -167,22 +179,33 @@ export function SecretStoreSection() {
       {
         id: 'type',
         accessorFn: (c) => CREDENTIAL_TYPE_DISPLAY_NAMES[c.credential_type],
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Type" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t('scans.credentials.col.type', 'Type')} />
+        ),
         cell: ({ getValue }) => <Badge variant="outline">{getValue<string>()}</Badge>,
       },
       {
         id: 'status',
         enableSorting: false,
-        header: 'Status',
+        header: t('scans.credentials.col.status', 'Status'),
         cell: ({ row }) => <CredentialStatusBadge credential={row.original} />,
       },
       {
         id: 'last_used',
         accessorFn: (c) => c.last_used_at ?? '',
-        header: ({ column }) => <DataTableColumnHeader column={column} title="Last used" />,
+        header: ({ column }) => (
+          <DataTableColumnHeader
+            column={column}
+            title={t('scans.credentials.col.lastUsed', 'Last used')}
+          />
+        ),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">
-            {formatLastUsed(row.original.last_used_at)}
+            {formatRelative(
+              row.original.last_used_at,
+              t('scans.credentials.neverUsed', 'Never used'),
+              locale
+            )}
           </span>
         ),
       },
@@ -193,15 +216,19 @@ export function SecretStoreSection() {
         cell: ({ row }) => (
           <Can permission={[Permission.SecretStoreWrite, Permission.SecretStoreDelete]}>
             <DataTableRowActions
+              title={row.original.name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                name: row.original.name,
+              })}
               actions={[
                 {
-                  label: 'Edit',
+                  label: t('scans.credentials.row.edit', 'Edit'),
                   icon: Pencil,
                   onClick: () => handleEditCredential(row.original),
                   permission: Permission.SecretStoreWrite,
                 },
                 {
-                  label: 'Delete',
+                  label: t('scans.credentials.row.delete', 'Delete'),
                   icon: Trash2,
                   onClick: () => handleDeleteClick(row.original),
                   destructive: true,
@@ -214,28 +241,29 @@ export function SecretStoreSection() {
         ),
       },
     ],
-    [handleEditCredential, handleDeleteClick]
+    [handleEditCredential, handleDeleteClick, t, locale]
   )
 
   let body: React.ReactNode
   if (error) {
-    body = <ErrorState title="credentials" error={error} onRetry={handleRefresh} />
+    body = (
+      <ErrorState
+        title={t('scans.credentials.errorTitle', 'credentials')}
+        error={error}
+        onRetry={handleRefresh}
+      />
+    )
   } else if (isLoading) {
     body = <TableSkeleton rows={3} />
   } else if (credentials.length === 0) {
     body = (
       <EmptyState
         icon={KeyRound}
-        title="No credentials"
-        description="Add credentials to authenticate with template sources."
-        action={
-          <Can permission={Permission.SecretStoreWrite}>
-            <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Add credential
-            </Button>
-          </Can>
-        }
+        title={t('scans.credentials.empty.title', 'No credentials')}
+        description={t(
+          'scans.credentials.empty.description',
+          'Add credentials to authenticate with template sources.'
+        )}
       />
     )
   } else {
@@ -246,7 +274,7 @@ export function SecretStoreSection() {
         getRowId={(c) => c.id}
         searchPlaceholder={t('scans.credentials.search', 'Search credentials…')}
         toolbarEnd={<RefreshButton onClick={handleRefresh} loading={isLoading} />}
-        emptyMessage="No credentials match your search"
+        emptyMessage={t('scans.credentials.noMatch', 'No credentials match your search')}
       />
     )
   }
@@ -254,13 +282,16 @@ export function SecretStoreSection() {
   return (
     <PageStack>
       <PageHeader
-        title="Source credentials"
-        description="Encrypted credentials that template sources use to authenticate (Git tokens, cloud keys and more)."
+        title={t('settings.item.source-credentials', 'Source credentials')}
+        description={t(
+          'settings.page.sourceCredentials.description',
+          'Encrypted credentials that template sources use to authenticate (Git tokens, cloud keys and more).'
+        )}
       >
         <Can permission={Permission.SecretStoreWrite}>
           <Button size="sm" onClick={() => setAddDialogOpen(true)}>
             <Plus className="h-4 w-4" />
-            Add credential
+            {t('scans.credentials.add', 'Add credential')}
           </Button>
         </Can>
       </PageHeader>

@@ -28,6 +28,7 @@ import { formatDistanceToNow } from 'date-fns'
 import type { SyncStatus, ThreatIntelSource } from '@/lib/api/threatintel-types'
 import { triggerSync, setSyncEnabled } from '../hooks/use-threat-intel'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { formatNumber } from '@/lib/app-locale'
 
 interface SyncStatusManagerProps {
   statuses: SyncStatus[]
@@ -218,7 +219,7 @@ function SyncStatusRow({ status, onUpdate }: SyncStatusRowProps) {
           {status.records_synced > 0 && (
             <span>
               {t('threatIntel.sync.records', undefined, {
-                n: status.records_synced.toLocaleString(),
+                n: formatNumber(status.records_synced),
               })}
             </span>
           )}

@@ -12,7 +12,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { FilterSelect } from '@/features/shared/components/filter-select'
 import { useListParams } from '@/hooks/use-list-params'
-import { DataTable, ErrorState, ListToolbar, PageHeader, PageStack } from '@/features/shared'
+import { DataTable, ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import {
   setMcpClientBlocked,
@@ -26,6 +26,14 @@ const KIND_KEY: Record<AdminMcpClient['kind'], string> = {
   metadata_document: 'admin.aiApplications.kind.metadataDocument',
   organization: 'admin.aiApplications.kind.organization',
   dynamic: 'admin.aiApplications.kind.dynamic',
+}
+
+// The platform's own terminal client (a seeded row): its stored name is the
+// English one, so it reads in the viewer's language.
+const TERMINAL_CLIENT_ID = 'octc_terminal'
+
+function displayName(t: ReturnType<typeof useTranslation>['t'], c: AdminMcpClient): string {
+  return c.client_id === TERMINAL_CLIENT_ID ? t('mcp.connections.terminal', c.name) : c.name
 }
 
 /**
@@ -48,6 +56,7 @@ export default function AiApplicationsPage() {
   const [pendingBlock, setPendingBlock] = useState<AdminMcpClient | null>(null)
   const { t } = useTranslation()
   const canBlock = adminHas(me, 'platform.ai_clients.manage')
+  const clientName = (c: AdminMcpClient) => displayName(t, c)
 
   const toggle = async (c: AdminMcpClient) => {
     setBusy(c.id)
@@ -56,9 +65,11 @@ export default function AiApplicationsPage() {
       setPendingBlock(null)
       toast.success(
         c.blocked
-          ? t('admin.systemAiApplicationsPage.unblocked', '{name} unblocked', { name: c.name })
+          ? t('admin.systemAiApplicationsPage.unblocked', '{name} unblocked', {
+              name: clientName(c),
+            })
           : t('admin.systemAiApplicationsPage.blockedEverywhere', '{name} blocked everywhere', {
-              name: c.name,
+              name: clientName(c),
             })
       )
       await mutate()
@@ -87,8 +98,8 @@ export default function AiApplicationsPage() {
                 {/* Applications that name themselves (a metadata document or a
                             dynamic registration) are identified by where they live: the
                             name is whatever the application chose to say. */}
-                <span className="font-medium break-all">
-                  {c.kind === 'organization' ? c.name : c.host || c.name}
+                <span className="font-medium break-words">
+                  {c.kind === 'organization' ? displayName(t, c) : c.host || c.name}
                 </span>
                 <Badge variant={c.kind === 'dynamic' ? 'outline' : 'secondary'}>
                   {t(KIND_KEY[c.kind])}
@@ -113,7 +124,6 @@ export default function AiApplicationsPage() {
                       )}
                 </p>
               )}
-              <p className="text-muted-foreground font-mono text-xs break-all">{c.client_id}</p>
               <p className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
                 <span>
                   {t(
@@ -148,6 +158,8 @@ export default function AiApplicationsPage() {
       },
       {
         id: 'actions',
+        // Labelled buttons: as wide as they need (the 48 px actions column cut them).
+        meta: { kind: 'decisions' },
         header: '',
         cell: ({ row }) => {
           const c = row.original
@@ -190,28 +202,8 @@ export default function AiApplicationsPage() {
           title={t('admin.systemAiApplicationsPage.aiApplications', 'AI applications')}
           description={t(
             'admin.systemAiApplicationsPage.mcpClientsThatConnectTo',
-            'MCP clients that connect to this deployment, with their usage. Block one to stop it everywhere.'
+            'AI tools and apps that connect to this platform, with their usage. Block one to stop it everywhere.'
           )}
-        />
-        <ListToolbar
-          search={{
-            value: list.q,
-            onChange: list.setSearch,
-            placeholder: t('admin.systemAiApplicationsPage.search', 'Search host or name…'),
-            label: t('admin.systemAiApplicationsPage.searchLabel', 'Search AI applications'),
-          }}
-          start={
-            <FilterSelect
-              label={t('admin.systemAiApplicationsPage.filterLabel', 'State')}
-              value={state}
-              allValue="all"
-              allLabel={t('admin.systemAiApplicationsPage.filterAll', 'All')}
-              onChange={(v) => list.setFilter('state', v || 'all')}
-              options={[
-                { value: 'blocked', label: t('admin.systemAiApplicationsPage.blocked', 'Blocked') },
-              ]}
-            />
-          }
         />
         {error ? (
           <ErrorState
@@ -226,6 +218,28 @@ export default function AiApplicationsPage() {
             getRowId={(c) => c.id}
             isLoading={isLoading}
             showSearch={false}
+            // The search and the state filter share the Display menu's row.
+            search={{
+              value: list.q,
+              onChange: list.setSearch,
+              placeholder: t('admin.systemAiApplicationsPage.search', 'Search host or name…'),
+              label: t('admin.systemAiApplicationsPage.searchLabel', 'Search AI applications'),
+            }}
+            toolbarStart={
+              <FilterSelect
+                label={t('admin.systemAiApplicationsPage.filterLabel', 'State')}
+                value={state}
+                allValue="all"
+                allLabel={t('admin.systemAiApplicationsPage.filterAll', 'All')}
+                onChange={(v) => list.setFilter('state', v || 'all')}
+                options={[
+                  {
+                    value: 'blocked',
+                    label: t('admin.systemAiApplicationsPage.blocked', 'Blocked'),
+                  },
+                ]}
+              />
+            }
             showColumnToggle={false}
             showSelectionCount={false}
             emptyMessage={
@@ -253,10 +267,10 @@ export default function AiApplicationsPage() {
           title={
             pendingBlock?.blocked
               ? t('confirm.mcpClient.unblockTitle', 'Unblock {name} everywhere?', {
-                  name: pendingBlock.name,
+                  name: clientName(pendingBlock),
                 })
               : t('confirm.mcpClient.blockTitle', 'Block {name} everywhere?', {
-                  name: pendingBlock?.name ?? '',
+                  name: pendingBlock ? clientName(pendingBlock) : '',
                 })
           }
           desc={

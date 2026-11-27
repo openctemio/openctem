@@ -65,7 +65,6 @@ export function ReactionPicker({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
       <PopoverContent
-        align="start"
         className="w-auto overflow-hidden p-0"
         // Keep Esc for the picker: it closes the popover, not the whole panel.
         onEscapeKeyDown={(e) => e.stopPropagation()}

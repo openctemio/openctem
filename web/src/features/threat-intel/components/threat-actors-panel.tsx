@@ -77,6 +77,7 @@ import {
   type CreateThreatActorInput,
 } from '../api/use-threat-actors-api'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 const ALL = 'all'
 
@@ -90,7 +91,7 @@ function typeLabel(t: TFn, type: ActorType): string {
 function formatDate(iso: string): string {
   if (!iso) return '—'
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString()
+  return Number.isNaN(d.getTime()) ? '—' : localeFormatDate(d)
 }
 
 /** "financial_gain" → "Financial gain" (motivation is stored as a slug). */
@@ -207,6 +208,10 @@ export function ThreatActorsPanel() {
         id: 'actions',
         cell: ({ row }) => (
           <DataTableRowActions
+            title={row.original.name}
+            label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+              name: row.original.name,
+            })}
             actions={[
               {
                 label: t('threatIntel.actors.viewDetails'),
@@ -243,7 +248,7 @@ export function ThreatActorsPanel() {
   // tab of the Threat intelligence page, whose header is the page's only one.
   const typeSelect = (
     <Select value={typeFilter} onValueChange={setTypeFilter}>
-      <SelectTrigger className="h-9 w-40" aria-label={t('threatIntel.actors.filterType')}>
+      <SelectTrigger className="w-40" aria-label={t('threatIntel.actors.filterType')}>
         <SelectValue placeholder={t('threatIntel.actors.allTypes')} />
       </SelectTrigger>
       <SelectContent>
@@ -289,7 +294,12 @@ export function ThreatActorsPanel() {
             <>
               {typeSelect}
               <Can permission={Permission.ThreatIntelWrite} mode="disable">
-                <Button size="sm" className="h-9" onClick={() => setCreateOpen(true)}>
+                <Button
+                  iconOnlyBelow="sm"
+                  size="sm"
+
+                  onClick={() => setCreateOpen(true)}
+                >
                   <Plus className="h-4 w-4 sm:me-2" />
                   <span className="sr-only sm:not-sr-only">{t('threatIntel.actors.add')}</span>
                 </Button>
@@ -495,7 +505,7 @@ export function ThreatActorDetailSheet({
                     href={sanitizeExternalUrl(ref.url)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-sm break-all text-primary hover:underline"
+                    className="inline-flex items-center gap-1 text-sm break-words text-primary hover:underline"
                   >
                     {ref.source || ref.url}
                     <ExternalLink className="h-3 w-3 shrink-0" />

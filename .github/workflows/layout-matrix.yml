@@ -1,0 +1,260 @@
+name: Layout matrix
+
+# MVP acceptance v2 on GitHub-hosted runners: the routes given at dispatch go
+# through the full viewport matrix and the v2 detectors (spec
+# web/e2e/specs/75e-layout-matrix.spec.ts, or the console's
+# web/console/e2e/specs/layout-matrix.spec.ts), split over parallel shards.
+# On demand only; it gates nothing.
+#
+#   gh workflow run layout-matrix.yml --ref <branch> -f routes='/scans /findings' -f console=false
+#   gh run download <run-id> -n layout-matrix-merged -D <dir>
+#
+# Jobs
+#   plan       checks the inputs and splits the routes into at most `shards`
+#              groups, by route (a route's widths stay in one shard).
+#   build-api  the API image (web/e2e/ci/docker-bake.hcl, target api), saved
+#              as one artifact for every shard.
+#   build-web  the web (`next build`) or, with console, the console
+#              (`next build console`), once, as one artifact.
+#   shard      one per group: loads both, starts the e2e stack of web/e2e/ci
+#              (compose.yml, seed.sh, plus seed-matrix.sh) and runs the routes
+#              with web/e2e/ci/layout-matrix.sh. Artifact
+#              layout-matrix-shard-<n>: per route <slug>.json (detector totals
+#              and findings) and <slug>/ (w<width>.json and screenshots).
+#   summary    the per-route totals as a table in the run summary, and every
+#              shard's output in one artifact, layout-matrix-merged.
+#
+# Security: read-only token, no secrets, no pull request trigger; the stack's
+# passwords are random per run and masked (make-env.sh, layout-matrix.sh); the
+# inputs reach the shell through the environment only and are checked in
+# `plan` before any use.
+
+on:
+  workflow_dispatch:
+    inputs:
+      routes:
+        description: "Routes, space-separated (e.g. /scans /findings '/findings/[id]' /sensors@zones)"
+        required: true
+        type: string
+      console:
+        description: The routes are platform console routes
+        type: boolean
+        default: false
+      widths:
+        description: "Widths, comma-separated (e.g. 390,1440); empty for all"
+        type: string
+        default: ''
+      shards:
+        description: Parallel shards (1-20)
+        type: string
+        default: '8'
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Split the routes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.split.outputs.matrix }}
+    steps:
+      - id: split
+        env:
+          ROUTE_LIST: ${{ inputs.routes }}
+          SHARDS: ${{ inputs.shards }}
+          WIDTHS: ${{ inputs.widths }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$SHARDS" =~ ^[0-9]+$ ]] || [ "$SHARDS" -lt 1 ] || [ "$SHARDS" -gt 20 ]; then
+            echo "::error::shards must be 1-20"; exit 1
+          fi
+          [[ "$WIDTHS" =~ ^[0-9,]*$ ]] || { echo "::error::widths: digits and commas only"; exit 1; }
+          read -r -a routes <<< "$ROUTE_LIST"
+          [ "${#routes[@]}" -ge 1 ] || { echo "::error::no route given"; exit 1; }
+          # A route, or a route state of helpers/layout-matrix.ts (/sensors@zones).
+          re='^/[][A-Za-z0-9._~/-]*(@[a-z0-9-]+)?$'
+          for r in "${routes[@]}"; do
+            [[ "$r" =~ $re ]] || { echo "::error::not a route path: $r"; exit 1; }
+          done
+          n=$(( SHARDS < ${#routes[@]} ? SHARDS : ${#routes[@]} ))
+          printf '%s\n' "${routes[@]}" | jq -R . | jq -sc --argjson n "$n" '
+            . as $r | {include: [range(0; $n) as $i | {id: ($i + 1),
+              routes: ([$r | to_entries[] | select(.key % $n == $i) | .value] | join(" "))}]}' \
+            | sed 's/^/matrix=/' >> "$GITHUB_OUTPUT"
+          { echo "### Layout matrix"; echo; echo "- routes: ${#routes[@]}, shards: $n"; } >> "$GITHUB_STEP_SUMMARY"
+
+  build-api:
+    name: Build the API image
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # Reads the e2e layer cache when this ref can see it; never writes it.
+      - name: Build the image
+        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
+        with:
+          source: .
+          files: web/e2e/ci/docker-bake.hcl
+          targets: api
+      - name: Save the image
+        run: docker save local/openctem-server:e2e | gzip -1 > api-image.tar.gz
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: layout-matrix-api
+          path: api-image.tar.gz
+          compression-level: 0
+          retention-days: 1
+
+  build-web:
+    name: Build the app
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+      # The app compiles against the generated contract files (not committed).
+      - name: Generate the contract files
+        uses: ./.github/actions/generate-contract
+      - name: Build
+        working-directory: web
+        env:
+          CONSOLE: ${{ inputs.console }}
+          NEXT_TELEMETRY_DISABLED: '1'
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: |
+          set -euo pipefail
+          if [ "$CONSOLE" = true ]; then dir=console/.next; npx next build console; else dir=.next; npx next build; fi
+          rm -rf "$dir/cache"
+          tar -czf "$GITHUB_WORKSPACE/web-build.tar.gz" "$dir"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: layout-matrix-web
+          path: web-build.tar.gz
+          compression-level: 0
+          retention-days: 1
+
+  shard:
+    name: Shard ${{ matrix.id }}
+    needs: [plan, build-api, build-web]
+    # GitHub-hosted: the stack publishes on 127.0.0.1 of the job's Docker host.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      API_IMAGE: local/openctem-server:e2e
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: layout-matrix-api
+          path: ${{ runner.temp }}/build
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: layout-matrix-web
+          path: ${{ runner.temp }}/build
+      - name: Load the API image and the build
+        env:
+          BUILD: ${{ runner.temp }}/build
+        run: |
+          gzip -dc "$BUILD/api-image.tar.gz" | docker load
+          tar -xzf "$BUILD/web-build.tar.gz" -C web
+          rm -rf "$BUILD"
+      # Random passwords and secrets for this run, masked in the log.
+      - name: Generate the stack's secrets
+        run: bash web/e2e/ci/make-env.sh
+      - name: Pull the stack's third-party images
+        run: bash .github/scripts/retry.sh docker compose -f web/e2e/ci/compose.yml pull --quiet postgres redis
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+      - name: Playwright version
+        id: pw
+        working-directory: web
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - name: Install Chromium
+        working-directory: web
+        run: ../.github/scripts/install-chromium.sh --only-shell
+      - name: Run the matrix
+        env:
+          CONSOLE: ${{ inputs.console && '1' || '0' }}
+          LAYOUT_WIDTHS: ${{ inputs.widths }}
+          ROUTE_LIST: ${{ matrix.routes }}
+          SHARD: ${{ matrix.id }}
+          OUT: ${{ runner.temp }}/out
+          STACK_DIR: ${{ runner.temp }}/stack
+        run: |
+          read -r -a routes <<< "$ROUTE_LIST"
+          bash web/e2e/ci/layout-matrix.sh "$OUT" "${routes[@]}"
+          mv "$OUT/run.log" "$OUT/run-shard-$SHARD.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: layout-matrix-shard-${{ matrix.id }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: warn
+          retention-days: 7
+
+  summary:
+    name: Merge the shards
+    needs: shard
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: layout-matrix-shard-*
+          merge-multiple: true
+          path: merged
+      - name: Detector totals
+        run: |
+          set -euo pipefail
+          {
+            echo "### Detector totals"
+            echo
+            echo "| Route | Total | By detector |"
+            echo "| --- | ---: | --- |"
+            found=0
+            for f in merged/*.json; do
+              [ -f "$f" ] || continue
+              found=1
+              jq -r '"| `\(.route)` | \([.totals[]] | add // 0) | \(.totals | to_entries | map("\(.key): \(.value)") | join(", ") | if . == "" then "none" else . end) |"' "$f"
+            done
+            [ "$found" = 1 ] || echo "| (no route output) | | |"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: layout-matrix-merged
+          path: merged/
+          if-no-files-found: warn
+          retention-days: 14

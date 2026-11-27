@@ -1,4 +1,5 @@
 {
+  "integrationsHub.addHeading": "Kết nối thêm công cụ",
   "integrationsHub.badge.soon": "Sắp ra mắt",
   "integrationsHub.categories.import-mappings.description": "Chuyển bản xuất CSV, JSON hoặc XML thành phát hiện và tài sản",
   "integrationsHub.categories.import-mappings.title": "Ánh xạ nhập dữ liệu",
@@ -9,7 +10,7 @@
   "integrationsHub.categories.security.description": "Nhập tệp xuất kết quả quét Nessus và Tenable",
   "integrationsHub.categories.security.title": "Trình quét lỗ hổng",
   "integrationsHub.categories.siem.description": "Chuyển tiếp sự kiện bảo mật tới Splunk",
-  "integrationsHub.categories.siem.title": "SIEM",
+  "integrationsHub.categories.siem.title": "Chuyển tiếp sự kiện",
   "integrationsHub.categories.ticket-mapping.description": "Các trường và trạng thái được đồng bộ với Jira",
   "integrationsHub.categories.ticket-mapping.title": "Ánh xạ trường phiếu",
   "integrationsHub.categories.ticketing.description": "Kết nối Jira",

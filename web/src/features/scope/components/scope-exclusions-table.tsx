@@ -13,19 +13,13 @@
  * mode…" opens the two-step dialog (exclusion approvers only, step-up).
  */
 
+import { BreakText } from '@/features/shared/components/break-text'
 import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useRouter } from 'next/navigation'
 import { Ban, FlaskConical, Inbox, Power, PowerOff, Route, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import {
@@ -46,7 +40,7 @@ import {
 } from '../api/use-scope-api'
 import type { ApiScopeExclusion } from '../api/scope-api.types'
 import { scopeExclusionKindLabel } from '../lib/exclusion-kind'
-import { scopeErrorMessage } from '../lib/scope-codes'
+import { scopeErrorMessage, type Translate } from '../lib/scope-codes'
 import { coversText, expiryText } from '../lib/scope-entry'
 import {
   effectiveTesting,
@@ -62,24 +56,57 @@ import { ExclusionTestingDialog } from './exclusion-testing-dialog'
 import {
   scopeKindIcon,
   scopeKindOf,
-  ScopeTargetTypeSelect,
   scopeTargetTypeLabel,
   storedTypesFor,
   EXCLUSION_KINDS,
 } from './scope-target-type'
 import { SCOPE_PAGE_SIZES, type ScopeListQuery } from './scope-entries-table'
+import { ScopeListFilters } from './scope-list-filters'
+import { ScopeRowCard } from './scope-row-card'
 
-/** Labels and hints are English fallbacks; the keys are scope.exclusion.status.<status>.label/hint. */
-const EXCLUSION_STATUS: Record<string, { label: string; tone: PillTone; hint: string }> = {
-  active: { label: 'Excluded', tone: 'success', hint: 'Scans skip it.' },
-  pending: {
-    label: 'Pending approval',
-    tone: 'warning',
-    hint: 'Scans still reach it until another approver approves the exclusion.',
-  },
-  inactive: { label: 'Lifted', tone: 'muted', hint: 'Not in effect: scans may reach it.' },
-  rejected: { label: 'Rejected', tone: 'destructive', hint: 'Declined: never took effect.' },
-  expired: { label: 'Ended', tone: 'muted', hint: 'Its end date passed: scans may reach it.' },
+const EXCLUSION_STATUS_TONE: Record<string, PillTone> = {
+  active: 'success',
+  pending: 'warning',
+  inactive: 'muted',
+  rejected: 'destructive',
+  expired: 'muted',
+}
+
+/** Label and hint of an exclusion status; an unknown status reads as lifted. */
+function exclusionStatusText(t: Translate, s: string): { label: string; hint: string } {
+  const key = `scope.exclusion.status.${s}`
+  switch (s) {
+    case 'active':
+      return { label: t(`${key}.label`, 'Excluded'), hint: t(`${key}.hint`, 'Scans skip it.') }
+    case 'pending':
+      return {
+        label: t(`${key}.label`, 'Pending approval'),
+        hint: t(
+          `${key}.hint`,
+          'Scans still reach it until another approver approves the exclusion.'
+        ),
+      }
+    case 'rejected':
+      return {
+        label: t(`${key}.label`, 'Rejected'),
+        hint: t(`${key}.hint`, 'Declined: never took effect.'),
+      }
+    case 'expired':
+      return {
+        label: t(`${key}.label`, 'Ended'),
+        hint: t(`${key}.hint`, 'Its end date passed: scans may reach it.'),
+      }
+    case 'inactive':
+      return {
+        label: t(`${key}.label`, 'Lifted'),
+        hint: t(`${key}.hint`, 'Not in effect: scans may reach it.'),
+      }
+    default:
+      return {
+        label: t(`${key}.label`, s),
+        hint: t(`${key}.hint`, 'Not in effect: scans may reach it.'),
+      }
+  }
 }
 
 /**
@@ -96,7 +123,7 @@ interface ScopeExclusionsTableProps {
   onKindChange: (v: string) => void
   onStatusChange: (v: string) => void
   onPagination: (p: { pageIndex: number; pageSize: number }) => void
-  /** Controls the page puts first in the toolbar (which scope list is shown). */
+  /** The page's switch of which scope list is shown, drawn at the toolbar's end. */
   leading?: React.ReactNode
 }
 
@@ -131,8 +158,7 @@ export function ScopeExclusionsTable({
   const [busy, setBusy] = useState(false)
   const [testing, setTesting] = useState<PathExclusion | null>(null)
 
-  const statusLabel = (s: string) =>
-    t(`scope.exclusion.status.${s}.label`, EXCLUSION_STATUS[s]?.label ?? s)
+  const statusLabel = (s: string) => exclusionStatusText(t, s).label
 
   const act = async (fn: () => Promise<unknown>, done: string) => {
     try {
@@ -238,8 +264,8 @@ export function ScopeExclusionsTable({
         if (isPathExclusion(x))
           return (
             <div className="min-w-0 space-y-0.5">
-              <code className="break-all rounded bg-muted px-1.5 py-0.5 text-sm">
-                {pathRuleLabel(x)}
+              <code className="break-words rounded bg-muted px-1.5 py-0.5 text-sm">
+                <BreakText>{pathRuleLabel(x)}</BreakText>
               </code>
               <p className="text-xs text-muted-foreground">
                 {t(
@@ -256,10 +282,12 @@ export function ScopeExclusionsTable({
           )
         return (
           <div className="min-w-0 space-y-0.5">
-            <code className="break-all rounded bg-muted px-1.5 py-0.5 text-sm">{x.pattern}</code>
+            <code className="break-words rounded bg-muted px-1.5 py-0.5 text-sm">
+              <BreakText>{x.pattern}</BreakText>
+            </code>
             <p className="text-xs text-muted-foreground">
               {t('scope.col.covers', 'Covers {what}', {
-                what: coversText({ pattern: x.pattern, target_type: x.exclusion_type }),
+                what: coversText({ pattern: x.pattern, target_type: x.exclusion_type }, t),
               })}
             </p>
           </div>
@@ -276,10 +304,10 @@ export function ScopeExclusionsTable({
           ) : (
             (scopeKindIcon(row.original.exclusion_type) ?? <Ban className="h-4 w-4" />)
           )}
-          <span className="text-sm text-foreground">
+          <span className="whitespace-nowrap text-sm text-foreground">
             {isPathExclusion(row.original)
               ? t('scope.exclusion.webPath', 'Web path')
-              : scopeTargetTypeLabel(row.original.exclusion_type ?? '')}
+              : scopeTargetTypeLabel(row.original.exclusion_type ?? '', t)}
           </span>
         </div>
       ),
@@ -287,10 +315,16 @@ export function ScopeExclusionsTable({
     {
       id: 'why',
       header: t('scope.col.why', 'Why'),
+      // The reason stays with the why (one line, whole text in the tooltip).
       cell: ({ row }) => (
-        <span className="text-sm" data-testid="exclusion-why">
-          {scopeExclusionKindLabel(t, (row.original as { kind?: string }).kind)}
-        </span>
+        <div className="min-w-0 space-y-0.5" title={row.original.reason || undefined}>
+          <span className="whitespace-nowrap text-sm" data-testid="exclusion-why">
+            {scopeExclusionKindLabel(t, (row.original as { kind?: string }).kind)}
+          </span>
+          {row.original.reason && (
+            <p className="line-clamp-1 text-xs text-muted-foreground">{row.original.reason}</p>
+          )}
+        </div>
       ),
     },
     {
@@ -298,15 +332,15 @@ export function ScopeExclusionsTable({
       header: t('scope.col.status', 'Status'),
       cell: ({ row }) => {
         const x = row.original as PathExclusion
-        const s = EXCLUSION_STATUS[x.status ?? ''] ?? EXCLUSION_STATUS.inactive
+        const tone = EXCLUSION_STATUS_TONE[x.status ?? ''] ?? EXCLUSION_STATUS_TONE.inactive
         const mode = effectiveTesting(x)
         return (
           <div className="flex flex-col items-start gap-1">
             <TonePill
-              tone={s.tone}
+              tone={tone}
               label={statusLabel(x.status ?? 'inactive')}
-              title={t(`scope.exclusion.status.${x.status ?? 'inactive'}.hint`, s.hint)}
-              detail={x.expires_at ? expiryText(x.expires_at) : undefined}
+              title={exclusionStatusText(t, x.status ?? 'inactive').hint}
+              detail={x.expires_at ? expiryText(x.expires_at, undefined, t) : undefined}
               state={x.status}
             />
             {isPathExclusion(x) && x.status === 'active' && (
@@ -318,7 +352,7 @@ export function ScopeExclusionsTable({
                 title={t(`scope.testing.hint.${mode}`, TESTING_HINT[mode])}
                 detail={
                   mode !== 'blocked' && x.testing_until
-                    ? expiryText(x.testing_until).replace('Expires in', 'Blocked again in')
+                    ? expiryText(x.testing_until, undefined, t, 'blocked')
                     : undefined
                 }
                 state={`testing-${mode}`}
@@ -329,24 +363,24 @@ export function ScopeExclusionsTable({
       },
     },
     {
-      accessorKey: 'reason',
-      header: t('scope.col.reason', 'Reason'),
-      cell: ({ row }) => (
-        <span className="line-clamp-2 text-sm text-muted-foreground" title={row.original.reason}>
-          {row.original.reason || '-'}
-        </span>
-      ),
-    },
-    {
       accessorKey: 'created_by',
       header: t('scope.col.addedBy', 'Added by'),
-      cell: ({ row }) => <ActorChip actor={row.original.created_by} at={row.original.created_at} />,
+      cell: ({ row }) => (
+        <div className="max-w-64 min-w-0">
+          <ActorChip
+            actor={row.original.created_by}
+            at={row.original.created_at}
+            className="max-w-full"
+          />
+        </div>
+      ),
     },
     {
       id: 'actions',
       enableHiding: false,
       cell: ({ row }) => (
         <DataTableRowActions
+          title={row.original.pattern ?? ''}
           label={t('scope.col.actionsFor', 'Actions for {pattern}', {
             pattern: row.original.pattern ?? '',
           })}
@@ -379,37 +413,56 @@ export function ScopeExclusionsTable({
             placeholder: t('scope.exclusion.search', 'Search exclusions…'),
             label: t('scope.exclusion.searchLabel', 'Search exclusions'),
           }}
-          toolbarStart={
-            <>
-              {leading}
-              <ScopeTargetTypeSelect
-                value={kind ?? 'all'}
-                onValueChange={onKindChange}
-                withAll
-                only={EXCLUSION_KINDS}
-                className="h-9 w-auto min-w-36"
-                aria-label={t('scope.filter.kind', 'Filter by kind')}
-              />
-              <Select value={query.status} onValueChange={onStatusChange}>
-                <SelectTrigger
-                  className="h-9 w-auto min-w-36"
-                  aria-label={t('scope.filter.status', 'Filter by status')}
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    {t('scope.filter.allStatuses', 'All statuses')}
-                  </SelectItem>
-                  {OUT_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {statusLabel(s)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </>
+          toolbarEnd={leading}
+          // When the table still scrolls sideways the row menu stays in view.
+          pinActions
+          filter={
+            <ScopeListFilters
+              kind={kind ?? 'all'}
+              status={query.status}
+              onKindChange={onKindChange}
+              onStatusChange={onStatusChange}
+              kinds={EXCLUSION_KINDS}
+              statuses={OUT_STATUSES.map((s) => ({ value: s, label: statusLabel(s) }))}
+            />
           }
+          mobileRow={(x, selection) => {
+            const tone = EXCLUSION_STATUS_TONE[x.status ?? ''] ?? EXCLUSION_STATUS_TONE.inactive
+            const path = isPathExclusion(x as PathExclusion)
+            return (
+              <ScopeRowCard
+                pattern={path ? pathRuleLabel(x as PathExclusion) : (x.pattern ?? '')}
+                status={
+                  <TonePill
+                    tone={tone}
+                    label={statusLabel(x.status ?? 'inactive')}
+                    state={x.status}
+                  />
+                }
+                summary={x.reason || undefined}
+                facts={[
+                  path
+                    ? t('scope.exclusion.webPath', 'Web path')
+                    : scopeTargetTypeLabel(x.exclusion_type ?? '', t),
+                  scopeExclusionKindLabel(t, (x as { kind?: string }).kind),
+                  ...(x.expires_at ? [expiryText(x.expires_at, undefined, t)] : []),
+                ]}
+                selection={selection}
+                selectLabel={t('scope.col.selectEntry', 'Select {pattern}', {
+                  pattern: x.pattern ?? '',
+                })}
+                actions={
+                  <DataTableRowActions
+                    title={x.pattern ?? ''}
+                    label={t('scope.col.actionsFor', 'Actions for {pattern}', {
+                      pattern: x.pattern ?? '',
+                    })}
+                    actions={actionsFor(x)}
+                  />
+                }
+              />
+            )
+          }}
           manualPagination
           rowCount={data?.total ?? 0}
           pagination={{ pageIndex: query.page - 1, pageSize: query.perPage }}

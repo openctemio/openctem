@@ -99,7 +99,7 @@ export function MobilizationBriefCard({ findingId, brief, canWrite }: Mobilizati
           <p className="text-muted-foreground text-sm">
             {t(
               'findings.mobilizationBrief.subtitle',
-              'What “done” means and which fixes are acceptable — carried into the linked ticket.'
+              'What “done” means and which fixes are acceptable. It is carried into the linked ticket.'
             )}
           </p>
         </div>

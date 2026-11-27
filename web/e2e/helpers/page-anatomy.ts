@@ -1,12 +1,15 @@
+import fs from 'fs'
 import type { Page } from '@playwright/test'
 import { expect } from '@playwright/test'
+import { checkScrollEnd } from './scroll-end'
 
 /**
  * Page anatomy checks, shared by every Playwright suite that walks pages: the
  * tenant app's (specs/31-page-rhythm) and the platform console's
  * (console/specs). One probe and one set of rules, so the two apps cannot
- * drift: the page's blocks sit in a PageStack, block gaps are 20px (16px from
- * the header to its tabs), one tab row, metric strips, chips, no sideways
+ * drift: the page's blocks sit in a PageStack, block gaps follow the spacing
+ * tokens read from the page (--sp-page, 24px; --sp-section, 16px from the
+ * header to its tabs), one tab row, metric strips, chips, no sideways
  * scroll, no render error. The rules are described at the top of
  * specs/31-page-rhythm.spec.ts.
  */
@@ -16,26 +19,28 @@ import { expect } from '@playwright/test'
  * SettingsSaveBar (research/391). The list only shrinks: a page that moves is
  * removed, and a new page is never added.
  */
-const SAVE_EXCEPTIONS = new Set<string>([
-  '/account',
-  '/account/notifications',
-  '/account/preferences',
-  '/settings/ai',
-  '/settings/asset-sources',
-  '/settings/finding-lifecycle',
-  '/settings/mcp',
-  '/settings/pentest',
-  '/settings/scanning/content',
-  '/settings/scanning/scan-approval',
-  '/settings/scope',
-  '/settings/trusted-organizations',
-])
+const SAVE_EXCEPTIONS = new Set<string>(['/settings/mcp'])
 
-const PAGE_GAP = 20
-const TIGHT_GAP = 16
 const NAME_MIN_1440 = 160
 
+/**
+ * Rows with controls of different heights that are still open, per
+ * "route@width" (probeRowMix). The list only shrinks: each entry names the
+ * owner of the fix. A route that is not listed may have none.
+ */
+const ROW_MIX_DEBT: Record<string, number> = {
+  // A wrapped toolbar: its second line's controls sit on another centre line.
+  '/attack-surface/exposures@1440': 1,
+  // The "SLA due in 72 hours" toggle (28) beside the Display menu (32).
+  '/my-work@1440': 1,
+}
+
 type Probe = {
+  /** The spacing tokens as the page resolves them (src/styles/theme.css). */
+  pageGap: number
+  tightGap: number
+  /** Icon-only buttons (an icon, no visible text) that are not square. */
+  oblongIconButtons: { name: string; width: number; height: number }[]
   stack: boolean
   pairs: { from: string; to: string; gap: number }[]
   tabRows: number
@@ -52,14 +57,29 @@ type Probe = {
   middotChips: string[]
   emptyPagination: boolean
   nameColumns: { header: string; width: number }[]
+  /**
+   * Header rows of every table: height, whether the header cells are filled
+   * with anything but the surface the table sits on (a tint), and whether the
+   * header's bottom rule is drawn and stronger than the rules between rows.
+   */
+  tableHeads: { height: number; tinted: boolean; rule: boolean; ruleStronger: boolean }[]
+  /** Raw `{{placeholder}}` text anywhere in main. */
+  rawTemplates: boolean
   pageOverflowX: boolean
   restingSave: string[]
   handDenied: boolean
 }
 
-export async function probe(page: Page): Promise<Probe> {
-  return page.evaluate(() => {
+export async function probe(page: Page, allTables = false): Promise<Probe> {
+  return page.evaluate((allTables: boolean) => {
     const main = document.querySelector('main') ?? document.body
+    const tokenPx = (name: string) => {
+      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize)
+      if (v.endsWith('rem')) return parseFloat(v) * rem
+      if (v.endsWith('px')) return parseFloat(v)
+      return Number.NaN
+    }
     const overlay = (el: Element) =>
       !!el.closest('[role=dialog],[data-slot=sheet-content],[data-radix-popper-content-wrapper]')
     const shown = (el: Element) => {
@@ -85,6 +105,9 @@ export async function probe(page: Page): Promise<Probe> {
       }
     }
     if (stack) walk(stack)
+    // In reading order on screen: a block a phone moves with `order` (a list's
+    // tiles after its rows) is paired with the blocks it now sits between.
+    blocks.sort((x, y) => x.getBoundingClientRect().top - y.getBoundingClientRect().top)
     const pairs = []
     for (let i = 1; i < blocks.length; i++) {
       const a = blocks[i - 1].getBoundingClientRect()
@@ -106,7 +129,8 @@ export async function probe(page: Page): Promise<Probe> {
         n.matches('nav') ? n.querySelectorAll(':scope > a') : n.querySelectorAll('[role=tab]')
       ).filter(shown)
       const nr = n.getBoundingClientRect()
-      const fades = n.getAttribute('data-fade-end') === 'true'
+      const fadeEnd = n.getAttribute('data-fade-end') === 'true'
+      const fadeStart = n.getAttribute('data-fade-start') === 'true'
       return {
         count: items.length,
         icons: items.filter((x) => x.querySelector('svg')).length,
@@ -114,20 +138,22 @@ export async function probe(page: Page): Promise<Probe> {
           .map((x) => x.querySelector('svg')?.getBoundingClientRect().width ?? 0)
           .filter((w) => w > 0)
           .map(Math.round),
-        // A Radix strip may scroll when it shows its fade; a route strip never cuts a label.
+        // Every page tab strip is one swipe row (owner rule 2026-11-21): a tab
+        // past an edge is allowed only where that edge shows its fade.
         clipped: items
           .filter((x) => {
             const r = x.getBoundingClientRect()
-            return (r.right > nr.right + 1 || r.left < nr.left - 1) && !(fades && !n.matches('nav'))
+            return (r.right > nr.right + 1 && !fadeEnd) || (r.left < nr.left - 1 && !fadeStart)
           })
           .map((x) => (x.textContent ?? '').trim()),
       }
     })
     // A SegmentedLens on a page (the control that used to filter rows); radio
-    // and toggle groups in forms and wizards are inputs, not row filters, and a
-    // lens in a route-lens wrapper switches between routes (navigation).
+    // and toggle groups in forms and wizards are inputs, not row filters. No
+    // lens is exempt: a lens that switches between routes is a second tab
+    // level (owner rule 2026-11-24: one tab level per screen).
     const rowFilterSegmented = Array.from(main.querySelectorAll('[data-testid="segmented-lens"]'))
-      .filter((n) => shown(n) && !overlay(n) && !n.closest('[data-slot="route-lens"]'))
+      .filter((n) => shown(n) && !overlay(n))
       .map((n) => n.getAttribute('aria-label') ?? '')
 
     const metricStrips = Array.from(main.querySelectorAll('[data-slot="metric-strip"]'))
@@ -178,7 +204,95 @@ export async function probe(page: Page): Promise<Probe> {
         width: Math.round(th.getBoundingClientRect().width),
       }))
 
+    // Tables: header row 36 (32 compact), no fill of its own, one bottom rule
+    // stronger than the rules between rows. The fill is compared with the
+    // surface the table sits on (the page, or a card), not with the body.
+    const rgb = (c: string): number[] | null => {
+      const ctx = document.createElement('canvas').getContext('2d')
+      if (!ctx || !c) return null
+      ctx.fillStyle = '#000'
+      ctx.fillStyle = c
+      ctx.fillRect(0, 0, 1, 1)
+      const [r, g, bl, al] = ctx.getImageData(0, 0, 1, 1).data
+      return al === 0 ? null : [r, g, bl]
+    }
+    const lum = (c: number[]) => {
+      const f = (v: number) => {
+        const x = v / 255
+        return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4
+      }
+      return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2])
+    }
+    const contrast = (a: number[], b: number[]) => {
+      const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m)
+      return (x + 0.05) / (y + 0.05)
+    }
+    const surfaceOf = (el: Element) => {
+      for (let e = el.parentElement; e; e = e.parentElement) {
+        const c = getComputedStyle(e).backgroundColor
+        if (c && c !== 'transparent' && c !== 'rgba(0, 0, 0, 0)') return c
+      }
+      return getComputedStyle(document.body).backgroundColor
+    }
+    const ruleOf = (tr: Element | null) => {
+      if (!tr) return null
+      const cs = getComputedStyle(tr)
+      return parseFloat(cs.borderBottomWidth) > 0 ? rgb(cs.borderBottomColor) : null
+    }
+    // Every table, or (tenant app, until its raw tables move to the kit) the
+    // shared DataTable's.
+    const tableHeads = Array.from(
+      main.querySelectorAll(allTables ? 'table thead tr' : '[data-scroll-mode] table thead tr')
+    )
+      .filter((tr) => shown(tr) && tr.querySelector('th'))
+      .map((tr) => {
+        const table = tr.closest('table') as HTMLTableElement
+        const th = tr.querySelector('th') as HTMLElement
+        const surface = rgb(surfaceOf(table)) ?? [255, 255, 255]
+        const fill = rgb(getComputedStyle(th).backgroundColor)
+        const headRule = ruleOf(tr)
+        const rowRule = ruleOf(table.querySelector('tbody tr:not(:last-child)'))
+        return {
+          height: Math.round(tr.getBoundingClientRect().height),
+          tinted: fill !== null && contrast(fill, surface) > 1.01,
+          rule: headRule !== null,
+          ruleStronger:
+            headRule !== null &&
+            (rowRule === null || contrast(headRule, surface) > contrast(rowRule, surface)),
+        }
+      })
+    const rawTemplates = /\{\{[^}]*\}\}/.test(main.textContent ?? '')
+
     return {
+      tableHeads,
+      rawTemplates,
+      oblongIconButtons: Array.from(
+        document.querySelectorAll<HTMLElement>(
+          'header button, main button, header a[data-slot=button], main a[data-slot=button]'
+        )
+      )
+        .filter((b) => {
+          const r = b.getBoundingClientRect()
+          return (
+            r.width > 0 &&
+            r.height > 0 &&
+            // a select trigger with no value yet is not an icon button
+            b.getAttribute('role') !== 'combobox' &&
+            b.querySelector('svg') &&
+            !(b.innerText ?? '').trim()
+          )
+        })
+        .map((b) => {
+          const r = b.getBoundingClientRect()
+          return {
+            name: b.getAttribute('aria-label') ?? b.title ?? '',
+            width: Math.round(r.width),
+            height: Math.round(r.height),
+          }
+        })
+        .filter((b) => Math.abs(b.width - b.height) > 1),
+      pageGap: tokenPx('--sp-page'),
+      tightGap: tokenPx('--sp-section'),
       stack: !!stack,
       pairs,
       tabRows: pageRows.length,
@@ -187,43 +301,243 @@ export async function probe(page: Page): Promise<Probe> {
       tabStrips,
       wrappedChips,
       middotChips,
-      emptyPagination: /Page 1 of 0|Showing 0\s*[-–]\s*0 of 0/.test(main.textContent ?? ''),
+      emptyPagination: /Page 1 of 0|Showing 0\s*(?:[-–]|to)\s*0 of 0/.test(main.textContent ?? ''),
       nameColumns,
       pageOverflowX: document.documentElement.scrollWidth > window.innerWidth + 1,
       restingSave: Array.from(main.querySelectorAll('button'))
         .filter((b) => shown(b) && !overlay(b) && !b.closest('[data-slot=settings-save-bar]'))
         .map((b) => (b.textContent ?? '').trim())
-        .filter((label) => /^(Save( changes| policy| settings)?|Lưu( thay đổi)?)$/i.test(label)),
+        .filter((label) =>
+          /^(Save( changes| policy| settings| preferences)?|Lưu( thay đổi| tùy chọn)?)$/i.test(
+            label
+          )
+        ),
       handDenied: /Insufficient permissions|Access Denied/.test(main.textContent ?? ''),
     }
+  }, allTables)
+}
+
+/** One control of a row: its accessible name (or tag) and its drawn box. */
+export type RowControl = { name: string; height: number; centre: number }
+/** A row whose controls differ in height or do not share one centre line. */
+export type MixedRow = { row: string; controls: RowControl[] }
+
+/**
+ * Controls side by side in one row are drawn at one height on one centre
+ * line ("Sizes" in docs/ui-style-contract.md: every control in a row the same
+ * height). A row is the controls of one container (a list toolbar, a page or
+ * card header, a form row, a bulk bar, the app header; otherwise the widest
+ * ancestor that is still one line high) whose boxes overlap vertically.
+ * Controls: buttons, button-like links, text fields, selects and comboboxes.
+ * Not compared: checkboxes, radios and switches, text links, what sits inside
+ * a chip (its remove button), a button placed over a field (a search field's
+ * clear button), and controls of different table cells.
+ */
+export async function probeRowMix(page: Page): Promise<MixedRow[]> {
+  return page.evaluate(() => {
+    const TOL = 0.5
+    const CONTAINERS = [
+      '[data-slot=list-toolbar-region]',
+      '[data-slot=list-toolbar]',
+      '[data-slot=page-header]',
+      '[data-slot=card-header]',
+      '[data-slot=bulk-action-bar]',
+      '[data-slot=settings-save-bar]',
+      '[data-slot=dialog-footer]',
+      '[role=toolbar]',
+      'header',
+    ].join(',')
+    const STOP = 'td,th,[role=cell],[role=gridcell],[role=columnheader],[role=row],li,main,body'
+    const overlay = (el: Element) =>
+      !!el.closest('[role=dialog],[data-slot=sheet-content],[data-radix-popper-content-wrapper]')
+    const shown = (el: Element) => {
+      const r = el.getBoundingClientRect()
+      const s = getComputedStyle(el)
+      return (
+        r.width > 1 &&
+        r.height > 1 &&
+        s.visibility !== 'hidden' &&
+        s.display !== 'none' &&
+        s.opacity !== '0' &&
+        !el.closest('[aria-hidden=true],.sr-only')
+      )
+    }
+    const rawControls = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        [
+          'button',
+          '[role=button]',
+          'a[data-slot=button]',
+          '[role=combobox]',
+          'select',
+          'input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=range]):not([type=file])',
+        ].join(',')
+      )
+    ).filter((el) => {
+      if (!shown(el) || overlay(el)) return false
+      if (el.matches('[role=checkbox],[role=radio],[role=switch],[role=tab],[role=menuitem]'))
+        return false
+      if (el.closest('[data-slot=checkbox],[data-slot=switch],[data-slot=radio-group-item]'))
+        return false
+      // A link-styled button is a text link, and so is a bare button around
+      // text (no kit slot, no border, no fill: a list row's title).
+      if (el.getAttribute('data-variant') === 'link') return false
+      const cs = getComputedStyle(el)
+      if (
+        el.tagName === 'BUTTON' &&
+        !el.hasAttribute('data-slot') &&
+        (el.innerText ?? '').trim() !== '' &&
+        parseFloat(cs.borderTopWidth) === 0 &&
+        /rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor)
+      )
+        return false
+      // Inside a chip (its remove button) or over a field (a clear button).
+      if (
+        el.closest(
+          '[data-testid^=filter-chip],[data-slot=locked-chip],[data-slot=badge],[data-slot=signal-chip],[data-slot=status-lozenge],[data-slot=list-search-end]'
+        )
+      )
+        return false
+      if (getComputedStyle(el).position === 'absolute') return false
+      // A control nested in another control counts once (the outer one).
+      const outer = el.parentElement?.closest('button,[role=button],a[data-slot=button]')
+      if (outer && outer !== el) return false
+      return true
+    })
+    // A bordered group is one control (a filter select with its clear
+    // button, a view switcher's or the Basic | Query switch's segments):
+    // measured by its box.
+    const GROUPS =
+      '[data-slot=filter-select],[data-slot=view-switcher],[data-slot=list-search-mode]'
+    const seen = new Set<HTMLElement>()
+    const controls = rawControls
+      .map((el) => el.closest<HTMLElement>(GROUPS) ?? el)
+      .filter((el) => (seen.has(el) ? false : (seen.add(el), true)))
+    const label = (el: Element) => {
+      const n =
+        el.getAttribute('aria-label') ||
+        (el as HTMLElement).innerText?.trim().split('\n')[0] ||
+        el.getAttribute('placeholder') ||
+        el.getAttribute('title') ||
+        ''
+      const tag = el.getAttribute('data-slot') || el.tagName.toLowerCase()
+      return `${tag}${n ? ` "${n.slice(0, 40)}"` : ''}`
+    }
+    const containerOf = (el: Element): Element => {
+      const named = el.parentElement?.closest(CONTAINERS)
+      const stop = el.parentElement?.closest(STOP)
+      // A table cell, a list item or a row ends the search before a far-away container.
+      if (named && !(stop && named.contains(stop))) return named
+      // Otherwise the widest ancestor that is still one line high.
+      let c: Element = el.parentElement ?? document.body
+      const h = el.getBoundingClientRect().height
+      while (c.parentElement && !c.matches(STOP) && !c.parentElement.matches(STOP)) {
+        const ph = c.parentElement.getBoundingClientRect().height
+        if (ph > h * 1.5 + 8) break
+        c = c.parentElement
+      }
+      return c
+    }
+    const byContainer = new Map<Element, HTMLElement[]>()
+    for (const el of controls) {
+      const c = containerOf(el)
+      byContainer.set(c, [...(byContainer.get(c) ?? []), el])
+    }
+    const describe = (c: Element) => {
+      const slot = c.getAttribute('data-slot')
+      if (slot) return slot
+      const id = c.id ? `#${c.id}` : ''
+      const lab = c.getAttribute('aria-label')
+      return `${c.tagName.toLowerCase()}${id}${lab ? ` "${lab}"` : ''}`
+    }
+    const out: { row: string; controls: { name: string; height: number; centre: number }[] }[] = []
+    for (const [c, els] of byContainer) {
+      if (els.length < 2) continue
+      const boxes = els
+        .map((el) => ({ el, r: el.getBoundingClientRect() }))
+        .sort((a, b) => a.r.top - b.r.top)
+      // Rows: controls whose boxes overlap vertically (transitively).
+      const rows: (typeof boxes)[] = []
+      for (const b of boxes) {
+        const row = rows.find((rw) =>
+          rw.some((o) => b.r.top < o.r.bottom - 1 && b.r.bottom > o.r.top + 1)
+        )
+        if (row) row.push(b)
+        else rows.push([b])
+      }
+      for (const rw of rows) {
+        if (rw.length < 2) continue
+        const hs = rw.map((b) => b.r.height)
+        const cs = rw.map((b) => b.r.top + b.r.height / 2)
+        const spread = (xs: number[]) => Math.max(...xs) - Math.min(...xs)
+        if (spread(hs) <= TOL && spread(cs) <= TOL) continue
+        rw.sort((a, b) => a.r.left - b.r.left)
+        out.push({
+          row: `${describe(c)} at y=${Math.round(rw[0].r.top)}`,
+          controls: rw.map((b) => ({
+            name: label(b.el),
+            height: Math.round(b.r.height * 10) / 10,
+            centre: Math.round((b.r.top + b.r.height / 2) * 10) / 10,
+          })),
+        })
+      }
+    }
+    return out
   })
+}
+
+/** `list-toolbar at y=488: dropdown-menu-trigger "Views" 32px @504, button "Refresh" 36px @504` */
+export function formatMixedRow(m: MixedRow): string {
+  const parts = m.controls.map((c) => `${c.name} ${c.height}px @${c.centre}`)
+  return `${m.row}: ${parts.join(', ')}`
 }
 
 export async function checkAt(
   page: Page,
   route: string,
   width: number,
-  ownLayoutRoutes: RegExp[] = []
+  ownLayoutRoutes: RegExp[] = [],
+  opts: { rowMix?: boolean; allTables?: boolean; scrollEnd?: boolean } = {}
 ) {
   await page.setViewportSize({ width, height: width < 600 ? 844 : 900 })
   // Let a resize settle (the tab strip re-measures what fits).
   await page.waitForTimeout(300)
-  const r = await probe(page)
+  const r = await probe(page, opts.allTables)
   const at = `${route} at ${width}px`
 
   const ownLayout = ownLayoutRoutes.some((re) => re.test(route.split('?')[0]))
   if (!ownLayout) expect(r.stack, `${at}: the page's blocks sit in a PageStack`).toBe(true)
+  expect(r.pageGap, `${at}: --sp-page resolves to a length`).toBeGreaterThan(0)
+  expect(r.tightGap, `${at}: --sp-section resolves to a length`).toBeGreaterThan(0)
   for (const p of ownLayout ? [] : r.pairs) {
     // Route tabs (page-tabs) and in-page tabs (tabs) both sit 16px under the header.
     const want =
-      p.from === 'page-header' && (p.to === 'page-tabs' || p.to === 'tabs') ? TIGHT_GAP : PAGE_GAP
+      p.from === 'page-header' && (p.to === 'page-tabs' || p.to === 'tabs') ? r.tightGap : r.pageGap
     expect
       .soft(Math.abs(p.gap - want), `${at}: ${p.from} -> ${p.to} is ${p.gap}px, want ${want}px`)
       .toBeLessThanOrEqual(1)
   }
+  expect.soft(r.oblongIconButtons, `${at}: icon-only buttons are squares`).toEqual([])
+  if (opts.rowMix) {
+    const mixed = await probeRowMix(page)
+    if (process.env.ROWMIX_OUT) {
+      fs.appendFileSync(process.env.ROWMIX_OUT, JSON.stringify({ route, width, mixed }) + '\n')
+    }
+    const key = `${route.split('?')[0].replace(/\/[0-9a-f-]{36}(?=\/|$)/g, '/{id}')}@${width}`
+    expect
+      .soft(
+        mixed.length,
+        `${at}: controls in one row share one height and centre (allowed ${ROW_MIX_DEBT[key] ?? 0}):\n` +
+          mixed.map(formatMixedRow).join('\n')
+      )
+      .toBeLessThanOrEqual(ROW_MIX_DEBT[key] ?? 0)
+  }
   expect.soft(r.tabRows, `${at}: one tab row per page`).toBeLessThanOrEqual(1)
   expect
-    .soft(r.rowFilterSegmented, `${at}: a row filter is a filter token, not a segmented control`)
+    .soft(
+      r.rowFilterSegmented,
+      `${at}: one tab level per screen: no segmented control switches routes or rows under the tabs (a row filter is a filter token)`
+    )
     .toEqual([])
   for (const s of r.tabStrips) {
     expect.soft([0, s.count], `${at}: every tab has an icon or none has`).toContain(s.icons)
@@ -248,11 +562,25 @@ export async function checkAt(
     }
   }
   expect.soft(r.pageOverflowX, `${at}: no horizontal page scroll`).toBe(false)
+  for (const h of r.tableHeads) {
+    expect
+      .soft([32, 33, 36, 37], `${at}: a table header row is 36 (32 compact) + 1`)
+      .toContain(h.height)
+    expect.soft(h.tinted, `${at}: a table header row has no background tint`).toBe(false)
+    expect.soft(h.rule, `${at}: a table header row has a bottom rule`).toBe(true)
+    expect
+      .soft(h.ruleStronger, `${at}: the header rule is stronger than the rules between rows`)
+      .toBe(true)
+  }
+  expect.soft(r.rawTemplates, `${at}: no raw {{placeholder}} text`).toBe(false)
   const path = route.split('?')[0]
-  if (/^\/(settings|account)(\/|$)/.test(path) && !SAVE_EXCEPTIONS.has(path)) {
+  // Tenant settings and account pages, and the console's System settings pages.
+  if (/^\/(settings|account|system)(\/|$)/.test(path) && !SAVE_EXCEPTIONS.has(path)) {
     expect.soft(r.restingSave, `${at}: a settings form saves through SettingsSaveBar`).toEqual([])
   }
   expect.soft(r.handDenied, `${at}: a refusal is the shared access notice`).toBe(false)
+  // Last: it scrolls the page to its end and back.
+  if (opts.scrollEnd) await checkScrollEnd(page, at)
 }
 
 export async function open(page: Page, route: string): Promise<boolean> {

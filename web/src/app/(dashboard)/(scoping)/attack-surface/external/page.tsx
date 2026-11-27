@@ -14,8 +14,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Download, Eye, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Download, Eye, MoreHorizontal, Pencil, Plus, Radar, RefreshCw, Trash2 } from 'lucide-react'
+import { ActionMenu } from '@/components/ui/action-menu'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { toast } from 'sonner'
+import { ToolbarAction } from '@/features/shared/components/toolbar-action'
 
 import { Main } from '@/components/layout'
 import {
@@ -93,6 +96,14 @@ import {
 
 const PAGE_SIZES = [20, 50, 100]
 
+/**
+ * Frame widths (px) under which a column steps aside, so the table fits its
+ * frame (about 650 at 768, 700 at 1024 with the sidebar open) instead of
+ * scrolling sideways: the labels first, then the last-seen time. Asset,
+ * service facts, risk, open findings and the row menu stay at every width.
+ */
+const EXTERNAL_HIDE_BELOW = { labels: 1100, lastSeen: 960 } as const
+
 // The exposures list has no event-type URL filter: it opens on a search for
 // certificates, open ones first.
 const CERT_EXPOSURES_HREF = '/exposures?q=certificate'
@@ -130,10 +141,10 @@ function typeLabel(t: TFn, type?: string): string {
       return t('attackSurface.external.type.certificate', 'Certificate')
     case 'host':
       return t('attackSurface.external.type.host', 'Host')
-    default: {
-      const s = (type ?? '').replace(/_/g, ' ')
-      return s.charAt(0).toUpperCase() + s.slice(1)
-    }
+    case 'network':
+      return t('attackSurface.external.type.network', 'Network')
+    default:
+      return t('attackSurface.external.type.other', 'Other')
   }
 }
 
@@ -188,13 +199,14 @@ export default function ExternalSurfacePage() {
   const router = useRouter()
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
+  const isPhone = useIsMobile()
   const thresholds: RiskLevelThresholds = useRiskThresholds()
 
   const [qParam, setQParam] = useUrlFilter('q', '')
   const [typeParam, setTypeParam] = useUrlFilter('type', 'all')
   const [riskParam, setRiskParam] = useUrlFilter('risk', 'all')
   const [findingsParam, setFindingsParam] = useUrlFilter('findings', 'all')
-  const list = useListParams({ pageSizes: PAGE_SIZES, defaultPageSize: 20 })
+  const list = useListParams({ pageSizes: PAGE_SIZES })
   const { pagination, setPagination, setPage } = list
 
   const [searchInput, setSearchInput] = useState(qParam)
@@ -503,6 +515,9 @@ export default function ExternalSurfacePage() {
     () => [
       {
         id: 'name',
+        // The row's name: a long one ends in an ellipsis, its full text the
+        // cell's title.
+        meta: { kind: 'name', label: t('attackSurface.external.col.asset', 'Asset') },
         header: t('attackSurface.external.col.asset', 'Asset'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -539,6 +554,11 @@ export default function ExternalSurfacePage() {
       },
       {
         id: 'labels',
+        meta: {
+          kind: 'text',
+          hideBelow: EXTERNAL_HIDE_BELOW.labels,
+          label: t('attackSurface.external.col.labels', 'Labels'),
+        },
         header: t('attackSurface.external.col.labels', 'Labels'),
         enableSorting: false,
         cell: ({ row }) => (
@@ -555,6 +575,11 @@ export default function ExternalSurfacePage() {
       },
       {
         id: 'last_seen',
+        meta: {
+          kind: 'text',
+          hideBelow: EXTERNAL_HIDE_BELOW.lastSeen,
+          label: t('attackSurface.external.col.lastSeen', 'Last seen'),
+        },
         header: t('attackSurface.external.col.lastSeen', 'Last seen'),
         enableSorting: false,
         cell: ({ row }) =>
@@ -570,6 +595,10 @@ export default function ExternalSurfacePage() {
         cell: ({ row }) => (
           <span onClick={(e) => e.stopPropagation()}>
             <DataTableRowActions
+              title={row.original.name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                name: row.original.name,
+              })}
               actions={[
                 {
                   label: t('attackSurface.external.action.open', 'Open'),
@@ -611,7 +640,7 @@ export default function ExternalSurfacePage() {
         }}
       >
         <SelectTrigger
-          className="h-9 w-36"
+          className="w-36"
           aria-label={t('attackSurface.external.filterType', 'Filter by type')}
         >
           <SelectValue />
@@ -633,7 +662,7 @@ export default function ExternalSurfacePage() {
         }}
       >
         <SelectTrigger
-          className="h-9 w-32"
+          className="w-32"
           aria-label={t('attackSurface.external.filterRisk', 'Filter by risk')}
         >
           <SelectValue />
@@ -650,16 +679,75 @@ export default function ExternalSurfacePage() {
     </>
   )
 
-  const toolbarEnd = (
-    <Button
-      variant="outline"
-      size="sm"
-      className="h-9"
-      onClick={() => void refetchAssets()}
-      aria-label={t('attackSurface.external.refresh', 'Refresh')}
-    >
-      <RefreshCw className="h-4 w-4" />
-    </Button>
+  // The list's own actions (scan the page, export, refresh) live in its
+  // toolbar; the page header keeps its one main action, Add asset. A phone
+  // keeps the search wide: the three are one More there.
+  const toolbarEnd = isPhone ? (
+    <ActionMenu
+      title={t('attackSurface.external.title', 'External attack surface')}
+      label={t('common.table.phoneMore', 'More list actions')}
+      items={[
+        ...(can(Permission.ScansExecute)
+          ? [
+              {
+                id: 'scan',
+                label: t('attackSurface.external.scanPage', 'Scan this page'),
+                icon: Radar,
+                disabledReason:
+                  assets.length === 0
+                    ? t('attackSurface.external.scanNothing', 'No asset on this page to scan')
+                    : undefined,
+                onSelect: () => openScanDialog(assets),
+              },
+            ]
+          : []),
+        {
+          id: 'export',
+          label: t('attackSurface.external.export', 'Export'),
+          icon: Download,
+          onSelect: () => void handleExport(),
+        },
+        {
+          id: 'refresh',
+          label: t('attackSurface.external.refresh', 'Refresh'),
+          icon: RefreshCw,
+          onSelect: () => void refetchAssets(),
+        },
+      ]}
+      trigger={
+        <Button
+          variant="outline"
+          size="icon-sm"
+          aria-label={t('common.table.phoneMore', 'More list actions')}
+        >
+          <MoreHorizontal className="h-4 w-4" aria-hidden />
+        </Button>
+      }
+    />
+  ) : (
+    <>
+      <Can permission={Permission.ScansExecute}>
+        <ToolbarAction
+          icon={Radar}
+          label={t('attackSurface.external.scanPage', 'Scan this page')}
+          onClick={() => openScanDialog(assets)}
+          disabled={assets.length === 0}
+        />
+      </Can>
+      <ToolbarAction
+        icon={Download}
+        label={t('attackSurface.external.export', 'Export')}
+        onClick={() => void handleExport()}
+      />
+      <Button
+        variant="outline"
+        size="icon-sm"
+        onClick={() => void refetchAssets()}
+        aria-label={t('attackSurface.external.refresh', 'Refresh')}
+      >
+        <RefreshCw className="h-4 w-4" />
+      </Button>
+    </>
   )
 
   const formFields = (
@@ -750,21 +838,6 @@ export default function ExternalSurfacePage() {
               'Every internet-facing asset, riskiest first.'
             )}
           >
-            <Can permission={Permission.ScansExecute}>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => openScanDialog(assets)}
-                disabled={assets.length === 0}
-              >
-                <RefreshCw className="me-2 h-4 w-4" />
-                {t('attackSurface.external.scanPage', 'Scan this page')}
-              </Button>
-            </Can>
-            <Button variant="outline" size="sm" onClick={() => void handleExport()}>
-              <Download className="me-2 h-4 w-4" />
-              {t('attackSurface.external.export', 'Export')}
-            </Button>
             <Can permission={Permission.AssetsWrite}>
               <Button size="sm" onClick={() => setIsCreateOpen(true)}>
                 <Plus className="me-2 h-4 w-4" />
@@ -773,7 +846,7 @@ export default function ExternalSurfacePage() {
             </Can>
           </PageHeader>
 
-          <MetricStrip loading={metricsLoading} items={metrics} />
+          <MetricStrip loading={metricsLoading} items={metrics} listFirst />
 
           {error && !isLoading ? (
             <ErrorState
@@ -808,6 +881,7 @@ export default function ExternalSurfacePage() {
               onPaginationChange={setPagination}
               pageSizeOptions={PAGE_SIZES}
               onRowClick={(a) => router.push(`/assets/${a.id}`)}
+              pinActions
               emptyMessage={
                 filtersActive
                   ? t('attackSurface.external.emptyFiltered', 'No internet-facing assets match')

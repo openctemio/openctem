@@ -123,11 +123,12 @@ test.describe.fixme('attack path view', { tag: ['@attack-surface'] }, () => {
       test.skip(!g, 'assets or relationships could not be created (module off or no permission)')
       try {
         await page.goto(`/attack-paths?target=${g!.jewel}&paths=all`)
-        await expect(
-          page.getByRole('heading', { level: 1, name: `Path to ${g!.names.jewel}` })
-        ).toBeVisible({
-          timeout: 30_000,
-        })
+        // The title stays the page's name; the path is named in the selection line.
+        await expect(page.locator('[data-slot=graph-selection]')).toContainText(
+          `Path to ${g!.names.jewel}`,
+          { timeout: 30_000 }
+        )
+        await expect(page.getByRole('heading', { level: 1, name: 'Attack paths' })).toBeVisible()
         const canvas = page.getByTestId('attack-path-canvas')
         await expect(canvas.getByTestId('flow-node')).toHaveCount(4)
         // Internet edge plus four relationships.
@@ -230,7 +231,7 @@ test.describe.fixme('attack path view', { tag: ['@attack-surface'] }, () => {
   test('an unknown asset shows an error state, not an empty graph', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto('/attack-paths?target=00000000-0000-0000-0000-000000000000')
-    await expect(page.getByText(/Failed to load attack paths|not found/i).first()).toBeVisible({
+    await expect(page.getByText(/Couldn't load attack paths|not found/i).first()).toBeVisible({
       timeout: 30_000,
     })
   })

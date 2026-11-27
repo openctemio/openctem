@@ -26,6 +26,11 @@ const HANDLERS: Record<string, [string, RegExp]> = {
     'components/layout/team-switcher.tsx',
     /\(event\.metaKey \|\| event\.ctrlKey\) \|\| !event\.shiftKey[\s\S]*Digit\(\[1-9\]\)/,
   ],
+  'create-scan': ['hooks/use-create-actions.ts', /id: 'scan',\s*chord: 's'/],
+  'create-import': ['hooks/use-create-actions.ts', /id: 'import',\s*chord: 'i'/],
+  'create-asset': ['hooks/use-create-actions.ts', /id: 'asset',\s*chord: 'a'/],
+  'create-finding': ['hooks/use-create-actions.ts', /id: 'finding',\s*chord: 'f'/],
+  'create-task': ['hooks/use-create-actions.ts', /id: 'task',\s*chord: 't'/],
   'open-finding': [
     'features/findings/components/finding-detail-drawer.tsx',
     /\(e\.metaKey \|\| e\.ctrlKey\) && e\.key === 'Enter'/,
@@ -47,7 +52,7 @@ const HANDLERS: Record<string, [string, RegExp]> = {
     /e\.key !== 't' \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,
   ],
   'add-filter': [
-    'features/findings/filters/add-filter-popover.tsx',
+    'features/shared/components/filter-button.tsx',
     /e\.key !== 'f' \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey/,
   ],
   'focus-search': [
@@ -58,13 +63,41 @@ const HANDLERS: Record<string, [string, RegExp]> = {
     'features/shared/components/list-toolbar.tsx',
     /aria-keyshortcuts="f"\]:not[\s\S]*trigger\.click\(\)/,
   ],
+  'select-row': [
+    'features/shared/components/data-table/data-table-selection.tsx',
+    /e\.key\.toLowerCase\(\) !== 'x'[\s\S]*e\.shiftKey && anchor\.current[\s\S]*row\.toggleSelected\(\)/,
+  ],
+  'dismiss-selection': [
+    'app/(dashboard)/findings/page.tsx',
+    /e\.key !== 'd' \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.altKey[\s\S]*openDismissRef\.current\(\)/,
+  ],
+  'dismiss-reason': [
+    'features/findings/components/bulk-dismiss-dialog.tsx',
+    /n < 1 \|\| n > reasons\.length[\s\S]*setReason\(reasons\[n - 1\]\)/,
+  ],
+  'dismiss-submit': [
+    'features/findings/components/bulk-dismiss-dialog.tsx',
+    /\(e\.metaKey \|\| e\.ctrlKey\) && e\.key === 'Enter'[\s\S]*void submit\(\)/,
+  ],
   'clear-selection': [
     'features/shared/components/bulk-action-bar.tsx',
-    /e\.key === 'Escape' && !e\.defaultPrevented\) onClear\(\)/,
+    // Escape inside an open menu or dialog closes that, not the selection.
+    /e\.key !== 'Escape' \|\| e\.defaultPrevented\) return[\s\S]*?closest\(POPUP_SELECTOR\)\) return\s*onClear\(\)/,
   ],
 }
 
 describe('keyboard shortcuts', () => {
+  it('the create chords are handled: "n" on window after page handlers, the letter in capture', () => {
+    const chords = src('hooks/use-create-chords.ts')
+    expect(chords).toMatch(
+      /CREATE_PREFIX = 'n'[\s\S]*e\.key !== CREATE_PREFIX[\s\S]*e\.defaultPrevented/
+    )
+    expect(chords).toMatch(/addEventListener\('keydown', onCapture, true\)/)
+    expect(src('components/layout/header-create-menu.tsx')).toContain(
+      'useCreateChords(actions, run)'
+    )
+  })
+
   it('every listed shortcut has a real handler', () => {
     expect(KEYBOARD_SHORTCUTS.map((s) => s.id).sort()).toEqual(Object.keys(HANDLERS).sort())
     for (const s of KEYBOARD_SHORTCUTS) {

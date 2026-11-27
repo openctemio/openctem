@@ -11,7 +11,7 @@ import { test, expect } from '../fixtures/authenticated-page'
  * at 1440px and at 390px from bounding boxes:
  *
  * - the page's blocks sit in a `PageStack`;
- * - page header to its tab strip 16px, every other gap between blocks 20px
+ * - page header to its tab strip 16px, every other gap between blocks 24px (the --sp-section and --sp-page tokens, read from the page)
  *   (nested stacks flattened, so a tab panel's blocks count);
  * - one tab row per page, no segmented control used as a row filter;
  * - tab icons: all tabs of a strip have one or none does, 16px; no tab label
@@ -23,11 +23,17 @@ import { test, expect } from '../fixtures/authenticated-page'
  * - an empty list shows no pagination ("Showing 0 - 0 of 0", "Page 1 of 0");
  * - a table's name column keeps a readable width at 1440px;
  * - no horizontal page scroll;
- * - a settings page (/settings, /account) shows no Save button at rest: its
+ * - controls side by side in a row (buttons, fields, selects) share one
+ *   height and one centre line (probeRowMix; open rows are listed in
+ *   ROW_MIX_DEBT in helpers/page-anatomy.ts, which only shrinks);
+ * - a settings page (/settings, /account and its tabs, console /system) shows no Save button at rest: its
  *   form saves through the sticky SettingsSaveBar, shown while there are
  *   unsaved changes (SAVE_EXCEPTIONS lists the pages not moved yet);
  * - no hand-made "Insufficient permissions" / "Access Denied" text: a refusal
  *   is the shared access notice;
+ * - the scroll ends a normal bottom padding after the last visible content
+ *   (at most the page's bottom padding plus 8px) and the document never
+ *   scrolls (helpers/scroll-end.ts; every static page);
  * - the page renders: no error boundary ("Something went wrong") and no
  *   uncaught page error (a server page calling a client hook crashed
  *   /notifications on every visit with nothing visiting it).
@@ -36,8 +42,10 @@ import { test, expect } from '../fixtures/authenticated-page'
  */
 
 const APP = path.resolve(__dirname, '../../src/app/(dashboard)')
+/** The account area (its own shell): its pages are settings pages too. */
+const ACCOUNT = path.resolve(__dirname, '../../src/app/(account)')
 
-/** Static routes of the dashboard shell, from its page files. */
+/** Static routes of the dashboard shell and the account area, from their page files. */
 function staticRoutes(): string[] {
   const out: string[] = []
   const walk = (dir: string, segs: string[]) => {
@@ -52,6 +60,7 @@ function staticRoutes(): string[] {
     }
   }
   walk(APP, [])
+  walk(ACCOUNT, [])
   return [...new Set(out)].filter((r) => !r.includes('[')).sort()
 }
 
@@ -59,11 +68,20 @@ function staticRoutes(): string[] {
  * Detail pages, opened on the first row the seeded organization has. The id
  * comes from the list endpoint through the console's own proxy.
  */
-const DETAIL_ROUTES: { route: string; list: string }[] = [
+const DETAIL_ROUTES: { route: string; list: string; key?: string }[] = [
   { route: '/assets/{id}', list: '/api/v1/assets?per_page=1' },
+  { route: '/assets/groups/{id}', list: '/api/v1/asset-groups?per_page=1' },
+  { route: '/components/{id}', list: '/api/v1/components?per_page=1' },
   { route: '/findings/{id}', list: '/api/v1/findings?per_page=1' },
   { route: '/scans/{id}', list: '/api/v1/scans?per_page=1' },
   { route: '/remediation/campaigns/{id}', list: '/api/v1/remediation/campaigns?per_page=1' },
+  { route: '/remediation/tasks/{id}', list: '/api/v1/remediation/tasks?per_page=1' },
+  { route: '/pentest/campaigns/{id}', list: '/api/v1/pentest/campaigns?per_page=1' },
+  {
+    route: '/vulnerabilities/{id}',
+    list: '/api/v1/vulnerability-exposures?per_page=1',
+    key: 'cve_id',
+  },
 ]
 
 /** Pages that are not a page of blocks, with the reason. */
@@ -86,28 +104,33 @@ for (const route of staticRoutes()) {
     test.skip(!(await open(page, route)), `${route} redirects`)
     // The page renders a block layout once its header is drawn.
     await expect(page.locator('main h1').first()).toBeVisible({ timeout: 30_000 })
-    for (const width of [1440, 390]) await checkAnatomy(page, route, width, OWN_LAYOUT)
+    for (const width of [1440, 390])
+      await checkAnatomy(page, route, width, OWN_LAYOUT, { rowMix: true, scrollEnd: true })
     if (info.errors.length > 0) {
       await info.attach(route, { body: await page.screenshot(), contentType: 'image/png' })
     }
   })
 }
 
-for (const { route, list } of DETAIL_ROUTES) {
+for (const { route, list, key } of DETAIL_ROUTES) {
   test(`page anatomy on ${route}`, { tag: ['@shell'] }, async ({ page }) => {
     await page.goto('/')
-    const id = await page.evaluate(async (url) => {
-      const res = await fetch(url, { credentials: 'same-origin' })
-      if (!res.ok) return null
-      const body = await res.json()
-      const rows = body.data ?? body.items ?? body
-      return Array.isArray(rows) && rows[0]?.id ? String(rows[0].id) : null
-    }, list)
+    const id = await page.evaluate(
+      async ({ url, field }) => {
+        const res = await fetch(url, { credentials: 'same-origin' })
+        if (!res.ok) return null
+        const body = await res.json()
+        const rows = body.data ?? body.items ?? body
+        return Array.isArray(rows) && rows[0]?.[field] ? String(rows[0][field]) : null
+      },
+      { url: list, field: key ?? 'id' }
+    )
     test.skip(!id, `no row to open for ${route}`)
     const url = route.replace('{id}', encodeURIComponent(id!))
     await open(page, url)
     await expect(page.locator('main h1').first()).toBeVisible({ timeout: 30_000 })
-    for (const width of [1440, 390]) await checkAnatomy(page, url, width, OWN_LAYOUT)
+    for (const width of [1440, 390])
+      await checkAnatomy(page, url, width, OWN_LAYOUT, { rowMix: true })
   })
 }
 

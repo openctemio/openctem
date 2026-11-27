@@ -52,6 +52,8 @@ import { CIRunSheet, RunAttempt, VerdictBadge } from './ci-runs-view'
 import { CIRepositorySettingsTab } from './ci-repo-settings'
 import { runAttempts } from '../lib/gate-settings'
 import { useTranslation } from '@/context/i18n-provider'
+import { DEFAULT_TABLE_PAGE_SIZE } from '@/lib/page-size-options'
+import { formatDateTime, formatNumber } from '@/lib/app-locale'
 
 export type PipelineTab = 'overview' | 'runs' | 'branches' | 'settings'
 export const PIPELINE_TABS: { value: PipelineTab; label: string }[] = [
@@ -102,7 +104,7 @@ export function GateTrend({ points }: { points: CIPipelineDetail['gate_trend'] }
         {list.map((p) => (
           <span
             key={p.run_id}
-            title={`${p.verdict}, ${shortSHA(p.commit_sha)}, ${p.evaluated_at ? new Date(p.evaluated_at).toLocaleString() : ''}`}
+            title={`${p.verdict}, ${shortSHA(p.commit_sha)}, ${p.evaluated_at ? formatDateTime(new Date(p.evaluated_at)) : ''}`}
             className={cn(
               'size-3 rounded-sm',
               p.verdict === 'fail' ? 'bg-destructive' : 'bg-success'
@@ -178,7 +180,7 @@ function Overview({ p }: { p: CIPipelineDetail }) {
         />
         <DetailStat
           label={t('scans.ci.view.runs', 'Runs')}
-          value={(p.runs_count ?? 0).toLocaleString()}
+          value={formatNumber(p.runs_count ?? 0)}
           caption={
             p.last_fork_run_at
               ? t('scans.ci.sheet.ownRuns', 'own runs; fork runs are not counted')
@@ -261,7 +263,7 @@ function Overview({ p }: { p: CIPipelineDetail }) {
 
 function Runs({ pipelineId }: { pipelineId: string }) {
   const { t } = useTranslation()
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 })
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: DEFAULT_TABLE_PAGE_SIZE })
   const [run, setRun] = useState<string | null>(null)
   const { data, error, isLoading } = useCIRuns({
     pipelineId,
@@ -498,7 +500,7 @@ export function CIPipelineSheet({ id, onClose }: { id: string | null; onClose: (
                 </Button>
               )}
               <Button asChild size="sm" variant="outline">
-                <Link href="/ci-cd?tab=setup">
+                <Link href="/ci-cd?tab=connections">
                   <Settings2 className="h-4 w-4" />
                   {t('scans.ci.trustAndGateLink', 'CI/CD settings')}
                 </Link>

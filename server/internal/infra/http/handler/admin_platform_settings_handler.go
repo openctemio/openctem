@@ -33,6 +33,7 @@ import (
 	"github.com/openctemio/openctem/server/internal/app/scanidentity"
 	"github.com/openctemio/openctem/server/internal/app/scopenames"
 	"github.com/openctemio/openctem/server/internal/app/storagequota"
+	"github.com/openctemio/openctem/server/internal/app/vulnfeedsources"
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/pkg/apierror"
 	"github.com/openctemio/openctem/server/pkg/domain/admin"
@@ -83,6 +84,8 @@ type AdminPlatformSettingsHandler struct {
 	ScopeNames *scopenames.Service
 	// PrivateDestinations are the private ranges outbound requests may reach.
 	PrivateDestinations *privatedestinations.Service
+	// VulnFeedSources is where the vulnerability feed is fetched from.
+	VulnFeedSources *vulnfeedsources.Service
 	// FeedLimits is how old the vulnerability data may be.
 	FeedLimits *feedlimits.Service
 }
@@ -139,7 +142,8 @@ func (h *AdminPlatformSettingsHandler) writeSettingError(w http.ResponseWriter, 
 	case errors.Is(err, platformsetting.ErrVersionConflict):
 		apierror.Conflict("The " + what + " was changed by someone else; reload and try again").WriteJSON(w)
 	case errors.Is(err, platformcaptcha.ErrLockedByEnvironment), errors.Is(err, deploymentregion.ErrLockedByEnvironment),
-		errors.Is(err, platformai.ErrLockedByEnvironment), errors.Is(err, platformsociallogin.ErrLockedByEnvironment):
+		errors.Is(err, platformai.ErrLockedByEnvironment), errors.Is(err, platformsociallogin.ErrLockedByEnvironment),
+		errors.Is(err, vulnfeedsources.ErrLockedByEnvironment):
 		apierror.New(http.StatusConflict, CodeSettingLockedByEnvironment, err.Error()).WriteJSON(w)
 	case errors.Is(err, deploymentregion.ErrAlreadySet):
 		apierror.New(http.StatusConflict, CodeRegionAlreadySet, err.Error()).WriteJSON(w)

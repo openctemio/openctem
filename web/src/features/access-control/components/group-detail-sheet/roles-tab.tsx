@@ -158,7 +158,7 @@ export function RolesTab({
             {t('org.teamOutside.grantDirect', 'Give the role to a person')}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
+        <DropdownMenuContent>
           {fullDataCandidates.map((r) => (
             <DropdownMenuItem key={r.id} onSelect={() => setGrantRole(r)}>
               {r.name}

@@ -46,6 +46,7 @@ import type {
   CIRepositoryCoverage,
 } from '../types'
 import { useSearchQuery } from '@/hooks/use-search-query'
+import { formatDateTime } from '@/lib/app-locale'
 
 type TFn = ReturnType<typeof useTranslation>['t']
 
@@ -61,7 +62,7 @@ function capabilityTitle(c: CICapabilityCoverage, t: TFn): string {
     parts.push(
       t('scans.ci.coverage.last', 'Last: {source}', {
         source: `${kind}${c.source_name ? ` (${c.source_name})` : ''}`,
-      }) + (c.last_at ? `, ${new Date(c.last_at).toLocaleString()}` : '')
+      }) + (c.last_at ? `, ${formatDateTime(new Date(c.last_at))}` : '')
     )
   }
   if (c.expected)
@@ -202,7 +203,7 @@ export function CICoverageView({ toolbarStart }: CICoverageViewProps) {
   const filter: CICoverageFilter = isCoverageFilter(filterParam) ? filterParam : ''
   const [q, setQ] = useUrlFilter('q', '')
   const searchTerm = useSearchQuery(q).term
-  const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: 20 })
+  const { pagination, setPagination, setPage } = useListParams()
   const [pending, setPending] = useState<string | null>(null)
   const { data, error, isLoading, mutate } = useCICoverage({
     filter,

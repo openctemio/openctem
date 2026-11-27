@@ -1,8 +1,16 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
-import { QueryInput } from '../components/query-input'
+import { QueryInput, SUGGESTION_LIST_PHONE_CLASSES } from '../components/query-input'
 import type { ParseResult } from '../api/query-api'
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 const api = vi.hoisted(() => ({ parse: vi.fn(), values: vi.fn() }))
 vi.mock('../api/query-api', () => ({
@@ -15,8 +23,17 @@ vi.mock('../api/query-api', () => ({
           type: 'enum',
           operators: ['=', 'in'],
           enum: ['critical', 'high', 'medium', 'low', 'info'],
+          group: 'common',
         },
-        { path: 'tool_name', type: 'string', operators: ['=', 'in'] },
+        { path: 'tool_name', type: 'string', operators: ['=', 'in'], group: 'common' },
+        {
+          path: 'is_in_kev',
+          type: 'boolean',
+          operators: ['=', '!='],
+          aliases: ['kev'],
+          group: 'common',
+        },
+        { path: 'asset_id', type: 'id', operators: ['=', 'in'], group: 'identifier' },
       ],
     },
   }),
@@ -88,7 +105,8 @@ describe('QueryInput', () => {
         ],
       })
     )
-    render(<Box initial="severty=high" />)
+    render(<Box initial="severty=high" onSubmit={vi.fn()} />)
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' })
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300)
     })
@@ -113,45 +131,442 @@ describe('QueryInput', () => {
     expect(window.localStorage.getItem('recent-queries:findings')).toContain('severity>=high')
   })
 
-  it('drops a stale answer', async () => {
-    let first!: (r: ParseResult) => void
-    api.parse
-      .mockImplementationOnce(() => new Promise<ParseResult>((r) => (first = r)))
-      .mockResolvedValueOnce(ok({ text: 'kev=true' }))
-    const onParsed = vi.fn()
-    function Two() {
-      const [v, setV] = useState('severity=x')
+  it('offers the fields under labelled groups, each with its meaning, when the field is empty', () => {
+    render(<Box />)
+    const box = screen.getByRole('combobox')
+    fireEvent.focus(box)
+    const list = screen.getByRole('listbox')
+    const groups = screen.getAllByRole('group')
+    expect(groups.map((g) => g.getAttribute('aria-labelledby'))).toHaveLength(2)
+    expect(screen.getByRole('group', { name: 'Common' })).toBeTruthy()
+    expect(screen.getByRole('group', { name: 'Identifiers' })).toBeTruthy()
+    const options = screen.getAllByRole('option')
+    expect(options.map((o) => o.querySelector('.font-mono')?.textContent)).toEqual([
+      'severity',
+      'tool_name',
+      'kev',
+      'asset_id',
+    ])
+    expect(options[2].textContent).toContain('Listed as known exploited')
+    expect(options[3].textContent).toContain('Identifier of the asset the finding is on')
+    // The field points at the first option; the arrows move across the groups.
+    expect(box.getAttribute('aria-activedescendant')).toBe(`${list.id}-0`)
+    for (let i = 0; i < 3; i++) fireEvent.keyDown(box, { key: 'ArrowDown' })
+    expect(box.getAttribute('aria-activedescendant')).toBe(`${list.id}-3`)
+    expect(options[3].getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(box, { key: 'Tab' })
+    expect((box as HTMLInputElement).value).toBe('asset_id')
+  })
+
+  it('Enter in the empty field still applies no filter; an arrowed row is accepted', () => {
+    const onSubmit = vi.fn()
+    render(<Box onSubmit={onSubmit} />)
+    const box = screen.getByRole('combobox')
+    fireEvent.focus(box)
+    expect(screen.getAllByRole('option').length).toBeGreaterThan(0)
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ valid: true, text: '' }))
+    expect((box as HTMLInputElement).value).toBe('')
+    fireEvent.keyDown(box, { key: 'ArrowDown' })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect((box as HTMLInputElement).value).toBe('tool_name')
+  })
+
+  it('draws the suggestions as a floating list in a portal, sized by the room and the field', () => {
+    const { container } = render(<Box />)
+    const box = screen.getByRole('combobox')
+    expect(box.getAttribute('aria-controls')).toBeNull()
+    fireEvent.change(box, { target: { value: 'sev', selectionStart: 3 } })
+    const list = screen.getByRole('listbox')
+    // Outside the field's own tree: no scroll container around the field
+    // (a dialog body) can clip it.
+    expect(container.contains(list)).toBe(false)
+    expect(document.body.contains(list)).toBe(true)
+    expect(box.getAttribute('aria-controls')).toBe(list.id)
+    expect(box.getAttribute('aria-activedescendant')).toBe(`${list.id}-0`)
+    expect(list.className).toContain('--radix-popover-content-available-height')
+    expect(list.className).toContain('--radix-popover-trigger-width')
+    expect(list.className).toContain('overflow-y-auto')
+    // It never takes focus: the caret stays in the field.
+    expect(document.activeElement).not.toBe(list)
+  })
+
+  it('below 768 px the suggestions span the screen between the popover gutters, about eight rows', () => {
+    render(<Box />)
+    const box = screen.getByRole('combobox')
+    fireEvent.change(box, { target: { value: 'sev', selectionStart: 3 } })
+    const classes = screen.getByRole('listbox').className.split(/\s+/)
+    // From 768 px: never wider than the field, as before.
+    expect(classes).toContain('w-[min(28rem,var(--radix-popover-trigger-width))]')
+    // Below: the screen less both gutters (the kit's own gutter variable, so
+    // a safe area counts), not the field's width.
+    expect(classes).toContain('max-md:w-[calc(100vw-var(--float-gutter-x,2rem))]')
+    expect(classes).toContain(
+      'max-md:max-h-[min(17rem,var(--radix-popover-content-available-height))]'
+    )
+    expect(SUGGESTION_LIST_PHONE_CLASSES.split(' ').every((c) => c.startsWith('max-md:'))).toBe(
+      true
+    )
+  })
+
+  it('in a dialog the suggestions keep the field width on a phone too, so they stay inside it', () => {
+    function InDialog() {
+      const [v, setV] = useState('')
       return (
-        <>
+        <Dialog open>
+          <DialogContent size="xl">
+            <DialogHeader>
+              <DialogTitle>title</DialogTitle>
+              <DialogDescription>description</DialogDescription>
+            </DialogHeader>
+            <DialogBody>
+              <QueryInput entity="findings" value={v} onChange={setV} multiline ariaLabel="q" />
+            </DialogBody>
+          </DialogContent>
+        </Dialog>
+      )
+    }
+    render(<InDialog />)
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'sev', selectionStart: 3 } })
+    const list = screen.getByRole('listbox')
+    expect(list.className).toContain('--radix-popover-trigger-width')
+    expect(list.className).not.toContain('100vw-var(--float-gutter-x')
+  })
+
+  it('Escape closes the suggestions first and keeps the dialog open', async () => {
+    const onOpenChange = vi.fn()
+    function InDialog() {
+      const [v, setV] = useState('')
+      return (
+        <Dialog open onOpenChange={onOpenChange}>
+          <DialogContent size="xl">
+            <DialogHeader>
+              <DialogTitle>title</DialogTitle>
+              <DialogDescription>description</DialogDescription>
+            </DialogHeader>
+            <DialogBody>
+              <QueryInput entity="findings" value={v} onChange={setV} multiline ariaLabel="q" />
+            </DialogBody>
+          </DialogContent>
+        </Dialog>
+      )
+    }
+    render(<InDialog />)
+    const box = screen.getByRole('combobox')
+    fireEvent.change(box, { target: { value: 'sev', selectionStart: 3 } })
+    expect(screen.getByRole('listbox')).toBeTruthy()
+    fireEvent.keyDown(box, { key: 'Escape' })
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(onOpenChange).not.toHaveBeenCalled()
+    fireEvent.keyDown(box, { key: 'Escape' })
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('sends nothing while typing; one check on Enter', async () => {
+    api.parse.mockResolvedValue(ok({ text: 'severity>=high kev=true' }))
+    const onSubmit = vi.fn()
+    render(<Box onSubmit={onSubmit} />)
+    const box = screen.getByRole('combobox')
+    const text = 'severity>=high kev=t'
+    for (let i = 1; i <= text.length; i++) {
+      fireEvent.change(box, { target: { value: text.slice(0, i), selectionStart: i } })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(50)
+      })
+    }
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+    expect(api.parse).not.toHaveBeenCalled()
+    expect(api.values).not.toHaveBeenCalled()
+    fireEvent.keyDown(box, { key: 'Escape' })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+    })
+    expect(api.parse).toHaveBeenCalledTimes(1)
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks for server values only after two characters and a pause, cancelling the one in flight', async () => {
+    const signals: AbortSignal[] = []
+    api.values.mockImplementation((...args: unknown[]) => {
+      signals.push(args[4] as AbortSignal)
+      return new Promise(() => {})
+    })
+    render(<Box />)
+    const box = screen.getByRole('combobox')
+    const type = async (v: string, wait: number) => {
+      fireEvent.change(box, { target: { value: v, selectionStart: v.length } })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(wait)
+      })
+    }
+    await type('tool_name=', 1000)
+    await type('tool_name=n', 1000)
+    expect(api.values).not.toHaveBeenCalled()
+    await type('tool_name=nu', 299)
+    expect(api.values).not.toHaveBeenCalled()
+    await type('tool_name=nuc', 300)
+    expect(api.values).toHaveBeenCalledTimes(1)
+    expect(api.values.mock.calls[0].slice(0, 3)).toEqual(['findings', 'tool_name', 'nuc'])
+    await type('tool_name=nucl', 300)
+    expect(api.values).toHaveBeenCalledTimes(2)
+    expect(signals[0].aborted).toBe(true)
+    expect(signals[1].aborted).toBe(false)
+  })
+
+  it('Ctrl+Space asks for values at once, whatever was typed', async () => {
+    render(<Box />)
+    const box = screen.getByRole('combobox')
+    fireEvent.change(box, { target: { value: 'tool_name=', selectionStart: 10 } })
+    fireEvent.keyDown(box, { key: ' ', ctrlKey: true })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
+    expect(api.values).toHaveBeenCalledTimes(1)
+  })
+
+  it('a quote or parenthesis that does not pair up is refused without asking the server', async () => {
+    const onSubmit = vi.fn()
+    render(<Box onSubmit={onSubmit} initial={'tool_name="nuclei'} />)
+    const box = screen.getByRole('combobox')
+    expect(box.getAttribute('aria-invalid')).toBe('false')
+    fireEvent.keyDown(box, { key: 'Enter' })
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+    })
+    expect(api.parse).not.toHaveBeenCalled()
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(box.getAttribute('aria-invalid')).toBe('true')
+    expect(screen.getByText(/quote is not closed/i)).toBeTruthy()
+  })
+
+  it('shows Apply, enabled and announced while the text differs from the applied one', async () => {
+    api.parse.mockResolvedValue(ok({ text: 'kev=true' }))
+    const onSubmit = vi.fn()
+    function Applied() {
+      const [v, setV] = useState('severity>=high')
+      return (
+        <QueryInput
+          entity="findings"
+          value={v}
+          onChange={setV}
+          applied="severity>=high"
+          onSubmit={onSubmit}
+          ariaLabel="search"
+          quietStatus
+        />
+      )
+    }
+    render(<Applied />)
+    const apply = screen.getByRole('button', { name: /apply query/i }) as HTMLButtonElement
+    expect(apply.disabled).toBe(true)
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'kev=true' } })
+    expect(apply.disabled).toBe(false)
+    expect(screen.getByText(/not applied yet/i)).toBeTruthy()
+    expect(api.parse).not.toHaveBeenCalled()
+    fireEvent.click(apply)
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+    })
+    expect(api.parse).toHaveBeenCalledTimes(1)
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ valid: true }))
+  })
+
+  function ListField({ onSubmit }: { onSubmit: (r: ParseResult) => void }) {
+    const [v, setV] = useState('severity>=high')
+    return (
+      <QueryInput
+        entity="findings"
+        value={v}
+        onChange={setV}
+        applied="severity>=high"
+        onSubmit={onSubmit}
+        ariaLabel="search"
+        quietStatus
+      />
+    )
+  }
+
+  it('expands in place into a coloured multi-line editor: Shift+Enter is a new line, Enter runs, Escape folds back unchanged', async () => {
+    api.parse.mockResolvedValue(ok())
+    const onSubmit = vi.fn()
+    const { container } = render(<ListField onSubmit={onSubmit} />)
+    fireEvent.click(screen.getByRole('button', { name: /expand the editor/i }))
+    const editor = container.querySelector('[data-slot="query-editor-expanded"] textarea')
+    expect(editor).toBeTruthy()
+    expect(screen.getByRole('combobox')).toBe(editor)
+    // The coloured copy holds the same text, hidden from assistive technology.
+    const copy = container.querySelector('[data-slot="query-highlight"]')!
+    expect(copy.getAttribute('aria-hidden')).toBe('true')
+    expect(copy.textContent).toBe('severity>=high\n')
+    expect(copy.querySelector('span')?.textContent).toBe('severity')
+    const box = screen.getByRole('combobox')
+    fireEvent.keyDown(box, { key: 'Escape' })
+    // It folds back after its short height animation.
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
+    expect(container.querySelector('[data-slot="query-editor-expanded"]')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /expand the editor/i }))
+    const big = screen.getByRole('combobox')
+    fireEvent.change(big, { target: { value: 'kev=true' } })
+    fireEvent.keyDown(big, { key: 'Enter', shiftKey: true })
+    expect(api.parse).not.toHaveBeenCalled()
+    fireEvent.keyDown(big, { key: 'Escape' })
+    // Changed: Escape does not fold it (the host decides, e.g. puts the applied text back).
+    expect(container.querySelector('[data-slot="query-editor-expanded"]')).toBeTruthy()
+    fireEvent.keyDown(big, { key: 'Enter' })
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+    })
+    expect(api.parse).toHaveBeenCalledTimes(1)
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
+
+  it('expanding and folding keep the text and the caret; line breaks become spaces on one line', () => {
+    const { container } = render(<ListField onSubmit={vi.fn()} />)
+    const line = screen.getByRole('combobox') as HTMLInputElement
+    line.focus()
+    line.setSelectionRange(3, 5)
+    fireEvent.click(screen.getByRole('button', { name: /expand the editor/i }))
+    act(() => {
+      vi.advanceTimersByTime(50)
+    })
+    const big = screen.getByRole('combobox') as HTMLTextAreaElement
+    expect(big.tagName).toBe('TEXTAREA')
+    expect(big.value).toBe('severity>=high')
+    expect(document.activeElement).toBe(big)
+    expect([big.selectionStart, big.selectionEnd]).toEqual([3, 5])
+    fireEvent.change(big, { target: { value: 'severity=critical\nkev=true' } })
+    big.setSelectionRange(20, 20)
+    fireEvent.click(screen.getByRole('button', { name: /collapse the editor/i }))
+    act(() => {
+      vi.advanceTimersByTime(300)
+    })
+    expect(container.querySelector('[data-slot="query-editor-expanded"]')).toBeNull()
+    const again = screen.getByRole('combobox') as HTMLInputElement
+    expect(again.value).toBe('severity=critical kev=true')
+    expect(document.activeElement).toBe(again)
+    expect(again.selectionStart).toBe(20)
+  })
+
+  it('autoFocus focuses the field once it is enabled (a list prints its text first)', () => {
+    const props = {
+      entity: 'findings' as const,
+      onChange: vi.fn(),
+      ariaLabel: 'search',
+      autoFocus: true,
+    }
+    const { rerender } = render(<QueryInput {...props} value="" disabled />)
+    expect(document.activeElement).not.toBe(screen.getByRole('combobox'))
+    rerender(<QueryInput {...props} value="severity>=high" />)
+    expect(document.activeElement).toBe(screen.getByRole('combobox'))
+  })
+
+  it('on a touch screen the expanded editor does not take the focus (no keyboard on open)', () => {
+    const before = window.matchMedia
+    window.matchMedia = ((q: string) => ({
+      matches: q.includes('coarse'),
+      media: q,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    })) as unknown as typeof window.matchMedia
+    try {
+      function Touch() {
+        const [v, setV] = useState('severity>=high')
+        return (
           <QueryInput
             entity="findings"
             value={v}
             onChange={setV}
-            onParsed={onParsed}
+            applied="severity>=high"
+            onSubmit={vi.fn()}
             ariaLabel="search"
+            autoFocus
+            quietStatus
           />
-          <button onClick={() => setV('kev=true')}>next</button>
-        </>
-      )
+        )
+      }
+      render(<Touch />)
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      fireEvent.click(screen.getByRole('button', { name: /expand the editor/i }))
+      act(() => {
+        vi.advanceTimersByTime(50)
+      })
+      const big = screen.getByRole('combobox')
+      expect(big.tagName).toBe('TEXTAREA')
+      expect(document.activeElement).not.toBe(big)
+    } finally {
+      window.matchMedia = before
     }
-    render(<Two />)
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(300)
-    })
-    fireEvent.click(screen.getByText('next'))
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(300)
-    })
-    await act(async () => {
-      first(
-        ok({
-          valid: false,
-          problems: [
-            { code: 'unknown_value', message: '', start: 9, end: 10, line: 1, column: 10 },
-          ],
-        })
-      )
-    })
-    expect(onParsed).toHaveBeenLastCalledWith(expect.objectContaining({ text: 'kev=true' }))
+  })
+
+  it('applies through one icon in the field: no text button, the edit state on the icon', () => {
+    const { container } = render(<ListField onSubmit={vi.fn()} />)
+    const apply = screen.getByRole('button', { name: 'Apply query' })
+    expect(apply.textContent).toBe('')
+    expect(apply).toHaveAttribute('aria-keyshortcuts', 'Enter')
+    expect(apply.closest('[data-slot="query-field-controls"]')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^apply$/i })).toBeNull()
+    expect(apply.className).not.toContain('bg-primary')
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'kev=true' } })
+    expect(apply.className).toContain('bg-primary')
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toMatch(/not applied yet/i)
+  })
+
+  it('on a phone help and expand sit behind one overflow in the one-line field', () => {
+    render(<ListField onSubmit={vi.fn()} />)
+    const more = screen.getByRole('button', { name: 'More query options' })
+    expect(more.closest('[data-slot="query-field-controls"]')).toBeTruthy()
+    // From 768 px the two are their own buttons; below, hidden (CSS).
+    expect(screen.getByRole('button', { name: /query syntax/i })).toHaveClass('hidden', 'md:flex')
+    expect(screen.getByRole('button', { name: /expand the editor/i })).toHaveClass(
+      'hidden',
+      'md:flex'
+    )
+    expect(more.parentElement).toHaveClass('md:hidden')
+  })
+
+  it('the expanded editor grows in place with its text, within 2 to 8 lines, and wraps at spaces only', () => {
+    const { container } = render(<ListField onSubmit={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /expand the editor/i }))
+    const big = container.querySelector<HTMLTextAreaElement>(
+      '[data-slot="query-editor-expanded"] textarea'
+    )!
+    // In the flow: no overlay box, no stand-in field keeping the row one line high.
+    expect(container.querySelector('input[aria-hidden]')).toBeNull()
+    expect(big.closest('.absolute')).toBeNull()
+    // Its height follows the text, not a dragged size: no resize handle,
+    // nothing kept in the browser.
+    expect(big.className).toContain('resize-none')
+    // On a phone its three controls (3 x 28 px) get a strip above the text,
+    // which then has the field's whole width; from 768 px they end its first line.
+    expect(big.className).toContain('max-md:pt-(--spacing-control-touch)')
+    expect(big.className).toContain('max-md:pe-3')
+    expect(big.className).toContain('md:pe-[calc(var(--list-search-end,0.5rem)+4.75rem)]')
+    expect(window.localStorage.getItem('query-editor-height')).toBeNull()
+    // 8 lines of 20 px at most (plus the frame), 2 at least.
+    const max = parseFloat(big.style.maxHeight)
+    expect(max).toBeLessThanOrEqual(12 + 8 * 20)
+    expect(parseFloat(big.style.height)).toBeLessThanOrEqual(max)
+    // Lines break at spaces, never inside a condition; the coloured copy
+    // behind it wraps the same way.
+    const copy = big.previousElementSibling as HTMLElement
+    for (const el of [big, copy]) {
+      expect(el.className).toContain('break-normal')
+      expect(el.className).toContain('whitespace-pre-wrap')
+      expect(el.className).not.toContain('break-words')
+    }
+  })
+
+  it("the help lists the syntax and the person's own fields with their operators", async () => {
+    render(<ListField onSubmit={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: /query syntax/i }))
+    const help = document.querySelector('[data-slot="query-help"]')!
+    expect(help.textContent).toContain('severity')
+    expect(help.textContent).toContain('tool_name')
+    expect(help.textContent).toMatch(/Enter runs the query/)
   })
 })

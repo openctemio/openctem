@@ -93,7 +93,7 @@ describe('AccessRequestsPanel', () => {
     render(<AccessRequestsPanel canDecide />)
     const row = screen.getByText('owner@acme.com').closest('tr') as HTMLElement
     await user.click(within(row).getByRole('button', { name: /approve/i }))
-    expect(screen.getByLabelText(/slug/i)).toHaveValue('acme-corp')
+    expect(screen.getByLabelText(/short name/i)).toHaveValue('acme-corp')
     await user.click(screen.getByRole('button', { name: /create organization/i }))
     await waitFor(() =>
       expect(approveAccessRequest).toHaveBeenCalledWith('r1', {

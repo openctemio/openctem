@@ -12,16 +12,13 @@ import {
 } from '../list-columns'
 
 describe('default columns', () => {
-  it('Active leaves severity out (priority already carries it); every other view shows it', () => {
-    expect(defaultColumns(true)).toEqual(['status', 'slaStatus'])
-    expect(defaultColumns(false)).toEqual(['severity', 'status', 'slaStatus'])
+  it('shows asset, severity, status and due beside the locked columns, in every view', () => {
+    expect(defaultColumns()).toEqual(['asset', 'severity', 'status', 'slaStatus'])
   })
 
   it('the scanner and the first-seen date start hidden', () => {
-    for (const active of [true, false]) {
-      expect(defaultColumns(active)).not.toContain('source')
-      expect(defaultColumns(active)).not.toContain('createdAt')
-    }
+    expect(defaultColumns()).not.toContain('source')
+    expect(defaultColumns()).not.toContain('createdAt')
   })
 })
 

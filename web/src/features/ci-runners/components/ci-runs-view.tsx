@@ -31,7 +31,6 @@ import {
   StackedCell,
 } from '@/features/shared'
 import { ProviderIcon } from '@/features/scm-connections'
-import { dateFnsLocaleFor } from '@/lib/format-date'
 import { useListParams } from '@/hooks/use-list-params'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { Permission, usePermissions } from '@/lib/permissions'
@@ -55,9 +54,11 @@ import { baselineCounts, missingCodeHost, runAttempts } from '../lib/gate-settin
 import { INFO_REASON_CODES, PROVIDER_LABEL, REASON_LABEL, shortSHA } from '../lib/ci'
 import { repositoryPath } from '../lib/pipeline'
 import type { CIGateReason, CIRun, CIVerdictFilter } from '../types'
+import { CIOverrides } from './ci-overrides'
 import { useTranslation } from '@/context/i18n-provider'
 import { CIOverrideDialog } from './ci-override-dialog'
 import { CISetupEntry } from './ci-setup-wizard'
+import { formatDate } from '@/lib/app-locale'
 
 /** Whether a load error is a 404: the run is missing or out of the caller's data scope. */
 function isNotFound(error: unknown): boolean {
@@ -84,7 +85,7 @@ export function VerdictBadge({
       </Badge>
     )
   if (verdict === 'pass')
-    return <Badge variant="default">{t('scans.ci.verdict.pass', 'Pass')}</Badge>
+    return <Badge variant="outline">{t('scans.ci.verdict.pass', 'Pass')}</Badge>
   if (status === 'running')
     return <Badge variant="secondary">{t('scans.ci.verdict.running', 'Running')}</Badge>
   return <Badge variant="secondary">{t('scans.ci.verdict.none', 'No verdict')}</Badge>
@@ -260,7 +261,9 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
           )}
         >
           <Button asChild variant="outline" size="sm">
-            <Link href="/ci-cd?tab=setup">{t('scans.ci.trustAndGateLink', 'CI/CD settings')}</Link>
+            <Link href="/ci-cd?tab=connections">
+              {t('scans.ci.trustAndGateLink', 'CI/CD settings')}
+            </Link>
           </Button>
         </PageHeader>
       )}
@@ -274,7 +277,8 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
               'scans.ci.noRuns',
               'Add a CI trust configuration, then add the {product} CI scan to a pipeline.'
             )}
-            action={<CISetupEntry canWrite />}
+            // Embedded, the page header already holds "Connect a CI provider".
+            action={embedded ? undefined : <CISetupEntry canWrite />}
           />
         ) : (
           <EmptyState
@@ -333,6 +337,7 @@ export function CIRunsView({ embedded = false, toolbarStart }: CIRunsViewProps) 
         />
       )}
 
+      <CIOverrides canOverride={can(Permission.CIOverride)} />
       <CIRunSheet id={selected} onClose={() => setSelected(null)} />
     </PageStack>
   )
@@ -396,7 +401,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => void }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const { can } = usePermissions()
   const canOverride = can(Permission.CIOverride)
   // Code-host connections are managed with scans:ci:write (Pull request feedback).
@@ -404,7 +409,6 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
   const [overrideOpen, setOverrideOpen] = useState(false)
   const { data: run, error, mutate } = useCIRun(id)
   const v = run?.verdict_detail
-  const dfLocale = dateFnsLocaleFor(locale)
   const reasons = v?.reasons ?? []
   const isInfo = (r: CIGateReason) => INFO_REASON_CODES.includes(r.code ?? '')
   const blocking = reasons.filter((r) => r.mode !== 'comment' && !isInfo(r))
@@ -575,7 +579,7 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                   {v?.baseline?.due_at && (
                     <span className="ms-1 font-normal text-muted-foreground">
                       {t('scans.ci.runDetail.baselineDue', ', baseline blocks again from {date}', {
-                        date: new Date(v.baseline.due_at).toLocaleDateString(),
+                        date: formatDate(new Date(v.baseline.due_at)),
                       })}
                     </span>
                   )}
@@ -696,7 +700,7 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
                             className="mt-1.5 flex w-fit"
                             data-testid="ci-run-connect-host"
                           >
-                            <Link href="/ci-cd?tab=setup&section=feedback">
+                            <Link href="/ci-cd?tab=feedback">
                               <Plug className="size-3.5" aria-hidden />
                               {codeHost === 'gitlab'
                                 ? t('scans.ci.runDetail.connectGitLab', 'Connect GitLab')

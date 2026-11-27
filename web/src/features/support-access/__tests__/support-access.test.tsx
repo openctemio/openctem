@@ -16,8 +16,11 @@ vi.mock('@/lib/api/client', () => ({
 
 let role: 'owner' | 'admin' | 'member' = 'member'
 let hasTeamRead = true
-vi.mock('@/lib/permissions', () => ({
+vi.mock('@/lib/permissions/constants', async (orig) => ({
+  ...(await orig<typeof import('@/lib/permissions/constants')>()),
   Permission: { TeamRead: 'team:read' },
+}))
+vi.mock('@/lib/permissions/hooks', () => ({
   usePermissions: () => ({
     can: (p: string) => (p === 'team:read' ? hasTeamRead : true),
     isAtLeast: (r: string) =>

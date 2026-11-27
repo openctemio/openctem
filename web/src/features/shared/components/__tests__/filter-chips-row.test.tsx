@@ -10,51 +10,33 @@ import { FilterChipsRow, LockedChip, fitChipsRow } from '../filter-chips-row'
 // chip was folded to make room.
 
 describe('fitChipsRow', () => {
-  // A 390px phone: 358px of row inside the 16px gutters.
-  const phone = { total: 358, trail: 96, end: 72 }
-
   it('shows every chip when everything fits on one line', () => {
-    expect(fitChipsRow({ total: 1200, lead: 200, trail: 96, end: 72, chips: [130, 120] })).toEqual({
+    expect(fitChipsRow({ total: 1200, lead: 200, end: 168, chips: [130, 120] })).toEqual({ fit: 2 })
+  })
+
+  it('folds chips into "+N more" beside the leading chip and the end block', () => {
+    // 900 - (200 + 8) - (168 + 8) = 516 for chips: two of 200 fit with "+N more".
+    expect(fitChipsRow({ total: 900, lead: 200, end: 168, chips: [200, 200, 200] })).toEqual({
       fit: 2,
-      stacked: false,
     })
   })
 
-  it('folds chips into "+N more" using the leading chip at its natural width', () => {
-    // 900 - (200 + 8) - (96 + 8) - (72 + 8) = 508 for chips: two of 200 fit with "+N more".
-    expect(
-      fitChipsRow({ total: 900, lead: 200, trail: 96, end: 72, chips: [200, 200, 200] })
-    ).toEqual({ fit: 2, stacked: false })
+  it('never asks for a second line: with no room every chip folds', () => {
+    // 358 - 208 - 176 < 0: only "+N more" is left, on the same line.
+    expect(fitChipsRow({ total: 358, lead: 200, end: 168, chips: [130] })).toEqual({ fit: 0 })
+    expect(fitChipsRow({ total: 358, lead: 0, end: 168, chips: [80, 80, 80] })).toEqual({ fit: 1 })
   })
 
-  it('puts the leading chip on its own line on a phone, never under a chip', () => {
-    // 358 - 208 - 104 - 80 < 0: not even "+N more" fits beside it.
-    expect(fitChipsRow({ ...phone, lead: 200, chips: [130] })).toEqual({ fit: 1, stacked: true })
-  })
-
-  it('folds the chips on the second line when they do not fit there either', () => {
-    // Second line: 358 - 104 - 80 = 174, so one 80px chip and "+N more".
-    expect(fitChipsRow({ ...phone, lead: 200, chips: [80, 80, 80] })).toEqual({
-      fit: 1,
-      stacked: true,
-    })
-  })
-
-  it('stacks a leading chip with no chips when it and the actions do not fit', () => {
-    expect(fitChipsRow({ ...phone, lead: 200, chips: [] })).toEqual({ fit: 0, stacked: true })
-    expect(fitChipsRow({ ...phone, lead: 150, chips: [] })).toEqual({ fit: 0, stacked: false })
-  })
-
-  it('never stacks without a leading chip', () => {
-    expect(fitChipsRow({ ...phone, lead: 0, chips: [130, 130, 130] })).toEqual({
-      fit: 0,
-      stacked: false,
-    })
+  it('keeps the fit whatever the end block holds once measured (Clear pinned at the end)', () => {
+    const a = fitChipsRow({ total: 1000, lead: 0, end: 200, chips: [120, 120, 120, 120] })
+    const b = fitChipsRow({ total: 1000, lead: 0, end: 200, chips: [120, 120, 120, 120, 120] })
+    expect(b.fit).toBeLessThanOrEqual(5)
+    expect(a.fit).toBe(4)
   })
 })
 
 describe('FilterChipsRow measuring', () => {
-  const widths = { row: 358, lead: 200, chip: 130, trail: 96, end: 72 }
+  const widths = { row: 358, lead: 200, chip: 130, end: 168 }
   let restore: Array<() => void> = []
 
   function stub(proto: object, prop: string, get: (el: HTMLElement) => number) {
@@ -82,7 +64,6 @@ describe('FilterChipsRow measuring', () => {
     stub(HTMLElement.prototype, 'offsetWidth', (el) => {
       if (el.dataset.chipKey) return widths.chip
       if (el.parentElement?.dataset.slot === 'filter-chips-leading') return widths.lead
-      if (el.dataset.slot === 'filter-chips-trailing') return widths.trail
       if (el.dataset.slot === 'filter-chips-end') return widths.end
       return 0
     })
@@ -106,39 +87,76 @@ describe('FilterChipsRow measuring', () => {
         <span key={c}>{c}</span>
       ))}
       trailing={<button type="button">Add filter</button>}
-      end={<span>90 findings</span>}
     />
   )
 
-  it('stacks the locked chip above the chips at phone width', () => {
+  it('one line of one height: the locked chip and the chips never stack', () => {
     render(row(['Related to is Me']))
     const r = screen.getByTestId('row')
-    expect(r).toHaveAttribute('data-stacked')
-    expect(screen.getByText('Related to is Me')).toBeInTheDocument()
+    expect(r).toHaveClass('flex-nowrap', 'h-control')
+    expect(r).not.toHaveClass('flex-wrap')
+    // 358 - 208 - 176 leaves no room: the chip folds into "+1 more" on the same line.
+    expect(screen.getByText('+1 more')).toBeInTheDocument()
   })
 
-  it('keeps one line when the row is wide', () => {
+  it('keeps every chip when the row is wide', () => {
     widths.row = 1200
     try {
       render(row(['Related to is Me', 'EPSS score at least 0.5']))
-      expect(screen.getByTestId('row')).not.toHaveAttribute('data-stacked')
       expect(screen.queryByText(/more/)).toBeNull()
     } finally {
       widths.row = 358
     }
   })
 
-  it('folds what does not fit beside the actions on the second line', () => {
-    widths.chip = 70
+  it('folds what does not fit and pins the list actions and Clear at the end', () => {
+    widths.row = 750
+    widths.chip = 120
     try {
-      render(row(['a', 'b', 'c']))
-      // Second line: 358 - 104 - 80 = 174: one 70px chip and "+2 more" (88).
-      expect(screen.getByTestId('row')).toHaveAttribute('data-stacked')
+      render(row(['a', 'b', 'c', 'd']))
+      // 750 - 208 - 176 = 366: two 120px chips, a gap and "+2 more" (88) take 340.
       expect(screen.getByText('a')).toBeInTheDocument()
-      expect(screen.queryByText('b')).toBeNull()
+      expect(screen.getByText('b')).toBeInTheDocument()
+      expect(screen.queryByText('c')).toBeNull()
       expect(screen.getByText('+2 more')).toBeInTheDocument()
+      const end = document.querySelector('[data-slot="filter-chips-end"]') as HTMLElement
+      expect(end).toHaveClass('ms-auto')
+      expect(end).toHaveTextContent(/^Add filter$/)
     } finally {
+      widths.row = 358
       widths.chip = 130
     }
+  })
+
+  it('on a phone keeps every chip and wraps them, never scrolls or "+N more"', () => {
+    const width = window.innerWidth
+    widths.chip = 70
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+    try {
+      render(row(['a', 'b', 'c']))
+      for (const c of ['a', 'b', 'c']) expect(screen.getByText(c)).toBeInTheDocument()
+      expect(screen.queryByText(/more/)).toBeNull()
+      const strip = document.querySelector('[data-slot="filter-chips-strip"]') as HTMLElement
+      expect(strip).toHaveAttribute('data-wrap')
+      expect(strip).toHaveClass('flex-wrap')
+      expect(strip.className).not.toContain('overflow-x')
+      // The locked chip wraps with the chips.
+      expect(strip).toContainElement(screen.getByText('Informational hidden (12)'))
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+      widths.chip = 130
+    }
+  })
+})
+
+describe('FilterChipsRow with nothing to show', () => {
+  it('renders nothing without chips, actions, count or leading chip', () => {
+    const { container } = render(<FilterChipsRow chips={[]} />)
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('marks a row that holds only its leading chip, so the toolbar can hide it', () => {
+    render(<FilterChipsRow data-testid="row" chips={[]} leading={<span />} />)
+    expect(screen.getByTestId('row')).toHaveAttribute('data-bare')
   })
 })

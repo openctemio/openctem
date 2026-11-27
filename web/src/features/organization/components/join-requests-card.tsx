@@ -6,7 +6,6 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
   SelectContent,
@@ -69,14 +68,16 @@ export function JoinRequestsCard({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">
+    // A section of the Requests tab, not a card in it (P4-Settings-Members): the frame took the
+    // width that kept a request's role, Approve and Reject on one line on a phone.
+    <section className="space-y-3" aria-labelledby="join-requests-title">
+      <div className="space-y-1">
+        <h2 id="join-requests-title" className="text-base font-semibold">
           {t('org.joinRequests.title', undefined, { count: String(requests.length) })}
-        </CardTitle>
-        <CardDescription>{t('org.joinRequests.desc')}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
+        </h2>
+        <p className="text-sm text-muted-foreground">{t('org.joinRequests.desc')}</p>
+      </div>
+      <div className="space-y-3 border-t pt-3">
         {requests.map((r) => (
           <div
             key={r.id}
@@ -94,7 +95,7 @@ export function JoinRequestsCard({
                 value={roles[r.id] ?? r.requested_role}
                 onValueChange={(v) => setRoles((cur) => ({ ...cur, [r.id]: v as JoinRole }))}
               >
-                <SelectTrigger className="h-8 w-28" aria-label={t('org.joinRequests.role')}>
+                <SelectTrigger className="w-36" aria-label={t('org.joinRequests.role')}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -102,7 +103,12 @@ export function JoinRequestsCard({
                   <SelectItem value="member">{t('settings.domains.role.member')}</SelectItem>
                 </SelectContent>
               </Select>
-              <Button size="sm" onClick={() => setApproving(r.id)} disabled={busy !== null}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setApproving(r.id)}
+                disabled={busy !== null}
+              >
                 {busy === r.id ? (
                   <Loader2 className="me-1.5 h-4 w-4 animate-spin" />
                 ) : (
@@ -123,7 +129,7 @@ export function JoinRequestsCard({
           </div>
         ))}
         <p className="text-xs text-muted-foreground">{t('org.joinRequests.expiry')}</p>
-      </CardContent>
+      </div>
       {(() => {
         const req = requests.find((r) => r.id === approving)
         const role = req ? (roles[req.id] ?? req.requested_role) : 'viewer'
@@ -147,6 +153,6 @@ export function JoinRequestsCard({
           />
         )
       })()}
-    </Card>
+    </section>
   )
 }

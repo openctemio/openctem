@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	"github.com/openctemio/openctem/server/internal/app/scopeauth"
 	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
 	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
@@ -31,7 +33,7 @@ type FullData interface {
 
 // AdminNotifier tells every administrator about a widening (*scope.Service).
 type AdminNotifier interface {
-	NotifyAdmins(ctx context.Context, tenantID shared.ID, title, body string)
+	NotifyAdminsMsg(ctx context.Context, tenantID shared.ID, title, body string, msg *notificationdom.Message)
 }
 
 // Ledger feeds the job signer's scope ledger (*scope.Service.CommitEntries):
@@ -426,7 +428,8 @@ func (s *Service) Import(ctx context.Context, tenantID, actor shared.ID, in Inpu
 		return nil, nil, err
 	}
 	s.recordAttestation(ctx, p, actor)
-	s.widened(ctx, p, fmt.Sprintf("Program %s imported with %d scope entries (attested by the importer)", p.Name, len(entries)), len(entries) > 0)
+	s.widened(ctx, p, fmt.Sprintf("Program %s imported with %d scope entries (attested by the importer)", p.Name, len(entries)),
+		notificationdom.Msg("program.imported", "program", p.Name, "count", len(entries)), len(entries) > 0)
 	return p, pv, nil
 }
 
@@ -631,6 +634,7 @@ func (s *Service) applyScope(ctx context.Context, p *bp.Program, pv *Preview, ac
 	}
 	s.recordAttestation(ctx, p, actor)
 	s.widened(ctx, p, fmt.Sprintf("Program %s scope accepted: %d entries added, %d removed (attested)", p.Name, len(create), len(drop)),
+		notificationdom.Msg("program.scope_accepted", "program", p.Name, "added", len(create), "removed", len(drop)),
 		len(create) > 0 && p.Status == bp.StatusActive)
 	return nil
 }
@@ -705,7 +709,8 @@ func (s *Service) Resume(ctx context.Context, tenantID, actor, id shared.ID, acc
 		return nil, err
 	}
 	s.recordAttestation(ctx, p, actor)
-	s.widened(ctx, p, fmt.Sprintf("Program %s resumed (attested)", p.Name), true)
+	s.widened(ctx, p, fmt.Sprintf("Program %s resumed (attested)", p.Name),
+		notificationdom.Msg("program.resumed", "program", p.Name), true)
 	return p, nil
 }
 
@@ -721,10 +726,10 @@ func (s *Service) stopEntries(ctx context.Context, p *bp.Program, actor shared.I
 }
 
 // widened notifies the administrators and schedules the scope join.
-func (s *Service) widened(ctx context.Context, p *bp.Program, body string, join bool) {
+func (s *Service) widened(ctx context.Context, p *bp.Program, body string, msg *notificationdom.Message, join bool) {
 	s.assign(ctx, p)
 	if s.notifier != nil {
-		s.notifier.NotifyAdmins(ctx, p.TenantID, "Program scope in effect", body)
+		s.notifier.NotifyAdminsMsg(ctx, p.TenantID, "Program scope in effect", body, msg)
 	}
 	if join && s.joiner != nil {
 		s.joiner.Schedule(p.TenantID)

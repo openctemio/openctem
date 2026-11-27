@@ -35,6 +35,11 @@ var Scans = MustEntity(EntityDef{
 	},
 	Measures: []string{"total_runs", "failed_runs"},
 	Times:    []string{scanFieldCreatedAt, "last_run_at", "next_run_at"},
+	// What people filter scans by, in the order the editor offers it.
+	Suggested: []string{
+		"name", scanFieldStatus, "last_run_status", "scan_type", "schedule_type", "scanner_name", "tag",
+		"last_run_at", "next_run_at", "failed_runs", "total_runs", scanFieldCreatedAt,
+	},
 	Mandatory: []Mandatory{
 		{Leaf: &filterspec.Leaf{Field: "archived", Op: filterspec.OpEq, Values: []any{false}},
 			Why: "archived scans are left out"},

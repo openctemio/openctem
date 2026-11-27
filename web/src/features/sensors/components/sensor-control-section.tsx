@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 
 import { agoShort, exactTime, formatDurationShort } from '../lib/format'
 import { HeartbeatGapSparkline } from './heartbeat-gap-sparkline'
+import { formatNumber } from '@/lib/app-locale'
 
 /** A timer lag or report build above this is slow (the API's control_slow). */
 export const CONTROL_SLOW_MS = 5000
@@ -123,7 +124,7 @@ function ControlFields({
         </DetailField>
         <DetailField label={t('sensors.control.lost')}>
           <span className={cn('tabular-nums', c.failures > 0 && 'text-warning')}>
-            {c.failures.toLocaleString()}
+            {formatNumber(c.failures)}
           </span>
         </DetailField>
       </DetailFieldGrid>

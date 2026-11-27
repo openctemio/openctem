@@ -8,7 +8,7 @@
     "/compliance": 3,
     "/scope": 6,
     "/sensors": 8,
-    "/assets": 9,
+    "/assets": 8,
     "/assets/attention": 9,
     "/assets/changes": 4,
     "/insights/program-health": 7,
@@ -18,12 +18,13 @@
     "/remediation": 6,
     "/scans": 7,
     "/findings": 4,
-    "/account/security": 7,
+    "/account/security": 8,
     "/settings/ai": 7,
     "/settings/members": 7,
     "/settings/scanning/scan-windows": 6,
     "/settings/scanning/sensor-safety": 6
   },
+  "$comment_account": "The account area (/account/*, its own shell) runs on the account session, outside any organization, so it never sends /me/bootstrap (the gate wants 0) and asks the account reads directly: /users/me, /users/me/tenants and the ownership invitations banner (GET /me/ownership-invitations) that the organization shell takes from the bootstrap. That is why /account/security is budgeted at 8: the former 7 counted the bootstrap, and the account shell adds /users/me and the invitations read in its place (+1 net).",
   "$comment_providers": "/scope sends one more request than its counts need: GET /api/v1/scope/provider-addresses lists the entries that lie on a provider's shared addresses and still wait for the person's answer (move out of scope, or keep scanning). It is its own resource: the count strip and the table read other lists, and the card has its own mutations that refresh only it. Folding it into the entries list would make every entries page carry provider groups it does not show.",
   "$comment_security": "/account/security reads the account's own sign-in methods (one request, GET /api/v1/me/sign-in-methods): they are per account and change only by the person's own link or unlink, so neither the bootstrap nor the cache holds them. The organization sign-in card adds one more for the same reason (GET /api/v1/me/sso-links: the account's organizations with single sign-on and its identity at each).",
   "$comment_counts": "/scope reads its strip, tab and approval counts from two one-row lists with include=status_counts (entries, exclusions) next to its table; /compliance reads every framework card's stats from the frameworks list (include=stats); /sensors reads the fleet and its stats in one poll-mode request (changed_since), which its 15 s refresh repeats with only the changed sensors.",
@@ -39,9 +40,7 @@
     "/api/v1/organization/support-access/active"
   ],
   "$comment_pageUses": "A page that needs one of those endpoints for its own content, not for the shell: the change-password card reads the password policy from /auth/providers.",
-  "pageUsesSessionEndpoint": {
-    "/account/security": ["/api/v1/auth/providers"]
-  },
+  "pageUsesSessionEndpoint": {},
   "$comment_sensorSafety": "/settings/scanning/sensor-safety loads the opt-in impact, shared-sensor setting, tenant settings, identity policy and the last-changed audit line, plus the support-access banner.",
   "$comment_settingsAi": "/settings/ai shows five independent resources on open (AI settings, AI config, sources, AI agents, masking) and two more cards that each read their own tenant-scoped resource: the auto-triage policy and the knowledge sources list. None of them can come from the bootstrap (they are admin-only reads that change on save) and each card reads only its own endpoint, so the page is budgeted at seven.",
   "$comment_supportAccess": "The support-access banner (a shell element on every page) takes the active grants from /me/bootstrap and sends no request on a load (it re-reads once a minute afterwards), so a page budget counts only the page's own reads; /settings/members also loads join requests and the ownership transfer.",
@@ -93,7 +92,7 @@
       "max": 6
     },
     "/scans/[id]": {
-      "sample": "/api/v1/scans?per_page=1",
+      "sample": "/api/v1/scans?per_page=1&name=E2E%20scan%20never%20run",
       "max": 5
     },
     "/scans/workflows/[id]": {
@@ -115,6 +114,17 @@
     "/vulnerabilities/[cve]": {
       "from": "/vulnerabilities",
       "max": 5
+    }
+  },
+  "$comment_sheetRoutes": "A list with its quick-view sheet open from the link (?task=, ?campaign=): the list, the record and its first rows. The sheet reads its timeline and query only when expanded. Measured 2026-11-22 with E2E_BUDGET_REPORT: tasks 8 (the list's 4 plus the task, its first findings, the owner names and the campaign name), campaigns 7 (the list plus the campaign, its first tasks and the owner names).",
+  "sheetRoutes": {
+    "/remediation/tasks?task=[id]": {
+      "sample": "/api/v1/remediation/tasks?per_page=1",
+      "max": 8
+    },
+    "/remediation/campaigns?campaign=[id]": {
+      "sample": "/api/v1/remediation/campaigns?per_page=1",
+      "max": 7
     }
   }
 }

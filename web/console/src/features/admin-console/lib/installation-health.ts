@@ -1,5 +1,6 @@
 import type { PillTone } from '@/features/shared/components/tone-pill'
 import type { AdminOverview, AdminSystem } from '../types'
+import type { NamedVar } from './named-vars'
 import { hoursAgo, levelTone } from './system'
 
 /** The console page of the platform's own sensors (research/389). */
@@ -18,6 +19,8 @@ export interface HealthTile {
   detailKey?: string
   detail?: string
   vars?: Record<string, string | number>
+  /** Values of `vars` that are identifiers, read in words. */
+  named?: NamedVar[]
   href: string
 }
 
@@ -93,8 +96,9 @@ function storageTile(sys: AdminSystem): HealthTile {
     stateKey: 'admin.health.storageFree',
     state: '{percent}% free',
     detailKey: 'admin.health.storageDetail',
-    detail: 'Lowest: {name}',
+    detail: 'Least free: {name}',
     vars: { percent: Math.round(worst.free_ratio * 100), name: worst.name },
+    named: [{ var: 'name', keyPrefix: 'admin.system.volume.', values: [worst.name] }],
   }
 }
 
@@ -171,8 +175,8 @@ function databaseTile(o: AdminOverview): HealthTile {
     label: 'Database schema',
     href: '/health',
     detailKey: 'admin.health.schemaVersion',
-    detail: 'Version {version}',
-    vars: { version: p.schema_version },
+    detail: 'Last change {date}',
+    vars: { date: schemaDate(p.schema_version) },
   } as const
   if (!p.schema_known) {
     return { ...base, tone: 'muted', stateKey: 'admin.health.notReported', state: 'Not reported' }
@@ -202,4 +206,15 @@ function databaseTile(o: AdminOverview): HealthTile {
     }
   }
   return { ...base, tone: 'success', stateKey: 'admin.health.schemaOk', state: 'In sync' }
+}
+
+/**
+ * When the database schema last changed, in words: its version is the time
+ * of its newest migration (YYYYMMDDHHMMSS, UTC), read as "2026-11-20 09:40
+ * UTC" instead of a 14-digit number. Any other version is shown as it is.
+ */
+export function schemaDate(version: number | string): string {
+  const v = String(version)
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})\d{2}$/.exec(v)
+  return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]} UTC` : v
 }

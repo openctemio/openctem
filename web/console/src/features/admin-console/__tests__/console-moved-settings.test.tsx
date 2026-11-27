@@ -62,9 +62,9 @@ async function confirmWithReason(reason = 'rotate the key') {
 describe('CAPTCHA settings', () => {
   it('never shows the stored secret, keeps it when untouched and sends the reason', async () => {
     render(<CaptchaSettingsForm settings={captcha} canEdit onSaved={() => {}} />)
-    const secret = screen.getByLabelText('Secret key') as HTMLInputElement
-    expect(secret.value).toBe('')
-    expect(secret.type).toBe('password')
+    // A stored secret is a status with Replace and Remove, never an input.
+    expect(screen.getByText('Stored, never shown')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Replace Secret key' })).toBeInTheDocument()
     expect(screen.getByText(/Changed by root@example.test/)).toBeInTheDocument()
     await userEvent.clear(screen.getByLabelText('Site key (public)'))
     await userEvent.type(screen.getByLabelText('Site key (public)'), '0x4AAAAAAAnew')
@@ -83,17 +83,23 @@ describe('CAPTCHA settings', () => {
         onSaved={() => {}}
       />
     )
-    expect(
-      screen.getByText(/Locked by the server configuration \(CAPTCHA_TURNSTILE_SECRET\)/)
-    ).toBeInTheDocument()
+    // The variable is typed on the server: it reads as code in the sentence.
+    const code = Array.from(document.querySelectorAll('code')).find(
+      (c) => c.textContent === 'CAPTCHA_TURNSTILE_SECRET'
+    )
+    expect(code?.closest('[role="status"]')).toHaveTextContent(
+      /Locked by the server configuration \(CAPTCHA_TURNSTILE_SECRET\)\. Change it on the server/
+    )
     expect(screen.getByLabelText('Site key (public)')).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
   })
 
   it('offers no change to a non-super admin', () => {
     render(<CaptchaSettingsForm settings={captcha} canEdit={false} onSaved={() => {}} />)
+    // The page shows the view-only notice (SettingsPage readOnly); the form disables itself.
     expect(screen.queryByRole('button', { name: 'Save changes' })).not.toBeInTheDocument()
-    expect(screen.getByText('Only a super admin can change this setting.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Check' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Site key (public)')).toBeDisabled()
   })
 })
 
@@ -120,9 +126,10 @@ describe('Alert webhook', () => {
       />
     )
     expect(screen.getByText('Receiver: hooks.example.com')).toBeInTheDocument()
-    expect((screen.getByLabelText('Webhook address (https)') as HTMLInputElement).value).toBe('')
+    await userEvent.click(screen.getByRole('button', { name: 'Replace Webhook address' }))
+    expect((screen.getByLabelText('Webhook address') as HTMLInputElement).value).toBe('')
     await userEvent.type(
-      screen.getByLabelText('Webhook address (https)'),
+      screen.getByLabelText('Webhook address'),
       'https://hooks.example.com/T0KEN'
     )
     await userEvent.click(screen.getByRole('switch', { name: /Send alerts to the webhook/ }))

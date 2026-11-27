@@ -1,16 +1,14 @@
 'use client'
 
+import { useNow } from '@/hooks/use-now'
 import { useDisplayUser } from '@/hooks/use-display-user'
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Main } from '@/components/layout'
 import {
-  PageHeader,
+  SettingsPage,
   DataTable,
   DataTableColumnHeader,
   DataTableRowActions,
-  DisabledMenuItem,
-  MetricStrip,
   DetailCallout,
   DetailCopyId,
   DetailField,
@@ -19,12 +17,12 @@ import {
   DetailSheet,
   DetailStat,
   DetailStatGrid,
-  PageStack,
 } from '@/features/shared'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { HealthStatus } from '@/components/ui/health-status'
+import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { OneTimeLinkDialog } from '@/components/one-time-link-dialog'
@@ -48,14 +46,11 @@ import {
 } from '@/components/ui/dialog'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
+import { roleDisplayName } from '@/features/access-control/lib/system-role'
+import { formatCalendarDate } from '@/lib/format-metric'
 import { JoinRequestsCard } from '@/features/organization/components/join-requests-card'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { useJoinRequests } from '@/features/organization/api/use-domain-signup'
+import type { RowAction } from '@/features/shared/components/data-table-row-actions'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
@@ -64,7 +59,6 @@ import {
   UserPlus,
   Shield,
   CheckCircle,
-  MoreHorizontal,
   Trash2,
   Send,
   Ban,
@@ -126,50 +120,20 @@ import { fetcherWithOptions } from '@/lib/api/client'
 import { tenantEndpoints } from '@/lib/api/endpoints'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { Can, Permission, usePermissions, useCanMutate } from '@/lib/permissions'
+import { useOpenForm } from '@/hooks/use-open-form'
 import { MemberMfaBadge } from '@/features/organization/components/member-mfa-badge'
 import { MemberBadges } from '@/features/organization/components/member-badges'
+import {
+  PersonPhoneCard,
+  distinctAddress,
+} from '@/features/organization/components/person-phone-card'
 import { MemberAccessDialog } from '@/features/organization/components/member-access-dialog'
 import { suspendedReasonText } from '@/features/organization/lib/external-access'
 import { useTenantSettings } from '@/features/organization/api/use-tenant-settings'
 import { usePendingOwnershipTransfer } from '@/features/organization/api/use-ownership-transfer'
 import { TransferOwnershipDialog } from '@/features/organization/components/transfer-ownership-dialog'
 import { OwnershipTransferBanner } from '@/features/organization/components/ownership-transfer-banner'
-
-/**
- * The management actions of an administrator row, disabled for a caller who
- * is not the owner, each explaining why on hover or focus.
- */
-function PeerAdminLockedItems({ mfaEnabled }: { mfaEnabled: boolean }) {
-  const { t } = useTranslation()
-  const lockReason = t('org.membersPage.peerAdminLock', PEER_ADMIN_LOCK_REASON)
-  return (
-    <>
-      <DropdownMenuSeparator />
-      <DisabledMenuItem
-        label={t('org.membersPage.changeRoles', 'Change roles')}
-        icon={Pencil}
-        reason={lockReason}
-      />
-      {mfaEnabled && (
-        <DisabledMenuItem
-          label={t('org.membersPage.reset2fa', 'Reset 2FA')}
-          icon={ShieldOff}
-          reason={t('org.membersPage.resetMfaOwnerOnly', RESET_MFA_OWNER_REASON)}
-        />
-      )}
-      <DisabledMenuItem
-        label={t('org.membersPage.disable', 'Disable')}
-        icon={Ban}
-        reason={lockReason}
-      />
-      <DisabledMenuItem
-        label={t('org.membersPage.offboard', 'Offboard')}
-        icon={UserMinus}
-        reason={lockReason}
-      />
-    </>
-  )
-}
+import { BreakText } from '@/features/shared/components/break-text'
 
 // Tab values for the status filter on the members table (RFC-050 member
 // lifecycle). "current" (the default) is active + disabled; offboarded
@@ -206,27 +170,16 @@ const roleFilters: { value: RoleFilter; key: string; en: string }[] = [
   { value: 'viewer', key: 'org.role.viewer', en: 'Viewer' },
 ]
 
-// Helper functions
-const getInitials = (name: string) => {
-  return name
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2)
-}
+// The lists of the page, one tab each; the tab is in the URL (`?tab=`).
+type MemberTab = 'members' | 'invitations' | 'requests'
 
-const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
+// Helper functions
+// In the console language ("25 thg 11, 2026" in Vietnamese), not always English.
+const formatDate = (dateString: string, locale: string) => formatCalendarDate(dateString, locale)
 
 type TFn = ReturnType<typeof useTranslation>['t']
 
-const formatLastActive = (t: TFn, lastLoginAt?: string) => {
+const formatLastActive = (t: TFn, locale: string, lastLoginAt?: string) => {
   if (!lastLoginAt) return t('org.membersPage.never', 'Never')
   const date = new Date(lastLoginAt)
   const now = new Date()
@@ -236,15 +189,27 @@ const formatLastActive = (t: TFn, lastLoginAt?: string) => {
   const diffDays = Math.floor(diffMs / 86400000)
 
   if (diffMins < 1) return t('org.membersPage.justNow', 'Just now')
-  if (diffMins < 60) return t('org.membersPage.minsAgo', '{count} mins ago', { count: diffMins })
+  if (diffMins < 60)
+    return t('org.membersPage.minsAgo', '{count, plural, one {# min ago} other {# mins ago}}', {
+      count: diffMins,
+    })
   if (diffHours < 24)
-    return t('org.membersPage.hoursAgo', '{count} hours ago', { count: diffHours })
-  if (diffDays < 7) return t('org.membersPage.daysAgo', '{count} days ago', { count: diffDays })
-  return formatDate(lastLoginAt)
+    return t('org.membersPage.hoursAgo', '{count, plural, one {# hour ago} other {# hours ago}}', {
+      count: diffHours,
+    })
+  if (diffDays < 7)
+    return t('org.membersPage.daysAgo', '{count, plural, one {# day ago} other {# days ago}}', {
+      count: diffDays,
+    })
+  return formatDate(lastLoginAt, locale)
 }
 
 // Role chips are neutral: a role is a label, not a state, so it gets no colour of
 // its own (the old per-role palette read as severity and broke in dark mode).
+/** A role's name: a built-in role in the console language, a custom role as named. */
+const roleName = (t: TFn, role: { slug?: string; name: string; is_system?: boolean }) =>
+  roleDisplayName(t, role)
+
 const getRoleColor = (role: Role) =>
   role.is_system ? 'bg-secondary text-secondary-foreground' : 'bg-muted text-foreground'
 
@@ -263,18 +228,11 @@ function MemberStatusBadge({ status, pendingSetup }: { status: string; pendingSe
     ? t(MEMBER_STATUS_KEY[status].key, MEMBER_STATUS_KEY[status].en)
     : (STATUS_DISPLAY[status as keyof typeof STATUS_DISPLAY]?.label ?? status)
   return (
-    <Badge
-      variant={status === 'active' ? 'secondary' : 'outline'}
-      className={
-        status === 'suspended'
-          ? 'border-destructive/40 text-destructive'
-          : status === 'offboarded'
-            ? 'text-muted-foreground'
-            : undefined
-      }
-    >
-      {label}
-    </Badge>
+    <HealthStatus
+      state={status === 'active' ? 'ok' : status === 'suspended' ? 'paused' : 'off'}
+      label={label}
+      value={status}
+    />
   )
 }
 
@@ -334,7 +292,7 @@ function UserRolesCell({ userId }: { userId: string }) {
     <div className="flex flex-wrap gap-1">
       {displayRoles.slice(0, 2).map((role) => (
         <Badge key={role.id} className={`${getRoleColor(role)} border-0 text-xs`}>
-          {role.name}
+          {roleName(t, role)}
         </Badge>
       ))}
       {displayRoles.length > 2 && (
@@ -371,8 +329,8 @@ function UserRolesDetailCard({
         </h4>
         {onManageRoles && (
           <Can route="PUT /api/v1/users/{userId}/roles">
-            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onManageRoles}>
-              <Pencil className="me-1 h-3 w-3" />
+            <Button variant="ghost" onClick={onManageRoles}>
+              <Pencil />
               {t('org.membersPage.manage', 'Manage')}
             </Button>
           </Can>
@@ -398,7 +356,7 @@ function UserRolesDetailCard({
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <p className="font-medium text-sm">{role.name}</p>
+                  <p className="font-medium text-sm">{roleName(t, role)}</p>
                   {role.is_system && (
                     <span className="text-xs text-muted-foreground px-1.5 py-0.5 rounded bg-muted">
                       {t('org.membersPage.system', 'System')}
@@ -679,11 +637,12 @@ export default function UsersPage() {
     ? (roleParam as RoleFilter)
     : 'all'
   const debouncedSearch = useSearchQuery(searchQuery).term
+  const [tabParam, setTabParam] = useUrlFilter('tab', 'members')
 
   // Paged, searched and filtered on the server. The list used to load one
   // capped page (100) and filter it in the browser, so every member past the
   // cap was unreachable (23a B20).
-  const list = useListParams({ pageSizes: MEMBER_PAGE_SIZES, defaultPageSize: 20 })
+  const list = useListParams({ pageSizes: MEMBER_PAGE_SIZES })
   const { pagination, setPagination, setPage } = list
   const resetPage = useCallback(() => setPage(1), [setPage])
   const offset = (list.page - 1) * list.perPage
@@ -757,6 +716,10 @@ export default function UsersPage() {
   // UI State
   const [selectedMember, setSelectedMember] = useState<MemberWithUser | null>(null)
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
+  // "Invite people" from the Create menu: the same gate as the Invite button.
+  const canInvite = useCanMutate('POST /api/v1/tenants/{tenant}/invitations')
+  const openInviteForm = useCallback(() => setInviteDialogOpen(true), [setInviteDialogOpen])
+  useOpenForm('invite', canInvite, openInviteForm)
   const [addUserOpen, setAddUserOpen] = useState(false)
   const [setupLinkTarget, setSetupLinkTarget] = useState<SetupLinkTarget | null>(null)
   const [editRolesMember, setEditRolesMember] = useState<MemberWithUser | null>(null)
@@ -777,7 +740,9 @@ export default function UsersPage() {
     expiresAt: string
   } | null>(null)
   const emailUnavailable = useEmailUnavailable()
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
+  // Invitation expiry is read against a clock in state (a minute is fine here).
+  const now = useNow(60_000)
   const [isResettingMfa, setIsResettingMfa] = useState(false)
   // Offboarding wizard (RFC-050): the member being offboarded. Offboarding
   // strips every access source and asks for a new owner of their work.
@@ -835,45 +800,234 @@ export default function UsersPage() {
     return { current, active, suspended, offboarded, all: current + offboarded }
   }, [memberStats])
 
+  // A member's row menu: the table's last column and the phone card.
+  const memberMenu = (member: MemberWithUser) => {
+    const isOwnerRow = member.role === 'owner'
+    const locked = isPeerAdminLocked(member, caller)
+    const offboarded = member.status === 'offboarded'
+
+    const name = member.name || member.email
+    const lockReason = t('org.membersPage.peerAdminLock', PEER_ADMIN_LOCK_REASON)
+    const memberRoute = 'PATCH /api/v1/tenants/{tenant}/members/{userId}' as const
+    const actions: RowAction[] = [
+      {
+        label: t('org.membersPage.viewDetails', 'View details'),
+        icon: Eye,
+        onClick: () => setSelectedMember(member),
+      },
+    ]
+    if (isOwnerRow && canManageMembers && canResetMemberMfa(member, caller)) {
+      actions.push({
+        label: t('org.membersPage.reset2fa', 'Reset 2FA'),
+        icon: ShieldOff,
+        onClick: () => setResetMfaMember(member),
+        separatorBefore: true,
+      })
+    }
+    if (!isOwnerRow && !offboarded && caller.isOwner) {
+      actions.push({
+        label: t('org.ownership.action', 'Transfer ownership...'),
+        icon: Crown,
+        onClick: () => setTransferMember(member),
+        disabled: !!pendingTransfer,
+        disabledReason: pendingTransfer
+          ? t(
+              'org.ownership.pendingReason',
+              'A transfer is already waiting for an answer: cancel it first.'
+            )
+          : undefined,
+        separatorBefore: true,
+      })
+    }
+    if (!isOwnerRow && !offboarded && locked) {
+      // The management actions of an administrator row, shown disabled
+      // with the reason to a caller who is not the owner.
+      actions.push(
+        {
+          label: t('org.membersPage.changeRoles', 'Change roles'),
+          icon: Pencil,
+          onClick: () => undefined,
+          disabled: true,
+          disabledReason: lockReason,
+          separatorBefore: true,
+          route: memberRoute,
+        },
+        ...(member.mfa_status === 'enabled'
+          ? [
+              {
+                label: t('org.membersPage.reset2fa', 'Reset 2FA'),
+                icon: ShieldOff,
+                onClick: () => undefined,
+                disabled: true,
+                disabledReason: t('org.membersPage.resetMfaOwnerOnly', RESET_MFA_OWNER_REASON),
+                route: memberRoute,
+              },
+            ]
+          : []),
+        {
+          label: t('org.membersPage.disable', 'Disable'),
+          icon: Ban,
+          onClick: () => undefined,
+          disabled: true,
+          disabledReason: lockReason,
+          route: memberRoute,
+        },
+        {
+          label: t('org.membersPage.offboard', 'Offboard'),
+          icon: UserMinus,
+          onClick: () => undefined,
+          disabled: true,
+          disabledReason: lockReason,
+          route: memberRoute,
+        }
+      )
+    }
+    if (!isOwnerRow && !locked) {
+      actions.push({
+        label: t('org.membersPage.changeRoles', 'Change roles'),
+        icon: Pencil,
+        onClick: () => {
+          setEditRolesMember(member)
+          setEditRolesDialogOpen(true)
+        },
+        route: 'PUT /api/v1/users/{userId}/roles',
+      })
+      if (member.kind === 'external' && canChangeAccess && !offboarded) {
+        actions.push({
+          label: t('org.membersPage.changeEndOfAccess', 'Change end of access'),
+          icon: CalendarClock,
+          onClick: () => setAccessMember(member),
+          route: memberRoute,
+        })
+      }
+      if (member.pending_setup) {
+        actions.push({
+          label: t('org.membersPage.getSetupLink', 'Get setup link'),
+          icon: KeyRound,
+          onClick: () =>
+            setSetupLinkTarget({
+              userId: member.user_id,
+              email: member.email,
+              name: member.name,
+            }),
+          route: memberRoute,
+        })
+      }
+      // Access changes, each asking first, set apart from the edits above.
+      const access: RowAction[] = []
+      if (canResetMemberMfa(member, caller)) {
+        access.push({
+          label: t('org.membersPage.reset2fa', 'Reset 2FA'),
+          icon: ShieldOff,
+          onClick: () => setResetMfaMember(member),
+          route: memberRoute,
+        })
+      }
+      access.push(
+        member.status === 'suspended'
+          ? {
+              label:
+                member.suspended_reason === 'awaiting_approval'
+                  ? t('org.membersPage.approve', 'Approve')
+                  : t('org.membersPage.reenable', 'Re-enable'),
+              icon: CheckCircle,
+              onClick: () => setReactivateMember(member),
+              route: memberRoute,
+            }
+          : {
+              label: t('org.membersPage.disable', 'Disable'),
+              icon: Ban,
+              onClick: () => setSuspendConfirmMember(member),
+              route: memberRoute,
+            },
+        {
+          label: t('org.membersPage.offboardEllipsis', 'Offboard...'),
+          icon: UserMinus,
+          onClick: () => setOffboardMember(member),
+          destructive: true,
+          route: memberRoute,
+        }
+      )
+      access[0].separatorBefore = true
+      actions.push(...access)
+    }
+    if (!isOwnerRow && offboarded && caller.isOwner) {
+      actions.push({
+        label: t('org.membersPage.erasePersonalData', 'Erase personal data...'),
+        icon: Eraser,
+        onClick: () => setEraseConfirmMember(member),
+        destructive: true,
+        route: 'POST /api/v1/organization/members/{member_id}/erase',
+      })
+    }
+
+    return (
+      <DataTableRowActions
+        actions={actions}
+        title={name}
+        label={t('common.rowActions.actionsFor', 'Actions for {name}', { name })}
+      />
+    )
+  }
+
   // Table columns. The select-checkbox column was removed alongside the
   // bulk-actions dropdown — there's nothing to do with selected rows now.
+  // hideBelow is the table frame width under which a column folds: the sum of the
+  // columns still shown with it (name floor 200, roles 160, status 160, row menu 48,
+  // two-factor 128, last active 112, joined 112) plus 60 of slack, so no header is cut.
   const columns: ColumnDef<MemberWithUser>[] = [
     {
       accessorKey: 'name',
+      // The floor makes the name and e-mail shrink and cut instead of pushing
+      // the Two-factor and row-actions columns out of the frame.
+      meta: { kind: 'name', minWidth: 200, label: t('org.membersPage.col.user', 'User') },
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('org.membersPage.col.user', 'User')} />
       ),
       cell: ({ row }) => (
         <div
           className={cn(
-            'flex items-center gap-3',
+            'flex min-w-0 items-center gap-2',
             isDeactivated(row.original.status) && 'opacity-60'
           )}
         >
-          <Avatar className="h-8 w-8">
-            <AvatarFallback className="text-xs">{getInitials(row.original.name)}</AvatarFallback>
-          </Avatar>
-          <div>
-            <p className="font-medium">
-              {row.original.name}
-              {isDeactivated(row.original.status) && (
-                <span className="text-muted-foreground ms-1 text-xs font-normal">
-                  {t('org.membersPage.deactivated', '(deactivated)')}
-                </span>
-              )}
-            </p>
-            <p className="text-muted-foreground text-xs">{row.original.email}</p>
-            <MemberBadges
-              member={row.original}
-              ssoExceptionUntil={ssoExceptionUntil.get(row.original.user_id)}
-              className="mt-1"
-            />
-          </div>
+          <button
+            type="button"
+            className="min-w-0 shrink truncate text-start font-medium underline-offset-3 hover:underline focus-visible:underline focus-visible:outline-none"
+            title={`${row.original.name} ${row.original.email}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              setSelectedMember(row.original)
+            }}
+          >
+            {/* No name: the address, wrapping on a phone card only before
+                its "@" (each part whole). */}
+            {row.original.name || <BreakText>{row.original.email}</BreakText>}
+          </button>
+          {isDeactivated(row.original.status) && (
+            <span className="shrink-0 text-cap text-muted-foreground">
+              {t('org.membersPage.deactivated', '(deactivated)')}
+            </span>
+          )}
+          <MemberBadges
+            member={row.original}
+            ssoExceptionUntil={ssoExceptionUntil.get(row.original.user_id)}
+            className="shrink-0"
+          />
+          {/* Once: not under a name that is the address itself. One line with an ellipsis that gives
+              way to the name first (shrinks four times faster); wrapping it beside a long name made
+              a column of single letters and rows 90 px tall. The full address is in the name's title. */}
+          {distinctAddress(row.original.name, row.original.email) && (
+            <span className="min-w-0 shrink-[4] truncate text-cap text-muted-foreground">
+              {row.original.email}
+            </span>
+          )}
         </div>
       ),
     },
     {
       accessorKey: 'role',
+      meta: { kind: 'tags', label: t('org.membersPage.col.roles', 'Roles') },
       header: t('org.membersPage.col.roles', 'Roles'),
       enableSorting: false,
       cell: ({ row }) => {
@@ -882,15 +1036,23 @@ export default function UsersPage() {
     },
     {
       accessorKey: 'joined_at',
+      meta: { kind: 'date', label: t('org.membersPage.col.joined', 'Joined'), hideBelow: 1000 },
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('org.membersPage.col.joined', 'Joined')} />
       ),
       cell: ({ row }) => (
-        <span className="text-muted-foreground text-sm">{formatDate(row.original.joined_at)}</span>
+        <span className="text-muted-foreground text-sm">
+          {formatDate(row.original.joined_at, locale)}
+        </span>
       ),
     },
     {
       accessorKey: 'last_login_at',
+      meta: {
+        kind: 'date',
+        label: t('org.membersPage.col.lastActive', 'Last active'),
+        hideBelow: 880,
+      },
       header: ({ column }) => (
         <DataTableColumnHeader
           column={column}
@@ -899,12 +1061,13 @@ export default function UsersPage() {
       ),
       cell: ({ row }) => (
         <span className="text-muted-foreground text-sm">
-          {formatLastActive(t, row.original.last_login_at)}
+          {formatLastActive(t, locale, row.original.last_login_at)}
         </span>
       ),
     },
     {
       accessorKey: 'status',
+      meta: { kind: 'status', label: t('org.membersPage.col.status', 'Status'), width: 160 },
       header: ({ column }) => (
         <DataTableColumnHeader column={column} title={t('org.membersPage.col.status', 'Status')} />
       ),
@@ -929,7 +1092,12 @@ export default function UsersPage() {
       ? [
           {
             id: 'mfa',
-            header: '2FA',
+            meta: {
+              kind: 'status',
+              label: t('org.membersPage.col.twoFactor', 'Two-factor'),
+              hideBelow: 770,
+            },
+            header: t('org.membersPage.col.twoFactor', 'Two-factor'),
             enableSorting: false,
             cell: ({ row }) => <MemberMfaBadge status={row.original.mfa_status} />,
           } satisfies ColumnDef<MemberWithUser>,
@@ -937,180 +1105,10 @@ export default function UsersPage() {
       : []),
     {
       id: 'actions',
+      meta: { kind: 'actions', label: t('org.membersPage.col.actions', 'Actions') },
       enableSorting: false,
       enableHiding: false,
-      cell: ({ row }) => {
-        const member = row.original
-        const isOwnerRow = member.role === 'owner'
-        const locked = isPeerAdminLocked(member, caller)
-        const offboarded = member.status === 'offboarded'
-
-        return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
-                aria-label={`Actions for ${member.name || member.email}`}
-              >
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-              <DropdownMenuItem onClick={() => setSelectedMember(member)}>
-                <Eye className="me-2 h-4 w-4" />
-                {t('org.membersPage.viewDetails', 'View details')}
-              </DropdownMenuItem>
-              {isOwnerRow && canManageMembers && canResetMemberMfa(member, caller) && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault()
-                      setResetMfaMember(member)
-                    }}
-                  >
-                    <ShieldOff className="me-2 h-4 w-4" />
-                    {t('org.membersPage.reset2fa', 'Reset 2FA')}
-                  </DropdownMenuItem>
-                </>
-              )}
-              {!isOwnerRow && !offboarded && caller.isOwner && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    disabled={!!pendingTransfer}
-                    onSelect={(e) => {
-                      e.preventDefault()
-                      setTransferMember(member)
-                    }}
-                  >
-                    <Crown className="me-2 h-4 w-4" />
-                    {t('org.ownership.action', 'Transfer ownership...')}
-                  </DropdownMenuItem>
-                </>
-              )}
-              {!isOwnerRow && !offboarded && locked && (
-                <Can route="PATCH /api/v1/tenants/{tenant}/members/{userId}">
-                  <PeerAdminLockedItems mfaEnabled={member.mfa_status === 'enabled'} />
-                </Can>
-              )}
-              {!isOwnerRow && !locked && (
-                <>
-                  <Can route="PUT /api/v1/users/{userId}/roles">
-                    <DropdownMenuItem
-                      onClick={() => {
-                        setEditRolesMember(member)
-                        setEditRolesDialogOpen(true)
-                      }}
-                    >
-                      <Pencil className="me-2 h-4 w-4" />
-                      {t('org.membersPage.changeRoles', 'Change roles')}
-                    </DropdownMenuItem>
-                  </Can>
-                  <Can route="PATCH /api/v1/tenants/{tenant}/members/{userId}">
-                    {member.kind === 'external' && canChangeAccess && !offboarded && (
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          e.preventDefault()
-                          setAccessMember(member)
-                        }}
-                      >
-                        <CalendarClock className="me-2 h-4 w-4" />
-                        {t('org.membersPage.changeEndOfAccess', 'Change end of access')}
-                      </DropdownMenuItem>
-                    )}
-                    {member.pending_setup && (
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          e.preventDefault()
-                          setSetupLinkTarget({
-                            userId: member.user_id,
-                            email: member.email,
-                            name: member.name,
-                          })
-                        }}
-                      >
-                        <KeyRound className="me-2 h-4 w-4" />
-                        {t('org.membersPage.getSetupLink', 'Get setup link')}
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuSeparator />
-                    {canResetMemberMfa(member, caller) && (
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          // Confirm first; onSelect lets the menu close cleanly.
-                          e.preventDefault()
-                          setResetMfaMember(member)
-                        }}
-                      >
-                        <ShieldOff className="me-2 h-4 w-4" />
-                        {t('org.membersPage.reset2fa', 'Reset 2FA')}
-                      </DropdownMenuItem>
-                    )}
-                    {member.status === 'suspended' ? (
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          // Restoring access asks first; onSelect lets the menu close.
-                          e.preventDefault()
-                          setReactivateMember(member)
-                        }}
-                      >
-                        <CheckCircle className="me-2 h-4 w-4" />
-                        {member.suspended_reason === 'awaiting_approval'
-                          ? t('org.membersPage.approve', 'Approve')
-                          : t('org.membersPage.reenable', 'Re-enable')}
-                      </DropdownMenuItem>
-                    ) : (
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          // Open confirmation dialog instead of firing
-                          // immediately. onSelect lets the dropdown close
-                          // cleanly before the AlertDialog opens.
-                          e.preventDefault()
-                          setSuspendConfirmMember(member)
-                        }}
-                      >
-                        <Ban className="me-2 h-4 w-4" />
-                        {t('org.membersPage.disable', 'Disable')}
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onSelect={(e) => {
-                        // Open the offboarding wizard. onSelect lets the
-                        // dropdown close cleanly first.
-                        e.preventDefault()
-                        setOffboardMember(member)
-                      }}
-                    >
-                      <UserMinus className="me-2 h-4 w-4" />
-                      {t('org.membersPage.offboardEllipsis', 'Offboard...')}
-                    </DropdownMenuItem>
-                  </Can>
-                </>
-              )}
-              {!isOwnerRow && offboarded && caller.isOwner && (
-                <Can route="POST /api/v1/organization/members/{member_id}/erase">
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onSelect={(e) => {
-                      // Confirm first; onSelect lets the menu close cleanly.
-                      e.preventDefault()
-                      setEraseConfirmMember(member)
-                    }}
-                  >
-                    <Eraser className="me-2 h-4 w-4" />
-                    {t('org.membersPage.erasePersonalData', 'Erase personal data...')}
-                  </DropdownMenuItem>
-                </Can>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )
-      },
+      cell: ({ row }) => memberMenu(row.original),
     },
   ]
 
@@ -1269,158 +1267,200 @@ export default function UsersPage() {
     }
   }
 
+  // An invitation's row menu: the table's last column and the phone card.
+  const invitationMenu = (inv: Invitation) => (
+    <DataTableRowActions
+      title={inv.email}
+      label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+        name: inv.email,
+      })}
+      actions={[
+        ...(new Date(inv.expires_at).getTime() <= now
+          ? [
+              {
+                label: t('org.membersPage.renewInvitation', 'Renew'),
+                icon: RotateCw,
+                route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/renew' as const,
+                onClick: () => reissueInviteLink(inv, true),
+              },
+            ]
+          : [
+              {
+                label: t('org.membersPage.copyNewLink', 'Copy new link'),
+                icon: LinkIcon,
+                route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/link' as const,
+                onClick: () => reissueInviteLink(inv, false),
+              },
+            ]),
+        // The email actions only make sense on a server that sends email.
+        ...(emailUnavailable
+          ? []
+          : [
+              {
+                label: t('org.membersPage.resendEmail', 'Resend email'),
+                icon: Send,
+                route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend' as const,
+                onClick: () => resendInvite(inv),
+              },
+            ]),
+        {
+          label: t('org.membersPage.cancelInvitation', 'Cancel invitation'),
+          icon: Trash2,
+          destructive: true,
+          separatorBefore: true,
+          route: 'DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}' as const,
+          onClick: () => setPendingCancelInvite(inv),
+        },
+      ]}
+    />
+  )
+
+  // The parts of an invitation row, shared by the table and the phone card.
+  const invitationBadges = (inv: Invitation) => (
+    <>
+      {inv.member_kind === 'external' && (
+        <Badge variant="outline" className="text-xs" data-testid="invitation-badge-external">
+          {t('org.invitations.external')}
+        </Badge>
+      )}
+      {inv.privileged && (
+        <Badge
+          variant="outline"
+          className="border-warning/50 text-xs text-warning"
+          data-testid="invitation-badge-mfa"
+          title={t('org.invitations.mfaHint')}
+        >
+          {t('org.invitations.mfa')}
+        </Badge>
+      )}
+    </>
+  )
+
+  const invitationRoles = (invitation: Invitation) => {
+    // Role names from role_ids (resolved when the role list is loaded).
+    const invitedRoles = (invitation.role_ids || [])
+      .map((id) => availableRolesForInvite.find((r) => r.id === id))
+      .filter((r): r is NonNullable<typeof r> => r != null)
+    if (invitedRoles.length > 0) {
+      return (
+        <div className="flex flex-wrap items-center gap-1">
+          {invitedRoles.slice(0, 2).map((role) => (
+            <Badge key={role.id} className={`${getRoleColor(role)} border-0 text-xs`}>
+              {roleName(t, role)}
+            </Badge>
+          ))}
+          {invitedRoles.length > 2 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="secondary" className="text-xs cursor-pointer">
+                  +{invitedRoles.length - 2}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {invitedRoles
+                  .slice(2)
+                  .map((r) => roleName(t, r))
+                  .join(', ')}
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      )
+    }
+    /* Invitations created before the RBAC role picker carry only the
+       legacy `role` field ("member", "admin", ...) with empty role_ids —
+       show that (in the console language) rather than a confusing "No roles". */
+    return (
+      <Badge variant="secondary" className="text-xs">
+        {invitation.role
+          ? roleDisplayName(t, { slug: invitation.role, name: invitation.role, is_system: true })
+          : t('org.membersPage.noRoles', 'No roles')}
+      </Badge>
+    )
+  }
+
+  /** When the invitation runs out; `labelled` adds "Expires" for the phone card. */
+  const invitationExpiry = (inv: Invitation, labelled = false) => {
+    const daysUntilExpiry = Math.ceil(
+      (new Date(inv.expires_at).getTime() - now) / (1000 * 60 * 60 * 24)
+    )
+    const isExpiringSoon = daysUntilExpiry <= 3 && daysUntilExpiry > 0
+    const isExpired = daysUntilExpiry <= 0
+    const date = formatDate(inv.expires_at, locale)
+    return (
+      <span
+        className={`text-sm ${isExpired || isExpiringSoon ? 'text-destructive' : 'text-muted-foreground'}`}
+      >
+        {isExpired
+          ? t('org.membersPage.expired', 'Expired')
+          : isExpiringSoon
+            ? daysUntilExpiry > 1
+              ? t('org.membersPage.expiresInOther', 'In {count} days', {
+                  count: daysUntilExpiry,
+                })
+              : t('org.membersPage.expiresInOne', 'In {count} day', { count: daysUntilExpiry })
+            : labelled
+              ? t('org.membersPage.expiresOn', 'Expires {date}', { date })
+              : date}
+      </span>
+    )
+  }
+
   const invitationColumns: ColumnDef<Invitation>[] = [
     {
       accessorKey: 'email',
+      meta: { kind: 'name', label: t('org.membersPage.col.email', 'Email') },
       header: t('org.membersPage.col.email', 'Email'),
       enableSorting: false,
       cell: ({ row }) => (
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="font-medium">{row.original.email}</span>
-          {row.original.member_kind === 'external' && (
-            <Badge variant="outline" className="text-xs" data-testid="invitation-badge-external">
-              {t('org.invitations.external')}
-            </Badge>
-          )}
-          {row.original.privileged && (
-            <Badge
-              variant="outline"
-              className="border-warning/50 text-xs text-warning"
-              data-testid="invitation-badge-mfa"
-              title={t('org.invitations.mfaHint')}
-            >
-              {t('org.invitations.mfa')}
-            </Badge>
-          )}
+          <span className="font-medium">
+            <BreakText>{row.original.email}</BreakText>
+          </span>
+          {invitationBadges(row.original)}
         </div>
       ),
     },
     {
       id: 'roles',
+      meta: { kind: 'tags', label: t('org.membersPage.col.roles', 'Roles') },
       header: t('org.membersPage.col.roles', 'Roles'),
       enableSorting: false,
-      cell: ({ row }) => {
-        const invitation = row.original
-        // Role names from role_ids (resolved when the role list is loaded).
-        const invitedRoles = (invitation.role_ids || [])
-          .map((id) => availableRolesForInvite.find((r) => r.id === id))
-          .filter((r): r is NonNullable<typeof r> => r != null)
-        if (invitedRoles.length > 0) {
-          return (
-            <div className="flex flex-wrap items-center gap-1">
-              {invitedRoles.slice(0, 2).map((role) => (
-                <Badge key={role.id} className={`${getRoleColor(role)} border-0 text-xs`}>
-                  {role.name}
-                </Badge>
-              ))}
-              {invitedRoles.length > 2 && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge variant="secondary" className="text-xs cursor-pointer">
-                      +{invitedRoles.length - 2}
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {invitedRoles
-                      .slice(2)
-                      .map((r) => r.name)
-                      .join(', ')}
-                  </TooltipContent>
-                </Tooltip>
-              )}
-            </div>
-          )
-        }
-        /* Invitations created before the RBAC role picker carry only the
-           legacy `role` field ("member", "admin", ...) with empty role_ids —
-           show that rather than a confusing "No roles". */
-        return (
-          <Badge variant="secondary" className="text-xs capitalize">
-            {invitation.role || t('org.membersPage.noRoles', 'No roles')}
-          </Badge>
-        )
-      },
+      cell: ({ row }) => invitationRoles(row.original),
     },
     {
       accessorKey: 'expires_at',
+      meta: { kind: 'date', label: t('org.membersPage.col.expires', 'Expires') },
       header: t('org.membersPage.col.expires', 'Expires'),
       enableSorting: false,
-      cell: ({ row }) => {
-        const daysUntilExpiry = Math.ceil(
-          (new Date(row.original.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
-        )
-        const isExpiringSoon = daysUntilExpiry <= 3 && daysUntilExpiry > 0
-        const isExpired = daysUntilExpiry <= 0
-        return (
-          <span
-            className={`text-sm ${isExpired || isExpiringSoon ? 'text-destructive' : 'text-muted-foreground'}`}
-          >
-            {isExpired
-              ? t('org.membersPage.expired', 'Expired')
-              : isExpiringSoon
-                ? daysUntilExpiry > 1
-                  ? t('org.membersPage.expiresInOther', 'In {count} days', {
-                      count: daysUntilExpiry,
-                    })
-                  : t('org.membersPage.expiresInOne', 'In {count} day', { count: daysUntilExpiry })
-                : formatDate(row.original.expires_at)}
-          </span>
-        )
-      },
+      cell: ({ row }) => invitationExpiry(row.original),
     },
     {
       id: 'actions',
+      meta: { kind: 'actions', label: t('org.membersPage.col.actions', 'Actions') },
       enableSorting: false,
       enableHiding: false,
-      cell: ({ row }) => (
-        <DataTableRowActions
-          actions={[
-            ...(new Date(row.original.expires_at).getTime() <= Date.now()
-              ? [
-                  {
-                    label: t('org.membersPage.renewInvitation', 'Renew'),
-                    icon: RotateCw,
-                    route:
-                      'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/renew' as const,
-                    onClick: () => reissueInviteLink(row.original, true),
-                  },
-                ]
-              : [
-                  {
-                    label: t('org.membersPage.copyNewLink', 'Copy new link'),
-                    icon: LinkIcon,
-                    route: 'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/link' as const,
-                    onClick: () => reissueInviteLink(row.original, false),
-                  },
-                ]),
-            // The email actions only make sense on a server that sends email.
-            ...(emailUnavailable
-              ? []
-              : [
-                  {
-                    label: t('org.membersPage.resendEmail', 'Resend email'),
-                    icon: Send,
-                    route:
-                      'POST /api/v1/tenants/{tenant}/invitations/{invitationId}/resend' as const,
-                    onClick: () => resendInvite(row.original),
-                  },
-                ]),
-            {
-              label: t('org.membersPage.cancelInvitation', 'Cancel invitation'),
-              icon: Trash2,
-              destructive: true,
-              separatorBefore: true,
-              route: 'DELETE /api/v1/tenants/{tenant}/invitations/{invitationId}' as const,
-              onClick: () => setPendingCancelInvite(row.original),
-            },
-          ]}
-        />
-      ),
+      cell: ({ row }) => invitationMenu(row.original),
     },
   ]
 
-  const toggleStatus = (next: StatusFilter) =>
-    setStatusFilter(statusFilter === next ? 'current' : next)
+  // The organization-wide counts (the old metric strip) ride on the Status options.
+  const withCount = (label: string, count: number | undefined) =>
+    memberStats && count !== undefined
+      ? t('org.membersPage.filter.withCount', '{label} ({count})', { label, count })
+      : label
+
+  // Join requests: the same read the card makes (one request, shared), for the tab count.
+  const canManageRequests = isAtLeast('admin')
+  const { requests: joinRequests } = useJoinRequests(canManageRequests)
+  const tabs: MemberTab[] = [
+    'members',
+    ...(canSeeInvitations ? (['invitations'] as const) : []),
+    ...(canManageRequests ? (['requests'] as const) : []),
+  ]
+  const activeTab: MemberTab = tabs.includes(tabParam as MemberTab)
+    ? (tabParam as MemberTab)
+    : 'members'
 
   // The list filters are the shared filter token (research/249 R21): it
   // reads "Status: Current members" at its natural width instead of a
@@ -1434,7 +1474,13 @@ export default function UsersPage() {
         allLabel={t('org.membersPage.filter.current', 'Current members')}
         options={statusFilters
           .filter((f) => f.value !== 'current')
-          .map((f) => ({ value: f.value, label: t(f.key, f.en) }))}
+          .map((f) => ({
+            value: f.value,
+            label: withCount(
+              t(f.key, f.en),
+              f.value === 'all' ? statusCounts.all : statusCounts[f.value]
+            ),
+          }))}
         onChange={(v) => setStatusFilter(v || 'current')}
       />
       <FilterSelect
@@ -1462,48 +1508,32 @@ export default function UsersPage() {
 
   return (
     <MemberRolesContext.Provider value={memberRolesMap}>
-      <Main>
-        <PageStack>
-          <PageHeader
-            title={t('org.membersPage.title', 'Members')}
-            description={t(
-              'org.membersPage.description',
-              'People in this organization, their roles and pending invitations.'
-            )}
-          >
+      <SettingsPage
+        wide
+        title={t('org.membersPage.title', 'Members')}
+        description={t(
+          'org.membersPage.description',
+          'People in this organization, their roles and pending invitations.'
+        )}
+        actions={
+          <>
             {/* Accounts are created by owners/admins (no self-registration);
               inviting someone who already has an account stays available. */}
-            <Can route="POST /api/v1/tenants/{tenant}/invitations" mode="disable">
-              <Button size="sm" variant="outline" onClick={() => setInviteDialogOpen(true)}>
-                <Send className="me-2 h-4 w-4" />
-                {t('org.membersPage.inviteUser', 'Invite user')}
-              </Button>
-            </Can>
             <Can route="POST /api/v1/tenants/{tenant}/users" mode="disable">
-              <Button size="sm" onClick={() => setAddUserOpen(true)}>
-                <UserPlus className="me-2 h-4 w-4" />
+              <Button variant="outline" onClick={() => setAddUserOpen(true)}>
+                <UserPlus aria-hidden />
                 {t('org.membersPage.addUser', 'Add user')}
               </Button>
             </Can>
-          </PageHeader>
-
-          <JoinRequestsCard canManage={isAtLeast('admin')} onChanged={refreshData} />
-
-          {emailUnavailable && canSeeInvitations && (
-            <Alert>
-              <Info className="h-4 w-4" />
-              <AlertTitle>
-                {t('org.membersPage.noEmailTitle', 'This server cannot send email')}
-              </AlertTitle>
-              <AlertDescription>
-                {t(
-                  'org.membersPage.noEmailBody',
-                  'Invitation emails are not sent. Copy each invitation link and give it to the person yourself.'
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-
+            <Can route="POST /api/v1/tenants/{tenant}/invitations" mode="disable">
+              <Button onClick={() => setInviteDialogOpen(true)}>
+                <Send aria-hidden />
+                {t('org.membersPage.inviteUser', 'Invite user')}
+              </Button>
+            </Can>
+          </>
+        }
+        banners={
           <OwnershipTransferBanner
             transfer={pendingTransfer}
             onChanged={() => {
@@ -1511,130 +1541,164 @@ export default function UsersPage() {
               refreshData()
             }}
           />
+        }
+      >
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setTabParam(v === 'members' ? '' : v)}
+          className="gap-section"
+        >
+          {tabs.length > 1 && (
+            <TabsList aria-label={t('org.membersPage.tabs.label', 'Member lists')}>
+              <TabsTrigger value="members">
+                {t('org.membersPage.tabs.members', 'Current members')}
+                <TabsCount value={memberStats ? statusCounts.current : null} />
+              </TabsTrigger>
+              {canSeeInvitations && (
+                <TabsTrigger value="invitations">
+                  {t('org.membersPage.metric.pendingInvites', 'Pending invitations')}
+                  <TabsCount value={invitations.length} />
+                </TabsTrigger>
+              )}
+              {canManageRequests && (
+                <TabsTrigger value="requests">
+                  {t('org.membersPage.tabs.requests', 'Requests to join')}
+                  <TabsCount value={joinRequests.length} />
+                </TabsTrigger>
+              )}
+            </TabsList>
+          )}
 
-          {membersError && !membersLoading ? (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>
-                {t('org.membersPage.loadFailedTitle', 'Failed to load members')}
-              </AlertTitle>
-              <AlertDescription>
-                <p>{t('org.membersPage.loadFailedBody', 'The member list could not be loaded.')}</p>
-                <Button variant="outline" size="sm" className="mt-2" onClick={refreshData}>
-                  <RefreshCw className="me-2 h-4 w-4" />
-                  {t('common.retry', 'Retry')}
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <>
-              <MetricStrip
-                loading={membersLoading}
-                items={[
-                  {
-                    key: 'current',
-                    label: t('org.membersPage.metric.members', 'Members'),
-                    value: statusCounts.current,
-                    onClick: () => setStatusFilter('current'),
-                    active: statusFilter === 'current',
-                  },
-                  {
-                    key: 'active',
-                    label: t('org.membersPage.filter.active', 'Active'),
-                    value: statusCounts.active,
-                    onClick: () => toggleStatus('active'),
-                    active: statusFilter === 'active',
-                  },
-                  {
-                    key: 'suspended',
-                    label: t('org.membersPage.filter.suspended', 'Disabled'),
-                    value: statusCounts.suspended,
-                    onClick: () => toggleStatus('suspended'),
-                    active: statusFilter === 'suspended',
-                  },
-                  {
-                    key: 'offboarded',
-                    label: t('org.membersPage.filter.offboarded', 'Offboarded'),
-                    value: statusCounts.offboarded,
-                    onClick: () => toggleStatus('offboarded'),
-                    active: statusFilter === 'offboarded',
-                  },
-                  ...(canSeeInvitations
-                    ? [
-                        {
-                          key: 'invites',
-                          label: t('org.membersPage.metric.pendingInvites', 'Pending invitations'),
-                          value: invitations.length,
-                          onClick: () =>
-                            document
-                              .getElementById('pending-invitations')
-                              ?.scrollIntoView({ behavior: 'smooth' }),
-                        },
-                      ]
-                    : []),
-                ]}
-              />
-
-              <div>
-                {membersLoading ? (
-                  <div className="space-y-2">
-                    <Skeleton className="h-9 w-full max-w-sm" />
-                    {Array.from({ length: 6 }).map((_, i) => (
-                      <Skeleton key={i} className="h-12 w-full" />
-                    ))}
-                  </div>
-                ) : (
-                  /*
-                  No selection column: the old bulk "Resend / Deactivate /
-                  Delete" actions fired toasts without calling any API. Per-row
-                  actions are the supported way to disable / offboard a member.
-                */
-                  <DataTable
-                    columns={columns}
-                    data={members}
-                    getRowId={(m) => m.id}
-                    manualPagination
-                    rowCount={membersTotal}
-                    pagination={pagination}
-                    onPaginationChange={setPagination}
-                    pageSizeOptions={MEMBER_PAGE_SIZES}
-                    paginationNoun={t('org.membersPage.noun', 'members')}
-                    showSearch={false}
-                    search={{
-                      value: searchQuery,
-                      onChange: setSearchQuery,
-                      placeholder: t('org.membersPage.searchPlaceholder', 'Search members…'),
-                      label: t('org.membersPage.searchLabel', 'Search members'),
-                    }}
-                    showColumnToggle={false}
-                    toolbarStart={toolbarStart}
-                    onRowClick={(m) => setSelectedMember(m)}
-                    emptyMessage={t('org.membersPage.noMatch', 'No members match these filters')}
+          <TabsContent value="members">
+            {membersError && !membersLoading ? (
+              <Alert variant="destructive">
+                <AlertCircle aria-hidden />
+                <AlertTitle>
+                  {t('org.membersPage.loadFailedTitle', 'Failed to load members')}
+                </AlertTitle>
+                <AlertDescription>
+                  <p>
+                    {t('org.membersPage.loadFailedBody', 'The member list could not be loaded.')}
+                  </p>
+                  <Button variant="outline" className="mt-2" onClick={refreshData}>
+                    <RefreshCw aria-hidden />
+                    {t('common.retry', 'Retry')}
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            ) : membersLoading ? (
+              <div className="space-y-2" aria-busy="true">
+                <Skeleton className="h-8 w-full max-w-sm" />
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : (
+              /*
+                No selection column: the old bulk "Resend / Deactivate /
+                Delete" actions fired toasts without calling any API. Per-row
+                actions are the supported way to disable / offboard a member.
+              */
+              <DataTable
+                columns={columns}
+                data={members}
+                // When the table still scrolls sideways the row menu stays in view.
+                pinActions
+                getRowId={(m) => m.id}
+                manualPagination
+                rowCount={membersTotal}
+                pagination={pagination}
+                onPaginationChange={setPagination}
+                pageSizeOptions={MEMBER_PAGE_SIZES}
+                paginationNoun={t('org.membersPage.noun', 'members')}
+                showSearch={false}
+                search={{
+                  value: searchQuery,
+                  onChange: setSearchQuery,
+                  placeholder: t('org.membersPage.searchPlaceholder', 'Search members…'),
+                  label: t('org.membersPage.searchLabel', 'Search members'),
+                }}
+                toolbarStart={toolbarStart}
+                onRowClick={(m) => setSelectedMember(m)}
+                mobileRow={(m) => (
+                  <PersonPhoneCard
+                    title={m.name || m.email}
+                    address={distinctAddress(m.name, m.email)}
+                    dimmed={isDeactivated(m.status)}
+                    onOpen={() => setSelectedMember(m)}
+                    menu={memberMenu(m)}
+                    facts={
+                      <>
+                        <UserRolesCell userId={m.user_id} />
+                        <MemberStatusBadge status={m.status} pendingSetup={m.pending_setup} />
+                        {m.mfa_status ? <MemberMfaBadge status={m.mfa_status} labelled /> : null}
+                        <MemberBadges
+                          member={m}
+                          ssoExceptionUntil={ssoExceptionUntil.get(m.user_id)}
+                        />
+                      </>
+                    }
                   />
                 )}
-              </div>
+                emptyMessage={t('org.membersPage.noMatch', 'No members match these filters')}
+              />
+            )}
+          </TabsContent>
 
-              {/* Pending Invitations Section */}
-              {invitations.length > 0 && (
-                <section id="pending-invitations" className="scroll-mt-4">
-                  <h2 className="mb-3 text-base font-semibold">
-                    {t('org.membersPage.metric.pendingInvites', 'Pending invitations')}
-                  </h2>
-                  <DataTable
-                    columns={invitationColumns}
-                    data={invitations}
-                    getRowId={(inv) => inv.id}
-                    showSearch={false}
-                    showColumnToggle={false}
-                    showPagination={invitations.length > 10}
-                    emptyMessage={t('org.membersPage.noInvites', 'No pending invitations')}
-                  />
-                </section>
+          {canSeeInvitations && (
+            <TabsContent value="invitations" className="flex flex-col gap-section">
+              {emailUnavailable && (
+                <Alert>
+                  <Info aria-hidden />
+                  <AlertTitle>
+                    {t('org.membersPage.noEmailTitle', 'This server cannot send email')}
+                  </AlertTitle>
+                  <AlertDescription>
+                    {t(
+                      'org.membersPage.noEmailBody',
+                      'Invitation emails are not sent. Copy each invitation link and give it to the person yourself.'
+                    )}
+                  </AlertDescription>
+                </Alert>
               )}
-            </>
+              <DataTable
+                columns={invitationColumns}
+                data={invitations}
+                getRowId={(inv) => inv.id}
+                showSearch={false}
+                showColumnToggle={false}
+                showPagination={invitations.length > 10}
+                mobileRow={(inv) => (
+                  <PersonPhoneCard
+                    title={inv.email}
+                    menu={invitationMenu(inv)}
+                    facts={
+                      <>
+                        {invitationRoles(inv)}
+                        {invitationExpiry(inv, true)}
+                        {invitationBadges(inv)}
+                      </>
+                    }
+                  />
+                )}
+                emptyMessage={t('org.membersPage.noInvites', 'No pending invitations')}
+              />
+            </TabsContent>
           )}
-        </PageStack>
-      </Main>
+
+          {canManageRequests && (
+            <TabsContent value="requests">
+              {joinRequests.length === 0 ? (
+                <p className="text-body text-muted-foreground">
+                  {t('org.membersPage.noRequests', 'Nobody is waiting to join.')}
+                </p>
+              ) : (
+                <JoinRequestsCard canManage={canManageRequests} onChanged={refreshData} />
+              )}
+            </TabsContent>
+          )}
+        </Tabs>
+      </SettingsPage>
 
       {/* User Details Sheet */}
       {selectedMember &&
@@ -1709,11 +1773,11 @@ export default function UsersPage() {
                 <DetailStatGrid aria-label={t('org.membersPage.keyDates', 'Key dates')}>
                   <DetailStat
                     label={t('org.membersPage.col.joined', 'Joined')}
-                    value={formatDate(member.joined_at)}
+                    value={formatDate(member.joined_at, locale)}
                   />
                   <DetailStat
                     label={t('org.membersPage.col.lastActive', 'Last active')}
-                    value={formatLastActive(t, member.last_login_at)}
+                    value={formatLastActive(t, locale, member.last_login_at)}
                   />
                 </DetailStatGrid>
 

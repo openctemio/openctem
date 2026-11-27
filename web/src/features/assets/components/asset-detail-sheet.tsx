@@ -12,7 +12,7 @@ import { ArrowLeft, ChevronRight, FileText, Hash, Network, Pencil, Trash2 } from
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
-import { TabsCount } from '@/components/ui/tabs'
+import { TabsCount } from '@/components/ui/tab-strip'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import {
   DetailHeader,
@@ -280,7 +280,7 @@ export function AssetDetailSheet<T extends Asset>({
 
   if (!asset) return null
 
-  const assetTypeName = assetTypeNameProp ?? getAssetTypeLabel(asset.type)
+  const assetTypeName = assetTypeNameProp ?? getAssetTypeLabel(asset.type, t)
   const renderProperties = showProperties ?? overviewContent === undefined
 
   // Control plane is a property of relationship edges, not an asset column: the

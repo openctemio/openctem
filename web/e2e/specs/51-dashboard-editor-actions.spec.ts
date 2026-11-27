@@ -87,13 +87,15 @@ for (const vp of VIEWPORTS) {
 
         // Edit details opens this dashboard's form.
         await page.getByRole('button', { name: 'More dashboard actions' }).click()
-        await expect(page.getByRole('menuitem', { name: 'Edit details' })).toHaveAttribute(
-          'href',
-          `/dashboards?edit=${id}`
-        )
+        // A menu on a desktop, a bottom sheet of plain rows on a phone.
+        const row = (name: string) =>
+          page
+            .getByRole('menuitem', { name })
+            .or(page.locator('[data-slot="action-sheet-row"]', { hasText: name }))
+        await expect(row('Edit details')).toHaveAttribute('href', `/dashboards?edit=${id}`)
 
         // Customize (in the More menu on a phone).
-        const customize = page.getByRole('menuitem', { name: 'Customize' })
+        const customize = row('Customize')
         if (await customize.isVisible()) await customize.click()
         else {
           await page.keyboard.press('Escape')

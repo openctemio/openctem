@@ -1,5 +1,9 @@
 {
-  "userMenu.allSettings": "Tất cả cài đặt",
+  "userMenu.accountSettings": "Cài đặt tài khoản",
+  "userMenu.fallbackName": "Người dùng",
   "userMenu.open": "Mở menu người dùng",
+  "userMenu.openFor": "Mở menu người dùng của {name}",
+  "userMenu.organizationSettings": "Cài đặt tổ chức",
+  "userMenu.organizationSettingsOf": "Cài đặt của {name}",
   "userMenu.signOut": "Đăng xuất"
 }

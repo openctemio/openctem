@@ -9,6 +9,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { AlertTriangle, CheckCircle2, ChevronRight, CircleAlert, Info } from 'lucide-react'
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -70,6 +71,7 @@ export function DetailChecklist({
   defaultOpen = false,
   className,
 }: DetailChecklistProps) {
+  const { t } = useTranslation()
   const [open, setOpen] = React.useState(defaultOpen)
   if (checks.length === 0) return null
   const passing = checks.filter((c) => c.status === 'ok').length
@@ -90,10 +92,25 @@ export function DetailChecklist({
           ) : null}
           <span className="min-w-0 flex-1 tabular-nums">
             {failing === 0
-              ? `All ${checks.length} ${title.toLowerCase()} passing`
-              : `${title}: ${passing} of ${checks.length} passing`}
+              ? t('components.shared.checklist.allPassing', 'All {count} {title} passing', {
+                  count: checks.length,
+                  title: title.toLowerCase(),
+                })
+              : t(
+                  'components.shared.checklist.somePassing',
+                  '{title}: {passing} of {count} passing',
+                  {
+                    title,
+                    passing,
+                    count: checks.length,
+                  }
+                )}
           </span>
-          <span className="shrink-0 text-xs">{open ? 'Hide' : 'Show'}</span>
+          <span className="shrink-0 text-xs">
+            {open
+              ? t('components.shared.checklist.hide', 'Hide')
+              : t('components.shared.checklist.show', 'Show')}
+          </span>
         </button>
       </CollapsibleTrigger>
       <CollapsibleContent className="pt-1">

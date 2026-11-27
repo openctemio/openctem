@@ -28,7 +28,7 @@ vi.mock('../use-attention-count', () => ({
   useAttentionCount: (id: string) => state.counts[id],
 }))
 
-import { AttentionReasons, ScopingDecisionCards } from '../attention-reasons'
+import { AttentionReasons } from '../attention-reasons'
 
 beforeEach(() => {
   state.hidden = []
@@ -96,31 +96,22 @@ describe('AttentionReasons', () => {
     expect(screen.queryByText('Relationships')).toBeNull()
   })
 
+  it('lists Decide monitoring as a scoping decision with its why and count', () => {
+    state.counts.decide_monitoring = 462
+    render(<AttentionReasons />)
+    const decide = within(screen.getByRole('region', { name: 'Scoping decisions' }))
+    const row = decide.getByTestId('attention-reason-decide_monitoring')
+    expect(row).toHaveAttribute('href', '/assets/attention/decide-monitoring')
+    expect(row).toHaveTextContent('Decide monitoring')
+    expect(row).toHaveTextContent(
+      'Discovered names waiting for a decision: monitor, watch only, or not yours.'
+    )
+    expect(screen.getByTestId('attention-count-decide_monitoring')).toHaveTextContent('462 assets')
+  })
+
   it('renders no tablist: the page keeps one tab row', () => {
     render(<AttentionReasons />)
     expect(screen.queryByRole('tablist')).toBeNull()
     expect(screen.queryByRole('navigation')).toBeNull()
-  })
-})
-
-describe('ScopingDecisionCards', () => {
-  it('shows a card only for a decision with assets waiting', () => {
-    render(<ScopingDecisionCards />)
-    const links = screen.getAllByRole('link')
-    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/assets/attention/validate-primary'])
-    expect(screen.getByTestId('attention-count-validate_primary')).toHaveTextContent('2 assets')
-    expect(screen.queryByTestId('attention-reason-decide_monitoring')).toBeNull()
-  })
-
-  it('renders no card while counts load or when nothing waits', () => {
-    state.counts = { decide_monitoring: 0 }
-    render(<ScopingDecisionCards />)
-    expect(screen.queryAllByRole('link')).toHaveLength(0)
-  })
-
-  it('renders nothing when the assets module is off', () => {
-    state.hidden = ['assets']
-    const { container } = render(<ScopingDecisionCards />)
-    expect(container).toBeEmptyDOMElement()
   })
 })

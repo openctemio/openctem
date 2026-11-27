@@ -8,7 +8,7 @@ import axe from 'axe-core'
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { InventoryFilterBar } from '../inventory-filter-bar'
+import { InventoryAddFilter, InventoryFilterBar } from '../inventory-filter-bar'
 import { buildFacetGroups } from '../../../lib/inventory-facets'
 import { inventoryChips } from '../../../lib/inventory-chips'
 import { parseInventoryFilters, type InventoryFilters } from '../../../lib/inventory-url'
@@ -37,6 +37,7 @@ const stats = { byCriticality: {}, byHasOwner: {} } as unknown as AssetStatsData
 function setup(qs: string) {
   const filters = parseInventoryFilters(new URLSearchParams(qs))
   const onChange = vi.fn<(f: InventoryFilters) => void>()
+  const onOpenPanel = vi.fn()
   const chips = inventoryChips(filters, {
     groups,
     t,
@@ -44,30 +45,37 @@ function setup(qs: string) {
     formatDate: (s) => s,
   })
   const r = render(
-    <InventoryFilterBar
-      chips={chips}
-      groups={groups}
-      filters={filters}
-      stats={stats}
-      onChange={onChange}
-      onClearAll={vi.fn()}
-      resultLabel="361 assets"
-    />
+    <>
+      <InventoryAddFilter
+        groups={groups}
+        filters={filters}
+        stats={stats}
+        onChange={onChange}
+        onOpenPanel={onOpenPanel}
+      />
+      <InventoryFilterBar
+        chips={chips}
+        filters={filters}
+        onChange={onChange}
+        onClearAll={vi.fn()}
+      />
+    </>
   )
-  return { onChange, filters, ...r }
+  return { onChange, onOpenPanel, filters, ...r }
 }
 
 describe('InventoryFilterBar', () => {
   it('draws a chip per filter; removing one clears only it', () => {
     const { onChange } = setup('lens=data&types=storage&criticalities=high')
     const chips = screen.getAllByTestId('inventory-filter-chip')
-    expect(chips.map((c) => c.textContent)).toEqual(['Type is storage', 'Criticality is High'])
-    fireEvent.click(screen.getByRole('button', { name: 'Remove filter Type is storage' }))
+    expect(chips.map((c) => c.textContent)).toEqual(['Type: storage', 'Criticality: High'])
+    fireEvent.click(screen.getByRole('button', { name: 'Remove filter Type: storage' }))
     const next = onChange.mock.calls[0][0]
     expect(next.types).toBeUndefined()
     expect(next.criticalities).toEqual(['high'])
     expect(next.lens).toBe('data')
-    expect(screen.getByRole('status')).toHaveTextContent('361 assets')
+    // The count is said once, in the title row, never in the chips row.
+    expect(screen.queryByRole('status')).toBeNull()
   })
 
   it('Add filter lists the registry, searches it, and a picked facet applies as you tick', async () => {
@@ -84,6 +92,14 @@ describe('InventoryFilterBar', () => {
     expect(onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({ criticalities: ['critical'], page: 1 })
     )
+  })
+
+  it('ends with a row that opens the facet panel', async () => {
+    const { onOpenPanel } = setup('')
+    await userEvent.click(screen.getByRole('button', { name: /add filter/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Show the filter panel' }))
+    expect(onOpenPanel).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('dialog', { name: 'Add filter' })).toBeNull()
   })
 
   it('opens Add filter on f, but not while typing', async () => {

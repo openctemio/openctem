@@ -4,6 +4,20 @@ import { useEffect, useState, type ComponentProps } from 'react'
 import Link, { useLinkStatus } from 'next/link'
 import { navPendingStore } from './nav-progress'
 
+/** The shell's page scroller (`MainRegion`, also the skip link's target). */
+const PAGE_SCROLLER_ID = 'content'
+
+/** Whether `href` is the page open now (same path and query, no fragment). */
+function isCurrentPage(href: string): boolean {
+  const to = new URL(href, window.location.href)
+  return (
+    !to.hash &&
+    to.origin === window.location.origin &&
+    to.pathname === window.location.pathname &&
+    to.search === window.location.search
+  )
+}
+
 type SidebarLinkProps = Omit<ComponentProps<typeof Link>, 'prefetch'>
 
 /**
@@ -16,12 +30,28 @@ type SidebarLinkProps = Omit<ComponentProps<typeof Link>, 'prefetch'>
  * 100-300 ms between pointing and clicking, the pattern Next recommends
  * ("prefetch only on hover", linking-and-navigating docs).
  */
-export function SidebarLink({ onMouseEnter, onFocus, onTouchStart, ...props }: SidebarLinkProps) {
+export function SidebarLink({
+  onClick,
+  onMouseEnter,
+  onFocus,
+  onTouchStart,
+  ...props
+}: SidebarLinkProps) {
   const [intent, setIntent] = useState(false)
   return (
     <Link
       {...props}
       prefetch={intent ? null : false}
+      onClick={(e) => {
+        onClick?.(e)
+        if (e.defaultPrevented) return
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+        // A link to the page already open (the current quick view) makes no
+        // navigation, so nothing scrolls: bring the page back to its top.
+        if (isCurrentPage(e.currentTarget.href)) {
+          document.getElementById(PAGE_SCROLLER_ID)?.scrollTo({ top: 0 })
+        }
+      }}
       onMouseEnter={(e) => {
         setIntent(true)
         onMouseEnter?.(e)

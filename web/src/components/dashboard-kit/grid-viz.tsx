@@ -179,15 +179,23 @@ export function ItemsViz({
                   </Badge>
                 ))}
               {r.kev && <KevBadge label={t('dashboardKit.items.kev', 'KEV')} />}
+              {/* The finding's title and its asset are names: they may end in
+                  an ellipsis, with the whole name as their title. */}
               {r.title?.trim() ? (
-                <span className="min-w-0 flex-1 truncate">{r.title}</span>
+                <span data-cut-tooltip title={r.title} className="min-w-0 flex-1 truncate">
+                  {r.title}
+                </span>
               ) : (
                 <span className="min-w-0 flex-1 truncate text-muted-foreground">
                   {t('dashboardKit.items.untitled', 'Untitled finding')}
                 </span>
               )}
               {r.asset && (
-                <span className="hidden max-w-[10rem] truncate text-xs text-muted-foreground sm:inline">
+                <span
+                  data-cut-tooltip
+                  title={r.asset}
+                  className="hidden max-w-[10rem] truncate text-xs text-muted-foreground sm:inline"
+                >
                   {r.asset}
                 </span>
               )}

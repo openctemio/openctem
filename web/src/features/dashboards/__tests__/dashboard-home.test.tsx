@@ -26,6 +26,7 @@ vi.mock('sonner', () => ({ toast }))
 
 const api = vi.hoisted(() => ({
   mine: [] as Dashboard[],
+  mineLoading: false,
   org: [] as Dashboard[],
   orgEnabled: [] as boolean[],
   orgError: undefined as Error | undefined,
@@ -40,7 +41,10 @@ vi.mock('../api/use-dashboards-api', () => ({
     hasOrg: perms.list.some((p) => p.startsWith('dashboards:org:')),
     dataKey: null,
   }),
-  useMyDashboards: () => ({ data: { data: api.mine }, isLoading: false }),
+  useMyDashboards: () =>
+    api.mineLoading
+      ? { data: undefined, isLoading: true }
+      : { data: { data: api.mine }, isLoading: false },
   useOrgDashboards: (enabled: boolean) => {
     api.orgEnabled.push(enabled)
     if (enabled && api.orgError) return { data: undefined, error: api.orgError, isLoading: false }
@@ -49,6 +53,8 @@ vi.mock('../api/use-dashboards-api', () => ({
   useRevalidateAllDashboards: () => async () => {},
   DASHBOARDS_KEY: '/api/v1/me/dashboards',
   createDashboard: api.create,
+  // The re-read after a refused copy: nothing there (no other tab made one).
+  fetchMyDashboards: () => Promise.resolve({ data: [] }),
   addFlowPanel: api.addFlow,
   undoFlowPanel: api.undoFlow,
   updateDashboard: api.update,
@@ -141,6 +147,7 @@ describe('DashboardHome', () => {
     window.localStorage.clear()
     perms.list = []
     api.mine = []
+    api.mineLoading = false
     api.org = []
     api.orgEnabled = []
     api.orgError = undefined
@@ -164,9 +171,14 @@ describe('DashboardHome', () => {
     const metrics = input.layout.map(
       (w) => (w as unknown as { config: { data: { metric: string } } }).config.data.metric
     )
-    // The CTEM story leads: the key figures, the exposure flow (with the
-    // five stages), then the levers; fix next and attack paths follow.
-    expect(metrics.slice(0, 3)).toEqual(['exposure.kpis', 'exposure.flow', 'exposure.levers'])
+    // The CTEM story leads: the key figures, the five stages, then Fix next
+    // beside new versus fixed; attack paths follow.
+    expect(metrics.slice(0, 4)).toEqual([
+      'exposure.kpis',
+      'ctem.loop',
+      'fix.next',
+      'flow.new_vs_fixed',
+    ])
     expect(metrics).toContain('fix.next')
     expect(metrics).toContain('attack_paths.to_crown_jewels')
     expect(metrics).toContain('attack_paths.to_crown_jewels')
@@ -218,9 +230,35 @@ describe('DashboardHome', () => {
     expect(screen.queryByText('Organization')).toBeNull()
     expect(screen.getByText('Mine', { selector: '[role=menuitem] span' })).toBeInTheDocument()
     await userEvent.keyboard('{Escape}')
-    // My own dashboard: Customize and the schedule picker are offered.
+    // My own dashboard: Customize in the toolbar, the schedule in More.
     expect(screen.getByRole('button', { name: 'Customize' })).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Refresh schedule' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    expect(await screen.findByRole('menuitem', { name: /Refresh schedule/ })).toBeInTheDocument()
+  })
+
+  it("holds the switcher's place on the title line while the lists load, hidden and inert", () => {
+    api.mineLoading = true
+    renderHome()
+    const line = document.querySelector('[data-slot="page-header-title-line"]')
+    const pending = screen.getByTestId('dashboard-switcher-pending')
+    expect(line).toContainElement(pending)
+    expect(pending).toBeDisabled()
+    expect(pending).toHaveAttribute('aria-hidden', 'true')
+    expect(screen.queryByRole('button', { name: /Switch dashboard/ })).toBeNull()
+  })
+
+  it("the dashboard's name is the switcher: a chevron on the title line, outside the h1", () => {
+    api.mine = [dash('p2', 'Mine', { is_default: true })]
+    data.byKey['personal:p2'] = snapshot('personal', 3)
+    renderHome()
+    const switcher = screen.getByRole('button', { name: 'Switch dashboard: Mine' })
+    const line = document.querySelector('[data-slot="page-header-title-line"]')
+    expect(line).toContainElement(switcher)
+    expect(screen.getByRole('heading', { level: 1, name: 'Mine' })).not.toContainElement(switcher)
+    // The toolbar holds no switcher and no schedule picker any more.
+    const toolbar = screen.getByTestId('dashboard-toolbar')
+    expect(toolbar).not.toContainElement(switcher)
+    expect(screen.queryByRole('combobox', { name: 'Refresh schedule' })).toBeNull()
   })
 
   it('an organization viewer lands on the organization default, badge organization-wide, no schedule or customize without manage', () => {
@@ -250,7 +288,10 @@ describe('DashboardHome', () => {
     api.org = [dash('o2', 'CTEM', { is_org_default: true })]
     data.byKey['organization:o2'] = snapshot('organization', 1)
     const { unmount } = renderHome()
-    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    // Duplicate is the viewer's only action: a menu never holds one item, so
+    // it is the button itself and no Edit details is offered.
+    expect(screen.queryByRole('button', { name: 'More dashboard actions' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Duplicate to mine' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Edit details' })).toBeNull()
     unmount()
     perms.list = ['dashboards:org:view', 'dashboards:org:manage']
@@ -280,6 +321,62 @@ describe('DashboardHome', () => {
     expect(screen.getByRole('button', { name: 'Refresh now' })).toBeEnabled()
   })
 
+  it('the header keeps only the one-line freshness; a notice sits under the header', async () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    data.byKey['personal:p1'] = { ...snapshot('personal', 5), facts_built_at: null, stale: true }
+    renderHome()
+    const notice = await screen.findByTestId('dashboard-data-notice')
+    // Building wins over stale: nothing older exists yet.
+    expect(notice).toHaveTextContent('Dashboard data is being built for the first time.')
+    expect(notice).toHaveAttribute('role', 'status')
+    const header = document.querySelector('[data-slot="page-header"]')
+    expect(header).toContainElement(screen.getByTestId('dashboard-freshness'))
+    expect(header).not.toContainElement(notice)
+    expect(screen.getByTestId('dashboard-freshness')).not.toHaveTextContent('being built')
+  })
+
+  it('the first count shows one notice instead of a "No data yet" box per widget', async () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    const snap = snapshot('personal', 5)
+    data.byKey['personal:p1'] = {
+      ...snap,
+      facts_built_at: null,
+      widgets: snap.widgets.map((w) => ({
+        ...w,
+        state: 'building' as const,
+        reason: 'facts_building',
+        scalar: undefined,
+      })),
+    }
+    renderHome()
+    const notice = await screen.findByTestId('dashboard-first-build')
+    expect(notice).toHaveAttribute('role', 'status')
+    expect(notice).toHaveTextContent('Your figures are being prepared')
+    expect(notice).toHaveTextContent('usually takes a few minutes')
+    expect(notice.querySelectorAll('[data-slot="empty-state"]')).toHaveLength(1)
+    // The line notice would say the same: not shown beside it.
+    expect(screen.queryByTestId('dashboard-data-notice')).toBeNull()
+    expect(screen.queryByText('No data yet')).toBeNull()
+  })
+
+  it('a stale notice names a failed refresh; current figures show no notice', async () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    data.byKey['personal:p1'] = {
+      ...snapshot('personal', 5),
+      stale: true,
+      last_refresh_error: 'timeout',
+    }
+    const { unmount } = renderHome()
+    expect(await screen.findByTestId('dashboard-data-notice')).toHaveTextContent(
+      'The last refresh failed; these are the last good figures.'
+    )
+    unmount()
+    data.byKey['personal:p1'] = snapshot('personal', 5)
+    renderHome()
+    expect(await screen.findByTestId('dashboard-freshness')).toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-data-notice')).toBeNull()
+  })
+
   it('the personal delete confirm does not claim the dashboard is deleted for everyone', async () => {
     api.mine = [dash('p1', 'Mine', { is_default: true })]
     data.byKey['personal:p1'] = snapshot('personal', 5)
@@ -306,12 +403,13 @@ describe('DashboardHome', () => {
     expect(toast.success).not.toHaveBeenCalled()
   })
 
-  it('a manager may set the organization schedule', () => {
+  it('a manager may set the organization schedule', async () => {
     perms.list = ['dashboards:org:view', 'dashboards:org:manage']
     api.org = [dash('o2', 'CTEM', { is_org_default: true })]
     data.byKey['organization:o2'] = snapshot('organization', 1)
     renderHome()
-    expect(screen.getByRole('combobox', { name: 'Refresh schedule' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    expect(await screen.findByRole('menuitem', { name: /Refresh schedule/ })).toBeInTheDocument()
   })
 
   it('keeps the last choice and switches from the menu', async () => {
@@ -348,19 +446,51 @@ describe('DashboardHome', () => {
   it('the actions menu carries Customize and the schedule for the phone toolbar', async () => {
     api.mine = [dash('p1', 'Mine', { is_default: true })]
     data.byKey['personal:p1'] = snapshot('personal', 5)
+    const desktop = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 500 })
+    try {
+      renderHome()
+      // The switcher is on the title line; the toolbar holds Refresh (named
+      // although icon-only) and More.
+      expect(screen.getByRole('button', { name: /Switch dashboard/ })).toBeInTheDocument()
+      const toolbar = screen.getByTestId('dashboard-toolbar')
+      expect(within(toolbar).getByRole('button', { name: 'Refresh now' })).toBeInTheDocument()
+      await userEvent.click(within(toolbar).getByRole('button', { name: 'More dashboard actions' }))
+      // A submenu makes it a bottom sheet titled with the dashboard.
+      const sheet = await screen.findByRole('dialog', { name: 'Mine' })
+      expect(within(sheet).getByRole('button', { name: 'Customize' })).toBeInTheDocument()
+      await userEvent.click(within(sheet).getByRole('button', { name: /Refresh schedule/ }))
+      expect(
+        within(sheet).getByRole('button', { name: 'Organization default (current)' })
+      ).toBeInTheDocument()
+      await userEvent.click(within(sheet).getByRole('button', { name: 'Every 6 hours' }))
+      const { setDashboardSchedule } = await import('../api/use-dashboards-api')
+      await waitFor(() => expect(setDashboardSchedule).toHaveBeenCalledWith('personal', 'p1', '6h'))
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: desktop })
+    }
+  })
+
+  it('from 640px the actions menu leaves Customize to the toolbar and keeps the schedule', async () => {
+    api.mine = [dash('p1', 'Mine', { is_default: true })]
+    data.byKey['personal:p1'] = snapshot('personal', 5)
     renderHome()
-    // One toolbar row: the switcher, Refresh (named even when icon-only) and More.
-    const toolbar = screen.getByTestId('dashboard-toolbar')
-    expect(within(toolbar).getByRole('button', { name: /Switch dashboard/ })).toBeInTheDocument()
-    expect(within(toolbar).getByRole('button', { name: 'Refresh now' })).toBeInTheDocument()
-    await userEvent.click(within(toolbar).getByRole('button', { name: 'More dashboard actions' }))
-    const menu = screen.getByRole('menu')
-    expect(within(menu).getByRole('menuitem', { name: 'Customize' })).toBeInTheDocument()
-    const radios = within(menu).getAllByRole('menuitemradio')
-    expect(radios.map((r) => r.textContent)).toContain('Organization default')
-    await userEvent.click(within(menu).getByRole('menuitemradio', { name: 'Every 6 hours' }))
-    const { setDashboardSchedule } = await import('../api/use-dashboards-api')
-    await waitFor(() => expect(setDashboardSchedule).toHaveBeenCalledWith('personal', 'p1', '6h'))
+    await userEvent.click(screen.getByRole('button', { name: 'More dashboard actions' }))
+    const menu = await screen.findByRole('menu')
+    expect(within(menu).queryByRole('menuitem', { name: 'Customize' })).toBeNull()
+    expect(within(menu).getByRole('menuitem', { name: /Refresh schedule/ })).toBeInTheDocument()
+    expect(within(menu).getByRole('menuitem', { name: 'Edit details' })).toBeInTheDocument()
+  })
+
+  it('a viewer of an organization dashboard gets no schedule item', async () => {
+    perms.list = ['dashboards:org:view']
+    api.mine = [dash('p1', 'Mine')]
+    api.org = [dash('o2', 'CTEM', { is_org_default: true })]
+    data.byKey['organization:o2'] = snapshot('organization', 1)
+    renderHome()
+    // Duplicate to mine is the only action: shown as the button itself.
+    expect(screen.getByRole('button', { name: 'Duplicate to mine' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /Refresh schedule/ })).toBeNull()
   })
 
   it('the meta line names the scope, the last and the next refresh on one line', () => {
@@ -417,6 +547,17 @@ describe('DashboardHome new layout hint', () => {
     expect(api.create).not.toHaveBeenCalled()
   })
 
+  it('a building notice opens the layout hint line instead of a row of its own', async () => {
+    api.mine = [ctemCopy('d1')]
+    data.byKey['personal:d1'] = { ...snapshot('personal', 5), facts_built_at: null }
+    renderHome()
+    const hint = await screen.findByTestId('layout-hint')
+    const notices = await screen.findAllByTestId('dashboard-data-notice')
+    expect(notices).toHaveLength(1)
+    expect(hint).toContainElement(notices[0])
+    expect(notices[0]).toHaveTextContent('Dashboard data is being built for the first time.')
+  })
+
   it('"Add them" inserts each missing widget where the template has it and keeps every widget', async () => {
     api.mine = [ctemCopy('d1')]
     api.update.mockResolvedValue({})
@@ -435,13 +576,12 @@ describe('DashboardHome new layout hint', () => {
       'intel.kev_open',
       'sla.within',
       'exposure.kpis',
-      'exposure.flow',
-      'exposure.levers',
+      'ctem.loop',
       'fix.next',
+      'flow.new_vs_fixed',
+      'exposure.levers',
       'attack_paths.to_crown_jewels',
       'exposure.open_by_priority',
-      'flow.new_vs_fixed',
-      'findings.age_bands',
       'surface.new_assets',
       'certificates.expiry',
       // The person's own extra widget stays.

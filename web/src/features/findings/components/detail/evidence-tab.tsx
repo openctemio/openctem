@@ -59,10 +59,13 @@ import {
 } from '@/features/pentest/components/flagged-attachment'
 import Image from 'next/image'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 interface EvidenceTabProps {
   evidence: Evidence[]
   finding?: FindingDetail // Optional: for stack traces and related locations
+  /** `false` when the page shows validation results in their own tab. */
+  validation?: boolean
 }
 
 const EVIDENCE_ICONS: Record<EvidenceType, React.ReactNode> = {
@@ -130,8 +133,8 @@ function RepositoryLink({
   )
 }
 
-export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
-  const { t, locale } = useTranslation()
+export function EvidenceTab({ evidence, finding, validation = true }: EvidenceTabProps) {
+  const { t } = useTranslation()
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set())
   // The tool's own proof (request, response, match), masked server-side.
   const { data: evidenceItems, mutate: refreshToolEvidence } = useFindingEvidenceItems(
@@ -208,7 +211,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString(locale, {
+    return localeFormatDate(new Date(dateString), {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -423,7 +426,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
       {/* Validation (CTEM Stage-4): re-check + evidence timeline */}
       {finding?.id && (
         <>
-          <ValidationEvidencePanel findingId={finding.id} />
+          {validation && <ValidationEvidencePanel findingId={finding.id} />}
           {showComplianceCard && <ComplianceMappingCard findingId={finding.id} />}
           <Separator />
         </>
@@ -629,7 +632,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                             </span>
                             <div className="flex-1 min-w-0">
                               {frame.location?.path && (
-                                <span className="text-primary break-all">
+                                <span className="text-primary break-words">
                                   {toDisplayText(frame.location.path)}
                                   {frame.location.start_line && (
                                     <span className="text-muted-foreground">
@@ -815,7 +818,7 @@ export function EvidenceTab({ evidence, finding }: EvidenceTabProps) {
                             {isExternal ? (
                               <SafeExternalLink
                                 href={uri}
-                                className="text-sm text-primary hover:underline break-all inline-flex items-center gap-1"
+                                className="text-sm text-primary hover:underline break-words inline-flex items-center gap-1"
                               >
                                 {uri}
                                 <ExternalLink className="h-3 w-3 flex-shrink-0" />

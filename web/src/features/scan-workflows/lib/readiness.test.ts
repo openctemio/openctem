@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   byReadiness,
+  canScan,
   firstProblem,
   isRunnable,
   readinessFixHref,
@@ -26,7 +27,15 @@ const r = (state: WorkflowReadiness['state'], steps: WorkflowReadiness['steps'] 
 })
 
 describe('workflow readiness', () => {
-  it('ready and waiting can be chosen; ci_only and blocked cannot; unknown can', () => {
+  it('a scan of any workflow but a CI-only one can be created (blocked ones run in part)', () => {
+    expect(canScan(r('ready'))).toBe(true)
+    expect(canScan(r('waiting'))).toBe(true)
+    expect(canScan(r('blocked'))).toBe(true)
+    expect(canScan(r('ci_only'))).toBe(false)
+    expect(canScan(undefined)).toBe(true)
+  })
+
+  it('ready and waiting run fully; ci_only and blocked do not; unknown does', () => {
     expect(isRunnable(r('ready'))).toBe(true)
     expect(isRunnable(r('waiting'))).toBe(true)
     expect(isRunnable(r('ci_only'))).toBe(false)
@@ -45,7 +54,7 @@ describe('workflow readiness', () => {
         fix: 'Add a sensor with naabu',
       },
     ])
-    expect(readinessLabel(blocked)).toBe('Not available')
+    expect(readinessLabel(blocked)).toBe('Runs in part')
     expect(firstProblem(blocked)?.step_key).toBe('p')
     expect(readinessFixHref(blocked)).toBe('/sensors')
     expect(
@@ -120,6 +129,6 @@ describe('workflow readiness', () => {
     expect(stepReason(step, tr(en))).toBe('No enabled tool runs probe.http (httpx is turned off)')
     expect(stepFix(step, tr(vi))).toBe('Bật httpx')
     expect(stepFixHref(step)).toBe('/settings/scanning/tools')
-    expect(readinessLabel(r('blocked'), tr(vi))).toBe('Không khả dụng')
+    expect(readinessLabel(r('blocked'), tr(vi))).toBe('Chạy một phần')
   })
 })

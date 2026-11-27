@@ -26,6 +26,11 @@ test.describe('Findings quick views', { tag: ['@findings'] }, () => {
     ]) {
       await expect(nav.getByRole('link', { name: new RegExp(`^${name}`) })).toBeVisible()
     }
+    // Pending approval leads to the approvals inbox, where requests are decided.
+    await expect(nav.getByRole('link', { name: /^Pending approval/ })).toHaveAttribute(
+      'href',
+      '/findings/approvals'
+    )
     await nav.getByRole('link', { name: /^Needs triage/ }).click()
     await expect(page).toHaveURL(/status=new/)
     await expect(page.getByTestId('findings-view-title')).toHaveText('Needs triage')

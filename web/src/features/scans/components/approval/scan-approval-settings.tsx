@@ -2,18 +2,17 @@
 
 /**
  * Settings > Scan approval (RFC-073): the organization's mode (Off, On,
- * Strict; owner only) and its approval rules (owner or administrator):
- * apply a preset, add or edit a rule (condition chips and requirement),
- * reorder by dragging, turn a rule off or remove it, and try the rules on
- * the existing scans. Every change asks for a reason; the API asks for
- * re-authentication.
+ * Strict; owner only, saved through the page's save bar) and its approval
+ * rules (owner or administrator; each change applies on its own): apply a
+ * preset, add or edit a rule (condition chips and requirement), reorder by
+ * dragging, turn a rule off or remove it, and try the rules on the existing
+ * scans. Every change asks for a reason; the API asks for re-authentication.
  */
 
 import { useEffect, useId, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
   DialogBody,
@@ -25,10 +24,15 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageStack } from '@/features/shared'
+import {
+  SettingsBlock,
+  SettingsPage,
+  SettingsRow,
+  SettingsSaveBar,
+  SettingsSection,
+} from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import {
   saveScanGovernanceMode,
@@ -67,16 +71,22 @@ export function ScanApprovalSettings() {
     if (data) setChoice(data.organization_mode)
   }, [data])
 
-  if (error) {
+  const title = t('settings.item.scan-approval', 'Scan approval')
+  const description = t(
+    'settings.desc.scan-approval',
+    'Which scans need a person’s approval before they run: off by default.'
+  )
+  if (error || isLoading || !data) {
     return (
-      <ErrorState
-        title={t('scans.approvalSettings.errorTitle', 'the scan approval settings')}
+      <SettingsPage
+        title={title}
+        description={description}
+        state={error ? 'error' : 'loading'}
         error={error}
         onRetry={() => void mutate()}
       />
     )
   }
-  if (isLoading || !data) return <Skeleton className="h-96 w-full" />
 
   // The platform can enforce a mode over the organization's choice. The radios
   // then show the mode in force, read-only, and the organization's own choice
@@ -150,26 +160,28 @@ export function ScanApprovalSettings() {
     })
   }
 
+  const modeDirty = canMode && choice !== data.organization_mode
+  const modeLabel = t('scans.approvalSettings.modeTitle', 'Mode')
+
   return (
-    <PageStack>
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('scans.approvalSettings.title', 'Scan approval')}</CardTitle>
-          <CardDescription>
-            {data.source === 'platform'
-              ? t(
-                  'scans.approvalSettings.forced',
-                  'In force: {mode}, set by your platform administrator.',
-                  {
-                    mode: modeText[data.mode].label,
-                  }
-                )
-              : t('scans.approvalSettings.inForce', 'In force: {mode}.', {
-                  mode: modeText[data.mode].label,
-                })}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+    <SettingsPage title={title} description={description} readOnly={!canRules}>
+      <SettingsSection
+        framed
+        id="mode"
+        title={modeLabel}
+        description={
+          forced
+            ? t(
+                'scans.approvalSettings.forced',
+                'In force: {mode}, set by your platform administrator.',
+                { mode: modeText[data.mode].label }
+              )
+            : t('scans.approvalSettings.inForce', 'In force: {mode}.', {
+                mode: modeText[data.mode].label,
+              })
+        }
+      >
+        <SettingsBlock>
           <RadioGroup
             value={forced ? data.mode : choice}
             onValueChange={(v) => setChoice(v as ScanApprovalMode)}
@@ -186,13 +198,15 @@ export function ScanApprovalSettings() {
                 />
                 <Label htmlFor={`${id}-${m}`} className="grid gap-1 font-normal">
                   <span className="font-medium">{modeText[m].label}</span>
-                  <span className="text-sm text-muted-foreground">{modeText[m].hint}</span>
+                  <span className="text-cap text-muted-foreground text-pretty">
+                    {modeText[m].hint}
+                  </span>
                 </Label>
               </div>
             ))}
           </RadioGroup>
           {forced && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-cap text-muted-foreground">
               {t(
                 'scans.approvalSettings.forcedNote',
                 'Your organization chose {chosen}. It applies if the platform administrator stops enforcing {mode}.',
@@ -200,80 +214,81 @@ export function ScanApprovalSettings() {
               )}
             </p>
           )}
-          {forced ? null : canMode ? (
-            <div className="flex justify-end">
-              <Button
-                disabled={choice === data.organization_mode || busy}
-                onClick={() => setPending({ kind: 'mode', mode: choice })}
-              >
-                {t('scans.approvalSettings.save', 'Save')}
-              </Button>
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
+          {!forced && !canMode && (
+            <p className="text-cap text-muted-foreground">
               {t('scans.approvalSettings.ownerOnly', 'Only an owner changes the mode.')}
             </p>
           )}
-        </CardContent>
-      </Card>
+        </SettingsBlock>
+      </SettingsSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('scans.approvalSettings.rulesTitle', 'Approval rules')}</CardTitle>
-          <CardDescription>
-            {t(
-              'scans.approvalSettings.rulesDesc',
-              'Conditions inside a rule must all hold; any matching rule holds the scan. The matching rule with the most approvers decides who approves. Monitor mode records what a rule would hold without holding it.'
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {canRules && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm text-muted-foreground">
-                {t('scans.approvalSettings.presets', 'Start from a preset:')}
-              </span>
-              {PRESETS.map((p) => (
-                <Button
-                  key={p}
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    setPending({
-                      kind: 'rules',
-                      rules: data.presets[p] ?? [],
-                      label: t(
-                        'scans.approvalSettings.applyPreset',
-                        'Replace the rules with the {preset} preset',
-                        {
-                          preset: t(`scans.approvalSettings.preset.${p}`, p),
-                        }
-                      ),
-                    })
-                  }
-                >
-                  {t(`scans.approvalSettings.preset.${p}`, p)}
-                </Button>
-              ))}
-            </div>
-          )}
-          {canRules && (
+      <SettingsSection
+        framed
+        id="rules"
+        title={t('scans.approvalSettings.rulesTitle', 'Approval rules')}
+        description={t(
+          'scans.approvalSettings.rulesDesc',
+          'Conditions inside a rule must all hold; any matching rule holds the scan. The matching rule with the most approvers decides who approves. Monitor mode records what a rule would hold without holding it.'
+        )}
+      >
+        {canRules && (
+          <SettingsBlock>
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={() => setEditing({ index: -1, rule: newRule() })}>
+              {/* Outline: the save bar is the page's one filled action. */}
+              <Button variant="outline" onClick={() => setEditing({ index: -1, rule: newRule() })}>
                 {t('scans.approvalSettings.addRule', 'Add rule')}
               </Button>
               {data.rules.length > 0 && (
-                <Button size="sm" variant="outline" onClick={() => setTesting((v) => !v)}>
+                <Button
+                  variant="outline"
+                  aria-expanded={testing}
+                  onClick={() => setTesting((v) => !v)}
+                >
                   {t('scans.approvalSettings.testRules', 'Try the rules on existing scans')}
                 </Button>
               )}
             </div>
-          )}
-          {testing && canRules && data.rules.length > 0 && (
+          </SettingsBlock>
+        )}
+        {canRules && (
+          <SettingsRow
+            label={t('scans.approvalSettings.presetRow', 'Start from a preset')}
+            hint={t(
+              'scans.approvalSettings.presetHint',
+              'Replaces the rules below with a ready set. You give a reason first.'
+            )}
+          >
+            {PRESETS.map((p) => (
+              <Button
+                key={p}
+                variant="outline"
+                onClick={() =>
+                  setPending({
+                    kind: 'rules',
+                    rules: data.presets[p] ?? [],
+                    label: t(
+                      'scans.approvalSettings.applyPreset',
+                      'Replace the rules with the {preset} preset',
+                      {
+                        preset: t(`scans.approvalSettings.preset.${p}`, p),
+                      }
+                    ),
+                  })
+                }
+              >
+                {t(`scans.approvalSettings.preset.${p}`, p)}
+              </Button>
+            ))}
+          </SettingsRow>
+        )}
+        {testing && canRules && data.rules.length > 0 && (
+          <SettingsBlock>
             <ApprovalRuleTester rules={data.rules} />
-          )}
+          </SettingsBlock>
+        )}
+        <SettingsBlock>
           {data.rules.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-dense text-muted-foreground">
               {t(
                 'scans.approvalSettings.noRules',
                 'No rules: no scan needs approval even when the mode is On.'
@@ -319,8 +334,18 @@ export function ScanApprovalSettings() {
               }
             />
           )}
-        </CardContent>
-      </Card>
+        </SettingsBlock>
+      </SettingsSection>
+
+      {canMode && (
+        <SettingsSaveBar
+          dirty={modeDirty}
+          saving={busy}
+          changes={[modeLabel]}
+          onSave={() => setPending({ kind: 'mode', mode: choice })}
+          onDiscard={() => setChoice(data.organization_mode)}
+        />
+      )}
 
       {editing && (
         <ApprovalRuleEditor
@@ -366,6 +391,6 @@ export function ScanApprovalSettings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </PageStack>
+    </SettingsPage>
   )
 }

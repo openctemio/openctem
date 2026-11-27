@@ -1,32 +1,29 @@
 'use client'
 
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import type { ColumnDef } from '@tanstack/react-table'
-import { Main } from '@/components/layout'
+import type { Column, ColumnDef, Row } from '@tanstack/react-table'
 import {
-  PageHeader,
   DataTable,
   DataTableColumnHeader,
   DataTableRowActions,
   EmptyState,
-  MetricStrip,
+  FacetOption,
+  FacetPanel,
+  FacetSection,
+  FilterSheet,
+  SettingsPage,
   type RowAction,
-  PageStack,
 } from '@/features/shared'
+import { AddFilterPanel } from '@/features/shared/components/add-filter-panel'
+import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
+import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
+import { RowNameLink } from '@/features/shared/components/row-name-link'
+import { PersonPhoneCard } from '@/features/organization/components/person-phone-card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { toast } from 'sonner'
-import { Can } from '@/lib/permissions'
-import { Plus, Shield, Trash2, Eye, Pencil, Loader2, AlertCircle, RefreshCw } from 'lucide-react'
+import { Can, useCanMutate } from '@/lib/permissions'
+import { Plus, Shield, Trash2, Eye, Pencil, Loader2 } from 'lucide-react'
 import { useSWRConfig } from 'swr'
 import {
   useRoles,
@@ -36,54 +33,70 @@ import {
   RoleDetailSheet,
   EditRoleSheet,
 } from '@/features/access-control'
-import { useUrlFilter } from '@/hooks/use-url-param'
+import type { RoleRisk } from '@/features/access-control/types/role.types'
+import { replaceUrlSearch, useUrlFilter } from '@/hooks/use-url-param'
 import { confirmName } from '@/lib/confirm-name'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
-import { RoleRiskBadge, RoleSummaryLine } from '@/features/access-control/components/role-risk'
+import { roleDisplayDescription, roleDisplayName } from '@/features/access-control/lib/system-role'
+import {
+  RoleRiskBadge,
+  RoleSummaryLine,
+  useRoleWords,
+} from '@/features/access-control/components/role-risk'
+
+/**
+ * Roles of the organization (boards P4-Settings-Roles, -RoleEditor,
+ * -DialogsAccess): one list with search, Add filter (role type, risk) and
+ * Display; the role opens in the detail sheet (`?role=<id>`), custom roles are
+ * edited and deleted from there or the row menu. The list is small and
+ * unpaged (the four system roles plus the organization's own), so filters
+ * apply on the client.
+ */
 
 type TypeFilter = 'all' | 'system' | 'custom'
+const RISKS: RoleRisk[] = ['critical', 'high', 'medium', 'low']
+const FILTER_PARAMS = ['type', 'risk', 'q']
 
-const typeFilters: { value: TypeFilter; key: string; en: string }[] = [
-  { value: 'all', key: 'org.rolesPage.type.all', en: 'All types' },
-  { value: 'system', key: 'org.rolesPage.type.system', en: 'System' },
-  { value: 'custom', key: 'org.rolesPage.type.custom', en: 'Custom' },
+const typeFilters: { value: Exclude<TypeFilter, 'all'>; key: string; en: string }[] = [
+  { value: 'system', key: 'org.rolesPage.type.systemRoles', en: 'System roles' },
+  { value: 'custom', key: 'org.rolesPage.type.customRoles', en: 'Custom roles' },
 ]
 
-const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
+const roleHref = (id: string) => `/settings/roles?role=${encodeURIComponent(id)}`
 
 export default function RolesPage() {
   const { t } = useTranslation()
+  const words = useRoleWords()
   const { mutate } = useSWRConfig()
+  const canCreate = useCanMutate('POST /api/v1/roles')
 
-  // API Hooks
-  const { roles, isLoading, isError, mutate: mutateRoles } = useRoles()
-  // A role grants every permission it holds, whatever the modules: count all.
-  const getFilteredPermissionCount = useCallback((role: Role) => role.permission_count, [])
+  const { roles, isLoading, isError, error, mutate: mutateRoles } = useRoles()
 
-  // UI State
-  const [selectedRole, setSelectedRole] = useState<Role | null>(null)
+  const [roleParam, setRoleParam] = useUrlFilter('role', '')
+  const selectedRole = useMemo(
+    () => (roleParam ? (roles.find((r) => r.id === roleParam) ?? null) : null),
+    [roles, roleParam]
+  )
+  const openRole = useCallback((role: Role | null) => setRoleParam(role?.id ?? ''), [setRoleParam])
+
   const [createSheetOpen, setCreateSheetOpen] = useState(false)
   const [editRole, setEditRole] = useState<Role | null>(null)
-  const [pendingEditRole, setPendingEditRole] = useState<Role | null>(null) // For transition from detail to edit
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [pendingEditRole, setPendingEditRole] = useState<Role | null>(null)
   const [roleToDelete, setRoleToDelete] = useState<Role | null>(null)
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useUrlFilter('q', '')
-  const [typeParam, setTypeFilter] = useUrlFilter('type', 'all')
+  const [typeParam, setTypeFilter] = useUrlFilter('type', '')
+  const [riskParam, setRiskFilter] = useUrlFilter('risk', '')
   const typeFilter: TypeFilter =
     typeParam === 'system' || typeParam === 'custom' ? typeParam : 'all'
+  const riskFilter = (RISKS as string[]).includes(riskParam) ? (riskParam as RoleRisk) : null
 
-  // Handle transition from detail sheet to edit sheet
-  // When detail sheet closes and there's a pending edit, open the edit sheet
+  // From the detail sheet to the edit sheet: wait until the detail sheet has
+  // closed, so the two never show at once.
   useEffect(() => {
     if (!selectedRole && pendingEditRole) {
-      // Small delay to ensure detail sheet animation is complete
       const timer = setTimeout(() => {
         setEditRole(pendingEditRole)
         setPendingEditRole(null)
@@ -92,353 +105,471 @@ export default function RolesPage() {
     }
   }, [selectedRole, pendingEditRole])
 
-  // Ensure mutual exclusivity: when edit sheet opens, close detail sheet
-  useEffect(() => {
-    if (editRole && selectedRole) {
-      setSelectedRole(null)
-    }
-  }, [editRole, selectedRole])
-
-  // Delete hook
   const { deleteRole, isDeleting } = useDeleteRole(roleToDelete?.id || null)
 
-  // Refresh data
   const refreshData = useCallback(() => {
-    mutateRoles()
+    void mutateRoles()
   }, [mutateRoles])
 
-  // Filter data
   const filteredData = useMemo(() => {
-    let data = [...roles]
-
-    if (typeFilter === 'system') {
-      data = data.filter((role) => role.is_system)
-    } else if (typeFilter === 'custom') {
-      data = data.filter((role) => !role.is_system)
-    }
-
     const q = searchQuery.trim().toLowerCase()
-    if (q) {
-      data = data.filter(
-        (role) =>
-          role.name.toLowerCase().includes(q) ||
-          role.slug.toLowerCase().includes(q) ||
-          role.description?.toLowerCase().includes(q)
+    return roles.filter((role) => {
+      if (typeFilter === 'system' && !role.is_system) return false
+      if (typeFilter === 'custom' && role.is_system) return false
+      if (riskFilter && role.summary?.risk !== riskFilter) return false
+      if (!q) return true
+      return (
+        role.name.toLowerCase().includes(q) ||
+        roleDisplayName(t, role).toLowerCase().includes(q) ||
+        role.slug.toLowerCase().includes(q) ||
+        !!role.description?.toLowerCase().includes(q)
       )
-    }
+    })
+  }, [roles, typeFilter, riskFilter, searchQuery, t])
 
-    return data
-  }, [roles, typeFilter, searchQuery])
+  const customCount = useMemo(() => roles.filter((r) => !r.is_system).length, [roles])
+  const hasMemberCounts = roles.some((r) => r.members_count !== undefined)
 
-  // Type counts
-  const typeCounts = useMemo(
-    () => ({
-      all: roles.length,
-      system: roles.filter((r) => r.is_system).length,
-      custom: roles.filter((r) => !r.is_system).length,
-    }),
-    [roles]
+  const askDelete = useCallback((role: Role) => setRoleToDelete(role), [])
+
+  // A row menu only where it offers a change: a system role, or a reader who
+  // can neither edit nor delete, opens the role by its name or the row (an
+  // overflow menu never holds one item).
+  const canEditRole = useCanMutate('PUT /api/v1/roles/{roleId}')
+  const canDeleteRole = useCanMutate('DELETE /api/v1/roles/{roleId}')
+  const roleMenu = useCallback(
+    (role: Role) => {
+      if (role.is_system || !(canEditRole || canDeleteRole)) return null
+      const name = toDisplayText(role.name, 120)
+      const actions: RowAction[] = [
+        {
+          label: t('org.rolesPage.viewDetails', 'View details'),
+          icon: Eye,
+          onClick: () => openRole(role),
+        },
+        ...(!role.is_system
+          ? [
+              {
+                label: t('org.rolesPage.editRole', 'Edit role'),
+                icon: Pencil,
+                route: 'PUT /api/v1/roles/{roleId}' as const,
+                onClick: () => setEditRole(role),
+              },
+              {
+                label: t('org.rolesPage.deleteRole', 'Delete role'),
+                icon: Trash2,
+                destructive: true,
+                separatorBefore: true,
+                route: 'DELETE /api/v1/roles/{roleId}' as const,
+                onClick: () => askDelete(role),
+              },
+            ]
+          : []),
+      ]
+      return (
+        <DataTableRowActions
+          title={name}
+          label={t('common.rowActions.actionsFor', 'Actions for {name}', { name })}
+          actions={actions}
+        />
+      )
+    },
+    [t, openRole, askDelete, canEditRole, canDeleteRole]
   )
 
-  // Table columns
+  const dataAccess = (role: Role) => (
+    <Badge variant={role.has_full_data_access ? 'outline' : 'secondary'}>
+      {role.has_full_data_access
+        ? t('org.rolesPage.fullAccess', 'Full access')
+        : t('org.rolesPage.teamBased', 'Team-based')}
+    </Badge>
+  )
+  const systemBadge = (
+    <Badge variant="outline" className="shrink-0">
+      {t('org.rolesPage.system', 'System')}
+    </Badge>
+  )
+
+  const roleLabel = t('org.rolesPage.col.role', 'Role')
+  const riskLabel = t('org.roleRisk.column', 'Risk')
+  const accessLabel = t('org.rolesPage.col.dataAccess', 'Data access')
+  const levelLabel = t('org.rolesPage.col.level', 'Level')
+  const membersLabel = t('org.rolesPage.col.members', 'Members')
+  const permissionsLabel = t('org.rolesPage.col.permissions', 'Permissions')
+
+  // hideBelow is the table frame width under which a column folds: the sum of the
+  // columns still shown with it (name floor 200, risk 140, data access 160, row menu 48,
+  // then 72 each for permissions, members and level) plus cell padding and slack, so no header is cut.
   const columns: ColumnDef<Role>[] = [
     {
       accessorKey: 'name',
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title={t('org.rolesPage.col.role', 'Role')} />
-      ),
-      cell: ({ row }) => (
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <p className="font-medium">{row.original.name}</p>
-            {row.original.is_system && (
-              <Badge variant="outline" className="text-xs">
-                {t('org.rolesPage.system', 'System')}
-              </Badge>
+      meta: { kind: 'name', pin: 'start', minWidth: 200, label: roleLabel },
+      enableHiding: false,
+      header: ({ column }) => <DataTableColumnHeader column={column} title={roleLabel} />,
+      cell: ({ row }) => {
+        const role = row.original
+        const name = toDisplayText(roleDisplayName(t, role), 200)
+        const description = roleDisplayDescription(t, role)
+        return (
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <RowNameLink href={roleHref(role.id)} onOpen={() => openRole(role)} title={name}>
+                {name}
+              </RowNameLink>
+              {role.is_system && systemBadge}
+            </div>
+            {description && (
+              <p className="text-cap text-muted-foreground truncate">
+                {toDisplayText(description, 300)}
+              </p>
             )}
           </div>
-          {row.original.description && (
-            <p className="text-muted-foreground text-xs line-clamp-1">{row.original.description}</p>
-          )}
-        </div>
-      ),
+        )
+      },
     },
     {
       id: 'risk',
-      header: t('org.roleRisk.column'),
-      enableSorting: false,
+      accessorFn: (r) => (r.summary ? RISKS.length - RISKS.indexOf(r.summary.risk) : 0),
+      meta: { kind: 'text', minWidth: 140, maxWidth: 320, hideBelow: 740, label: riskLabel },
+      header: ({ column }) => <DataTableColumnHeader column={column} title={riskLabel} />,
       cell: ({ row }) =>
         row.original.summary ? (
           <div className="min-w-0 space-y-1">
             <RoleRiskBadge risk={row.original.summary.risk} />
-            <RoleSummaryLine summary={row.original.summary} max={3} className="line-clamp-1" />
+            <RoleSummaryLine
+              summary={row.original.summary}
+              max={3}
+              clamp
+              className="text-cap text-muted-foreground"
+            />
           </div>
-        ) : (
-          <span className="text-sm tabular-nums">{getFilteredPermissionCount(row.original)}</span>
-        ),
+        ) : null,
     },
     {
       accessorKey: 'has_full_data_access',
-      header: t('org.rolesPage.col.dataAccess', 'Data access'),
+      meta: { kind: 'status', width: 160, label: accessLabel },
       enableSorting: false,
-      cell: ({ row }) => (
-        <Badge
-          variant={row.original.has_full_data_access ? 'default' : 'secondary'}
-          className="text-xs"
-        >
-          {row.original.has_full_data_access
-            ? t('org.rolesPage.fullAccess', 'Full access')
-            : t('org.rolesPage.teamBased', 'Team-based')}
-        </Badge>
-      ),
+      header: accessLabel,
+      cell: ({ row }) => dataAccess(row.original),
     },
     {
       accessorKey: 'hierarchy_level',
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title={t('org.rolesPage.col.level', 'Level')} />
-      ),
-      cell: ({ row }) => (
-        <span className="text-muted-foreground text-sm tabular-nums">
-          {row.original.hierarchy_level}
-        </span>
-      ),
+      meta: { kind: 'number', hideBelow: 960, label: levelLabel },
+      header: ({ column }) => <DataTableColumnHeader column={column} title={levelLabel} />,
+      cell: ({ row }) => <span className="tabular-nums">{row.original.hierarchy_level}</span>,
     },
+    // The list answer carries no member count today: the column shows only
+    // when it does, never a row of zeros.
+    ...(hasMemberCounts
+      ? [
+          {
+            id: 'members',
+            accessorFn: (r: Role) => r.members_count ?? 0,
+            meta: { kind: 'number' as const, hideBelow: 880, label: membersLabel },
+            header: ({ column }: { column: Column<Role> }) => (
+              <DataTableColumnHeader column={column} title={membersLabel} />
+            ),
+            cell: ({ row }: { row: Row<Role> }) => (
+              <span className="tabular-nums">{row.original.members_count ?? 0}</span>
+            ),
+          },
+        ]
+      : []),
     {
-      accessorKey: 'created_at',
-      header: ({ column }) => (
-        <DataTableColumnHeader column={column} title={t('org.rolesPage.col.created', 'Created')} />
-      ),
-      cell: ({ row }) => (
-        <span className="text-muted-foreground text-sm">{formatDate(row.original.created_at)}</span>
-      ),
+      accessorKey: 'permission_count',
+      meta: { kind: 'number', hideBelow: 800, label: permissionsLabel },
+      header: ({ column }) => <DataTableColumnHeader column={column} title={permissionsLabel} />,
+      cell: ({ row }) => <span className="tabular-nums">{row.original.permission_count}</span>,
     },
     {
       id: 'actions',
+      meta: { kind: 'actions' },
       enableSorting: false,
       enableHiding: false,
-      cell: ({ row }) => {
-        const role = row.original
-
-        const actions: RowAction[] = [
-          {
-            label: t('org.rolesPage.viewDetails', 'View details'),
-            icon: Eye,
-            onClick: () => setSelectedRole(role),
-          },
-          ...(!role.is_system
-            ? [
-                {
-                  label: t('org.rolesPage.editRole', 'Edit role'),
-                  icon: Pencil,
-                  route: 'PUT /api/v1/roles/{roleId}' as const,
-                  onClick: () => setEditRole(role),
-                },
-                {
-                  label: t('org.rolesPage.deleteRole', 'Delete role'),
-                  icon: Trash2,
-                  destructive: true,
-                  separatorBefore: true,
-                  route: 'DELETE /api/v1/roles/{roleId}' as const,
-                  onClick: () => {
-                    setRoleToDelete(role)
-                    setDeleteDialogOpen(true)
-                  },
-                },
-              ]
-            : []),
-        ]
-
-        return <DataTableRowActions actions={actions} />
-      },
+      cell: ({ row }) => roleMenu(row.original),
     },
   ]
 
-  // Actions
   const handleDeleteRole = async () => {
     if (!roleToDelete) return
-
     try {
       await deleteRole()
       toast.success(
-        t('org.rolesPage.deleted', 'Role "{name}" deleted', { name: roleToDelete.name })
+        t('org.rolesPage.deleted', 'Role "{name}" deleted', {
+          name: toDisplayText(roleToDelete.name, 120),
+        })
       )
-      setDeleteDialogOpen(false)
       setRoleToDelete(null)
-      mutate(
+      void mutate(
         (key: string) => typeof key === 'string' && key.startsWith('/api/v1/roles'),
         undefined,
         { revalidate: true }
       )
       refreshData()
-    } catch (error) {
+    } catch (err) {
+      // The dialog stays open: the role is still there and can be tried again.
       toast.error(
         t('org.rolesPage.deleteFailed', 'Failed to delete role: {error}', {
           error:
-            error instanceof Error
-              ? error.message
-              : t('org.rolesPage.unknownError', 'Unknown error'),
+            err instanceof Error ? err.message : t('org.rolesPage.unknownError', 'Unknown error'),
         })
       )
     }
   }
 
-  const toggleType = (next: TypeFilter) => setTypeFilter(typeFilter === next ? 'all' : next)
+  // Filters: one URL write for several params (two setters in a row would
+  // each start from the same URL).
+  const clearFilters = () => {
+    const next = new URLSearchParams(window.location.search)
+    for (const name of FILTER_PARAMS) next.delete(name)
+    replaceUrlSearch(next)
+  }
+  const typeText = (v: Exclude<TypeFilter, 'all'>) => {
+    const f = typeFilters.find((x) => x.value === v)!
+    return t(f.key, f.en)
+  }
+  const chipList = [
+    ...(typeFilter !== 'all'
+      ? [
+          {
+            key: 'type',
+            text: t('org.rolesPage.chip.type', 'Role type: {value}', {
+              value: typeText(typeFilter),
+            }),
+            clear: () => setTypeFilter(''),
+          },
+        ]
+      : []),
+    ...(riskFilter
+      ? [
+          {
+            key: 'risk',
+            text: t('org.rolesPage.chip.risk', 'Risk: {value}', { value: words.risk(riskFilter) }),
+            clear: () => setRiskFilter(''),
+          },
+        ]
+      : []),
+  ]
+  const activeCount = chipList.length
+  const chipsRow =
+    chipList.length > 0 ? (
+      <FilterChipsRow
+        data-testid="roles-filter-chips"
+        label={t('common.filterChips.label', 'Active filters')}
+        chips={chipList.map((c) => (
+          <RemovableFilterChip
+            key={c.key}
+            text={c.text}
+            onRemove={c.clear}
+            removeLabel={t('org.rolesPage.chip.remove', 'Remove filter {filter}', {
+              filter: c.text,
+            })}
+          />
+        ))}
+        onClearAll={chipList.length > 1 ? clearFilters : undefined}
+      />
+    ) : undefined
+
+  const facets = (
+    <FacetPanel
+      activeCount={activeCount}
+      onClearAll={() => {
+        setTypeFilter('')
+        setRiskFilter('')
+      }}
+    >
+      <FacetSection
+        title={t('org.rolesPage.typeLabel', 'Role type')}
+        selectedCount={typeFilter !== 'all' ? 1 : 0}
+      >
+        {typeFilters.map((f) => (
+          <FacetOption
+            key={f.value}
+            label={t(f.key, f.en)}
+            checked={typeFilter === f.value}
+            onCheckedChange={(on) => setTypeFilter(on ? f.value : '')}
+          />
+        ))}
+      </FacetSection>
+      <FacetSection title={riskLabel} selectedCount={riskFilter ? 1 : 0}>
+        {RISKS.map((r) => (
+          <FacetOption
+            key={r}
+            label={words.risk(r)}
+            checked={riskFilter === r}
+            onCheckedChange={(on) => setRiskFilter(on ? r : '')}
+          />
+        ))}
+      </FacetSection>
+    </FacetPanel>
+  )
+
+  const narrowed = activeCount > 0 || searchQuery.trim() !== ''
+  const filtersLabel = t('org.rolesPage.filtersLabel', 'Role filters')
+  // Only the four system roles exist: say so when the list is narrowed to
+  // custom roles, with the way to add one.
+  const noCustomYet = typeFilter === 'custom' && customCount === 0 && searchQuery.trim() === ''
+
+  const deleteMembers = roleToDelete?.members_count
+  const deleteImpact =
+    deleteMembers === undefined
+      ? t(
+          'confirm.role.deleteDesc',
+          'Members who have it lose its permissions at once, unless another role grants them. This cannot be undone.'
+        )
+      : t(
+          'confirm.role.deleteImpact',
+          '{members, plural, =0 {Nobody has this role now.} one {# member has this role now and loses its permissions at once, unless another role grants them.} other {# members have this role now and lose its permissions at once, unless another role grants them.}} This cannot be undone.',
+          { members: deleteMembers }
+        )
 
   return (
     <>
-      <Main>
-        <PageStack>
-          <PageHeader
-            title={t('org.rolesPage.title', 'Roles')}
-            description={t(
-              'org.rolesPage.description',
-              'Roles bundle permissions; a user can hold several roles.'
-            )}
-          >
-            <Can route="POST /api/v1/roles">
-              <Button id="create-role" size="sm" onClick={() => setCreateSheetOpen(true)}>
-                <Plus className="me-2 h-4 w-4" />
-                {t('org.rolesPage.createRole', 'Create role')}
-              </Button>
-            </Can>
-          </PageHeader>
-
-          {isError && !isLoading ? (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>{t('org.rolesPage.loadFailedTitle', 'Failed to load roles')}</AlertTitle>
-              <AlertDescription>
-                <p>{t('org.rolesPage.loadFailedBody', 'The role list could not be loaded.')}</p>
-                <Button variant="outline" size="sm" className="mt-2" onClick={refreshData}>
-                  <RefreshCw className="me-2 h-4 w-4" />
-                  {t('common.retry', 'Retry')}
-                </Button>
-              </AlertDescription>
-            </Alert>
-          ) : (
-            <>
-              <MetricStrip
-                loading={isLoading}
-                items={[
-                  {
-                    key: 'all',
-                    label: t('org.rolesPage.metric.roles', 'Roles'),
-                    value: typeCounts.all,
-                    onClick: () => setTypeFilter('all'),
-                    active: typeFilter === 'all',
-                  },
-                  {
-                    key: 'system',
-                    label: t('org.rolesPage.metric.system', 'System roles'),
-                    value: typeCounts.system,
-                    onClick: () => toggleType('system'),
-                    active: typeFilter === 'system',
-                  },
-                  {
-                    key: 'custom',
-                    label: t('org.rolesPage.metric.custom', 'Custom roles'),
-                    value: typeCounts.custom,
-                    onClick: () => toggleType('custom'),
-                    active: typeFilter === 'custom',
-                  },
-                ]}
-              />
-
-              <div>
-                {isLoading ? (
-                  <div className="space-y-2">
-                    <Skeleton className="h-9 w-full max-w-sm" />
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <Skeleton key={i} className="h-12 w-full" />
-                    ))}
-                  </div>
-                ) : roles.length === 0 ? (
-                  <EmptyState
-                    icon={Shield}
-                    title={t('org.rolesPage.emptyTitle', 'No roles yet')}
-                    description={t(
-                      'org.rolesPage.emptyBody',
-                      'Create a role to grant a set of permissions to users.'
-                    )}
-                    action={
-                      <Can route="POST /api/v1/roles">
-                        <Button size="sm" onClick={() => setCreateSheetOpen(true)}>
-                          <Plus className="me-2 h-4 w-4" />
-                          {t('org.rolesPage.createRole', 'Create role')}
-                        </Button>
-                      </Can>
-                    }
-                  />
-                ) : (
-                  <DataTable
-                    columns={columns}
-                    data={filteredData}
-                    getRowId={(r) => r.id}
-                    showSearch={false}
-                    search={{
-                      value: searchQuery,
-                      onChange: setSearchQuery,
-                      placeholder: t('org.rolesPage.searchPlaceholder', 'Search roles…'),
-                      label: t('org.rolesPage.searchLabel', 'Search roles'),
-                    }}
-                    showColumnToggle={false}
-                    onRowClick={(r) => setSelectedRole(r)}
-                    toolbarStart={
-                      <>
-                        <Select
-                          value={typeFilter}
-                          onValueChange={(v) => setTypeFilter(v as TypeFilter)}
-                        >
-                          <SelectTrigger
-                            className="h-9 w-[130px]"
-                            aria-label={t('org.rolesPage.typeLabel', 'Role type')}
-                          >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {typeFilters.map((f) => (
-                              <SelectItem key={f.value} value={f.value}>
-                                {t(f.key, f.en)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </>
-                    }
-                    emptyMessage={t('org.rolesPage.noMatch', 'No roles match these filters')}
-                  />
-                )}
-              </div>
-            </>
+      <SettingsPage
+        wide
+        title={t('org.rolesPage.title', 'Roles')}
+        description={t(
+          'org.rolesPage.description',
+          'Roles bundle permissions; a user can hold several roles.'
+        )}
+        readOnly={
+          !canCreate
+            ? t(
+                'org.rolesPage.readOnly',
+                'View only. Only owners and administrators can change roles.'
+              )
+            : undefined
+        }
+        actions={
+          <Can route="POST /api/v1/roles">
+            <Button id="create-role" onClick={() => setCreateSheetOpen(true)}>
+              <Plus aria-hidden />
+              {t('org.rolesPage.createRole', 'Create role')}
+            </Button>
+          </Can>
+        }
+      >
+        <DataTable
+          columns={columns}
+          data={filteredData}
+          // When the table still scrolls sideways the row menu stays in view.
+          pinActions
+          getRowId={(r) => r.id}
+          isLoading={isLoading && roles.length === 0}
+          error={isError ? (error ?? true) : undefined}
+          onRetry={refreshData}
+          errorTitle={t('org.rolesPage.subject', 'roles')}
+          showSearch={false}
+          search={{
+            value: searchQuery,
+            onChange: setSearchQuery,
+            placeholder: t('org.rolesPage.searchPlaceholder', 'Search roles…'),
+            label: t('org.rolesPage.searchLabel', 'Search roles'),
+          }}
+          // One filter entry per width: Add filter from 768 px, the button
+          // joined to the search field on a phone (it opens the sheet).
+          filterToggle={{
+            open: false,
+            onToggle: () => setFilterSheetOpen(true),
+            onOpenSheet: () => setFilterSheetOpen(true),
+            activeCount,
+            controlsId: 'role-filters',
+            label: filtersLabel,
+            sheetOnly: true,
+          }}
+          toolbarStart={<AddFilterPanel>{facets}</AddFilterPanel>}
+          toolbarBelow={chipsRow}
+          onRowClick={openRole}
+          showPagination={filteredData.length > 25}
+          paginationNoun={t('org.rolesPage.noun', 'roles')}
+          mobileRow={(role) => (
+            <PersonPhoneCard
+              title={
+                <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="min-w-0">{toDisplayText(roleDisplayName(t, role), 200)}</span>
+                  {role.is_system && systemBadge}
+                </span>
+              }
+              address={toDisplayText(roleDisplayDescription(t, role) ?? '', 300) || undefined}
+              onOpen={() => openRole(role)}
+              menu={roleMenu(role)}
+              facts={
+                <>
+                  {role.summary && <RoleRiskBadge risk={role.summary.risk} />}
+                  {dataAccess(role)}
+                  <span className="text-cap text-muted-foreground tabular-nums">
+                    {role.members_count !== undefined
+                      ? t(
+                          'org.rolesPage.card.counts',
+                          '{members, plural, one {# member} other {# members}}, {permissions, plural, one {# permission} other {# permissions}}',
+                          { members: role.members_count, permissions: role.permission_count }
+                        )
+                      : t(
+                          'org.rolesPage.card.permissions',
+                          '{permissions, plural, one {# permission} other {# permissions}}',
+                          { permissions: role.permission_count }
+                        )}
+                  </span>
+                </>
+              }
+            />
           )}
-        </PageStack>
-      </Main>
+          isFiltered={narrowed}
+          onClearFilters={clearFilters}
+          emptyState={{
+            nothingYet: (
+              <EmptyState
+                icon={Shield}
+                title={t('org.rolesPage.emptyTitle', 'No roles yet')}
+                description={t(
+                  'org.rolesPage.emptyBody',
+                  'Create a role to grant a set of permissions to users.'
+                )}
+              />
+            ),
+            noMatch: noCustomYet
+              ? {
+                  title: t('org.rolesPage.noCustomTitle', 'No custom roles yet'),
+                  hint: t(
+                    'org.rolesPage.noCustomHint',
+                    'Owner, Admin, Member and Viewer always exist. Add a custom role for anything in between.'
+                  ),
+                }
+              : {
+                  title: t('org.rolesPage.noMatch', 'No roles match these filters'),
+                  hint: t(
+                    'org.rolesPage.noMatchHint',
+                    'Try removing a filter or clearing the search.'
+                  ),
+                },
+          }}
+        />
+      </SettingsPage>
 
-      {/* Create Role Sheet */}
+      <FilterSheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen} title={filtersLabel}>
+        {facets}
+      </FilterSheet>
+
       <CreateRoleSheet
         open={createSheetOpen}
         onOpenChange={setCreateSheetOpen}
         onSuccess={refreshData}
       />
 
-      {/* Role Detail Sheet */}
       <RoleDetailSheet
         role={selectedRole}
         open={!!selectedRole}
-        onOpenChange={(open) => !open && setSelectedRole(null)}
+        onOpenChange={(open) => !open && openRole(null)}
         onEdit={(role) => {
-          // Use pending edit pattern to wait for detail sheet to close
           setPendingEditRole(role)
-          setSelectedRole(null) // This triggers the close animation
+          openRole(null)
         }}
         onDelete={(role) => {
-          setRoleToDelete(role)
-          setDeleteDialogOpen(true)
-          setSelectedRole(null)
+          askDelete(role)
+          openRole(null)
         }}
       />
 
-      {/* Edit Role Sheet */}
       <EditRoleSheet
         role={editRole}
         open={!!editRole}
@@ -449,28 +580,19 @@ export default function RolesPage() {
         }}
       />
 
-      {/* Delete Confirmation Dialog */}
       <ConfirmDialog
-        open={deleteDialogOpen}
+        open={!!roleToDelete}
         onOpenChange={(open) => {
-          setDeleteDialogOpen(open)
           if (!open) setRoleToDelete(null)
         }}
         destructive
         title={t('confirm.role.deleteTitle', 'Delete the role "{name}"?', {
-          name: roleToDelete?.name ?? '',
+          name: roleToDelete ? toDisplayText(roleToDelete.name, 120) : '',
         })}
-        desc={t(
-          'confirm.role.deleteDesc',
-          'Members who have it lose its permissions at once, unless another role grants them. This cannot be undone.'
-        )}
+        desc={deleteImpact}
         confirmText={
           <>
-            {isDeleting ? (
-              <Loader2 className="me-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="me-2 h-4 w-4" />
-            )}
+            {isDeleting ? <Loader2 className="animate-spin" aria-hidden /> : <Trash2 aria-hidden />}
             {t('confirm.role.delete', 'Delete role')}
           </>
         }

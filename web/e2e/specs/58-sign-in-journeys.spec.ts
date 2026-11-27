@@ -200,7 +200,7 @@ test.describe('sign-in journeys', { tag: ['@auth'] }, () => {
         problems.push(`expected to work inside ${env.slug}, ended ${got}`)
       }
       if (want === 'account-space' && outcome.kind !== 'account-space') {
-        problems.push(`expected the account space (welcome), ended ${got}`)
+        problems.push(`expected the account space (/account/organizations), ended ${got}`)
       }
       if (want === 'told-why') {
         if (outcome.kind === 'in-org' && outcome.slug === env.slug) {
@@ -394,7 +394,10 @@ async function drive(
     if (p.startsWith('/invitations')) {
       const accept = page.getByRole('button', { name: 'Accept invitation' })
       const open = page.getByRole('button', { name: /^Open / })
-      const signIn = page.getByRole('link', { name: /sign in/i })
+      // The page's own action, which keeps the invitation to return to. The
+      // brand link in the entry header is also named "Go to sign in" and
+      // opens /login with nothing to return to.
+      const signIn = page.getByRole('main').getByRole('link', { name: /sign in/i })
       // The page loads its invitation after it opens: wait for one of its
       // answers before reading it, or a slow load reads as a dead end.
       await accept
@@ -472,7 +475,11 @@ async function drive(
         (await visible(page, page.locator('[data-sonner-toast]')))
       return { kind: 'login', reason }
     }
-    if (p.startsWith('/welcome') || p.startsWith('/onboarding') || p.startsWith('/not-set-up')) {
+    if (
+      p.startsWith('/account/organizations') ||
+      p.startsWith('/onboarding') ||
+      p.startsWith('/not-set-up')
+    ) {
       // The account space with a notice names why an organization did not
       // open and offers its one next step: a page that says why.
       const notice = page.getByTestId('welcome-notice')

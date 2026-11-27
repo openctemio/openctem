@@ -11,14 +11,17 @@ const setWatching = vi.fn()
 const addWatchers = vi.fn()
 const removeWatcher = vi.fn()
 let participants: Participants | undefined
+const reads: boolean[] = []
 vi.mock('../../../api/use-participants', async () => {
   const actual = await vi.importActual<typeof import('../../../api/use-participants')>(
     '../../../api/use-participants'
   )
   return {
     ...actual,
-    useParticipants: () => ({
-      participants,
+    useParticipants: (_k: unknown, _i: unknown, o?: { enabled?: boolean }) => ({
+      participants: (reads.push(o?.enabled !== false), o?.enabled === false)
+        ? undefined
+        : participants,
       isLoading: false,
       busy: false,
       setWatching,
@@ -106,9 +109,17 @@ beforeEach(() => {
   toastSuccess.mockReset()
   picker.onOpenChange.mockReset()
   participants = base
+  reads.length = 0
 })
 
 describe('WatchersControl rail rows', () => {
+  it('draws no Watchers label when the list could not be read', () => {
+    participants = undefined
+    const { container } = renderControl()
+    expect(screen.queryByText('Watchers')).not.toBeInTheDocument()
+    expect(container.querySelector('dt, dd, [aria-busy]')).toBeNull()
+  })
+
   it('summarises watchers in one row and has no control that removes anyone', () => {
     renderControl()
     expect(screen.getByText('3 watching')).toBeInTheDocument()
@@ -121,7 +132,7 @@ describe('WatchersControl rail rows', () => {
   it('the self toggle names the action and offers Undo in its toast', async () => {
     renderControl()
     const toggle = screen.getByRole('button', { name: 'Stop watching this finding' })
-    expect(toggle).toHaveTextContent('Watching')
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
     await userEvent.click(toggle)
     expect(setWatching).toHaveBeenCalledWith(false)
     const [message, opts] = toastSuccess.mock.calls[0]
@@ -135,7 +146,10 @@ describe('WatchersControl rail rows', () => {
   it('says Watch when you are not watching', () => {
     participants = { ...base, me: { user_id: 'u-me', state: 'unsubscribed' } }
     renderControl({ kind: 'task' })
-    expect(screen.getByRole('button', { name: 'Watch this task' })).toHaveTextContent('Watch')
+    expect(screen.getByRole('button', { name: 'Watch this task' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
   })
 
   it('shows only the count when the API hides names', async () => {
@@ -227,6 +241,22 @@ describe('Manage watchers sheet', () => {
     const sheet = await openSheet()
     await userEvent.click(within(sheet).getByRole('button', { name: 'Watch' }))
     expect(setWatching).toHaveBeenCalledWith(true)
+  })
+})
+
+describe('a deferred control', () => {
+  it('reads nothing until it is opened, then shows the list in the sheet', async () => {
+    renderControl({ deferred: true })
+    expect(reads.every((r) => r === false)).toBe(true)
+    expect(screen.getByText('Watchers')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /manage watchers/i }))
+    expect(reads.at(-1)).toBe(true)
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('reads at once when it is not deferred', () => {
+    renderControl()
+    expect(reads.every((r) => r === true)).toBe(true)
   })
 })
 

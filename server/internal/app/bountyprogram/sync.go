@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
 	moduledom "github.com/openctemio/openctem/server/pkg/domain/module"
 	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
@@ -172,7 +174,7 @@ func (s *Service) sync(ctx context.Context, p *bp.Program, actor shared.ID) (*Sy
 		gone := s.isGone != nil && s.isGone(err)
 		stale := p.Sync.LastSyncedAt == nil || now.Sub(*p.Sync.LastSyncedAt) > bp.ClosedGrace
 		if gone && stale && p.Status == bp.StatusActive {
-			if serr := s.suspend(ctx, p, actor, "the scope source is gone"); serr == nil {
+			if serr := s.suspend(ctx, p, actor, "the scope source is gone", "source_gone"); serr == nil {
 				res.Suspended = true
 			}
 		}
@@ -183,7 +185,7 @@ func (s *Service) sync(ctx context.Context, p *bp.Program, actor shared.ID) (*Sy
 		return res, fmt.Errorf("%w: %s", bp.ErrSyncFailed, p.Sync.LastError)
 	}
 	if !open && p.Status == bp.StatusActive {
-		if err := s.suspend(ctx, p, actor, "the program no longer takes submissions"); err != nil {
+		if err := s.suspend(ctx, p, actor, "the program no longer takes submissions", "no_submissions"); err != nil {
 			return nil, err
 		}
 		res.Suspended = true
@@ -203,8 +205,9 @@ func (s *Service) sync(ctx context.Context, p *bp.Program, actor shared.ID) (*Sy
 		if p.Pending == nil || p.Pending.TermsSHA256 != terms {
 			p.Pending = &bp.PendingTerms{TermsSHA256: terms, Items: items}
 			if s.notifier != nil {
-				s.notifier.NotifyAdmins(ctx, p.TenantID, "Program scope changed",
-					fmt.Sprintf("%s lists %d new in-scope targets; a member must accept the new terms before they are scanned", p.Name, len(diff.AddedEntries)))
+				s.notifier.NotifyAdminsMsg(ctx, p.TenantID, "Program scope changed",
+					fmt.Sprintf("%s lists %d new in-scope targets; a member must accept the new terms before they are scanned", p.Name, len(diff.AddedEntries)),
+					notificationdom.Msg("program.scope_changed", "program", p.Name, "count", len(diff.AddedEntries)))
 			}
 		}
 		res.PendingAdditions = len(diff.AddedEntries) + len(diff.RemovedExclusion)
@@ -260,7 +263,9 @@ func (s *Service) narrow(ctx context.Context, p *bp.Program, d bp.SyncDiff) erro
 	return nil
 }
 
-func (s *Service) suspend(ctx context.Context, p *bp.Program, actor shared.ID, why string) error {
+// suspend pauses the program; why is the English reason (audit and e-mail)
+// and reason the code of its language-neutral form (program.suspend_reason.*).
+func (s *Service) suspend(ctx context.Context, p *bp.Program, actor shared.ID, why, reason string) error {
 	p.Status, p.UpdatedAt = bp.StatusPaused, s.now()
 	if err := s.stopEntries(ctx, p, actor); err != nil {
 		return err
@@ -268,7 +273,8 @@ func (s *Service) suspend(ctx context.Context, p *bp.Program, actor shared.ID, w
 	s.assign(ctx, p)
 	s.audited(ctx, p, actor, "Program suspended: "+why, nil)
 	if s.notifier != nil {
-		s.notifier.NotifyAdmins(ctx, p.TenantID, "Program suspended", fmt.Sprintf("%s: %s", p.Name, why))
+		s.notifier.NotifyAdminsMsg(ctx, p.TenantID, "Program suspended", fmt.Sprintf("%s: %s", p.Name, why),
+			notificationdom.Msg("program.suspended", "program", p.Name, "reason", notificationdom.Msg("program.suspend_reason."+reason)))
 	}
 	return nil
 }

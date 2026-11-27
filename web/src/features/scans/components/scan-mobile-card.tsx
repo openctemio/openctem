@@ -8,6 +8,7 @@ import type { ScanConfig } from '@/lib/api/scan-types'
 import { lastRunOf, lastRunReason, scanTypeLabel } from '../lib/scan-status'
 import { ScanApprovalBadge } from './approval/scan-approval-badge'
 import { IntensityBadge } from './intensity-badge'
+import { BreakText } from '@/features/shared/components/break-text'
 import { BlockedRunHint } from './last-run-cell'
 import { RunHistory } from './run-history'
 
@@ -15,10 +16,16 @@ import { RunHistory } from './run-history'
  * A scan on a phone. One fact per element, in reading order, never a
  * label/value grid squeezed into two columns:
  *
- *   [ ] Name ............................ Last run state  [...]
+ *   [ ] Name ................................................ [...]
+ *       Last run state
  *       nuclei  Single check  Intrusive
  *       3 hours ago  30 runs  (run glyphs) 80%
  *       Why it was blocked, and where to fix it (blocked runs only)
+ *
+ * The name has the whole line beside the row menu: a state such as "Waiting
+ * for a sensor" beside it left the name about 130 px on a 390 px screen. A
+ * name that is a host or an address wraps only after its dots and dashes
+ * (`BreakText`), never inside a word.
  *
  * Every line is a wrapping flex row whose children have min-width 0, so a
  * long name, a long workflow name or a translated label wraps or is cut with
@@ -74,16 +81,22 @@ export function ScanMobileCard({
           <div className="flex min-w-0 items-start gap-2">
             <div
               data-slot="scan-card-title"
-              className="flex min-w-0 flex-1 basis-32 flex-wrap items-center gap-x-2 gap-y-1"
+              className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1"
             >
-              <p className="min-w-0 break-words text-body font-medium">{config.name}</p>
+              <p className="min-w-0 break-words text-body font-medium" dir="auto">
+                <BreakText>{config.name}</BreakText>
+              </p>
               <ScanApprovalBadge status={config.approval_status} />
             </div>
-            {run ? (
+            <div className="-my-1 shrink-0">{actions}</div>
+          </div>
+          {run ? (
+            <div className="flex min-w-0">
               <button
                 type="button"
                 data-slot="scan-card-status"
-                className="shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                // A touch-sized target that keeps the line at text height.
+                className="-my-2 inline-flex h-control-touch min-w-0 max-w-full items-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => onOpenRun(run.id)}
                 aria-label={t('scans.cell.openLatestRun', undefined, { status: run.status })}
               >
@@ -94,13 +107,12 @@ export function ScanMobileCard({
                   title={lastRunReason(run, t)}
                 />
               </button>
-            ) : (
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {t('scans.cell.never')}
-              </span>
-            )}
-            <div className="-my-1 shrink-0">{actions}</div>
-          </div>
+            </div>
+          ) : (
+            <p data-slot="scan-card-status" className="text-xs text-muted-foreground">
+              {t('scans.cell.never')}
+            </p>
+          )}
           <MetaLine
             className="items-center"
             items={[

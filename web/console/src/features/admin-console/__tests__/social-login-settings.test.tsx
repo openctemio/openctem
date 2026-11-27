@@ -50,12 +50,11 @@ describe('Social login settings', () => {
   it('shows the exact redirect URI of each provider and the JavaScript origin of Google', () => {
     render(<SocialLoginSettingsForm settings={settings()} canEdit onSaved={() => {}} />)
     const google = within(screen.getByTestId('social-google'))
+    // Shown as text to copy, never as an input box that cuts them.
+    expect(google.getByText('https://ctem.example.com/auth/callback/google')).toBeInTheDocument()
+    expect(google.getByText('https://ctem.example.com')).toBeInTheDocument()
     expect(
-      google.getByDisplayValue('https://ctem.example.com/auth/callback/google')
-    ).toBeInTheDocument()
-    expect(google.getByDisplayValue('https://ctem.example.com')).toBeInTheDocument()
-    expect(
-      within(screen.getByTestId('social-microsoft')).getByDisplayValue(
+      within(screen.getByTestId('social-microsoft')).getByText(
         'https://ctem.example.com/auth/callback/microsoft'
       )
     ).toBeInTheDocument()
@@ -79,9 +78,7 @@ describe('Social login settings', () => {
     })
     render(<SocialLoginSettingsForm settings={s} canEdit onSaved={() => {}} />)
     const card = within(screen.getByTestId('social-google'))
-    const secret = card.getByLabelText('Client secret') as HTMLInputElement
-    expect(secret.value).toBe('')
-    expect(secret.type).toBe('password')
+    expect(card.getByText('Stored, never shown')).toBeInTheDocument()
     await userEvent.click(card.getByLabelText('Offer on the sign-in page'))
     await userEvent.click(card.getByRole('button', { name: 'Save changes' }))
     const dialog = within(screen.getByRole('alertdialog'))
@@ -110,7 +107,8 @@ describe('Social login settings', () => {
   it('tests the configuration without showing the secret', async () => {
     render(<SocialLoginSettingsForm settings={settings()} canEdit onSaved={() => {}} />)
     const card = within(screen.getByTestId('social-github'))
-    expect(card.getByRole('button', { name: 'Test configuration' })).toBeDisabled()
+    // Nothing to test yet: no idle, disabled button.
+    expect(card.queryByRole('button', { name: 'Test configuration' })).toBeNull()
     await userEvent.type(card.getByLabelText('Client ID'), 'Iv1.abcdef123456')
     await userEvent.type(card.getByLabelText('Client secret'), 'candidate-secret-123')
     await userEvent.click(card.getByRole('button', { name: 'Test configuration' }))
@@ -139,9 +137,12 @@ describe('Social login settings', () => {
     render(<SocialLoginSettingsForm settings={s} canEdit onSaved={() => {}} />)
     const card = within(screen.getByTestId('social-github'))
     expect(card.getByText('Set by the server environment')).toBeInTheDocument()
-    expect(
-      card.getByText(/Locked by the server configuration \(OAUTH_GITHUB_CLIENT_SECRET\)/)
-    ).toBeInTheDocument()
+    const code = Array.from(screen.getByTestId('social-github').querySelectorAll('code')).find(
+      (c) => c.textContent === 'OAUTH_GITHUB_CLIENT_SECRET'
+    )
+    expect(code?.closest('[role="status"]')).toHaveTextContent(
+      /Locked by the server configuration \(OAUTH_GITHUB_CLIENT_SECRET\)/
+    )
     expect(card.getByLabelText('Client ID')).toBeDisabled()
     expect(card.queryByRole('button', { name: 'Save changes' })).toBeNull()
     // An editable provider shows its save bar once something changed.
@@ -153,7 +154,9 @@ describe('Social login settings', () => {
 
   it('is read-only for an administrator who is not a super admin', () => {
     render(<SocialLoginSettingsForm settings={settings()} canEdit={false} onSaved={() => {}} />)
-    expect(screen.getAllByText('Only a super admin can change this setting.')).toHaveLength(3)
+    // The page says why once (SettingsPage readOnly); each provider's fields are locked.
+    for (const field of screen.getAllByLabelText('Client ID')) expect(field).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Test configuration' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull()
   })
 })

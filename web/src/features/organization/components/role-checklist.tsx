@@ -70,14 +70,12 @@ function RoleText({ role, descId }: { role: RoleChecklistItem; descId: string })
   return (
     <div className="min-w-0 flex-1">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="truncate text-sm font-medium" title={role.name}>
-          {name}
-        </span>
+        <span className="min-w-0 text-sm font-medium break-words">{name}</span>
         {role.summary && <RoleRiskBadge risk={role.summary.risk} />}
       </div>
       <div id={descId}>
         {role.description && (
-          <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+          <p className="mt-0.5 text-xs break-words text-muted-foreground">
             {role.description.slice(0, 200)}
           </p>
         )}
@@ -285,7 +283,7 @@ export function RolePicker({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-8 px-2 text-xs"
+            className="px-2 text-xs"
             aria-expanded={showMore}
             onClick={() => setShowMore((v) => !v)}
           >

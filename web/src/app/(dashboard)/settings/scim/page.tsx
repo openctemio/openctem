@@ -12,8 +12,9 @@ import {
   ErrorState,
   GatedButton,
   PageStack,
+  SettingsBlock,
+  SettingsSection,
 } from '@/features/shared'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
@@ -55,6 +56,7 @@ import { toast } from 'sonner'
 import { usePermissions } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 import { ExtensionSlot } from '@/lib/extension/slot'
+import { formatDate } from '@/lib/app-locale'
 
 function scimOwnerOnlyReason(tr: ReturnType<typeof useTranslation>['t']): string {
   return tr(
@@ -75,7 +77,7 @@ function StatusBadge({ t }: { t: ScimToken }) {
   if (!isActive(t)) {
     return <Badge variant="secondary">{tr('settings.scim.status.revoked', 'Revoked')}</Badge>
   }
-  return <Badge variant="default">{tr('settings.scim.status.active', 'Active')}</Badge>
+  return <Badge variant="outline">{tr('settings.scim.status.active', 'Active')}</Badge>
 }
 
 // ─────────────────────────────────────────────────────────
@@ -245,19 +247,19 @@ function ScimEndpointCard() {
     }
   }
   return (
-    <Card id="scim-endpoint">
-      <CardHeader>
-        <CardTitle>{tr('settings.scim.endpoint.title', 'SCIM endpoint')}</CardTitle>
-        <CardDescription>
-          {tr(
-            'settings.scim.endpoint.description',
-            'Configure your identity provider (Okta, Microsoft Entra ID, etc.) with this base URL and a token below. Authentication uses an HTTP bearer token.'
-          )}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="bg-muted flex items-center gap-2 rounded-md p-3">
-          <code className="flex-1 break-all text-xs">{baseURL || '…'}</code>
+    // A settings section, not a card: the URL gets the column's full width.
+    <SettingsSection
+      framed
+      id="scim-endpoint"
+      title={tr('settings.scim.endpoint.title', 'SCIM endpoint')}
+      description={tr(
+        'settings.scim.endpoint.description',
+        'Configure your identity provider (Okta, Microsoft Entra ID, etc.) with this base URL and a token below. Authentication uses an HTTP bearer token.'
+      )}
+    >
+      <SettingsBlock>
+        <div className="flex min-w-0 items-center gap-2">
+          <code className="min-w-0 flex-1 break-all text-dense">{baseURL || '…'}</code>
           <Button
             size="icon"
             variant="ghost"
@@ -269,8 +271,8 @@ function ScimEndpointCard() {
             {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </SettingsBlock>
+    </SettingsSection>
   )
 }
 
@@ -457,7 +459,7 @@ export default function ScimTokensPage() {
         ),
         cell: ({ row }) => (
           <span className="text-muted-foreground text-xs">
-            {new Date(row.original.created_at).toLocaleDateString()}
+            {formatDate(new Date(row.original.created_at))}
           </span>
         ),
       },
@@ -472,7 +474,7 @@ export default function ScimTokensPage() {
         cell: ({ row }) => (
           <span className="text-muted-foreground text-xs">
             {row.original.last_used_at
-              ? new Date(row.original.last_used_at).toLocaleDateString()
+              ? formatDate(new Date(row.original.last_used_at))
               : tr('settings.keys.never', 'Never')}
           </span>
         ),
@@ -487,7 +489,7 @@ export default function ScimTokensPage() {
         ),
         cell: ({ row }) => (
           <span className="text-muted-foreground text-xs">
-            {row.original.expires_at ? new Date(row.original.expires_at).toLocaleDateString() : ''}
+            {row.original.expires_at ? formatDate(new Date(row.original.expires_at)) : ''}
           </span>
         ),
       },
@@ -519,7 +521,11 @@ export default function ScimTokensPage() {
             'Automate user provisioning and deprovisioning from your identity provider.'
           )}
         >
-          {canManage && <GenerateTokenButton canMint={canMint} onClick={() => setGenOpen(true)} />}
+          {/* The page's one main action, in the header as on API keys and
+              service accounts; the empty state below only explains. */}
+          {canManage && !isLoading && !error && (
+            <GenerateTokenButton canMint={canMint} onClick={() => setGenOpen(true)} />
+          )}
         </PageHeader>
 
         {roleLoading ? (
@@ -559,9 +565,6 @@ export default function ScimTokensPage() {
                     'settings.scim.emptyDescription',
                     'Generate a token to connect your identity provider for automated user provisioning.'
                   )}
-                  action={
-                    <GenerateTokenButton canMint={canMint} onClick={() => setGenOpen(true)} />
-                  }
                 />
               ) : (
                 <DataTable

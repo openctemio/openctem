@@ -33,7 +33,7 @@ describe('LeaveOrganization', () => {
   it('lets a member leave: the button is enabled', () => {
     render(<LeaveOrganization />)
     expect(screen.getByRole('button', { name: /leave organization/i })).toBeEnabled()
-    expect(screen.getByText(/organization membership/i)).toBeInTheDocument()
+    expect(screen.getByText(/leave this organization/i)).toBeInTheDocument()
   })
 
   it('lets an owner leave when another owner exists', () => {
@@ -43,11 +43,11 @@ describe('LeaveOrganization', () => {
     expect(screen.getByRole('button', { name: /leave organization/i })).toBeEnabled()
   })
 
-  it('shows the sole owner a disabled button with the reason', () => {
+  it('tells the sole owner why leaving is unavailable, with no dead button', () => {
     state.owner = true
     state.stats = { role_counts: { owner: 1 } }
     render(<LeaveOrganization />)
-    expect(screen.getByRole('button', { name: /leave organization/i })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /leave organization/i })).toBeNull()
     expect(screen.getByText(/transfer ownership to another member first/i)).toBeInTheDocument()
   })
 

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
@@ -61,13 +63,13 @@ type LetterService struct {
 	// (Service.NarrowLetter; nil: the periodic ledger sync does it).
 	revoked func(ctx context.Context, tenantID shared.ID)
 	files   LetterFileStore
-	notify  func(ctx context.Context, tenantID shared.ID, title, body string)
+	notify  func(ctx context.Context, tenantID shared.ID, title, body string, msg *notificationdom.Message)
 	now     func() time.Time
 }
 
 // NewLetterService wires the service. notify tells every administrator
 // (nil: nobody).
-func NewLetterService(repo scopedom.LetterRepository, files LetterFileStore, notify func(ctx context.Context, tenantID shared.ID, title, body string)) *LetterService {
+func NewLetterService(repo scopedom.LetterRepository, files LetterFileStore, notify func(ctx context.Context, tenantID shared.ID, title, body string, msg *notificationdom.Message)) *LetterService {
 	return &LetterService{repo: repo, files: files, notify: notify, now: func() time.Time { return time.Now().UTC() }}
 }
 
@@ -168,7 +170,8 @@ func (ls *LetterService) Revoke(ctx context.Context, tenantID, id, by shared.ID)
 	if ls.notify != nil {
 		n, _ := ls.repo.CountEntries(ctx, tenantID, id)
 		ls.notify(ctx, tenantID, "Authorization letter revoked",
-			fmt.Sprintf("%s: %d scope entries naming it no longer authorize scans", l.Title, n))
+			fmt.Sprintf("%s: %d scope entries naming it no longer authorize scans", l.Title, n),
+			notificationdom.Msg("scope.letter_revoked", "letter", l.Title, "count", n))
 	}
 	return l, nil
 }

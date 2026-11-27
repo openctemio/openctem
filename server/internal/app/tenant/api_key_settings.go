@@ -73,9 +73,10 @@ func (s *TenantService) UpdateAPIKeySettings(ctx context.Context, tenantID strin
 		WithMetadata("loosened", loosened)
 	if loosened {
 		event = event.WithSeverity(audit.SeverityHigh)
-		s.notifyPolicyLoosened(ctx, tenantID, actx, "API key lifetime raised",
+		s.notifyPolicyLoosenedWith(ctx, tenantID, actx, "settings.api_key_lifetime_raised", "API key lifetime raised",
 			fmt.Sprintf("the maximum lifetime of new API keys from %d to %d days",
-				before.EffectiveMaxLifetimeDays(), after.EffectiveMaxLifetimeDays()), "/settings/api-keys")
+				before.EffectiveMaxLifetimeDays(), after.EffectiveMaxLifetimeDays()), "/settings/api-keys",
+			"from_days", before.EffectiveMaxLifetimeDays(), "to_days", after.EffectiveMaxLifetimeDays())
 	}
 	s.logAudit(ctx, actx, event)
 	return &after, nil

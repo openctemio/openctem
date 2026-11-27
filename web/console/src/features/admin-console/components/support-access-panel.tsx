@@ -29,6 +29,7 @@ import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { useTranslation } from '@/context/i18n-provider'
 import { EmptyState, ErrorState, PageStack } from '@/features/shared'
 import { RoleRequiredNotice } from './role-required-notice'
@@ -240,6 +241,23 @@ export function SupportAccessPanel({ canSupport }: { canSupport: boolean }) {
           </AlertDescription>
         </Alert>
       )}
+      {/* Over the empty state the title row would only say "0": it shows with grants. */}
+      {canSupport && !error && (isLoading || grants.length > 0) && (
+        <ListTitleRow
+          title={t('admin.support.grantsTitle', 'Granted to you')}
+          count={
+            <ListCount
+              total={grants.length}
+              loading={isLoading}
+              label={t(
+                'admin.support.grantsTotal',
+                '{count, plural, one {# organization} other {# organizations}}',
+                { count: grants.length }
+              )}
+            />
+          }
+        />
+      )}
       {!canSupport ? (
         <RoleRequiredNotice needed="ops_admin" variant="page" />
       ) : error ? (
@@ -286,17 +304,23 @@ export function SupportAccessPanel({ canSupport }: { canSupport: boolean }) {
                   ))}
                 </div>
                 <p className="text-sm break-words">{g.reason}</p>
-                <p className="text-xs text-muted-foreground">
-                  {t('admin.support.until', 'Until {time}', {
-                    time: formatSupportTime(g.expires_at, locale),
-                  })}
-                  {g.case_ref
-                    ? ` · ${t('admin.support.case', 'case {ref}', { ref: g.case_ref })}`
-                    : ''}
+                <p className="flex flex-wrap gap-x-3 text-cap text-muted-foreground">
+                  <span>
+                    {t('admin.support.until', 'Until {time}', {
+                      time: formatSupportTime(g.expires_at, locale),
+                    })}
+                  </span>
+                  {g.case_ref && (
+                    <span>{t('admin.support.case', 'case {ref}', { ref: g.case_ref })}</span>
+                  )}
                 </p>
               </div>
               {canSupport && (
-                <Button className="shrink-0 self-start" onClick={() => setOpening(g)}>
+                <Button
+                  variant="outline"
+                  className="shrink-0 self-start"
+                  onClick={() => setOpening(g)}
+                >
                   {t('admin.support.open', 'Open support session')}
                 </Button>
               )}

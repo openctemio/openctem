@@ -9,21 +9,20 @@
 
 import { useCallback, useMemo, type ReactNode } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowRight, CheckCircle2, RefreshCw, Timer } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Info, ListChecks, MoreHorizontal, Timer } from 'lucide-react'
 import Link from '@/components/link'
 import { Main } from '@/components/layout'
+import { ActionMenu } from '@/components/ui/action-menu'
 import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { PageHeader, PageStack } from '@/features/shared'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { LockedChip } from '@/features/shared/components/filter-chips-row'
-import { RelativeTime } from '@/features/shared/components/relative-time'
 import { useTranslation } from '@/context/i18n-provider'
 import { usePermissions } from '@/context/permission-provider'
 import { Permission } from '@/lib/permissions'
-import { cn } from '@/lib/utils'
 import { useFindingQuickViews } from '@/features/findings/api/use-quick-views'
 import { quickViewHref } from '@/features/findings/lib/quick-views'
 import { startSession, triageHref } from '@/features/findings/lib/triage-session'
@@ -42,6 +41,7 @@ import {
   type MyWorkTab,
 } from '../lib/queues'
 import { FindingQueue } from './finding-queue'
+import { QueueCaption } from './queue-caption'
 import { ReviewQueue } from './review-queue'
 import { RequestedQueue } from './requested-queue'
 
@@ -132,6 +132,18 @@ export function MyWorkPage() {
     expiring: count(FINDING_QUEUE_VIEW.expiring),
     tasks: taskCount,
   }
+  // While a count is on its way its tab shows "…" (the kit's loading count),
+  // so the tabs after it do not move when it arrives.
+  const viewsPending = !views.data && !views.error
+  const approvalsPending = !approvals.data && !approvals.error
+  const pending: Record<MyWorkTab, boolean> = {
+    assigned: viewsPending,
+    team: viewsPending,
+    expiring: viewsPending,
+    review: approvalsPending,
+    requested: approvalsPending,
+    tasks: canSeeTasks && taskCount === undefined,
+  }
   const dueSoonCount = count(DUE_SOON_VIEW)
   const triageView = viewOf(viewList, NEEDS_TRIAGE_VIEW)
 
@@ -204,11 +216,8 @@ export function MyWorkPage() {
   )
 
   // ---- The open tab ----
-  const lockedChip = (which: MyWorkTab) => (
-    <LockedChip hint={t('myWork.locked.hint', 'Set by this queue; it cannot be removed.')}>
-      {t(`myWork.locked.${which}`)}
-    </LockedChip>
-  )
+  // The selected tab is the queue's scope (its name and count), so no chip
+  // repeats it; a locked chip states only a rule the tab does not say.
 
   const findingPanel = (which: 'assigned' | 'team' | 'expiring') => {
     const rows = findingRows.data?.data ?? []
@@ -223,47 +232,81 @@ export function MyWorkPage() {
         isLoading={(views.isLoading || findingRows.isLoading) && !findingRows.data}
         error={views.error ?? findingRows.error}
         onRetry={refresh}
+        // The queue's one filter token (due in 72 hours) is the toolbar's
+        // start: a toggle at the row's control height (the kit button,
+        // pressed while the queue shows only what falls due). Named in full
+        // everywhere, also inside the phone Filters sheet, where it has room.
         toolbarStart={
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            {lockedChip(which)}
-            {which === 'assigned' && dueSoonCount !== undefined && (
-              <button
-                type="button"
+          <>
+            {which === 'assigned' && dueSoonCount !== undefined ? (
+              <Button
+                size="sm"
+                variant={dueSoon ? 'secondary' : 'outline'}
                 aria-pressed={dueSoon}
                 onClick={() => setQuery({ tab: 'assigned', due: !dueSoon })}
-                className={cn(
-                  'inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-                  dueSoon
-                    ? 'border-warning bg-accent text-foreground'
-                    : 'border-warning/60 text-foreground hover:bg-accent'
-                )}
               >
-                <Timer className="size-3.5" aria-hidden="true" />
+                <Timer className="me-2 size-4" aria-hidden="true" />
                 {t('myWork.chip.dueSoon', 'SLA due in 72 hours')}
-                <span className="tabular-nums">{dueSoonCount}</span>
-              </button>
-            )}
-            <span className="text-meta text-muted-foreground tabular-nums" aria-live="polite">
-              {total > rows.length
-                ? t('myWork.topOf', 'Top {shown} of {total}', { shown: rows.length, total })
-                : t('myWork.results', '{count} results', { count: total })}
-            </span>
-          </div>
+                <span className="ms-2 tabular-nums">{dueSoonCount}</span>
+              </Button>
+            ) : null}
+            {tabHint}
+          </>
         }
+        // The toolbar's end: the queue's one main action, everything else
+        // under More (View all opens the same list on Findings). While the
+        // views load, More is there disabled, so the toolbar line is drawn
+        // from the first paint and does not push the list down later.
         toolbarEnd={
-          viewParams !== undefined && total > 0 ? (
-            <div className="flex flex-wrap items-center gap-2">
+          viewParams === undefined && viewsPending ? (
+            <Button
+              size="icon-sm"
+              variant="outline"
+              disabled
+              aria-label={t('myWork.more', 'More for this queue')}
+            >
+              <MoreHorizontal aria-hidden="true" />
+            </Button>
+          ) : viewParams !== undefined && total > 0 ? (
+            <div className="flex shrink-0 items-center gap-2">
               {canTriage && which !== 'expiring' && (
-                <Button size="sm" variant="outline" onClick={() => openTriage(viewParams, viewKey)}>
+                <Button size="sm" onClick={() => openTriage(viewParams, viewKey)}>
                   {t('myWork.triageThese', 'Triage these')}
                 </Button>
               )}
-              <Button size="sm" variant="outline" asChild>
-                <Link href={quickViewHref(viewParams, include)}>
-                  {t('myWork.viewAll', 'View all')}
-                  <ArrowRight className="ms-2 size-4" aria-hidden="true" />
-                </Link>
-              </Button>
+              <ActionMenu
+                title={t(`myWork.tabs.${which}`, TAB_LABELS[which])}
+                label={t('myWork.more', 'More for this queue')}
+                items={[
+                  ...(canTriage && triageView && triageView.count > 0
+                    ? [
+                        {
+                          id: 'triage-new',
+                          label: t('myWork.triageNew', 'Triage {count} new findings', {
+                            count: triageView.count,
+                          }),
+                          icon: ListChecks,
+                          onSelect: () => openTriage(triageView.params, NEEDS_TRIAGE_VIEW),
+                        },
+                      ]
+                    : []),
+                  {
+                    id: 'view-all',
+                    label: t('myWork.viewAll', 'View all'),
+                    icon: ArrowRight,
+                    href: quickViewHref(viewParams, include),
+                  },
+                ]}
+                trigger={
+                  <Button
+                    size="icon-sm"
+                    variant="outline"
+                    aria-label={t('myWork.more', 'More for this queue')}
+                  >
+                    <MoreHorizontal aria-hidden="true" />
+                  </Button>
+                }
+              />
             </div>
           ) : null
         }
@@ -305,10 +348,13 @@ export function MyWorkPage() {
     }
     const rows = approvals.data.data ?? []
     const total = approvals.data.queue_counts?.[which] ?? approvals.data.total
+    // Only the rule the tab does not say: requests still waiting.
     const toolbar = (
       <>
-        {lockedChip(which)}
-        <LockedChip>{t('myWork.locked.pending', 'Pending')}</LockedChip>
+        <LockedChip hint={t('myWork.locked.hint', 'Set by this queue; it cannot be removed.')}>
+          {t('myWork.locked.pending', 'Pending')}
+        </LockedChip>
+        {tabHint}
       </>
     )
     if (which === 'review') {
@@ -322,7 +368,7 @@ export function MyWorkPage() {
             'review',
             canSeeApprovalRules ? (
               <Button size="sm" variant="ghost" asChild>
-                <Link href="/settings/finding-approvals">
+                <Link href="/settings/approvals">
                   {t('myWork.next.approvalRules', 'Set up approval rules')}
                 </Link>
               </Button>
@@ -343,68 +389,62 @@ export function MyWorkPage() {
   }
 
   const asOf = views.data?.as_of
+  const explain = t(`myWork.explain.${tab}`, TAB_EXPLAIN[tab])
+  // What the tab holds, behind an info mark at the toolbar's start: the
+  // sentence is not a row of its own.
+  const tabHint = (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          className="shrink-0"
+          aria-label={t('myWork.about', 'About this list')}
+        >
+          <Info aria-hidden="true" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="text-sm">{explain}</PopoverContent>
+    </Popover>
+  )
+  const queueTotal = isFindingQueueTab(tab)
+    ? (findingRows.data?.total ?? findingView?.count)
+    : undefined
+  const queueShown = isFindingQueueTab(tab) ? (findingRows.data?.data?.length ?? 0) : 0
+  const caption = (
+    <QueueCaption shown={queueShown} total={queueTotal} asOf={asOf} onRefresh={refresh} />
+  )
   return (
     <Main>
       <PageStack>
-        <PageHeader title={t('myWork.title')} description={t('myWork.description')}>
-          <>
-            {asOf && (
-              <span className="hidden text-meta text-muted-foreground sm:inline">
-                {t('myWork.updated', 'Updated')} <RelativeTime date={asOf} />
-              </span>
-            )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  onClick={refresh}
-                  aria-label={t('myWork.refresh', 'Refresh')}
-                >
-                  <RefreshCw className="size-4" aria-hidden="true" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('myWork.refresh', 'Refresh')}</TooltipContent>
-            </Tooltip>
-            {canTriage && triageView && (
-              <Button
-                onClick={() =>
-                  triageView.count > 0
-                    ? openTriage(triageView.params, NEEDS_TRIAGE_VIEW)
-                    : router.push(quickViewHref(triageView.params, include))
-                }
-              >
-                {t('myWork.triage', 'Triage')}
-                {triageView.count > 0 && (
-                  <span className="ms-1.5 tabular-nums">{triageView.count}</span>
-                )}
-              </Button>
-            )}
-          </>
-        </PageHeader>
+        {/* The title alone: what each tab holds is behind the info mark in
+            its toolbar, and the one triage entry is the open queue's
+            "Triage these" (everything new is under its More). */}
+        <PageHeader title={t('myWork.title')} />
 
         <Tabs value={tab} onValueChange={(v) => setQuery({ tab: v as MyWorkTab })}>
           <TabsList aria-label={t('myWork.tabs.label')}>
             {available.map((key) => (
               <TabsTrigger key={key} value={key}>
                 {t(`myWork.tabs.${key}`, TAB_LABELS[key])}
-                <TabsCount value={counts[key]} />
+                <TabsCount value={counts[key] ?? (pending[key] ? '…' : undefined)} />
               </TabsTrigger>
             ))}
           </TabsList>
-          <p className="text-meta text-muted-foreground">
-            {t(`myWork.explain.${tab}`, TAB_EXPLAIN[tab])}
-          </p>
           {available.map((key) => (
-            <TabsContent key={key} value={key} className="mt-1">
-              {key === tab &&
-                (isFindingQueueTab(key) ? (
-                  findingPanel(key)
-                ) : isApprovalQueueTab(key) ? (
-                  approvalPanel(key)
-                ) : (
-                  <MyTasksQueue />
-                ))}
+            <TabsContent key={key} value={key} className="mt-3 space-y-2">
+              {key === tab && (
+                <>
+                  {isFindingQueueTab(key) ? (
+                    findingPanel(key)
+                  ) : isApprovalQueueTab(key) ? (
+                    approvalPanel(key)
+                  ) : (
+                    <MyTasksQueue />
+                  )}
+                  {caption}
+                </>
+              )}
             </TabsContent>
           ))}
         </Tabs>

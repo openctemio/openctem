@@ -110,6 +110,11 @@ export function useRevalidateDashboards() {
   return () => mutate(DASHBOARDS_KEY)
 }
 
+/** One read of the viewer's own dashboards, outside SWR (for a decision after a write). */
+export function fetchMyDashboards() {
+  return fetchList(DASHBOARDS_KEY)
+}
+
 export function createDashboard(input: CreateDashboardInput) {
   return post<Dashboard>(DASHBOARDS_KEY, input)
 }

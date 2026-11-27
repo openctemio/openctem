@@ -128,12 +128,22 @@ const base = {
 } as unknown as Finding
 
 describe('FindingAssetCell', () => {
-  it('shows the asset with its markers and the place below', () => {
-    render(<FindingAssetCell finding={base} />)
-    expect(screen.getByText('proxy-edge-01')).toBeTruthy()
+  it('shows the asset with its markers on one line, the place in its name', () => {
+    const { container } = render(<FindingAssetCell finding={base} />)
+    const name = screen.getByText('proxy-edge-01')
     expect(screen.getByRole('img', { name: 'Internet-facing' })).toBeTruthy()
     expect(screen.getByRole('img', { name: 'Crown jewel' })).toBeTruthy()
-    expect(screen.getByText('/preview')).toBeTruthy()
+    // One line: the place is not drawn, it is read with the asset.
+    expect(screen.queryByText('/preview')).toBeNull()
+    expect(name.getAttribute('aria-label')).toContain('/preview')
+    const cell = container.querySelector('[data-slot="finding-asset-cell"]') as HTMLElement
+    expect(cell.className).not.toContain('flex-col')
+  })
+
+  it('shows the place as the line when the finding has no asset name', () => {
+    const f = { ...base, location: { detail: 'src/app/login.ts' } } as unknown as Finding
+    render(<FindingAssetCell finding={f} />)
+    expect(screen.getByText('src/app/login.ts')).toBeTruthy()
   })
 })
 

@@ -7,7 +7,7 @@
 
 import '@testing-library/jest-dom'
 import { cleanup } from '@testing-library/react'
-import { afterEach, vi } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
 import { registerDictionary } from '@/lib/i18n'
 import { en as enCatalog, vi as viCatalog } from '@/lib/i18n/dictionaries'
 
@@ -15,6 +15,19 @@ import { en as enCatalog, vi as viCatalog } from '@/lib/i18n/dictionaries'
 // up front so components render their text synchronously.
 registerDictionary('en', enCatalog)
 registerDictionary('vi', viCatalog)
+
+// An action menu's code is loaded on first use. Have it in before each test,
+// so a menu renders its real trigger at once and a click is never aimed at the
+// busy placeholder that the loaded menu replaces (a lost click under load).
+// Imported here, not at the top, so a test's own mocks are in place first.
+beforeEach(async () => {
+  try {
+    const m = await import('@/components/ui/action-menu')
+    await m.preloadActionMenu?.()
+  } catch {
+    // A test that mocks the menu or its parts has no real one to load.
+  }
+})
 
 // ============================================
 // CLEANUP
@@ -105,6 +118,24 @@ if (
       return 'none'
     },
   })
+}
+
+// The toast library writes a 97-rule stylesheet into <head> when it is first
+// imported. jsdom matches the rules of every sheet against an element each time
+// its computed style is read, and user-event, testing-library's role queries
+// and axe read it for many nodes. No test depends on the toast's own styling
+// (jsdom has no layout), so the sheet is dropped. The library appends the empty
+// <style> first and its text after, so the check runs when the observer fires.
+if (typeof document !== 'undefined') {
+  new MutationObserver((records) => {
+    for (const r of records) {
+      r.addedNodes.forEach((n) => {
+        if (n instanceof HTMLStyleElement && n.textContent?.includes('data-sonner-toaster')) {
+          n.remove()
+        }
+      })
+    }
+  }).observe(document.head, { childList: true })
 }
 
 // ============================================

@@ -212,6 +212,7 @@ function pageState(filters: InventoryFilters): InventoryFilters {
     pageSize: filters.pageSize,
     group: filters.group,
     view: filters.view,
+    queryMode: filters.queryMode,
   }
 }
 

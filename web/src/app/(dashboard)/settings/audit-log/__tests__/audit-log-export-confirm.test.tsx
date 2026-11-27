@@ -16,7 +16,6 @@ vi.mock('@/features/organization', async (orig) => ({
     isError: false,
     mutate: vi.fn(),
   }),
-  useAuditStats: () => ({ stats: undefined, isLoading: false }),
   useAuditExport: () => ({ run: runExport, isExporting: false }),
 }))
 vi.mock('@/context/i18n-provider', () => ({
@@ -32,6 +31,8 @@ vi.mock('@/lib/permissions', () => ({
 }))
 vi.mock('@/hooks/use-url-param', () => ({
   useUrlFilter: (_k: string, d: string) => [d, vi.fn()],
+  useUrlFilterList: () => [[], vi.fn()],
+  replaceUrlSearch: vi.fn(),
 }))
 vi.mock('@/hooks/use-list-params', () => ({
   useListParams: () => ({
@@ -39,6 +40,7 @@ vi.mock('@/hooks/use-list-params', () => ({
     setPagination: vi.fn(),
     sorting: [],
     setSorting: vi.fn(),
+    setPage: vi.fn(),
   }),
 }))
 

@@ -60,6 +60,7 @@ import {
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { FilterSelect } from '@/features/shared/components/filter-select'
 import {
   useIOCs,
   useCreateIOC,
@@ -75,19 +76,23 @@ import {
   type CreateIOCInput,
 } from '../api/use-iocs-api'
 import { useTranslation } from '@/context/i18n-provider'
+import {
+  formatDate as localeFormatDate,
+  formatDateTime as localeFormatDateTime,
+} from '@/lib/app-locale'
 
 const ALL = 'all'
 
 function formatDate(iso: string): string {
   if (!iso) return '—'
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString()
+  return Number.isNaN(d.getTime()) ? '—' : localeFormatDate(d)
 }
 
 function formatDateTime(iso: string): string {
   if (!iso) return '—'
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? '—' : localeFormatDateTime(d)
 }
 
 export function IOCsPanel() {
@@ -184,6 +189,10 @@ export function IOCsPanel() {
         id: 'actions',
         cell: ({ row }) => (
           <DataTableRowActions
+            title={row.original.value}
+            label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+              name: row.original.value,
+            })}
             actions={[
               {
                 label: t('threatIntel.iocs.viewDetails', 'View details'),
@@ -213,43 +222,33 @@ export function IOCsPanel() {
         title={t('threatIntel.iocs.noAccessTitle', 'No access to indicators')}
         description={t(
           'threatIntel.iocs.noAccessDescription',
-          'You need the View Threat Intel permission to see the IOC catalogue.'
+          'You need the View Threat Intel permission to see the indicator catalog.'
         )}
       />
     )
   }
 
+  // Filter tokens ("Type: Domain"): each sizes to its longest label, so no
+  // translation is cut, and a phone keeps them in the Filters sheet.
   const filterSelects = (
     <>
-      <Select value={typeFilter} onValueChange={setTypeFilter}>
-        <SelectTrigger
-          className="h-9 w-36"
-          aria-label={t('threatIntel.iocs.filterType', 'Filter by type')}
-        >
-          <SelectValue placeholder={t('threatIntel.iocs.allTypes', 'All types')} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>{t('threatIntel.iocs.allTypes', 'All types')}</SelectItem>
-          {IOC_TYPES.map((ty) => (
-            <SelectItem key={ty} value={ty}>
-              {iocTypeLabel(t, ty)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={statusFilter} onValueChange={setStatusFilter}>
-        <SelectTrigger
-          className="h-9 w-36"
-          aria-label={t('threatIntel.iocs.filterStatus', 'Filter by status')}
-        >
-          <SelectValue placeholder={t('threatIntel.iocs.allStatuses', 'All statuses')} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>{t('threatIntel.iocs.allStatuses', 'All statuses')}</SelectItem>
-          <SelectItem value="active">{t('threatIntel.iocs.active', 'Active')}</SelectItem>
-          <SelectItem value="inactive">{t('threatIntel.iocs.inactive', 'Inactive')}</SelectItem>
-        </SelectContent>
-      </Select>
+      <FilterSelect<IOCType>
+        label={t('threatIntel.iocs.col.type', 'Type')}
+        value={typeFilter === ALL ? '' : (typeFilter as IOCType)}
+        onChange={(v) => setTypeFilter(v || ALL)}
+        options={IOC_TYPES.map((ty) => ({ value: ty, label: iocTypeLabel(t, ty) }))}
+        foldLabel
+      />
+      <FilterSelect<'active' | 'inactive'>
+        label={t('threatIntel.iocs.col.status', 'Status')}
+        value={statusFilter === ALL ? '' : (statusFilter as 'active' | 'inactive')}
+        onChange={(v) => setStatusFilter(v || ALL)}
+        options={[
+          { value: 'active', label: t('threatIntel.iocs.active', 'Active') },
+          { value: 'inactive', label: t('threatIntel.iocs.inactive', 'Inactive') },
+        ]}
+        foldLabel
+      />
     </>
   )
 
@@ -259,11 +258,11 @@ export function IOCsPanel() {
         title={t('threatIntel.iocs.title', 'Indicators of compromise')}
         description={t(
           'threatIntel.iocs.description',
-          'Indicators correlated against runtime telemetry to reopen the findings they belong to.'
+          'Indicators matched against live events from your monitoring tools to reopen the findings they belong to.'
         )}
       >
         <Can permission={Permission.ThreatIntelWrite} mode="disable">
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
+          <Button iconOnlyBelow="sm" size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4 sm:me-2" />
             <span className="sr-only sm:not-sr-only">{t('threatIntel.iocs.add', 'Add IOC')}</span>
           </Button>
@@ -296,10 +295,10 @@ export function IOCsPanel() {
           emptyMessage={t('threatIntel.iocs.emptyTitle', 'No indicators')}
           emptyDescription={t(
             'threatIntel.iocs.emptyDescription',
-            'Add an indicator of compromise to start correlating runtime telemetry.'
+            'Add an indicator of compromise to start matching live events.'
           )}
           onRowClick={(row) => setSelectedId(row.id)}
-          toolbarEnd={filterSelects}
+          toolbarStart={filterSelects}
         />
       )}
 
@@ -465,10 +464,7 @@ function IOCMatchesSection({ iocId }: { iocId: string }) {
         <Skeleton className="h-12 w-full" />
       ) : matches.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          {t(
-            'threatIntel.iocs.matches.empty',
-            'No runtime telemetry has matched this indicator yet.'
-          )}
+          {t('threatIntel.iocs.matches.empty', 'No live event has matched this indicator yet.')}
         </p>
       ) : (
         <ul className="divide-y rounded-lg border">
@@ -488,7 +484,7 @@ function IOCMatchesSection({ iocId }: { iocId: string }) {
               {m.finding_id && (
                 <Link
                   href={`/findings/${m.finding_id}`}
-                  className="mt-1 inline-block break-all text-primary hover:underline"
+                  className="mt-1 inline-block break-words text-primary hover:underline"
                 >
                   {m.finding_title || m.finding_id}
                 </Link>
@@ -568,7 +564,7 @@ function CreateIOCDialog({
           <DialogDescription>
             {t(
               'threatIntel.iocs.create.description',
-              "Add an IOC to correlate against runtime telemetry. The value must match the selected type's format."
+              "Add an indicator to match against live events from your monitoring tools. The value must match the selected type's format."
             )}
           </DialogDescription>
         </DialogHeader>

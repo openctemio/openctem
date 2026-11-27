@@ -1,0 +1,379 @@
+'use client'
+
+import { useCallback, useEffect, useState, useTransition } from 'react'
+import { Building2, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { twoFactorSetupHref } from '@/lib/auth/refresh-failure'
+import { navigateAfterSessionChange } from '@/lib/session-navigation'
+import { CONTINUE_FAILED_PARAM, CONTINUE_PATH } from '@/features/auth/lib/continue-href'
+
+import { Button } from '@/components/ui/button'
+import { EntryActions } from '@/components/entry'
+import { Badge } from '@/components/ui/badge'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { useTranslation } from '@/context/i18n-provider'
+import {
+  onboardingAcceptAction,
+  onboardingOptionsAction,
+  type OnboardingOptions,
+} from '@/features/auth/actions/local-auth-actions'
+import { onboardingDeclineAction } from '@/features/auth/actions/account-space-actions'
+import { ResendVerification } from '@/features/auth/components/resend-verification'
+import { CreateTeamForm } from '@/features/tenant/components/create-team-form'
+import { ErrorState, SettingsBlock, SettingsSection } from '@/features/shared'
+import { useMyTenants } from '@/lib/api/user-tenant-hooks'
+import { readTenantCookieId } from '@/lib/tenant-epoch'
+import { safeText } from '@/lib/api/error-message'
+import { formatRelative } from '@/lib/format-date'
+
+import type { WelcomeNotice as Notice } from '@/lib/auth/refresh-failure'
+
+import { useProfile } from '../api'
+import { welcomeView } from '../lib/welcome-view'
+import { HUB_ROW, MembershipsCard } from './memberships-card'
+import { WelcomeNotice } from './welcome-notice'
+
+interface OrganizationsHubProps {
+  /**
+   * The browser holds only a refresh token (or a token of a social sign-in):
+   * ask the API for the account-only token first, then load.
+   */
+  needsSession: boolean
+  /**
+   * Why the account space opened instead of an organization (a refused
+   * refresh), already validated by the page: it shows the reason and its one
+   * next step.
+   */
+  notice?: { notice: Notice; org?: string }
+}
+
+/**
+ * /account/organizations (api RFC-141): the person's own memberships, each
+ * with its one next step, the invitations sent to their verified address
+ * (accept or decline), and "Create an organization" only when the API's policy
+ * allows it for this person. With no organization at all it is the first page a
+ * new person sees, so it starts with a welcome.
+ */
+export function OrganizationsHub({ needsSession, notice }: OrganizationsHubProps) {
+  const { t, locale } = useTranslation()
+  const { profile } = useProfile()
+  const [options, setOptions] = useState<OnboardingOptions | null>(null)
+  const [failed, setFailed] = useState(false)
+  const [starting, setStarting] = useState(needsSession)
+  const [busyRef, setBusyRef] = useState<string | null>(null)
+  const [declining, setDeclining] = useState<{ ref: string; name: string } | null>(null)
+  const [showCreate, setShowCreate] = useState(false)
+  const [, startTransition] = useTransition()
+
+  const load = useCallback(async () => {
+    const res = await onboardingOptionsAction()
+    if (res.success) {
+      setOptions(res.options)
+      setFailed(false)
+    } else if (res.sessionExpired) {
+      window.location.replace('/login')
+    } else {
+      setFailed(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!needsSession) {
+      void load()
+      return
+    }
+    // No account session in the cookies yet (a social sign-in, or a link
+    // from elsewhere): /auth/continue decides from the memberships and comes
+    // back here only when there is no organization to open. When it could not
+    // start one (the API did not answer), it says so instead of looping.
+    if (new URLSearchParams(window.location.search).has(CONTINUE_FAILED_PARAM)) {
+      setStarting(false)
+      setFailed(true)
+      return
+    }
+    window.location.replace(CONTINUE_PATH)
+  }, [needsSession, load])
+
+  const view = welcomeView(options)
+  const email = profile?.email
+  const { data: memberships } = useMyTenants({ skip: starting })
+  const [currentId] = useState(readTenantCookieId)
+  const firstRun = !!memberships && memberships.length === 0
+
+  // The organization a notice names comes from the page URL, which anyone can
+  // write: it is shown, and its identity-provider button offered, only when
+  // it is one of this person's own memberships. Otherwise the notice is the
+  // generic one (no name, no button).
+  const { data: myTenants } = useMyTenants({ skip: !notice?.org })
+  const noticeOrg =
+    notice?.org && myTenants?.some((m) => m.slug === notice.org) ? notice.org : undefined
+
+  const accept = (ref: string) => {
+    setBusyRef(ref)
+    startTransition(async () => {
+      const res = await onboardingAcceptAction(ref)
+      setBusyRef(null)
+      if (res.success && res.status === 'joined') {
+        // The organization is selected: load it, then say so.
+        navigateAfterSessionChange('/', {
+          replace: true,
+          flash: {
+            kind: 'success',
+            title: t('org.onboarding.joined', undefined, { name: res.organizationName }),
+          },
+        })
+        return
+      }
+      if (res.success) {
+        toast.success(t('org.onboarding.requested', undefined, { name: res.organizationName }))
+      } else if (res.code === 'MFA_ENROLLMENT_REQUIRED' && res.organizationId) {
+        // Joined; the organization requires two-factor authentication: set it
+        // up now (the session stays), then go straight into the organization.
+        window.location.assign(twoFactorSetupHref('/', res.organizationId))
+        return
+      } else if (res.code === 'OFFER_UNAVAILABLE') {
+        toast.error(t('org.onboarding.unavailable'))
+      } else {
+        toast.error(safeText(res.error, t('org.onboarding.failed')))
+      }
+      void load()
+    })
+  }
+
+  const decline = () => {
+    const target = declining
+    if (!target) return
+    setDeclining(null)
+    setBusyRef(target.ref)
+    startTransition(async () => {
+      const res = await onboardingDeclineAction(target.ref)
+      setBusyRef(null)
+      if (res.success) {
+        toast.success(t('auth.welcome.declined', undefined, { name: target.name }))
+      } else if (res.code === 'OFFER_UNAVAILABLE') {
+        toast.error(t('org.onboarding.unavailable'))
+      } else {
+        toast.error(safeText(res.error, t('org.onboarding.failed')))
+      }
+      void load()
+    })
+  }
+
+  const loading = (starting || (!options && !failed)) && !failed
+  const createOpen =
+    showCreate || (!!options && view.invitations.length === 0 && view.organizations.length === 0)
+
+  // The blocks sit in the account page's settings column (flat sections
+  // divided by hairlines), like every other account page.
+  return (
+    <>
+      {firstRun && (
+        <div data-testid="organizations-first-run">
+          <h2 className="text-section">
+            {t('auth.welcome.title', 'Welcome, {name}', {
+              name: profile?.name || email || '',
+            })}
+          </h2>
+          <p className="text-body text-muted-foreground">
+            {t(
+              'auth.welcome.subtitle',
+              'You are signed in, but you are not in an organization yet.'
+            )}
+          </p>
+        </div>
+      )}
+
+      {memberships && memberships.length > 0 && (
+        <MembershipsCard memberships={memberships} currentId={currentId} />
+      )}
+
+      {notice && (
+        <WelcomeNotice notice={notice.notice} org={noticeOrg} email={email ?? undefined} />
+      )}
+
+      {loading && (
+        <div
+          className="flex justify-center py-12"
+          role="status"
+          aria-label={t('org.onboarding.loading')}
+        >
+          <Loader2 className="text-muted-foreground size-6 animate-spin" aria-hidden />
+        </div>
+      )}
+
+      {failed && !options && (
+        <ErrorState
+          title={t('auth.welcome.loadFailed', 'your invitations')}
+          onRetry={() => {
+            setFailed(false)
+            void load()
+          }}
+        />
+      )}
+
+      {options && view.verifyFirst && (
+        <SettingsSection
+          framed
+          id="verify-email"
+          title={t('auth.welcome.verifyTitle', 'Verify your email address')}
+          description={
+            email
+              ? t('auth.welcome.verifyDesc', 'Verify {email} to see the invitations sent to it.', {
+                  email,
+                })
+              : t(
+                  'auth.welcome.verifyDescNoEmail',
+                  'Verify your email address to see the invitations sent to it.'
+                )
+          }
+        >
+          <SettingsBlock>
+            <ResendVerification email={email} />
+          </SettingsBlock>
+        </SettingsSection>
+      )}
+
+      {options && view.invitations.length > 0 && (
+        <SettingsSection
+          framed
+          id="invitations"
+          title={t('auth.welcome.invitations', 'Your invitations')}
+          // A label without its value reads as broken: no address, no line.
+          description={
+            email ? t('auth.welcome.invitationsDesc', 'Sent to {email}', { email }) : undefined
+          }
+        >
+          <ul>
+            {view.invitations.map((inv) => (
+              <li key={inv.ref} className={HUB_ROW}>
+                <div className="min-w-0">
+                  <p className="text-body truncate font-medium">{inv.organization_name}</p>
+                  <p className="text-cap text-muted-foreground">
+                    {inv.invited_by
+                      ? t('org.onboarding.invitedBy', undefined, {
+                          name: inv.invited_by,
+                          role: inv.role,
+                        })
+                      : t('org.onboarding.invitedAs', undefined, { role: inv.role })}
+                  </p>
+                  {/* Its own line: two sentences run together read as one. */}
+                  <p className="text-cap text-muted-foreground">
+                    {t('auth.welcome.expires', 'Expires {when}', {
+                      when: formatRelative(inv.expires_at, '', locale),
+                    })}
+                  </p>
+                </div>
+                {/* A choice: Decline, then Join; on a phone they share the width. */}
+                <EntryActions layout="row">
+                  <Button
+                    variant="outline"
+                    onClick={() => setDeclining({ ref: inv.ref, name: inv.organization_name })}
+                    disabled={busyRef !== null}
+                  >
+                    {t('auth.welcome.decline', 'Decline')}
+                  </Button>
+                  <Button onClick={() => accept(inv.ref)} disabled={busyRef !== null}>
+                    {busyRef === inv.ref && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                    {t('org.onboarding.join', 'Join')}
+                  </Button>
+                </EntryActions>
+              </li>
+            ))}
+          </ul>
+        </SettingsSection>
+      )}
+
+      {options && view.organizations.length > 0 && (
+        <SettingsSection
+          framed
+          id="company-organizations"
+          title={t('org.onboarding.yourCompany')}
+          description={t('org.onboarding.yourCompanyDesc')}
+        >
+          <ul>
+            {view.organizations.map((org) => (
+              <li key={org.ref} className={HUB_ROW}>
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className="bg-surface-sunken flex size-8 shrink-0 items-center justify-center rounded-sm">
+                    <Building2 className="size-4" aria-hidden />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-body truncate font-medium">{org.organization_name}</p>
+                    <p className="text-cap text-muted-foreground">{org.domain}</p>
+                  </div>
+                </div>
+                {org.pending ? (
+                  <Badge variant="secondary">{t('org.onboarding.waiting')}</Badge>
+                ) : (
+                  <Button
+                    onClick={() => accept(org.ref)}
+                    disabled={busyRef !== null}
+                    className="max-sm:w-full"
+                  >
+                    {busyRef === org.ref && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                    {org.mode === 'join' ? t('org.onboarding.join') : t('org.onboarding.askToJoin')}
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </SettingsSection>
+      )}
+
+      {options && view.canCreate && (
+        <SettingsSection
+          framed
+          id="create-organization"
+          title={t('auth.welcome.createTitle', 'Create an organization')}
+          description={t(
+            'auth.welcome.createDesc',
+            'An organization is where you manage exposure across a company. You can invite teammates after this.'
+          )}
+          // With other ways in listed, the form opens on demand: its button
+          // sits on the heading row, never on a row of its own.
+          actions={
+            !createOpen && (
+              <Button variant="outline" onClick={() => setShowCreate(true)}>
+                {t('auth.welcome.createCta', 'Create an organization')}
+              </Button>
+            )
+          }
+        >
+          {createOpen && (
+            <SettingsBlock>
+              <CreateTeamForm showCancel={false} isFirstTeam={true} />
+            </SettingsBlock>
+          )}
+        </SettingsSection>
+      )}
+
+      {options && view.askAdministrator && !view.verifyFirst && (
+        <p className="text-body text-muted-foreground" data-testid="ask-administrator">
+          {t(
+            'auth.welcome.askAdministrator',
+            'Ask your administrator to invite {email}. Invitations sent to this address appear here.',
+            { email: email ?? t('auth.welcome.thisAddress', 'this address') }
+          )}
+        </p>
+      )}
+
+      <ConfirmDialog
+        open={declining !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeclining(null)
+        }}
+        title={t('auth.welcome.declineTitle', 'Decline this invitation?')}
+        desc={t(
+          'auth.welcome.declineDesc',
+          '{name} will be told you declined. To join later, ask them to invite you again.',
+          { name: declining?.name ?? '' }
+        )}
+        confirmText={t('auth.welcome.decline', 'Decline')}
+        cancelBtnText={t('common.cancel', 'Cancel')}
+        destructive
+        handleConfirm={decline}
+        className="sm:max-w-sm"
+      />
+    </>
+  )
+}

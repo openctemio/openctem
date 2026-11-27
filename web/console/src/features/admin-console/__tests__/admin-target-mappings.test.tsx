@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import {
@@ -108,7 +108,7 @@ describe('TargetMappingDialog', () => {
     render(
       <TargetMappingDialog open onOpenChange={() => {}} defaultTargetType="url" onSaved={vi.fn()} />
     )
-    expect(screen.getByRole('alert')).toHaveTextContent(/already mapped to Website/)
+    expect(screen.getByRole('alert')).toHaveTextContent(/already mapped to Web application/)
     const submit = screen.getByRole('button', { name: 'Create mapping' })
     expect(submit).toBeDisabled()
     await user.click(submit)
@@ -162,7 +162,7 @@ describe('TargetMappingDialog', () => {
     expect(onSaved).toHaveBeenCalled()
     expect(onOpenChange).toHaveBeenCalledWith(false)
 
-    await user.click(screen.getByLabelText('Primary mapping'))
+    await user.click(screen.getByLabelText('First choice'))
     expect(screen.getByLabelText('Priority')).toHaveValue(10)
   })
 
@@ -240,7 +240,8 @@ describe('TargetMappingsPage', () => {
     render(<TargetMappingsPage />)
     expect(screen.getByRole('button', { name: /new mapping/i })).toBeInTheDocument()
     await openRowMenu(user)
-    expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeInTheDocument()
+    // The menu's code loads after the page: its items appear a moment later.
+    expect(await screen.findByRole('menuitem', { name: 'Edit' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Deactivate' })).toBeInTheDocument()
     expect(screen.getByRole('menuitem', { name: 'Delete' })).toBeInTheDocument()
   })
@@ -259,6 +260,78 @@ describe('TargetMappingsPage', () => {
     await waitFor(() =>
       expect(deleteTargetMapping).toHaveBeenCalledWith('m1', 'Duplicate of the registry pair')
     )
+  })
+
+  it('shows the view name without a count of its own, the two filters as toolbar selects', async () => {
+    asRole('readonly')
+    render(<TargetMappingsPage />)
+    expect(screen.getByRole('heading', { name: /All custom mappings/ })).toBeInTheDocument()
+    // The count lives in the metric strip and beside the pager, not in the title.
+    expect(document.querySelector('[data-slot="list-count"]')).toBeNull()
+    expect(screen.queryByText('1 mapping')).not.toBeInTheDocument()
+    const toolbar = screen.getByTestId('data-table-toolbar')
+    expect(within(toolbar).getByRole('button', { name: /target type/i })).toBeInTheDocument()
+    expect(within(toolbar).getByRole('button', { name: /asset type/i })).toBeInTheDocument()
+    const table = screen.getByRole('table', { name: 'Target mappings' })
+    const headers = within(table)
+      .getAllByRole('columnheader')
+      .map((h) => h.textContent?.trim())
+      .filter(Boolean)
+    expect(headers).toEqual(
+      expect.arrayContaining(['Target type', 'Asset type', 'Priority', 'Status', 'Updated'])
+    )
+  })
+
+  it('puts the status strip after the list on a phone, so the first card comes up', () => {
+    asRole('readonly')
+    render(<TargetMappingsPage />)
+    expect(document.querySelector('[data-slot="metric-strip-frame"]')).toHaveClass(
+      'max-md:order-last'
+    )
+  })
+
+  it('draws the built-in pairs only once the list is known', () => {
+    asRole('readonly')
+    vi.mocked(useTargetMappings).mockReturnValue({
+      data: undefined,
+      error: undefined,
+      isLoading: true,
+      mutate: vi.fn(),
+    } as unknown as ReturnType<typeof useTargetMappings>)
+    const { unmount } = render(<TargetMappingsPage />)
+    expect(screen.queryByText('Built-in pairs')).not.toBeInTheDocument()
+    unmount()
+    listOf([MAPPING])
+    render(<TargetMappingsPage />)
+    expect(screen.getByText('Built-in pairs')).toBeInTheDocument()
+  })
+
+  it('names the row menu after the pair', () => {
+    asRole('super_admin')
+    render(<TargetMappingsPage />)
+    expect(
+      screen.getAllByRole('button', { name: /^Actions for the mapping .+ → Web application$/ })
+        .length
+    ).toBeGreaterThan(0)
+  })
+
+  it('shows a failed read in the table with Retry, the filters staying', async () => {
+    asRole('super_admin')
+    const mutate = vi.fn()
+    vi.mocked(useTargetMappings).mockReturnValue({
+      data: undefined,
+      error: new Error('boom'),
+      isLoading: false,
+      mutate,
+    } as unknown as ReturnType<typeof useTargetMappings>)
+    render(<TargetMappingsPage />)
+    expect(
+      within(screen.getByTestId('data-table-toolbar')).getByRole('button', {
+        name: /target type/i,
+      })
+    ).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: /retry/i }))
+    expect(mutate).toHaveBeenCalled()
   })
 
   it('explains that an empty list only lacks custom mappings', () => {

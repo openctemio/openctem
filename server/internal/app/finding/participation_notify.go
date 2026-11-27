@@ -42,6 +42,9 @@ type findingEvent struct {
 	// assignee ("You have been assigned"); empty uses title.
 	watcherTitle string
 	body         string
+	// message and watcherMessage are the language-neutral forms of
+	// title+body and watcherTitle+body.
+	message, watcherMessage *notificationdom.Message
 	// teamOnly: shows team-only content that pentest clients never see.
 	teamOnly bool
 	// forceAssignee tells the assignee even if they stopped watching (the
@@ -78,7 +81,7 @@ func (s *VulnerabilityService) autoWatchFinding(ctx context.Context, tenantID, f
 // notifyFinding tells the people who should hear about an event on a finding.
 func (s *VulnerabilityService) notifyFinding(ctx context.Context, f *vulnerability.Finding, ev findingEvent) {
 	if s.participants == nil {
-		s.notifyAssignee(ctx, f, ev.actorID, ev.typ, ev.title, ev.body)
+		s.notifyAssignee(ctx, f, ev.actorID, ev.typ, ev.title, ev.body, ev.message)
 		return
 	}
 	actor := person(ev.actorID)
@@ -110,9 +113,12 @@ func (s *VulnerabilityService) notifyFinding(ctx context.Context, f *vulnerabili
 	findingID := f.ID()
 	for _, r := range recipients {
 		uid := r.UserID
-		title := ev.title
+		title, msg := ev.title, ev.message
 		if r.Reason == notificationdom.ReasonWatching && ev.watcherTitle != "" {
 			title = ev.watcherTitle
+			if ev.watcherMessage != nil {
+				msg = ev.watcherMessage
+			}
 		}
 		if err := s.userNotificationService.Notify(ctx, notificationdom.NotificationParams{
 			TenantID:         f.TenantID(),
@@ -122,6 +128,7 @@ func (s *VulnerabilityService) notifyFinding(ctx context.Context, f *vulnerabili
 			Severity:         f.Severity().String(),
 			Title:            title,
 			Body:             ev.body,
+			Message:          msg,
 			ResourceType:     "finding",
 			ResourceID:       &findingID,
 			URL:              fmt.Sprintf("/findings/%s", f.ID().String()),
@@ -143,14 +150,15 @@ func (s *VulnerabilityService) NotifyRegression(ctx context.Context, tenantID, f
 	if err != nil || f == nil {
 		return
 	}
-	title := "Regression: a fixed finding was detected again and reopened"
+	title, code := "Regression: a fixed finding was detected again and reopened", "finding.regressed"
 	if verifiedFix {
-		title = "Verified fix regressed: a fixed and verified finding was detected again"
+		title, code = "Verified fix regressed: a fixed and verified finding was detected again", "finding.regressed_verified"
 	}
 	s.notifyFinding(ctx, f, findingEvent{
 		typ:         notificationdom.TypeFindingStatusChange,
 		title:       title,
 		body:        detail,
+		message:     notificationdom.Msg(code, "detail", detail),
 		teamOnly:    isPentest(f),
 		watchersToo: true,
 	})

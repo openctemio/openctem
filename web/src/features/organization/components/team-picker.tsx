@@ -105,7 +105,7 @@ export function TeamPicker({
                 onCheckedChange={(v) => toggle(g.id, v === true)}
               />
               <Users className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-              <span className="min-w-0 flex-1 truncate">{g.name}</span>
+              <span className="min-w-0 flex-1 break-words">{g.name}</span>
               {g.group_type === 'external' && (
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {t('org.invite.teams.external')}

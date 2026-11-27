@@ -518,7 +518,7 @@ export function EASMReviewQueue() {
                 }}
               >
                 <SelectTrigger
-                  className="h-9 w-auto min-w-44"
+                  className="w-auto min-w-44"
                   aria-label={t('attackSurface.queue.reasonFilter', 'Filter by reason')}
                 >
                   <SelectValue />

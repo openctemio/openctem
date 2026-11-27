@@ -34,6 +34,7 @@ import {
   type TrackedAttribute,
 } from '../lib/attribute-sources'
 import { groupByDay, type AssetChange, type ChangeFilters } from '../lib/asset-timeline'
+import { formatDate } from '@/lib/app-locale'
 
 const ALL = 'all'
 
@@ -152,14 +153,18 @@ function Filters({
   const { t } = useTranslation()
   const l = useLabels()
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      {leading}
+    // Phone: the two selects share one row, equal width; from sm they keep their own widths.
+    <div
+      className="grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap"
+      data-testid="timeline-filters"
+    >
+      {leading && <div className="col-span-2 sm:contents">{leading}</div>}
       <Select
         value={filters.attribute || ALL}
         onValueChange={(v) => onChange({ ...filters, attribute: v === ALL ? undefined : v })}
       >
         <SelectTrigger
-          className="h-8 w-48"
+          className="w-full sm:w-48"
           aria-label={t('assetTimeline.filterAttribute', 'Attribute')}
         >
           <SelectValue />
@@ -177,7 +182,10 @@ function Filters({
         value={filters.sourceKind || ALL}
         onValueChange={(v) => onChange({ ...filters, sourceKind: v === ALL ? undefined : v })}
       >
-        <SelectTrigger className="h-8 w-44" aria-label={t('assetTimeline.filterSource', 'Source')}>
+        <SelectTrigger
+          className="w-full sm:w-44"
+          aria-label={t('assetTimeline.filterSource', 'Source')}
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -191,7 +199,7 @@ function Filters({
       </Select>
       {withTag && (
         <Input
-          className="h-8 w-48"
+          className="col-span-2 sm:col-span-1 sm:w-48"
           value={filters.tag ?? ''}
           maxLength={100}
           onChange={(e) => onChange({ ...filters, tag: e.target.value })}
@@ -212,7 +220,7 @@ function TimelineBody({
   filters: ChangeFilters
   onWhy?: (attribute: string) => void
 }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const { events, error, isLoading, hasMore, loadMore, loadingMore, mutate } = useAssetChanges(
     assetId,
     filters
@@ -255,7 +263,7 @@ function TimelineBody({
       {days.map((d) => (
         <section key={d.day} aria-label={d.day}>
           <h4 className="text-xs font-semibold uppercase text-muted-foreground">
-            {new Date(`${d.day}T00:00:00`).toLocaleDateString(locale, {
+            {formatDate(new Date(`${d.day}T00:00:00`), {
               year: 'numeric',
               month: 'short',
               day: 'numeric',

@@ -4,7 +4,10 @@
  * Header Actions Component
  *
  * Centralized header actions for dashboard pages.
- * Includes: Search, NotificationBell, ThemeSwitch, ProfileDropdown
+ * Search, then the right group in the shell package's order: Create, Full
+ * screen, Approvals, Notifications, Theme, Account (32 px controls, 4 apart,
+ * 8 before the avatar; on a phone 36 px, 8 apart, without Create, Full screen
+ * and Theme)
  *
  * Usage:
  * ```tsx
@@ -20,6 +23,8 @@ import { ProfileDropdown } from '@/components/profile-dropdown'
 import { NotificationBell } from '@/components/notification-bell'
 import { FullscreenToggle } from '@/components/fullscreen-toggle'
 import { HeaderApprovals } from './header-approvals'
+import { HeaderCreateMenu } from './header-create-menu'
+import { HEADER_ACTIONS_GROUP } from './header-controls'
 
 interface HeaderActionsProps {
   /**
@@ -46,18 +51,19 @@ export function HeaderActions({
   hideThemeSwitch = false,
   hideProfile = false,
 }: HeaderActionsProps) {
-  // The search (the command palette) sits in the middle of the bar; the
-  // account controls at the end.
+  // The breadcrumb takes the free room (app-header.tsx); the search sits next
+  // to the right group, which never shrinks. Below 768 px (the phone bar):
+  // Search, Approvals, Notifications, Account, 36 px and 8 apart; Create, Full
+  // screen and Theme leave the bar (Theme moves into the account menu).
   return (
     <>
-      <div className="ms-auto flex min-w-0 justify-center sm:mx-auto sm:flex-[0_1_26rem]">
-        {!hideSearch && <Search className="sm:w-full lg:w-full xl:w-full" />}
-      </div>
-      <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+      {!hideSearch && <Search className="ms-auto shrink-0" />}
+      <div className={HEADER_ACTIONS_GROUP} data-slot="header-actions">
+        <HeaderCreateMenu />
         <FullscreenToggle />
         <HeaderApprovals />
         {!hideNotifications && <NotificationBell />}
-        {!hideThemeSwitch && <ThemeSwitch />}
+        {!hideThemeSwitch && <ThemeSwitch className="max-md:hidden" />}
         {!hideProfile && <ProfileDropdown />}
       </div>
     </>

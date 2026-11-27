@@ -88,7 +88,7 @@ test.describe('Finding detail header', { tag: ['@findings', '@smoke'] }, () => {
 })
 
 test.describe('Findings list', { tag: ['@findings', '@smoke'] }, () => {
-  test("each title button's accessible name includes the finding title", async ({ page }) => {
+  test("each title link's accessible name includes the finding title", async ({ page }) => {
     const findings = await listFindings(page)
     test.skip(findings.length === 0, 'Needs a finding')
 
@@ -98,11 +98,11 @@ test.describe('Findings list', { tag: ['@findings', '@smoke'] }, () => {
     const first = findings[0]
     const title = (first.title || first.message || '').trim()
     test.skip(!title, 'First finding has no title')
-    // The title is the row's open button: "{title}, view details" (its name
-    // starts with the visible title; the target line is outside it).
+    // The title is the row's link to the finding: "{title}, view details" (its
+    // name starts with the visible title; the target line is outside it).
     const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     await expect(
-      page.getByRole('button', { name: new RegExp(`^${escaped}, view details$`) }).first()
+      page.getByRole('link', { name: new RegExp(`^${escaped}, view details$`) }).first()
     ).toBeVisible()
   })
 })

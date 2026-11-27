@@ -29,6 +29,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { ListToolbar } from '@/features/shared/components/list-toolbar'
+import { ToolbarAction } from '@/features/shared/components/toolbar-action'
 import { ApiClientError } from '@/lib/api/error-handler'
 import type {
   DismissReason,
@@ -51,6 +52,7 @@ import { SuggestionPanel } from './suggestion-panel'
 import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
 import { AcceptDialog, DismissDialog, SnoozeDialog } from './suggestion-dialogs'
 import { useSearchQuery } from '@/hooks/use-search-query'
+import { formatDate } from '@/lib/app-locale'
 
 const PER_PAGE = 25
 
@@ -62,7 +64,7 @@ export function apiMessage(err: unknown, fallback: string): string {
 }
 
 export function SuggestionsInbox() {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const { hasPermission } = usePermissions()
   const router = useRouter()
   const params = useSearchParams()
@@ -209,7 +211,7 @@ export function SuggestionsInbox() {
         await done()
         toast.success(
           t('remediationHub.toast.snoozedUntil', undefined, {
-            date: new Date(until).toLocaleDateString(locale, { dateStyle: 'medium' }),
+            date: formatDate(new Date(until), { dateStyle: 'medium' }),
           }),
           {
             action: {
@@ -230,7 +232,7 @@ export function SuggestionsInbox() {
         setBusy(false)
       }
     },
-    [done, t, locale, openId, setOpenId]
+    [done, t, openId, setOpenId]
   )
 
   const bulkAccept = useCallback(async () => {
@@ -376,7 +378,7 @@ export function SuggestionsInbox() {
               }}
             >
               <SelectTrigger
-                className="h-9 w-auto min-w-36"
+                className="w-auto min-w-36"
                 aria-label={t('remediationHub.suggestions.kindFilter')}
               >
                 <SelectValue />
@@ -398,7 +400,7 @@ export function SuggestionsInbox() {
               }}
             >
               <SelectTrigger
-                className="h-9 w-auto min-w-36"
+                className="w-auto min-w-36"
                 aria-label={t('remediationHub.suggestions.keyKindFilter')}
               >
                 <SelectValue />
@@ -422,10 +424,13 @@ export function SuggestionsInbox() {
               </Button>
             )}
             {canWrite && (
-              <Button variant="outline" onClick={runNow}>
-                <RefreshCw className="size-4" aria-hidden />
-                {t('remediationHub.suggestions.runNow')}
-              </Button>
+              // Icon-only on a phone, so the search keeps its room (it was
+              // pressed against the button at 360 px).
+              <ToolbarAction
+                icon={RefreshCw}
+                label={t('remediationHub.suggestions.runNow')}
+                onClick={() => void runNow()}
+              />
             )}
           </>
         }

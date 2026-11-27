@@ -21,6 +21,7 @@ import { ClipboardList, FolderOpen, Plus, ShieldCheck, Target } from 'lucide-rea
 import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { ChoiceGroup } from '@/components/ui/choice-group'
+import { FormSection, FormStack } from '@/features/shared/components/forms'
 import {
   Sheet,
   SheetBody,
@@ -79,6 +80,7 @@ import { LargeRangeConfirm } from './large-range-confirm'
 import { largeRangeSummary } from '../../lib/large-range'
 import { BulkTargetsPanel } from './bulk-targets-panel'
 import { CoreInfraWarning } from './core-infra-warning'
+import { formatNumber } from '@/lib/app-locale'
 
 /** Typed targets shown as chips; past this they move to the list. */
 export const CHIP_LIMIT = 20
@@ -434,10 +436,10 @@ export function TargetsStep({
   const canLower = (tier: ProbeTier) => lowerIntensityAllowed(data, chosenWorkflow?.steps, tier)
 
   return (
-    <div className="grid min-w-0 gap-6 p-4 sm:p-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] xl:gap-8">
+    <FormStack className="px-4 py-4 sm:px-6">
       {/* What you scan */}
       <section className="min-w-0 space-y-2" aria-labelledby={`${fieldId}-label`}>
-        <label id={`${fieldId}-label`} htmlFor={fieldId} className="text-sm font-medium">
+        <label id={`${fieldId}-label`} htmlFor={fieldId} className="block text-dense font-medium">
           {t('scans.targetsStep.label')}
         </label>
         <TargetChipsField
@@ -448,7 +450,7 @@ export function TargetsStep({
           invalid={pasted.invalid.length > 0}
           describedBy={`${fieldId}-help`}
         />
-        <p id={`${fieldId}-help`} className="text-xs text-muted-foreground">
+        <p id={`${fieldId}-help`} className="text-cap text-muted-foreground">
           {t('scans.targetsStep.help')}
         </p>
         <InvalidTargetsNote
@@ -465,8 +467,8 @@ export function TargetsStep({
         {over && (
           <p role="alert" className="text-xs text-destructive">
             {t('scans.summary.tooMany', undefined, {
-              count: sent.length.toLocaleString(),
-              max: MAX_DIRECT_TARGETS.toLocaleString(),
+              count: formatNumber(sent.length),
+              max: formatNumber(MAX_DIRECT_TARGETS),
             })}
           </p>
         )}
@@ -488,9 +490,8 @@ export function TargetsStep({
         <div className="flex flex-wrap items-center gap-2">
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="h-9 max-sm:min-h-11"
             onClick={() => setBulkOpen((o) => !o)}
             aria-expanded={bulkOpen}
             aria-controls={`${fieldId}-bulk`}
@@ -501,9 +502,8 @@ export function TargetsStep({
           </Button>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
-            className="h-9 max-sm:min-h-11"
             onClick={() =>
               openPicker(
                 targets.assetGroupIds.length > 0 && targets.assetIds.length === 0
@@ -518,9 +518,8 @@ export function TargetsStep({
           {canReadScope && (
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="h-9 max-sm:min-h-11"
               onClick={() => openPicker('scope')}
               data-testid="from-scope"
             >
@@ -565,11 +564,7 @@ export function TargetsStep({
       </section>
 
       {/* What the scan probes, and how to fix what it cannot */}
-      <section
-        className="min-w-0 space-y-3"
-        aria-label={t('scans.summary.label')}
-        data-testid="targets-result"
-      >
+      <FormSection title={t('scans.summary.label')} data-testid="targets-result">
         {empty ? (
           <p className="text-sm text-muted-foreground">{t('scans.summary.nothing')}</p>
         ) : (
@@ -617,7 +612,7 @@ export function TargetsStep({
           canLowerIntensity={canLower}
           onRecheck={() => void check.recheck()}
         />
-      </section>
+      </FormSection>
 
       <Sheet open={pickerOpen} onOpenChange={setPickerOpen}>
         <SheetContent side="right" className="sm:max-w-lg">
@@ -677,6 +672,6 @@ export function TargetsStep({
           </SheetFooter>
         </SheetContent>
       </Sheet>
-    </div>
+    </FormStack>
   )
 }

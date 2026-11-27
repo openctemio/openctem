@@ -285,7 +285,6 @@ function Palette({
         onChange={(e) => setQuery(e.target.value)}
         placeholder={t('automations.canvas.findStep', 'Find a step')}
         aria-label={t('automations.canvas.findStep', 'Find a step')}
-        className="h-8"
       />
       {loading && (
         <p className="text-xs text-muted-foreground">

@@ -69,80 +69,89 @@ const RESPONSE = {
   ],
 }
 
+const row = (id: string) => document.getElementById(`check-${id}`) as HTMLElement
+
 describe('SecurityOverview', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('renders the score, the counts, and every check with a status word', async () => {
+  it('renders the score, the counts, and every open check with a status word', async () => {
     fetcher.mockResolvedValue(RESPONSE)
     render(withSWR(<SecurityOverview />))
     expect(await screen.findByTestId('security-score')).toHaveTextContent('72')
-    // Accessible label on the progress bar.
-    expect(
-      screen.getByRole('progressbar', { name: 'Security score: 72 out of 100' })
-    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Security overview' })).toBeInTheDocument()
+    // Four summary tiles: the score (out of 100) and the three counts.
+    expect(screen.getByText('/ 100')).toBeInTheDocument()
+    expect(screen.getAllByText('Checks at risk').length).toBeGreaterThan(0)
     expect(screen.getByTestId('count-risk')).toHaveTextContent('1')
     expect(screen.getByTestId('count-warn')).toHaveTextContent('2')
     expect(screen.getByTestId('count-pass')).toHaveTextContent('2')
+    expect(screen.getByText(/^Checked /)).toBeInTheDocument()
 
-    // Group titles come from the dictionary, not the server.
-    for (const g of ['Sign-in', 'People and access', 'Credentials', 'Organization']) {
-      expect(screen.getByText(g)).toBeInTheDocument()
+    // Group titles come from the dictionary, not the server; a group whose
+    // checks all passed has no section of its own.
+    for (const g of ['Sign-in', 'People and access', 'Credentials']) {
+      expect(screen.getByRole('heading', { level: 2, name: g })).toBeInTheDocument()
     }
-    expect(screen.queryByText('Scanning')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Organization' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Scanning' })).not.toBeInTheDocument()
 
-    const risk = screen.getByTestId('check-sign_in.admins_without_mfa')
+    const risk = row('sign_in.admins_without_mfa')
     expect(within(risk).getByText('Owners and admins without two-factor')).toBeInTheDocument()
     // Status is text, never colour only; the count is in the sentence.
     expect(within(risk).getByText('Risk')).toBeInTheDocument()
     expect(
       within(risk).getByText(/2 owners or admins sign in with a password alone/)
     ).toBeInTheDocument()
-    expect(within(risk).getByRole('link', { name: 'Review' })).toHaveAttribute(
-      'href',
-      '/settings/members'
-    )
+    expect(
+      within(risk).getByRole('link', { name: 'Review: Owners and admins without two-factor' })
+    ).toHaveAttribute('href', '/settings/members')
 
-    const pass = screen.getByTestId('check-sign_in.mfa_admins_required')
+    expect(within(row('sign_in.ip_allowlist')).getByText('Info')).toBeInTheDocument()
+    expect(within(row('people.dormant_members')).getByText('Warning')).toBeInTheDocument()
+  })
+
+  it('folds the passed checks and shows them on demand, without a link', async () => {
+    fetcher.mockResolvedValue(RESPONSE)
+    const user = userEvent.setup()
+    render(withSWR(<SecurityOverview />))
+    await screen.findByTestId('security-score')
+    expect(row('sign_in.mfa_admins_required')).toBeNull()
+    const toggle = screen.getByRole('button', { name: 'Show the 2 passed checks' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await user.click(toggle)
+    expect(screen.getByRole('button', { name: 'Hide the 2 passed checks' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    )
+    const pass = row('sign_in.mfa_admins_required')
     expect(within(pass).getByText('Passed')).toBeInTheDocument()
     expect(within(pass).queryByRole('link')).not.toBeInTheDocument()
-    expect(
-      within(screen.getByTestId('check-sign_in.ip_allowlist')).getByText('Info')
-    ).toBeInTheDocument()
-    expect(
-      within(screen.getByTestId('check-people.dormant_members')).getByText('Warning')
-    ).toBeInTheDocument()
   })
 
   it('lists the worst checks of a group first', async () => {
     fetcher.mockResolvedValue(RESPONSE)
     render(withSWR(<SecurityOverview />))
     await screen.findByTestId('security-score')
-    const ids = screen
-      .getAllByTestId(/^check-sign_in\./)
-      .map((el) => el.getAttribute('data-testid'))
-    expect(ids).toEqual([
-      'check-sign_in.admins_without_mfa',
-      'check-sign_in.ip_allowlist',
-      'check-sign_in.mfa_admins_required',
-    ])
+    const ids = Array.from(document.querySelectorAll('[id^="check-sign_in."]')).map((el) => el.id)
+    expect(ids).toEqual(['check-sign_in.admins_without_mfa', 'check-sign_in.ip_allowlist'])
   })
 
-  it('shows a loading skeleton first', () => {
+  it('shows the page frame with loading rows first', () => {
     fetcher.mockReturnValue(new Promise(() => {}))
     render(withSWR(<SecurityOverview />))
-    expect(screen.getByTestId('security-overview-loading')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: 'Security overview' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Loading Security overview')).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByRole('button', { name: 'Re-check' })).toBeDisabled()
   })
 
   it('shows an error state, distinct from an empty overview, with a retry', async () => {
     fetcher.mockRejectedValueOnce(new Error('boom'))
     const user = userEvent.setup()
     render(withSWR(<SecurityOverview />))
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Could not load the security overview'
-    )
+    expect(await screen.findByText("Couldn't load Security overview")).toBeInTheDocument()
     expect(screen.queryByTestId('security-score')).not.toBeInTheDocument()
     fetcher.mockResolvedValueOnce(RESPONSE)
-    await user.click(screen.getByRole('button', { name: 'Try again' }))
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByTestId('security-score')).toHaveTextContent('72')
   })
 
@@ -163,6 +172,11 @@ describe('SecurityOverview', () => {
     expect(safeInternalLink('https://example.com/x')).toBeNull()
     expect(safeInternalLink('//example.com')).toBeNull()
     expect(safeInternalLink('')).toBeNull()
+    // A moved settings page: its new home, the #setting kept.
+    expect(safeInternalLink('/settings/authentication#ip-allowlist')).toBe(
+      '/settings/sign-in#ip-allowlist'
+    )
+    expect(safeInternalLink('/settings/domains')).toBe('/settings/sign-in?tab=domains')
   })
 })
 

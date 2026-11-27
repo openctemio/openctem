@@ -8,7 +8,9 @@
  * the explanation card. Counts in the menu are requested only while it is open.
  */
 
-import { ArrowRight, ChevronDown, ChevronLeft } from 'lucide-react'
+import { ListCount } from '@/features/shared/components/list-title-row'
+import { ArrowRight, ChevronDown, ChevronLeft, MoreHorizontal } from 'lucide-react'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { useRouter } from 'next/navigation'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
@@ -27,6 +29,7 @@ import { ASSET_ATTENTION_REASONS, type AttentionReasonDef } from '@/config/secti
 import { useVisibleSectionTabs } from '@/lib/permissions'
 import { safeHref } from '@/lib/safe-href'
 import { useAttentionCount } from './use-attention-count'
+import { formatNumber } from '@/lib/app-locale'
 
 const ATTENTION_HREF = '/assets/attention'
 
@@ -34,7 +37,7 @@ function MenuCount({ id }: { id: AttentionReasonDef['id'] }) {
   const count = useAttentionCount(id)
   return (
     <span className="ms-auto ps-4 text-xs text-muted-foreground tabular-nums">
-      {count === undefined ? '' : count.toLocaleString()}
+      {count === undefined ? '' : formatNumber(count)}
     </span>
   )
 }
@@ -45,9 +48,19 @@ interface AttentionQueueHeaderProps {
   count?: number
   /** The same slice in the inventory; absent for reasons that have no inventory view. */
   inventoryHref?: string
+  /**
+   * The queue's own More (e.g. "Select" on a phone); not drawn without items.
+   * It ends the heading row, after the inventory link.
+   */
+  moreItems?: ActionMenuEntry[]
 }
 
-export function AttentionQueueHeader({ reason, count, inventoryHref }: AttentionQueueHeaderProps) {
+export function AttentionQueueHeader({
+  reason,
+  count,
+  inventoryHref,
+  moreItems,
+}: AttentionQueueHeaderProps) {
   const { t } = useTranslation()
   const router = useRouter()
   const visible = useVisibleSectionTabs(ASSET_ATTENTION_REASONS)
@@ -59,30 +72,74 @@ export function AttentionQueueHeader({ reason, count, inventoryHref }: Attention
     .filter((rows) => rows.length > 0)
   const href = inventoryHref ? safeHref(inventoryHref) : null
 
+  const why = t(current.whyKey, current.why)
+  const inventoryLabel = t('assets.attention.openInInventory', 'Open in the inventory')
+  // The heading row is one line at every width: below 1280 px the inventory
+  // link is an item of the queue's More (an icon) and the why line takes the
+  // rest of the row, wrapped; from 1280 px the link is a button. Both are
+  // drawn and CSS picks one, so nothing moves after the page loads.
+  const ownItems = moreItems ?? []
+  const menuItems: ActionMenuEntry[] = [
+    ...(href
+      ? [
+          {
+            id: 'inventory',
+            label: inventoryLabel,
+            // Alone it turns the trigger into the link (an icon is needed);
+            // beside Select, icons for all items or none.
+            icon: ownItems.length ? undefined : ArrowRight,
+            onSelect: () => router.push(href),
+          },
+        ]
+      : []),
+    ...ownItems,
+  ]
+
   return (
-    <div className="flex flex-col gap-2" data-testid="attention-queue-header">
-      <Link
-        href={ATTENTION_HREF}
-        className="inline-flex w-fit items-center gap-1 rounded-sm text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <ChevronLeft className="size-3.5 rtl:rotate-180" aria-hidden />
-        {t('assets.attention.back', 'Needs attention')}
-      </Link>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+    // One row (research/249; MVP v2: no row of its own above the list): the
+    // back link as an icon, the reason heading that switches reason, the
+    // count, the why line (wrapped; on a phone at the top of the reason
+    // menu), then the inventory link and the More.
+    <div
+      // One line on a phone: the reason name ends in an ellipsis (whole in
+      // the menu) rather than push the count and More onto a line of their own.
+      className="flex items-center gap-x-3"
+      data-testid="attention-queue-header"
+    >
+      {/* The heading keeps its width from 768 px (the why line gives way);
+          on a phone it ends in an ellipsis, whole in its title and the menu. */}
+      <div className="flex min-w-0 items-center gap-1 md:shrink-0">
+        <Button asChild variant="ghost" size="icon">
+          <Link href={ATTENTION_HREF} aria-label={t('assets.attention.back', 'Needs attention')}>
+            <ChevronLeft className="size-4 rtl:rotate-180" aria-hidden />
+          </Link>
+        </Button>
         <DropdownMenu>
-          <h2 className="text-lg font-semibold">
+          <h2 className="min-w-0 text-lg font-semibold">
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
                 title={t('assets.attention.switch', 'Switch reason')}
-                className="-ms-1 inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-start font-semibold outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                // The row's control height (32, 36 on a phone): the inventory
+                // link and the More share its line.
+                className="inline-flex h-control max-w-full items-center gap-1.5 rounded-md px-1 text-start font-semibold outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring max-md:h-control-touch"
               >
-                {t(current.labelKey, current.label)}
-                <ChevronDown className="size-4 text-muted-foreground" aria-hidden />
+                {/* The heading is the queue's name: on a phone it ends in an
+                    ellipsis rather than wrap, whole in its title and the menu. */}
+                <span
+                  data-cut-tooltip
+                  title={t(current.labelKey, current.label)}
+                  className="truncate"
+                >
+                  {t(current.labelKey, current.label)}
+                </span>
+                <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
               </button>
             </DropdownMenuTrigger>
           </h2>
-          <DropdownMenuContent align="start" className="min-w-64">
+          <DropdownMenuContent>
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">{why}</p>
+            <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground">
               {t('assets.attention.switch', 'Switch reason')}
             </DropdownMenuLabel>
@@ -109,21 +166,59 @@ export function AttentionQueueHeader({ reason, count, inventoryHref }: Attention
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {count !== undefined && (
-          <span className="text-sm text-muted-foreground" data-testid="attention-queue-count">
-            {count.toLocaleString()} {t(current.unitKey, current.unit, { count })}
-          </span>
-        )}
-        {href && (
-          <Button asChild variant="outline" size="sm" className="ms-auto">
-            <Link href={href}>
-              {t('assets.attention.openInInventory', 'Open in the inventory')}
-              <ArrowRight className="ms-1.5 h-3.5 w-3.5" aria-hidden />
-            </Link>
-          </Button>
-        )}
       </div>
-      <p className="text-sm text-muted-foreground">{t(current.whyKey, current.why)}</p>
+      {/* The queue's one count, as every list says it. */}
+      <ListCount
+        total={count ?? 0}
+        loading={count === undefined}
+        label={
+          count === undefined
+            ? undefined
+            : `${formatNumber(count)} ${t(current.unitKey, current.unit, { count })}`
+        }
+      />
+      {/* A sentence, read whole beside the heading (never on a row of its
+          own above the list): it wraps in what the row has left. On a phone
+          it is read at the top of the reason menu. */}
+      <p
+        data-slot="attention-why"
+        className="min-w-0 flex-1 basis-0 text-sm text-muted-foreground max-md:hidden"
+      >
+        {why}
+      </p>
+      {menuItems.length > 0 && (
+        <div className="ms-auto flex shrink-0 items-center gap-2">
+          {href && (
+            <Button asChild variant="outline" className="max-xl:hidden">
+              <Link href={href}>
+                {inventoryLabel}
+                <ArrowRight className="ms-1.5 h-3.5 w-3.5" aria-hidden />
+              </Link>
+            </Button>
+          )}
+          <div
+            data-slot="attention-more"
+            className={ownItems.length ? 'contents' : 'contents xl:hidden'}
+          >
+            <ActionMenu
+              title={t(current.labelKey, current.label)}
+              label={t('common.actionMenu.label', 'Actions for {name}', {
+                name: t(current.labelKey, current.label),
+              })}
+              items={menuItems}
+              trigger={
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label={t('assets.inventoryPage.moreActions', 'More actions')}
+                >
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
+                </Button>
+              }
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

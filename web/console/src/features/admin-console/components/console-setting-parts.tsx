@@ -5,11 +5,11 @@ import { Loader2, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
-import { RelativeTime } from '@/features/shared'
+import { RelativeTime, SecretField as SecretInput, SettingsField } from '@/features/shared'
 import { AdminApiError } from '@console/lib/admin-api/client'
 import type { SettingChange } from '../types'
 
@@ -20,6 +20,49 @@ import type { SettingChange } from '../types'
  * dialog that asks for a reason.
  */
 
+/**
+ * A server environment variable an administrator has to set by hand: drawn
+ * as code (it is typed exactly), wrapping only after its underscores or
+ * slashes. Plain sentences say "the server's setting" instead; only a step
+ * the reader takes on the server names the variable.
+ */
+export function ServerVariable({ name }: { name: string }) {
+  const parts = name.split(/([_/])/)
+  return (
+    <code className="font-mono">
+      {parts.map((part, i) =>
+        part === '_' || part === '/' ? (
+          <span key={i}>
+            {part}
+            <wbr />
+          </span>
+        ) : (
+          part
+        )
+      )}
+    </code>
+  )
+}
+
+/**
+ * A translated sentence with one `{name}` drawn as `node` (a code element),
+ * so the sentence stays one dictionary entry in both languages.
+ */
+export function withPlaceholder(text: string, node: ReactNode): ReactNode {
+  const [before, ...rest] = text.split('\u0000')
+  return (
+    <>
+      {before}
+      {rest.map((part, i) => (
+        <span key={i}>
+          {node}
+          {part}
+        </span>
+      ))}
+    </>
+  )
+}
+
 /** "Locked by the server configuration (NAME)": the console cannot change it. */
 export function LockedByEnvironment({ envVar }: { envVar: string }) {
   const { t } = useTranslation()
@@ -27,10 +70,13 @@ export function LockedByEnvironment({ envVar }: { envVar: string }) {
     <Alert>
       <Lock className="size-4" aria-hidden />
       <AlertDescription>
-        {t(
-          'admin.settings.lockedByEnvironment',
-          'Locked by the server configuration ({name}). Change it on the server and restart, or remove the variable to manage it here.',
-          { name: envVar }
+        {withPlaceholder(
+          t(
+            'admin.settings.lockedByEnvironment',
+            'Locked by the server configuration ({name}). Change it on the server and restart, or remove the variable to manage it here.',
+            { name: '\u0000' }
+          ),
+          <ServerVariable name={envVar} />
         )}
       </AlertDescription>
     </Alert>
@@ -68,47 +114,111 @@ export interface SecretFieldProps {
 }
 
 /**
- * A write-only secret: never shown, only replaced or removed. The field says
- * whether one is stored.
+ * A write-only secret: never shown, only replaced or removed. A stored value
+ * reads as a status row ("Stored, never shown") with Replace and Remove, not
+ * as an empty input whose placeholder looks like a value; Replace opens the
+ * masked input. A viewer who cannot change it sees the status as text.
  */
 export function SecretField(p: SecretFieldProps) {
   const { t } = useTranslation()
-  const id = useId()
+  const [replacing, setReplacing] = useState(false)
+  const typing = replacing || p.value !== ''
+  const stored = t('admin.settings.secretStored', 'Stored, never shown')
   return (
-    <div className="grid gap-1.5">
-      <Label htmlFor={id}>{p.label}</Label>
-      <Input
-        id={id}
-        type="password"
-        value={p.value}
-        onChange={(e) => {
-          p.onChange(e.target.value)
-          p.onClear(false)
-        }}
-        disabled={p.disabled || p.clear}
-        autoComplete="new-password"
-        spellCheck={false}
-        placeholder={
-          p.isSet
-            ? t('admin.settings.secretKeep', 'Stored. Type to replace it.')
-            : (p.placeholder ?? t('admin.settings.secretNone', 'Not set'))
-        }
-      />
-      {p.help && <p className="text-xs text-muted-foreground">{p.help}</p>}
-      {p.isSet && !p.disabled && !p.noClear && (
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          <input
-            type="checkbox"
-            checked={p.clear}
-            onChange={(e) => {
-              p.onClear(e.target.checked)
-              p.onChange('')
-            }}
-          />
-          {t('admin.settings.secretClear', 'Remove the stored value')}
-        </label>
-      )}
-    </div>
+    <SettingsField label={p.label} hint={p.help}>
+      {(control) =>
+        p.disabled ? (
+          <p
+            id={control.id}
+            aria-describedby={control['aria-describedby']}
+            className="flex min-h-9 items-center gap-2 text-body text-muted-foreground"
+          >
+            {p.isSet && <Lock className="size-4 shrink-0" aria-hidden />}
+            {p.isSet ? stored : t('admin.settings.secretNone', 'Not set')}
+          </p>
+        ) : p.isSet && p.clear ? (
+          <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1">
+            <p id={control.id} className="text-body text-destructive">
+              {t('admin.settings.secretRemoving', 'Removed when you save')}
+            </p>
+            <Button type="button" variant="ghost" size="sm" onClick={() => p.onClear(false)}>
+              {t('admin.settings.secretUndo', 'Keep it')}
+            </Button>
+          </div>
+        ) : p.isSet && !typing ? (
+          <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1">
+            <p
+              id={control.id}
+              aria-describedby={control['aria-describedby']}
+              className="flex items-center gap-2 text-body"
+            >
+              <Lock className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              {stored}
+            </p>
+            <span className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-label={t('admin.settings.secretReplaceNamed', 'Replace {name}', {
+                  name: p.label,
+                })}
+                onClick={() => setReplacing(true)}
+              >
+                {t('admin.settings.secretReplace', 'Replace')}
+              </Button>
+              {!p.noClear && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  aria-label={t('admin.settings.secretRemoveNamed', 'Remove {name}', {
+                    name: p.label,
+                  })}
+                  onClick={() => {
+                    p.onChange('')
+                    p.onClear(true)
+                  }}
+                >
+                  {t('admin.settings.secretRemove', 'Remove')}
+                </Button>
+              )}
+            </span>
+          </div>
+        ) : (
+          <div className="flex min-w-0 items-center gap-2">
+            {/* The kit field: masked, Show value for what was just typed; a
+                stored value is never read back from the server. */}
+            <SecretInput
+              {...control}
+              value={p.value}
+              autoFocus={replacing}
+              onChange={(e) => {
+                p.onChange(e.target.value)
+                p.onClear(false)
+              }}
+              onBlur={() => {
+                if (p.value === '') setReplacing(false)
+              }}
+              autoComplete="new-password"
+              placeholder={p.placeholder}
+            />
+            {p.isSet && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  p.onChange('')
+                  setReplacing(false)
+                }}
+              >
+                {t('admin.settings.secretKeepStored', 'Keep the stored one')}
+              </Button>
+            )}
+          </div>
+        )
+      }
+    </SettingsField>
   )
 }
 

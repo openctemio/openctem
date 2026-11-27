@@ -11,7 +11,9 @@ import { useMemo, useState } from 'react'
 import useSWR from 'swr'
 import { ChevronRight, ScrollText } from 'lucide-react'
 
+import { StaticLead } from '@/components/static-page'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
@@ -47,7 +49,16 @@ function useNotices(source: NoticeSource) {
   )
 }
 
-export function OpenSourceLicenses({ api, web }: { api: NoticeSource; web: NoticeSource }) {
+export function OpenSourceLicenses({
+  api,
+  web,
+  lead = false,
+}: {
+  api: NoticeSource
+  web: NoticeSource
+  /** Open with the reading lead: how many components, in which part. */
+  lead?: boolean
+}) {
   const { t } = useTranslation()
   const apiDocs = useNotices(api)
   const webDocs = useNotices(web)
@@ -80,9 +91,28 @@ export function OpenSourceLicenses({ api, web }: { api: NoticeSource; web: Notic
   ]
   // A source that answered without a generated file, or did not answer.
   const missing = docs.filter(([, d]) => d !== undefined && (d === null || !d.generated))
+  const countOf = (id: NoticeSourceId) => rows.filter((r) => r.source === id).length
+  const reload = () => {
+    if (apiDocs.data === null) void apiDocs.mutate()
+    if (webDocs.data === null) void webDocs.mutate()
+  }
 
   return (
     <div className="grid gap-4" data-testid="open-source-licenses">
+      {lead && (
+        <StaticLead>
+          {loading || rows.length === 0 || missing.length > 0
+            ? t(
+                'help.licenses.description',
+                'The open-source components this build is made of, with their licenses. The list is generated when the release is built.'
+              )
+            : t(
+                'help.licenses.lead',
+                'This build is made of {total} open-source components: {api} in the API and {web} in the web app. The list is generated when the release is built.',
+                { total: rows.length, api: countOf('api'), web: countOf('web') }
+              )}
+        </StaticLead>
+      )}
       <ListToolbar
         search={{
           value: query,
@@ -99,32 +129,36 @@ export function OpenSourceLicenses({ api, web }: { api: NoticeSource; web: Notic
             options={(['api', 'web'] as const).map((id) => ({
               value: id,
               label: sourceLabel(id),
-              count: rows.filter((r) => r.source === id).length,
+              count: countOf(id),
             }))}
           />
         }
       />
 
       {missing.map(([id, d]) => (
-        <p
+        <div
           key={id}
-          className="text-sm text-muted-foreground"
-          data-testid={`licenses-missing-${id}`}
+          className="flex flex-wrap items-center gap-x-3 gap-y-2 text-body text-muted-foreground"
         >
-          {d === null
-            ? t(
-                'help.licenses.unavailable',
-                'The {part} list could not be loaded. Reload the page to try again.',
-                {
-                  part: sourceLabel(id),
-                }
-              )
-            : t(
-                'help.licenses.notGenerated',
-                'This {part} build has no license list: it is generated when the release image is built.',
-                { part: sourceLabel(id) }
-              )}
-        </p>
+          <p data-testid={`licenses-missing-${id}`}>
+            {d === null
+              ? t(
+                  'help.licenses.unavailable',
+                  'The {part} list could not be loaded. Reload the page to try again.',
+                  { part: sourceLabel(id) }
+                )
+              : t(
+                  'help.licenses.notGenerated',
+                  'This {part} build has no license list: it is generated when the release image is built.',
+                  { part: sourceLabel(id) }
+                )}
+          </p>
+          {d === null && (
+            <Button type="button" variant="outline" size="sm" onClick={reload}>
+              {t('help.licenses.reload', 'Reload')}
+            </Button>
+          )}
+        </div>
       ))}
 
       {loading ? (
@@ -144,18 +178,39 @@ export function OpenSourceLicenses({ api, web }: { api: NoticeSource; web: Notic
         />
       ) : (
         <>
-          <p className="text-sm text-muted-foreground" aria-live="polite">
+          <p className="text-dense text-muted-foreground" aria-live="polite">
             {t('help.licenses.count', '{count} components', { count: shown.length })}
           </p>
-          <ul className="divide-y rounded-md border" data-testid="licenses-list">
-            {shown.map((r) => (
-              <LicenseRow
-                key={`${r.source}:${r.name}@${r.version}`}
-                row={r}
-                part={sourceLabel(r.source)}
-              />
-            ))}
-          </ul>
+          <div className="overflow-hidden rounded-lg border bg-card">
+            <div
+              aria-hidden
+              data-slot="licenses-columns"
+              className="flex items-center gap-3 border-b px-3 py-2 text-cap text-muted-foreground"
+            >
+              <span className="size-4 shrink-0" />
+              <span className="min-w-0 flex-1">
+                {t('help.licenses.col.component', 'Component')}
+              </span>
+              <span className="hidden w-24 shrink-0 sm:inline">
+                {t('help.licenses.col.version', 'Version')}
+              </span>
+              <span className="hidden w-20 shrink-0 md:inline">
+                {t('help.licenses.source', 'Part')}
+              </span>
+              <span className="shrink-0 text-end sm:w-28">
+                {t('help.licenses.col.license', 'License')}
+              </span>
+            </div>
+            <ul className="divide-y" data-testid="licenses-list">
+              {shown.map((r) => (
+                <LicenseRow
+                  key={`${r.source}:${r.name}@${r.version}`}
+                  row={r}
+                  part={sourceLabel(r.source)}
+                />
+              ))}
+            </ul>
+          </div>
         </>
       )}
     </div>
@@ -168,29 +223,37 @@ function LicenseRow({ row, part }: { row: Row; part: string }) {
   return (
     <li>
       <Collapsible open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger className="flex w-full items-center gap-3 px-3 py-2 text-start hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <CollapsibleTrigger className="flex w-full items-start gap-3 px-3 py-2 text-start hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <ChevronRight
-            className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`}
+            className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-90' : ''}`}
             aria-hidden
           />
-          <span className="min-w-0 flex-1 truncate font-mono text-sm">{row.name}</span>
-          <span className="hidden shrink-0 font-mono text-sm text-muted-foreground sm:inline">
+          {/* A module path or a pseudo-version is a token: it wraps at any
+              character instead of hiding its end behind an ellipsis. */}
+          <span className="min-w-0 flex-1 font-mono text-code [overflow-wrap:anywhere]">
+            {row.name}
+          </span>
+          <span className="hidden w-28 shrink-0 font-mono text-code text-muted-foreground [overflow-wrap:anywhere] sm:inline">
             {row.version}
           </span>
-          <span className="hidden w-20 shrink-0 text-sm text-muted-foreground md:inline">
+          <span className="hidden w-20 shrink-0 text-dense text-muted-foreground md:inline">
             {part}
           </span>
-          <Badge variant="outline" className="shrink-0">
-            {row.license === 'Unknown' ? t('help.licenses.unknown', 'Unknown') : row.license}
-          </Badge>
+          <span className="flex max-w-28 shrink-0 justify-end sm:w-28">
+            <Badge variant="outline" className="max-w-full">
+              <span className="truncate">
+                {row.license === 'Unknown' ? t('help.licenses.unknown', 'Unknown') : row.license}
+              </span>
+            </Badge>
+          </span>
         </CollapsibleTrigger>
         <CollapsibleContent className="px-3 pb-3">
           {row.text ? (
-            <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 font-mono text-xs">
+            <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 font-mono text-code">
               {row.text}
             </pre>
           ) : (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-dense text-muted-foreground">
               {t('help.licenses.noText', 'This component ships no license file.')}
             </p>
           )}

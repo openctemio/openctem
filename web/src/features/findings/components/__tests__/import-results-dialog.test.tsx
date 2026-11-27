@@ -124,8 +124,8 @@ describe('ImportResultsDialog', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, previewBody))
     const onImported = vi.fn()
     render(<ImportResultsDialog open onOpenChange={vi.fn()} onImported={onImported} />)
-    const importButton = screen.getByRole('button', { name: /^Import$/ })
-    expect(importButton).toBeDisabled()
+    // One main action: Preview until a preview is shown, then Import.
+    expect(screen.queryByRole('button', { name: /^Import$/ })).toBeNull()
     await chooseFile()
     await userEvent.click(screen.getByRole('button', { name: /Preview/ }))
 
@@ -229,7 +229,7 @@ describe('ImportResultsDialog', () => {
     await chooseFile('evil.nessus')
     await userEvent.click(screen.getByRole('button', { name: /Preview/ }))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/line 3/))
-    expect(screen.getByRole('button', { name: /^Import$/ })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /^Import$/ })).toBeNull()
   })
 
   it('explains a body that is too large', async () => {
@@ -323,7 +323,7 @@ describe('ImportResultsDialog', () => {
       /3 hosts are outside your scope/
     )
     expect(recon).toHaveTextContent('2 files skipped on purpose')
-    expect(screen.getByText('1 files not recognized')).toBeInTheDocument()
+    expect(screen.getByText('1 file not recognized')).toBeInTheDocument()
     await user.click(screen.getByText('2 files skipped on purpose'))
     expect(screen.getByText('osint/emails.txt')).toBeInTheDocument()
   })

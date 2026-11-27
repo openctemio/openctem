@@ -1,14 +1,14 @@
 'use client'
 
+import { humanizeIdentifier } from '@/lib/humanize-identifier'
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Copy, Download, Info } from 'lucide-react'
+import { ChevronRight, Copy, Download, Info } from 'lucide-react'
 import { toast } from 'sonner'
 import type { ContentChannelResponse, PlatformContentPackResponse } from '@/lib/api/generated'
 import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
   SelectContent,
@@ -23,11 +23,13 @@ import {
   DetailHeader,
   DetailSheet,
   ErrorState,
+  MetaLine,
   PageHeader,
   PageStack,
   RelativeTime,
   StackedCell,
 } from '@/features/shared'
+import { ListCount, ListToolbarTitle } from '@/features/shared/components/list-title-row'
 import { useTranslation } from '@/context/i18n-provider'
 import { useListParams } from '@/hooks/use-list-params'
 import {
@@ -65,9 +67,28 @@ function formatBytes(n?: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MiB`
 }
 
+/** Plain labels for a pack's kind, trust tier and channel (unknown values read as words). */
+function usePackLabels() {
+  const { t } = useTranslation()
+  const missing = '\u0000'
+  return useMemo(() => {
+    const word = (ns: string, v?: string) => {
+      if (!v) return ''
+      const found = t(`${ns}.${v}`, missing)
+      return found !== missing ? found : humanizeIdentifier(v)
+    }
+    return {
+      kindLabel: (v?: string) => word('admin.cp.kindName', v),
+      tierLabel: (v?: string) => word('admin.cp.tierName', v),
+      channelLabel: (v?: string) => word('admin.cp.channelName', v),
+    }
+  }, [t])
+}
+
 export default function ContentPacksPage() {
   const admin = useAdmin()
   const { t } = useTranslation()
+  const { kindLabel, tierLabel, channelLabel } = usePackLabels()
   const canWrite = adminHas(admin, 'platform.content.manage')
   const list = useListParams({ defaultPageSize: 25, filters: { kind: '', status: '' } })
   const name = list.searchTerm
@@ -103,11 +124,17 @@ export default function ContentPacksPage() {
           <StackedCell primary={row.original.name} secondary={row.original.version} />
         ),
       },
-      { accessorKey: 'kind', header: t('admin.cp.kind', 'Kind') },
+      {
+        accessorKey: 'kind',
+        header: t('admin.cp.kind', 'Type'),
+        cell: ({ row }) => kindLabel(row.original.kind),
+      },
       {
         accessorKey: 'tier',
         header: t('admin.cp.col.tier', 'Tier'),
-        cell: ({ row }) => <Badge variant="outline">{row.original.tier}</Badge>,
+        // The tier is on the pack's sheet too: it gives way on a tablet.
+        meta: { hideBelow: 900 },
+        cell: ({ row }) => <Badge variant="outline">{tierLabel(row.original.tier)}</Badge>,
       },
       {
         id: 'content',
@@ -141,10 +168,57 @@ export default function ContentPacksPage() {
         cell: ({ row }) => <RelativeTime date={row.original.created_at} className="text-sm" />,
       },
     ],
-    [t]
+    [t, kindLabel, tierLabel]
   )
 
   const channelRows: ContentChannelResponse[] = channels.data?.data ?? []
+  // Which pack each channel points at: a short list in the shared table, so
+  // it gets the same header, states and phone cards as every list.
+  const channelColumns = useMemo<ColumnDef<ContentChannelResponse>[]>(
+    () => [
+      {
+        accessorKey: 'name',
+        header: t('admin.cp.col.pack', 'Pack'),
+        meta: { kind: 'name' },
+        cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+      },
+      {
+        accessorKey: 'channel',
+        header: t('admin.cp.channel', 'Channel'),
+        meta: { kind: 'status' },
+        cell: ({ row }) => (
+          <Badge variant={row.original.channel === 'stable' ? 'secondary' : 'outline'}>
+            {channelLabel(row.original.channel)}
+          </Badge>
+        ),
+      },
+      {
+        accessorKey: 'version',
+        header: t('admin.cp.version', 'Version'),
+        meta: { kind: 'text' },
+        cell: ({ row }) => <span className="tabular-nums">{row.original.version}</span>,
+      },
+      {
+        accessorKey: 'digest',
+        header: t('admin.cp.digest', 'Digest'),
+        // The digest is on the pack's sheet too: it gives way first on a tablet.
+        // "sha256:" and the digest's first 8 characters, whole.
+        meta: { kind: 'id', width: 176, hideBelow: 720 },
+        cell: ({ row }) => (
+          <span className="font-mono text-xs" title={row.original.digest}>
+            {shortDigest(row.original.digest)}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'updated_at',
+        header: t('admin.cp.updated', 'Updated'),
+        meta: { kind: 'datetime-recent' },
+        cell: ({ row }) => <RelativeTime date={row.original.updated_at} />,
+      },
+    ],
+    [t, channelLabel]
+  )
 
   return (
     <Main>
@@ -153,126 +227,18 @@ export default function ContentPacksPage() {
           title={t('admin.nav.contentPacks', 'Content packs')}
           description={t(
             'admin.cp.description',
-            'Templates, rules and wordlists the platform ships to sensors: linted, signed, and pinned to a channel.'
+            'Templates, rules and wordlists the platform sends to sensors. Each one is checked, signed and assigned to a channel.'
           )}
         >
           {canWrite && <AddContentPackDialog onAdded={refresh} />}
         </PageHeader>
 
-        {/* research/191 C-1: no sensor downloads packs yet; say so rather than show them as active. */}
-        <div
-          role="status"
-          className="flex gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm"
-        >
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden />
-          <p>
-            {t(
-              'admin.cp.notDelivered',
-              'Not active yet: sensors do not download content packs. A stored pack is not used by any scan, and revoking one stops nothing. Custom templates still travel inside each scan job.'
-            )}
-          </p>
-        </div>
-
-        <div className="grid gap-5 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="text-base">{t('admin.cp.channels', 'Channels')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {channelRows.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  {t(
-                    'admin.cp.noChannels',
-                    'No channel points at a pack yet. Open a pack and promote it.'
-                  )}
-                </p>
-              ) : (
-                <div>
-                  <table className="w-full text-sm">
-                    <thead className="text-muted-foreground">
-                      <tr>
-                        <th className="py-2 pe-3 text-start font-medium">
-                          {t('admin.cp.col.pack', 'Pack')}
-                        </th>
-                        <th className="py-2 pe-3 text-start font-medium">
-                          {t('admin.cp.channel', 'Channel')}
-                        </th>
-                        <th className="py-2 pe-3 text-start font-medium">
-                          {t('admin.cp.version', 'Version')}
-                        </th>
-                        <th className="py-2 pe-3 text-start font-medium">
-                          {t('admin.cp.digest', 'Digest')}
-                        </th>
-                        <th className="py-2 text-start font-medium">
-                          {t('admin.cp.updated', 'Updated')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {channelRows.map((c) => (
-                        <tr key={`${c.name}-${c.channel}`}>
-                          <td className="py-2 pe-3 font-medium">{c.name}</td>
-                          <td className="py-2 pe-3">
-                            <Badge variant={c.channel === 'stable' ? 'secondary' : 'outline'}>
-                              {c.channel}
-                            </Badge>
-                          </td>
-                          <td className="py-2 pe-3 tabular-nums">{c.version}</td>
-                          <td className="py-2 pe-3 font-mono text-xs" title={c.digest}>
-                            {shortDigest(c.digest)}
-                          </td>
-                          <td className="py-2">
-                            <RelativeTime date={c.updated_at} />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">{t('admin.cp.signingKey', 'Signing key')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              {key.data ? (
-                <>
-                  <p className="text-muted-foreground">
-                    {key.data.algorithm} · {t('admin.cp.keyId', 'key id')}{' '}
-                    <code className="text-xs">{key.data.key_id}</code>
-                  </p>
-                  <code className="block rounded bg-muted p-2 text-xs break-all select-all">
-                    {key.data.public_key}
-                  </code>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      navigator.clipboard
-                        .writeText(key.data?.public_key ?? '')
-                        .then(() => toast.success(t('admin.cp.copied', 'Public key copied.')))
-                        .catch(() => undefined)
-                    }
-                  >
-                    <Copy className="me-2 size-4" />
-                    {t('admin.cp.copyKey', 'Copy public key')}
-                  </Button>
-                </>
-              ) : (
-                <p className="text-muted-foreground">
-                  {key.error
-                    ? t('admin.cp.noKey', 'No signing key is configured.')
-                    : t('common.loading', 'Loading...')}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
         {packs.error ? (
-          <ErrorState title="content packs" error={packs.error} onRetry={refresh} />
+          <ErrorState
+            title={t('admin.cp.contentPacks', 'content packs')}
+            error={packs.error}
+            onRetry={refresh}
+          />
         ) : (
           <DataTable
             columns={columns}
@@ -282,7 +248,7 @@ export default function ContentPacksPage() {
             showSearch={false}
             showColumnToggle={false}
             showSelectionCount={false}
-            mobileCards
+            mobileRow={(p) => <PackPhoneCard pack={p} />}
             onRowClick={(p) => setOpenId(p.id ?? null)}
             emptyMessage={t('admin.cp.empty', 'No content pack yet')}
             manualPagination
@@ -301,14 +267,14 @@ export default function ContentPacksPage() {
                   value={list.filters.kind || ANY}
                   onValueChange={(v) => list.setFilter('kind', v === ANY ? '' : v)}
                 >
-                  <SelectTrigger className="sm:w-48" aria-label={t('admin.cp.kind', 'Kind')}>
+                  <SelectTrigger className="sm:w-48" aria-label={t('admin.cp.kind', 'Type')}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={ANY}>{t('admin.cp.anyKind', 'Any kind')}</SelectItem>
                     {KNOWN_KINDS.map((k) => (
                       <SelectItem key={k} value={k}>
-                        {k}
+                        {kindLabel(k)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -334,6 +300,94 @@ export default function ContentPacksPage() {
           />
         )}
 
+        {/* research/191 C-1: no sensor downloads packs yet; said under the list
+            (every row also reads "Stored, not delivered"), not above it. */}
+        <p
+          data-testid="content-packs-not-delivered"
+          className="flex gap-2 text-body text-muted-foreground"
+        >
+          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>
+            {t(
+              'admin.cp.notDelivered',
+              'Not active yet: sensors do not download content packs. A stored pack is not used by any scan, and revoking one stops nothing. Custom templates still travel inside each scan task.'
+            )}
+          </span>
+        </p>
+
+        {/* Which pack each channel points at: a short list in the shared table,
+            its name and count in its toolbar row beside Display. */}
+        <DataTable
+          columns={channelColumns}
+          data={channelRows}
+          getRowId={(c) => `${c.name}-${c.channel}`}
+          caption={t('admin.cp.channels', 'Channels')}
+          toolbarTitle={
+            <ListToolbarTitle
+              title={t('admin.cp.channels', 'Channels')}
+              count={
+                <ListCount
+                  total={channelRows.length}
+                  loading={channels.isLoading && !channels.data}
+                  label={t(
+                    'admin.cp.channelsTotal',
+                    '{count, plural, one {# channel} other {# channels}}',
+                    { count: channelRows.length }
+                  )}
+                />
+              }
+            />
+          }
+          isLoading={channels.isLoading}
+          showSearch={false}
+          showColumnToggle={false}
+          showSelectionCount={false}
+          showPagination={false}
+          mobileRow={(c) => <ChannelPhoneCard channel={c} />}
+          emptyMessage={t(
+            'admin.cp.noChannels',
+            'No channel points at a pack yet. Open a pack and promote it.'
+          )}
+        />
+
+        <section aria-labelledby="content-signing-key" className="flex flex-col gap-2">
+          <h2 id="content-signing-key" className="text-body font-medium">
+            {t('admin.cp.signingKey', 'Signing key')}
+          </h2>
+          {key.data ? (
+            <>
+              <p className="text-body text-muted-foreground">
+                {key.data.algorithm}, {t('admin.cp.keyId', 'key id')}{' '}
+                <code className="text-code break-all">{key.data.key_id}</code>
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                <code className="block min-w-0 flex-1 rounded bg-muted p-2 text-code break-all select-all">
+                  {key.data.public_key}
+                </code>
+                <Button
+                  variant="outline"
+                  className="self-start"
+                  onClick={() =>
+                    navigator.clipboard
+                      .writeText(key.data?.public_key ?? '')
+                      .then(() => toast.success(t('admin.cp.copied', 'Public key copied.')))
+                      .catch(() => undefined)
+                  }
+                >
+                  <Copy aria-hidden />
+                  {t('admin.cp.copyKey', 'Copy public key')}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <p className="text-body text-muted-foreground">
+              {key.error
+                ? t('admin.cp.noKey', 'No signing key is configured.')
+                : t('common.loading', 'Loading...')}
+            </p>
+          )}
+        </section>
+
         <DetailSheet
           open={opened !== null}
           onOpenChange={(o) => !o && setOpenId(null)}
@@ -351,7 +405,7 @@ export default function ContentPacksPage() {
                   </Badge>
                 ))
               }
-              meta={opened ? [opened.kind, `tier ${opened.tier}`] : []}
+              meta={opened ? [kindLabel(opened.kind), tierLabel(opened.tier)] : []}
               onClose={() => setOpenId(null)}
             />
           }
@@ -395,7 +449,7 @@ export default function ContentPacksPage() {
                 </DetailField>
                 <DetailField label={t('admin.cp.source', 'Source')} full>
                   {opened.source === 'https' ? (
-                    <span className="text-xs break-all">
+                    <span className="text-xs break-words">
                       {opened.source_ref} <code>{opened.source_digest}</code>
                     </span>
                   ) : (
@@ -418,6 +472,10 @@ export default function ContentPacksPage() {
 
         {revoking && (
           <TypedAdminConfirmDialog
+            reasonPlaceholder={t(
+              'admin.cp.reasonRevoke',
+              'Its templates flood findings, advisory 2231'
+            )}
             typeToConfirm={nameToType(revoking.name, revoking.version ?? revoking.id ?? 'revoke')}
             open
             onOpenChange={(o) => !o && setRevoking(null)}
@@ -446,6 +504,10 @@ export default function ContentPacksPage() {
         )}
         {moving && (
           <AdminConfirmDialog
+            reasonPlaceholder={t(
+              'admin.cp.reasonMove',
+              'A week on the test channel without problems, change 2231'
+            )}
             open
             onOpenChange={(o) => !o && setMoving(null)}
             title={t('admin.cp.moveTitle', 'Point {channel} at {name} {version}', {
@@ -473,5 +535,86 @@ export default function ContentPacksPage() {
         )}
       </PageStack>
     </Main>
+  )
+}
+
+/**
+ * A content pack on a phone; a tap opens its sheet, which the chevron says:
+ *
+ *   template-facts-core  2026.11.1                              >
+ *   nuclei-templates   core   Stored, not delivered
+ */
+function PackPhoneCard({ pack }: { pack: PlatformContentPackResponse }) {
+  const { t } = useTranslation()
+  const { kindLabel, tierLabel } = usePackLabels()
+  const revoked = pack.status === 'revoked'
+  return (
+    <div data-slot="pack-card" className="flex w-full min-w-0 items-center gap-2 px-3 py-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="min-w-0 truncate font-medium" title={pack.name}>
+            {pack.name}
+          </span>
+          <span className="shrink-0 text-cap text-muted-foreground tabular-nums">
+            {pack.version}
+          </span>
+        </div>
+        <MetaLine
+          className="items-center"
+          items={[
+            pack.kind ? <span key="kind">{kindLabel(pack.kind)}</span> : null,
+            pack.tier ? (
+              <Badge key="tier" variant="outline">
+                {tierLabel(pack.tier)}
+              </Badge>
+            ) : null,
+            <Badge key="status" variant={revoked ? 'destructive' : 'secondary'}>
+              {revoked
+                ? t('admin.cp.revoked', 'Revoked')
+                : t('admin.cp.storedNotDelivered', 'Stored, not delivered')}
+            </Badge>,
+          ]}
+        />
+      </div>
+      <ChevronRight
+        data-slot="person-card-chevron"
+        aria-hidden
+        className="size-4 shrink-0 text-muted-foreground rtl:rotate-180"
+      />
+    </div>
+  )
+}
+
+/**
+ * A channel on a phone: the pack and the channel it is on, then the version
+ * and when the channel last moved.
+ *
+ *   template-facts-core                                     stable
+ *   2026.11.1   2 days ago
+ */
+function ChannelPhoneCard({ channel }: { channel: ContentChannelResponse }) {
+  // The channel in words, as in the table ("Ổn định", never the raw "stable").
+  const { channelLabel } = usePackLabels()
+  return (
+    <div data-slot="channel-card" className="flex w-full min-w-0 flex-col gap-1 px-3 py-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0 flex-1 truncate font-medium" title={channel.name}>
+          {channel.name}
+        </span>
+        <Badge variant={channel.channel === 'stable' ? 'secondary' : 'outline'}>
+          {channelLabel(channel.channel)}
+        </Badge>
+      </div>
+      <MetaLine
+        items={[
+          channel.version ? (
+            <span key="version" className="tabular-nums">
+              {channel.version}
+            </span>
+          ) : null,
+          channel.updated_at ? <RelativeTime key="updated" date={channel.updated_at} /> : null,
+        ]}
+      />
+    </div>
   )
 }

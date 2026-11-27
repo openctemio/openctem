@@ -1,0 +1,7 @@
+# Directories (relative to web/) whose added lines may not use raw Tailwind
+# text sizes (text-xs, text-sm, ...): only the type roles (text-cap, text-dense,
+# text-body, ...). Read by scripts/check-design-tokens.sh. The list only grows:
+# a page wave adds its directories when it moves them to the roles.
+src/components/ui/
+src/components/layout/
+console/src/features/admin-console/components/

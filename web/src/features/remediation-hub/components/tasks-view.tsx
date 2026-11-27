@@ -36,9 +36,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { DataTable, FilterSelect, ListToolbar, PageStack, ViewSwitcher } from '@/features/shared'
+import {
+  DataTable,
+  FilterSelect,
+  ListToolbar,
+  PageStack,
+  ToolbarAction,
+  ViewSwitcher,
+} from '@/features/shared'
 import { EmptyState } from '@/features/shared/components/empty-state'
 import { ErrorState } from '@/features/shared/components/error-state'
+import { MetaLine } from '@/features/shared/components/text-layout'
 import { cn } from '@/lib/utils'
 import type { RemediationTask, TaskState } from '../api/types'
 import {
@@ -50,13 +58,18 @@ import {
 import { useOwnerNames } from '../api/use-owner-names'
 import { CreateTaskFromQueryDialog } from './create-task-from-query-dialog'
 import { apiMessage } from './suggestions-inbox'
-import { DeadlinePill, TaskProgress, TaskStatePill } from './task-bits'
+import { DeadlinePill, TaskProgressCell, TaskStatePill } from './task-bits'
+import { TaskSheet } from './task-sheet'
 import { VIEW_FILTERS, type TaskView } from './task-views'
 import { useSearchQuery } from '@/hooks/use-search-query'
+import { opensSheet, useSheetListNav, useSheetParam } from '@/hooks/use-sheet-param'
 
 export type { TaskView }
 
 const BOARD_COLUMNS: TaskState[] = ['open', 'in_progress', 'verifying', 'on_hold', 'done']
+
+/** Table frame widths (px) under which a column folds away; the name and the state stay. */
+export const TASK_HIDE_BELOW = { owner: 560, risk: 720, progress: 860 } as const
 
 export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) {
   const { t } = useTranslation()
@@ -91,6 +104,11 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
   }
   const { data, error, isLoading, mutate } = useTasks(filters)
   const tasks = useMemo(() => data?.data ?? [], [data])
+  // A row opens the task's quick view (?task=<id>); the full page stays a link.
+  const sheet = useSheetParam('task')
+  const taskIds = useMemo(() => tasks.map((x) => x.id), [tasks])
+  useSheetListNav({ ids: taskIds, currentId: sheet.id, onMove: sheet.move })
+  const openSheet = sheet.open
 
   const setParam = useCallback(
     (key: string, value: string) => {
@@ -106,70 +124,88 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
     (task: RemediationTask) =>
       [owners.user(task.assignee_user_id), owners.group(task.assignee_group_id)]
         .filter(Boolean)
-        .join(' · ') || t('remediationHub.owner.unassigned'),
+        .join(', ') || t('remediationHub.owner.unassigned'),
     [owners, t]
   )
 
+  // Board order: the task, who owns it, where it stands, how far it got, the
+  // risk it removes, then the deadline. Widths come from the column kinds.
   const columns = useMemo<ColumnDef<RemediationTask>[]>(
     () => [
       {
         accessorKey: 'title',
         header: t('remediationHub.tasks.columns.task'),
+        meta: { kind: 'name', label: t('remediationHub.tasks.columns.task') },
         cell: ({ row }) => (
           <div className="min-w-0">
             <Link
               href={`/remediation/tasks/${row.original.id}`}
-              className="font-medium hover:underline"
+              onClick={(e) => opensSheet(e, () => openSheet(row.original.id))}
+              className="block truncate font-medium hover:underline"
+              title={row.original.title}
             >
               {row.original.title}
             </Link>
-            <div className="text-muted-foreground truncate text-xs">
-              {row.original.action_title}
-            </div>
+            {row.original.action_title && row.original.action_title !== row.original.title && (
+              <div className="text-muted-foreground truncate text-xs">
+                {row.original.action_title}
+              </div>
+            )}
           </div>
+        ),
+      },
+      {
+        id: 'owner',
+        header: t('remediationHub.tasks.columns.owner'),
+        meta: {
+          kind: 'owner',
+          label: t('remediationHub.tasks.columns.owner'),
+          hideBelow: TASK_HIDE_BELOW.owner,
+        },
+        cell: ({ row }) => (
+          <span className="block truncate text-sm" title={ownerOf(row.original)}>
+            {ownerOf(row.original)}
+          </span>
         ),
       },
       {
         accessorKey: 'state',
         header: t('remediationHub.tasks.columns.state'),
+        meta: { kind: 'status', label: t('remediationHub.tasks.columns.state') },
         cell: ({ row }) => <TaskStatePill state={row.original.state} />,
-      },
-      {
-        id: 'owner',
-        header: t('remediationHub.tasks.columns.owner'),
-        cell: ({ row }) => <span className="text-sm">{ownerOf(row.original)}</span>,
       },
       {
         id: 'progress',
         header: t('remediationHub.tasks.columns.progress'),
+        meta: {
+          kind: 'text',
+          label: t('remediationHub.tasks.columns.progress'),
+          width: 160,
+          hideBelow: TASK_HIDE_BELOW.progress,
+        },
+        cell: ({ row }) => <TaskProgressCell task={row.original} />,
+      },
+      {
+        id: 'risk',
+        header: t('remediationHub.tasks.columns.risk'),
+        meta: {
+          kind: 'number',
+          label: t('remediationHub.tasks.columns.risk'),
+          headerHint: t('remediationHub.risk.explain'),
+          hideBelow: TASK_HIDE_BELOW.risk,
+        },
         cell: ({ row }) => (
-          <div className="w-32">
-            <TaskProgress task={row.original} />
-            <div className="text-muted-foreground mt-1 text-xs">
-              {t('remediationHub.tasks.verifiedOf', undefined, {
-                verified: row.original.counts.verified,
-                total: row.original.counts.total,
-              })}
-            </div>
-          </div>
+          <span className="text-sm tabular-nums">{row.original.counts.risk_points}</span>
         ),
       },
       {
         accessorKey: 'deadline',
         header: t('remediationHub.tasks.columns.deadline'),
+        meta: { kind: 'due', label: t('remediationHub.tasks.columns.deadline') },
         cell: ({ row }) => <DeadlinePill task={row.original} />,
       },
-      {
-        id: 'risk',
-        header: t('remediationHub.tasks.columns.risk'),
-        cell: ({ row }) => (
-          <span className="font-mono text-sm" title={t('remediationHub.risk.explain')}>
-            {row.original.counts.risk_points}
-          </span>
-        ),
-      },
     ],
-    [ownerOf, t]
+    [openSheet, ownerOf, t]
   )
 
   const sensors = useSensors(
@@ -213,118 +249,168 @@ export function TasksView({ defaultView = 'open' }: { defaultView?: TaskView }) 
 
   const viewLabels: TaskView[] = ['open', 'mine', 'verifying', 'on_hold', 'closed', 'all']
 
+  const filtered = searchTerm !== '' || view !== defaultView
+  const clearFilters = useCallback(() => {
+    setSearch('')
+    setParam('view', defaultView)
+  }, [defaultView, setParam])
+
+  // One toolbar for both layouts: which tasks (a filter token, not a second
+  // row of tabs under the section tabs) and the search; then sort, the
+  // table/board switch and the create action at the end.
+  const toolbarSearch = {
+    value: search,
+    onChange: (v: string) => {
+      setSearch(v)
+      setPagination((p) => ({ ...p, pageIndex: 0 }))
+    },
+    placeholder: t('remediationHub.tasks.search'),
+  }
+  // The order is a token of the start group: on a phone it moves into the
+  // Filters sheet with the Show filter, so the list comes first.
+  const toolbarStart = (
+    <>
+      <FilterSelect<TaskView>
+        label={t('remediationHub.tasks.showLabel', 'Show')}
+        value={view}
+        clearable={false}
+        foldLabel
+        options={viewLabels.map((v) => ({
+          value: v,
+          label: t(`remediationHub.tasks.view.${v}`),
+        }))}
+        onChange={(v) => setParam('view', v || defaultView)}
+      />
+      <Select value={sort} onValueChange={(v) => setSort(v as TaskListFilters['sort'])}>
+        <SelectTrigger className="w-40" aria-label={t('remediationHub.tasks.sort')}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {(['deadline', 'risk', 'updated', 'created'] as const).map((s) => (
+            <SelectItem key={s} value={s}>
+              {t(`remediationHub.tasks.sortBy.${s}`)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </>
+  )
+  const toolbarEnd = (
+    <>
+      <ViewSwitcher
+        options={[
+          { value: 'table', label: t('remediationHub.tasks.table'), icon: Table2 },
+          { value: 'board', label: t('remediationHub.tasks.board'), icon: LayoutGrid },
+        ]}
+        value={layout === 'board' ? 'board' : 'table'}
+        onChange={(v) => setParam('layout', v)}
+      />
+      {canQueryCreate && (
+        <ToolbarAction
+          icon={SquareCode}
+          label={t('remediationQuery.create.entry')}
+          onClick={() => setQueryOpen(true)}
+        />
+      )}
+    </>
+  )
+  const nothingYet = (
+    <EmptyState
+      icon={ClipboardList}
+      title={t('remediationHub.tasks.emptyTitle')}
+      description={t('remediationHub.tasks.emptyDescription')}
+      action={
+        <Button asChild variant="outline">
+          <Link href="/remediation/suggestions">{t('remediationHub.tasks.reviewSuggestions')}</Link>
+        </Button>
+      }
+      card
+    />
+  )
+
   return (
     <PageStack>
-      {/* One toolbar row: which tasks (a filter token, not a second row of
-          tabs under the section tabs), search; then sort, the table/board
-          view switch and the create action at the end. */}
-      <ListToolbar
-        search={{
-          value: search,
-          onChange: setSearch,
-          placeholder: t('remediationHub.tasks.search'),
-        }}
-        start={
-          <>
-            <FilterSelect<TaskView>
-              label={t('remediationHub.tasks.showLabel', 'Show')}
-              value={view}
-              clearable={false}
-              options={viewLabels.map((v) => ({
-                value: v,
-                label: t(`remediationHub.tasks.view.${v}`),
-              }))}
-              onChange={(v) => setParam('view', v || 'open')}
-            />
-          </>
-        }
-        end={
-          <>
-            <Select value={sort} onValueChange={(v) => setSort(v as TaskListFilters['sort'])}>
-              <SelectTrigger className="h-9 w-40" aria-label={t('remediationHub.tasks.sort')}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(['deadline', 'risk', 'updated', 'created'] as const).map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {t(`remediationHub.tasks.sortBy.${s}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <ViewSwitcher
-              options={[
-                { value: 'table', label: t('remediationHub.tasks.table'), icon: Table2 },
-                { value: 'board', label: t('remediationHub.tasks.board'), icon: LayoutGrid },
-              ]}
-              value={layout === 'board' ? 'board' : 'table'}
-              onChange={(v) => setParam('layout', v)}
-            />
-            {canQueryCreate && (
-              <Button size="sm" className="h-9" onClick={() => setQueryOpen(true)}>
-                <SquareCode className="size-4" aria-hidden />
-                {t('remediationQuery.create.entry')}
-              </Button>
-            )}
-          </>
-        }
-      />
       {canQueryCreate && <CreateTaskFromQueryDialog open={queryOpen} onOpenChange={setQueryOpen} />}
 
-      {error ? (
-        <ErrorState
-          title={t('remediationHub.tasks.loadError')}
-          error={error}
-          onRetry={() => void mutate()}
-        />
-      ) : !isLoading && tasks.length === 0 ? (
-        <EmptyState
-          icon={ClipboardList}
-          title={t('remediationHub.tasks.emptyTitle')}
-          description={t('remediationHub.tasks.emptyDescription')}
-          action={
-            <Button asChild variant="outline">
-              <Link href="/remediation/suggestions">
-                {t('remediationHub.tasks.reviewSuggestions')}
-              </Link>
-            </Button>
-          }
-          card
-        />
-      ) : layout === 'table' ? (
+      {layout === 'table' ? (
         <DataTable
           columns={columns}
           data={tasks}
-          showSearch={false}
+          search={toolbarSearch}
+          toolbarStart={toolbarStart}
+          toolbarEnd={toolbarEnd}
+          isLoading={isLoading}
+          error={error && !data ? error : undefined}
+          errorTitle={t('remediationHub.tasks.loadError')}
+          onRetry={() => void mutate()}
+          isFiltered={filtered}
+          onClearFilters={clearFilters}
+          emptyState={{
+            nothingYet,
+            noMatch: {
+              title: t('remediationHub.tasks.noMatchTitle'),
+              hint: t('remediationHub.tasks.noMatchHint'),
+            },
+          }}
           manualPagination
           rowCount={data?.total ?? 0}
           pageCount={data ? Math.max(1, Math.ceil(data.total / pagination.pageSize)) : 1}
           pagination={pagination}
           onPaginationChange={setPagination}
           getRowId={(r) => r.id}
-          onRowClick={(r) => router.push(`/remediation/tasks/${r.id}`)}
-          emptyMessage={t('remediationHub.tasks.emptyTitle')}
-          mobileRow={(r) => <TaskCard task={r} owner={ownerOf(r)} />}
+          onRowClick={(r) => sheet.open(r.id)}
+          paginationNoun={t('remediationHub.tasks.noun')}
+          mobileRow={(r) => (
+            <TaskPhoneCard task={r} owner={ownerOf(r)} onOpen={() => openSheet(r.id)} />
+          )}
         />
       ) : (
-        <DndContext sensors={sensors} onDragEnd={(e) => void onDragEnd(e)}>
-          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5" data-testid="task-board">
-            {BOARD_COLUMNS.map((col) => (
-              <BoardColumn
-                key={col}
-                state={col}
-                tasks={tasks.filter((x) =>
-                  col === 'done'
-                    ? x.state === 'done' || x.state === 'closed_unverified'
-                    : x.state === col
-                )}
-                ownerOf={ownerOf}
-                canDrag={canWrite}
-              />
-            ))}
-          </div>
-        </DndContext>
+        <>
+          <ListToolbar search={toolbarSearch} start={toolbarStart} end={toolbarEnd} />
+          {error && !data ? (
+            <ErrorState
+              title={t('remediationHub.tasks.loadError')}
+              error={error}
+              onRetry={() => void mutate()}
+            />
+          ) : !isLoading && tasks.length === 0 && !filtered ? (
+            nothingYet
+          ) : (
+            <DndContext sensors={sensors} onDragEnd={(e) => void onDragEnd(e)}>
+              <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5" data-testid="task-board">
+                {BOARD_COLUMNS.map((col) => (
+                  <BoardColumn
+                    key={col}
+                    state={col}
+                    tasks={tasks.filter((x) =>
+                      col === 'done'
+                        ? x.state === 'done' || x.state === 'closed_unverified'
+                        : x.state === col
+                    )}
+                    ownerOf={ownerOf}
+                    canDrag={canWrite}
+                  />
+                ))}
+              </div>
+            </DndContext>
+          )}
+        </>
       )}
+      <TaskSheet
+        taskId={sheet.id}
+        onClose={sheet.close}
+        position={
+          sheet.id && taskIds.includes(sheet.id)
+            ? {
+                index: taskIds.indexOf(sheet.id) + 1 + pagination.pageIndex * pagination.pageSize,
+                total: data?.total ?? tasks.length,
+                prevId: taskIds[taskIds.indexOf(sheet.id) - 1],
+                nextId: taskIds[taskIds.indexOf(sheet.id) + 1],
+                onGo: sheet.move,
+              }
+            : undefined
+        }
+      />
       <ConfirmDialog
         open={pendingHold !== null}
         onOpenChange={(open) => {
@@ -431,7 +517,6 @@ export function TaskCard({
   owner: string
   className?: string
 }) {
-  const { t } = useTranslation()
   return (
     <div className={cn('bg-card rounded-md border p-3 text-sm', className)}>
       <Link href={`/remediation/tasks/${task.id}`} className="font-medium hover:underline">
@@ -442,13 +527,57 @@ export function TaskCard({
         <TaskStatePill state={task.state} />
         <DeadlinePill task={task} />
       </div>
-      <TaskProgress task={task} className="mt-2" />
-      <div className="text-muted-foreground mt-1 text-xs">
-        {t('remediationHub.tasks.verifiedOf', undefined, {
-          verified: task.counts.verified,
-          total: task.counts.total,
-        })}
+      <TaskProgressCell task={task} className="mt-2" />
+    </div>
+  )
+}
+
+/**
+ * A task on a phone (board M-Remediation):
+ *   Upgrade OpenSSH on 14 hosts ....................... In progress
+ *   Platform team
+ *   14 of 31 findings resolved   2 d overdue
+ * A tap opens the task.
+ */
+export function TaskPhoneCard({
+  task,
+  owner,
+  onOpen,
+}: {
+  task: RemediationTask
+  owner: string
+  /** Opens the quick view instead of the page on a plain tap. */
+  onOpen?: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div data-slot="task-card" className="flex min-w-0 flex-col gap-1 px-3 py-3">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <Link
+          href={`/remediation/tasks/${task.id}`}
+          onClick={onOpen ? (e) => opensSheet(e, onOpen) : undefined}
+          data-cut-tooltip
+          className="min-w-0 truncate font-medium hover:underline"
+          title={task.title}
+        >
+          {task.title}
+        </Link>
+        <TaskStatePill state={task.state} className="shrink-0" />
       </div>
+      <p className="text-meta truncate" title={owner}>
+        {owner}
+      </p>
+      <MetaLine
+        items={[
+          <span key="progress" className="tabular-nums">
+            {t('remediationHub.tasks.verifiedOf', undefined, {
+              verified: task.counts.verified,
+              total: task.counts.total,
+            })}
+          </span>,
+          <DeadlinePill key="deadline" task={task} />,
+        ]}
+      />
     </div>
   )
 }

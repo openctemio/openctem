@@ -298,7 +298,7 @@ describe('In scope list', () => {
     )
     expect(await screen.findByText('onboarding')).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledWith(
-      '/api/v1/scope/targets?statuses=active%2Cpending%2Cexpired%2Cinactive&page=1&per_page=20'
+      '/api/v1/scope/targets?statuses=active%2Cpending%2Cexpired%2Cinactive&page=1&per_page=20&include=status_counts'
     )
   })
 
@@ -380,7 +380,7 @@ describe('Scan approval Off: no approval wording for scope changes', () => {
     routeGets([pendingEntry], [pendingExclusion], false)
     wrap(<ScopeApprovals />)
     expect(await screen.findByTestId('approvals-left-over')).toHaveTextContent(
-      /need no approval while scan approval is not Strict/
+      /need no approval while scan approval is not required/
     )
     expect(await screen.findAllByRole('listitem')).toHaveLength(2)
   })
@@ -419,10 +419,10 @@ describe('Entry tier ceilings follow governance', () => {
 
   it('outside Strict the column says the scan picks the intensity, with a link to governance', async () => {
     show(false)
-    expect(await screen.findByText('Set per scan')).toBeInTheDocument()
-    expect(screen.queryByText('T2 intrusive')).not.toBeInTheDocument()
+    expect(await screen.findByText('Chosen per scan')).toBeInTheDocument()
+    expect(screen.queryByText('Intrusive')).not.toBeInTheDocument()
     const note = await screen.findByTestId('scope-tier-per-scan-note')
-    expect(note).toHaveTextContent('Entry ceilings apply only in Strict governance')
+    expect(note).toHaveTextContent('Entry limits apply only when scans need strict approval')
     expect(within(note).getByRole('link')).toHaveAttribute(
       'href',
       '/settings/scanning/scan-approval'
@@ -431,8 +431,8 @@ describe('Entry tier ceilings follow governance', () => {
 
   it('in Strict the entry ceiling is shown', async () => {
     show(true)
-    expect(await screen.findByText('T2 intrusive')).toBeInTheDocument()
-    expect(screen.queryByText('Set per scan')).not.toBeInTheDocument()
+    expect(await screen.findByText('Intrusive')).toBeInTheDocument()
+    expect(screen.queryByText('Chosen per scan')).not.toBeInTheDocument()
     expect(screen.queryByTestId('scope-tier-per-scan-note')).not.toBeInTheDocument()
   })
 })

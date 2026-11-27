@@ -1,0 +1,17 @@
+### Changed: the console Content catalog list follows the shared list pattern (redesign branch)
+
+- Console > Content catalog: "Publish a package" and "Import a bundle" are the page's own actions in its header (the
+  same conditions: shown to a super admin, Import disabled without trust roots, and disabled until the trust state
+  is read).
+- The package list comes first on every width, from the first frame; the trust notice and the read-only Trust card
+  follow it. While the catalog is out of date the list's title row carries an "Out of date" link down to them.
+  Nothing moves on first load (the list dropped 148 px when the trust state arrived above it; on a phone it started
+  below the first screen).
+- The package list has a title row with the type view and the count once; the search and the type select are the
+  table's own toolbar; rows are on one line (the title, then the package id) and the package stays in view while the
+  table scrolls sideways; Source steps aside on a narrow table. A failed read shows in the table with Retry while the
+  toolbar stays; an empty list says whether the catalog is empty or nothing matches, with Clear filters.
+- On a phone a package is a card with fixed slots instead of a label/value grid: its title, its package id, the
+  type chip and the source, then the latest version and the version count on one line; a tap opens its versions.
+- No API change: the same reads, 25 a page, the versions sheet and its Revoke dialog.
+- Docs: none (layout of an existing console list; what it reads and who may change it are unchanged)

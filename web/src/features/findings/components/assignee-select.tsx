@@ -2,7 +2,7 @@
 
 import { useTranslation } from '@/context/i18n-provider'
 import { useState } from 'react'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { ResponsivePopover } from '@/features/shared/components/responsive-popover'
 import {
   Command,
   CommandEmpty,
@@ -13,6 +13,7 @@ import {
   CommandSeparator,
 } from '@/components/ui/command'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ChevronDown, User, Loader2, Check, UserPlus } from 'lucide-react'
 import { useTenant } from '@/context/tenant-provider'
@@ -43,7 +44,7 @@ interface AssigneeSelectProps {
   size?: 'sm' | 'default'
   /** Button variant */
   variant?: 'outline' | 'ghost'
-  /** Show full name or truncated */
+  /** The full name (or the placeholder) at every width; otherwise the first name, and a phone shows only the icon. */
   showFullName?: boolean
   /** Custom placeholder when no assignee */
   placeholder?: string
@@ -69,6 +70,11 @@ interface AssigneeSelectProps {
    * `field`: a form field, full width, the name or placeholder always shown.
    */
   layout?: 'inline' | 'field'
+  /**
+   * Accessible name of the picker, and its sheet title on a phone. By default
+   * "Select a person".
+   */
+  title?: string
 }
 
 function getInitials(name: string): string {
@@ -94,6 +100,7 @@ export function AssigneeSelect({
   membersLoading = false,
   id,
   layout = 'inline',
+  title,
 }: AssigneeSelectProps) {
   const field = layout === 'field'
   const { t } = useTranslation()
@@ -183,22 +190,25 @@ export function AssigneeSelect({
   }
 
   return (
-    <Popover
+    // An anchored popover from md up; a bottom sheet on a phone, where the
+    // search field does not take focus (no keyboard) until it is tapped.
+    <ResponsivePopover
       open={open}
       onOpenChange={(isOpen) => {
         setOpen(isOpen)
         if (!isOpen) setSearch('')
       }}
-    >
-      <PopoverTrigger asChild>
+      title={title ?? t('findings.assigneeSelect.title', 'Select a person')}
+      className="w-56"
+      trigger={
         <Button
           id={id}
           variant={variant}
           size={size}
           className={
             field
-              ? 'h-9 w-full justify-start gap-2 font-normal'
-              : `${size === 'sm' ? 'h-7 px-1.5 gap-1 text-xs' : 'h-9 sm:h-8 gap-2'} min-h-[32px]`
+              ? 'w-full justify-start gap-2 font-normal'
+              : cn(size === 'sm' ? 'gap-1' : 'gap-2', showFullName && 'max-w-full')
           }
           disabled={disabled || loading}
         >
@@ -207,11 +217,24 @@ export function AssigneeSelect({
             // Show assignee info - if name is empty (not enriched), show "Assigned" with user icon
             value.name ? (
               <>
-                <Avatar className="h-4 w-4">
-                  <AvatarFallback className="text-[8px]">{getInitials(value.name)}</AvatarFallback>
+                <Avatar className="h-5 w-5">
+                  <AvatarFallback className="text-xs">{getInitials(value.name)}</AvatarFallback>
                 </Avatar>
+                {/* A person's name: it may end in an ellipsis, the whole name
+                    held by its title. */}
                 <span
-                  className={field ? 'min-w-0 flex-1 truncate text-start' : 'max-w-[80px] truncate'}
+                  data-cut-tooltip
+                  title={value.name}
+                  // The whole name where it is shown in full (the finding's
+                  // properties): its row gives it a line of its own when it
+                  // does not fit beside the label; the first name is capped.
+                  className={
+                    field
+                      ? 'min-w-0 flex-1 truncate text-start'
+                      : showFullName
+                        ? 'min-w-0 truncate'
+                        : 'max-w-[80px] truncate'
+                  }
                 >
                   {showFullName || field ? value.name : value.name.split(' ')[0]}
                 </span>
@@ -220,7 +243,7 @@ export function AssigneeSelect({
               // Assigned but name not loaded yet - show placeholder
               <>
                 <User className="h-3 w-3" />
-                <span className="text-muted-foreground hidden sm:inline">
+                <span className={cn('text-muted-foreground', !showFullName && 'hidden sm:inline')}>
                   {t('findings.assigneeSelect.assigned', 'Assigned')}
                 </span>
               </>
@@ -232,7 +255,9 @@ export function AssigneeSelect({
                 className={
                   field
                     ? 'min-w-0 flex-1 truncate text-start text-muted-foreground'
-                    : 'sr-only sm:not-sr-only'
+                    : showFullName
+                      ? undefined
+                      : 'sr-only sm:not-sr-only'
                 }
               >
                 {placeholder ?? t('findings.assigneeSelect.assign', 'Assign')}
@@ -241,98 +266,97 @@ export function AssigneeSelect({
           ) : null}
           {!disabled && <ChevronDown className="h-3 w-3" />}
         </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-56 p-0" align="start">
-        <Command shouldFilter={false}>
-          <CommandInput
-            placeholder={t('findings.assigneeSelect.search', 'Search members...')}
-            value={search}
-            onValueChange={setSearch}
-          />
-          <CommandList>
-            {isLoadingMembers && (
-              <div className="flex items-center justify-center py-4">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              </div>
-            )}
-            {!isLoadingMembers && displayMembers.length === 0 && (
-              <CommandEmpty>
-                {t('findings.assigneeSelect.noMembers', 'No members found.')}
-              </CommandEmpty>
-            )}
-            {!isLoadingMembers && (
-              <>
-                {value && !search && (
-                  <>
-                    <CommandGroup>
-                      <CommandItem onSelect={handleUnassign} className="text-muted-foreground">
-                        <User className="me-2 h-4 w-4" />
-                        {t('findings.assigneeSelect.unassign', 'Unassign')}
-                      </CommandItem>
-                    </CommandGroup>
-                    <CommandSeparator />
-                  </>
-                )}
-                {displayMembers.length > 0 && (
-                  <CommandGroup
-                    heading={
-                      hasMoreMembers
-                        ? t(
-                            'findings.assigneeSelect.teamMembersTotal',
-                            'Team Members ({total} total)',
-                            {
-                              total: totalMembers,
-                            }
-                          )
-                        : t('findings.assigneeSelect.teamMembers', 'Team Members')
-                    }
-                  >
-                    {displayMembers.map((member) => (
-                      <CommandItem
-                        key={member.user_id}
-                        value={member.user_id}
-                        onSelect={() => handleSelect(member)}
-                        className="flex items-center gap-2"
-                      >
-                        <Avatar className="h-5 w-5 shrink-0">
-                          <AvatarFallback className="text-[10px]">
-                            {getInitials(member.name || 'U')}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="truncate">
-                              {member.name || t('findings.assigneeSelect.unknown', 'Unknown')}
+      }
+    >
+      <Command shouldFilter={false}>
+        <CommandInput
+          placeholder={t('findings.assigneeSelect.search', 'Search members...')}
+          value={search}
+          onValueChange={setSearch}
+        />
+        <CommandList>
+          {isLoadingMembers && (
+            <div className="flex items-center justify-center py-4">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+          )}
+          {!isLoadingMembers && displayMembers.length === 0 && (
+            <CommandEmpty>
+              {t('findings.assigneeSelect.noMembers', 'No members found.')}
+            </CommandEmpty>
+          )}
+          {!isLoadingMembers && (
+            <>
+              {value && !search && (
+                <>
+                  <CommandGroup>
+                    <CommandItem onSelect={handleUnassign} className="text-muted-foreground">
+                      <User className="me-2 h-4 w-4" />
+                      {t('findings.assigneeSelect.unassign', 'Unassign')}
+                    </CommandItem>
+                  </CommandGroup>
+                  <CommandSeparator />
+                </>
+              )}
+              {displayMembers.length > 0 && (
+                <CommandGroup
+                  heading={
+                    hasMoreMembers
+                      ? t(
+                          'findings.assigneeSelect.teamMembersTotal',
+                          'Team Members ({total} total)',
+                          {
+                            total: totalMembers,
+                          }
+                        )
+                      : t('findings.assigneeSelect.teamMembers', 'Team Members')
+                  }
+                >
+                  {displayMembers.map((member) => (
+                    <CommandItem
+                      key={member.user_id}
+                      value={member.user_id}
+                      onSelect={() => handleSelect(member)}
+                      className="flex items-center gap-2"
+                    >
+                      <Avatar className="h-5 w-5 shrink-0">
+                        <AvatarFallback className="text-cap">
+                          {getInitials(member.name || 'U')}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate">
+                            {member.name || t('findings.assigneeSelect.unknown', 'Unknown')}
+                          </span>
+                          {member.role && (
+                            <span className="text-cap text-muted-foreground bg-muted px-1 py-0.5 rounded capitalize shrink-0">
+                              {member.role}
                             </span>
-                            {member.role && (
-                              <span className="text-[10px] text-muted-foreground bg-muted px-1 py-0.5 rounded capitalize shrink-0">
-                                {member.role}
-                              </span>
-                            )}
-                          </div>
-                          {member.email && (
-                            <div className="text-xs text-muted-foreground truncate">
-                              {member.email}
-                            </div>
                           )}
                         </div>
-                        {value?.id === member.user_id && (
-                          <Check className="h-4 w-4 text-primary shrink-0" />
+                        {member.email && (
+                          <div className="text-xs text-muted-foreground truncate">
+                            {member.email}
+                          </div>
                         )}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                )}
-                {hasMoreMembers && (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground text-center">
-                    {t('findings.assigneeSelect.typeToSearch', 'Type to search for more members')}
-                  </div>
-                )}
-              </>
-            )}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+                      </div>
+                      {value?.id === member.user_id && (
+                        <Check className="h-4 w-4 text-primary shrink-0" />
+                      )}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+              {hasMoreMembers && (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground text-center">
+                  {t('findings.assigneeSelect.typeToSearch', 'Type to search for more members')}
+                </div>
+              )}
+            </>
+          )}
+        </CommandList>
+      </Command>
+    </ResponsivePopover>
   )
 }

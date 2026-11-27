@@ -207,7 +207,8 @@ func (p *Planner) sendImmediate(ctx context.Context, pol *policy, a *threatalert
 	}
 	p.notifyAdmins(ctx, a.TenantID, notificationdom.TypeEmergingThreat, notificationdom.SeverityCritical, title,
 		"Why now: "+whyNow(a)+". Affects you: "+a.HostCounts().Sentence()+".",
-		alertPath(a.ID))
+		alertPath(a.ID), notificationdom.Msg("threat.urgent", "title", a.Title,
+			"why", whyMessage(a), "hosts", hostsMessage(a.HostCounts())))
 }
 
 // sendSummary sends one message for several urgent alerts: the hourly
@@ -215,15 +216,22 @@ func (p *Planner) sendImmediate(ctx context.Context, pol *policy, a *threatalert
 func (p *Planner) sendSummary(ctx context.Context, pol *policy, tenantID shared.ID, alerts []*threatalert.Alert, quiet bool) {
 	_ = pol
 	title := fmt.Sprintf("[Urgent] %d more emerging threats affect your hosts", len(alerts))
+	code := "threat.summary_overflow"
 	if quiet {
 		title = fmt.Sprintf("[Urgent] %d emerging threats held during quiet hours", len(alerts))
+		code = "threat.summary_quiet"
 	}
 	lines := make([]string, 0, 10)
+	items := make([]*notificationdom.Message, 0, 10)
+	more := 0
 	for i, a := range alerts {
 		if i == 10 {
 			lines = append(lines, fmt.Sprintf("and %d more", len(alerts)-10))
+			more = len(alerts) - 10
 			break
 		}
+		items = append(items, notificationdom.Msg("threat.item", "vuln", threatalert.PlainText(a.VulnID, 64),
+			"score", a.ETS, "hosts", hostsMessage(a.HostCounts())))
 		lines = append(lines, fmt.Sprintf("%s (score %d, %s)", threatalert.PlainText(a.VulnID, 64), a.ETS, a.HostCounts().Sentence()))
 	}
 	body := strings.Join(lines, "\n")
@@ -237,10 +245,11 @@ func (p *Planner) sendSummary(ctx context.Context, pol *policy, tenantID shared.
 			p.logger.Warn("emerging threat summary not enqueued", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
 		}
 	}
-	p.notifyAdmins(ctx, tenantID, notificationdom.TypeEmergingThreat, notificationdom.SeverityCritical, title, body, url)
+	p.notifyAdmins(ctx, tenantID, notificationdom.TypeEmergingThreat, notificationdom.SeverityCritical, title, body, url,
+		notificationdom.Lines(code, items, "count", len(alerts), "more", more))
 }
 
-func (p *Planner) notifyAdmins(ctx context.Context, tenantID shared.ID, kind, severity, title, body, url string) {
+func (p *Planner) notifyAdmins(ctx context.Context, tenantID shared.ID, kind, severity, title, body, url string, msg *notificationdom.Message) {
 	if p.inApp == nil || p.admins == nil {
 		return
 	}
@@ -253,7 +262,7 @@ func (p *Planner) notifyAdmins(ctx context.Context, tenantID shared.ID, kind, se
 		uid := id
 		if err := p.inApp.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-			NotificationType: kind, Severity: severity, Title: title, Body: body, ResourceType: "emerging_threat", URL: url,
+			NotificationType: kind, Severity: severity, Title: title, Body: body, Message: msg, ResourceType: "emerging_threat", URL: url,
 		}); err != nil {
 			p.logger.Warn("emerging threat: notify admin", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
 		}
@@ -317,7 +326,8 @@ func (p *Planner) digest(ctx context.Context, rs *runState, tenantID shared.ID) 
 				p.logger.Warn("emerging threat digest not enqueued", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
 			}
 		}
-		p.notifyAdmins(ctx, tenantID, notificationdom.TypeEmergingThreatDigest, notificationdom.SeverityLow, title, body, alertsPath)
+		p.notifyAdmins(ctx, tenantID, notificationdom.TypeEmergingThreatDigest, notificationdom.SeverityLow, title, body, alertsPath,
+			digestMessage(d, baseline))
 		p.mailDigests(ctx, tenantID, local, since, baseline)
 	}
 	if err := p.store.ClearDigest(ctx, tenantID); err != nil {
@@ -403,4 +413,61 @@ func (p *Planner) digestMail(tenantID shared.ID, d threatalert.Digest, baseline 
 	}
 	fmt.Fprintf(&b, `<p>Open the list: <a href="%s">%s</a> (sign-in required). To stop this e-mail, set the e-mail digest to none or mute "Emerging threats daily digest" in your notification settings.</p>`, link, link)
 	return b.String()
+}
+
+// hostsMessage is the reach of an alert as counts: the web words the sentence
+// (a host that serves several ports is one) in the reader's language.
+func hostsMessage(c threatalert.HostCounts) *notificationdom.Message {
+	if c.Total() == 0 {
+		return notificationdom.Msg("threat.hosts_none")
+	}
+	return notificationdom.Msg("threat.hosts", "total", c.Total(), "confirmed", c.Confirmed, "likely", c.Likely,
+		"possible", c.Possible, "internet_facing", c.InternetFacing)
+}
+
+// whyMessage is whyNow as one coded line per reason (the web joins them with
+// commas): KEV (with or without known ransomware use), the exploitation
+// evidence, a notable EPSS score and the severity; "newly published" when
+// there is none.
+func whyMessage(a *threatalert.Alert) *notificationdom.Message {
+	var parts []*notificationdom.Message
+	if a.InKEV {
+		code := "threat.why.kev"
+		if a.KEVRansomware {
+			code = "threat.why.kev_ransomware"
+		}
+		parts = append(parts, notificationdom.Msg(code))
+	}
+	if exploitationWords[a.Breakdown.ExploitationBasis] != "" {
+		parts = append(parts, notificationdom.Msg("threat.exploitation."+a.Breakdown.ExploitationBasis))
+	}
+	if a.EPSS != nil && *a.EPSS >= 0.1 {
+		parts = append(parts, notificationdom.Msg("threat.why.epss", "epss", fmt.Sprintf("%.2f", *a.EPSS)))
+	}
+	if a.Severity != "" {
+		parts = append(parts, notificationdom.Msg("threat.why.severity", "severity", a.Severity))
+	}
+	if len(parts) == 0 {
+		parts = append(parts, notificationdom.Msg("threat.why.new"))
+	}
+	items := make([]notificationdom.Message, 0, len(parts))
+	for _, p := range parts {
+		items = append(items, *p)
+	}
+	return notificationdom.Msg("threat.why", "parts", items)
+}
+
+// digestMessage is digestText as a message code: the counts, and one line per
+// top item.
+func digestMessage(d threatalert.Digest, baseline bool) *notificationdom.Message {
+	if baseline {
+		return notificationdom.Msg("threat.digest_baseline", "count", d.Exploited)
+	}
+	items := make([]*notificationdom.Message, 0, len(d.Top))
+	for _, it := range d.Top {
+		items = append(items, notificationdom.Msg("threat.item", "vuln", threatalert.PlainText(it.VulnID, 64),
+			"score", it.ETS, "hosts", hostsMessage(it.HostCounts())))
+	}
+	return notificationdom.Lines("threat.digest", items, "urgent", d.Immediate, "review", d.Digest,
+		"listed", d.Listed, "resolved", d.Resolved, "kev", d.KEV)
 }

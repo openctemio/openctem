@@ -2,7 +2,7 @@
 
 import { safeInternalHref } from '@/lib/safe-href'
 import Link from '@/components/link'
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PriorityBadge } from '@/components/ui/priority-badge'
 import { useTranslation } from '@/context/i18n-provider'
 import { MetricStrip, type MetricStripItem } from '@/features/shared/components/metric-strip'
@@ -10,6 +10,7 @@ import { STATUS_TONE_FILL } from '@/lib/status-colors'
 import { cn } from '@/lib/utils'
 import type { CveExposure } from '../../types/exposure'
 import { cveFindingsHref, statusBuckets } from '../../lib/vuln-page'
+import { formatNumber } from '@/lib/app-locale'
 
 const PRIORITIES = ['P0', 'P1', 'P2', 'P3'] as const
 
@@ -27,7 +28,7 @@ export function ImpactStrip({ cve, exposure }: { cve: string; exposure: CveExpos
       key: 'findings',
       label: t('vulnPage.impact.findings', 'Active findings'),
       value: findings.active,
-      hint: t('vulnPage.impact.ofTotal', 'of {total}', { total: findings.total.toLocaleString() }),
+      hint: t('vulnPage.impact.ofTotal', 'of {total}', { total: formatNumber(findings.total) }),
       href: cveFindingsHref(cve, open),
     },
     {
@@ -35,7 +36,7 @@ export function ImpactStrip({ cve, exposure }: { cve: string; exposure: CveExpos
       label: t('vulnPage.impact.assets', 'Assets impacted'),
       value: assets.impacted,
       detail: t('vulnPage.impact.internetFacing', '{count} internet-facing', {
-        count: assets.internet_facing.toLocaleString(),
+        count: formatNumber(assets.internet_facing),
       }),
       href: cveFindingsHref(cve, { ...open, group: 'asset_id' }),
     },
@@ -63,7 +64,7 @@ export function ImpactStrip({ cve, exposure }: { cve: string; exposure: CveExpos
           {PRIORITIES.map((p) => (
             <span role="listitem" key={p} className="flex items-center gap-1 tabular-nums">
               <PriorityBadge priorityClass={p} />
-              <span>{(findings.by_priority[p] ?? 0).toLocaleString()}</span>
+              <span>{formatNumber(findings.by_priority[p] ?? 0)}</span>
             </span>
           ))}
         </span>
@@ -77,10 +78,10 @@ export function ImpactStrip({ cve, exposure }: { cve: string; exposure: CveExpos
       label: t('vulnPage.impact.inTasks', 'In remediation tasks'),
       value: findings.in_task,
       hint: t('vulnPage.impact.ofActive', 'of {total}', {
-        total: findings.active.toLocaleString(),
+        total: formatNumber(findings.active),
       }),
       detail: t('vulnPage.impact.notInTask', '{count} not yet in a task', {
-        count: findings.not_in_task.toLocaleString(),
+        count: formatNumber(findings.not_in_task),
       }),
       href: '/remediation/tasks',
     },
@@ -114,14 +115,12 @@ export function StatusCard({ cve, exposure }: { cve: string; exposure: CveExposu
       <CardHeader className="pb-3">
         <CardTitle className="text-base">
           {t('vulnPage.status.title', 'Status of the {count} findings', {
-            count: total.toLocaleString(),
+            count: formatNumber(total),
           })}
         </CardTitle>
-        <CardAction className="self-center">
-          <span className="text-xs text-muted-foreground">
-            {t('vulnPage.status.hint', 'Each segment opens its list')}
-          </span>
-        </CardAction>
+        <CardDescription>
+          {t('vulnPage.status.hint', 'Select a segment to open its list')}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {total === 0 ? (
@@ -163,7 +162,7 @@ export function StatusCard({ cve, exposure }: { cve: string; exposure: CveExposu
                     />
                     {label(b.key)}
                     <b className="font-semibold tabular-nums text-foreground">
-                      {b.count.toLocaleString()}
+                      {formatNumber(b.count)}
                     </b>
                   </Link>
                 </li>

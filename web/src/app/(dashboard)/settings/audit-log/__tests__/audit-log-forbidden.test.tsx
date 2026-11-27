@@ -6,12 +6,10 @@ import en from '@/lib/i18n/dictionaries/en/auditLog.json'
 import vi_ from '@/lib/i18n/dictionaries/vi/auditLog.json'
 
 const mockUseAuditLogs = vi.fn()
-const mockUseAuditStats = vi.fn()
 
 vi.mock('@/features/organization', async (orig) => ({
   ...(await orig<object>()),
   useAuditLogs: (f: unknown) => mockUseAuditLogs(f),
-  useAuditStats: (enabled?: boolean) => mockUseAuditStats(enabled),
 }))
 vi.mock('@/context/i18n-provider', () => ({
   useTranslation: () => ({ t: (k: string) => (en as Record<string, string>)[k] ?? k }),
@@ -22,6 +20,8 @@ vi.mock('@/lib/permissions', () => ({
 }))
 vi.mock('@/hooks/use-url-param', () => ({
   useUrlFilter: (_k: string, d: string) => [d, vi.fn()],
+  useUrlFilterList: () => [[], vi.fn()],
+  replaceUrlSearch: vi.fn(),
 }))
 vi.mock('@/hooks/use-list-params', () => ({
   useListParams: () => ({
@@ -29,6 +29,7 @@ vi.mock('@/hooks/use-list-params', () => ({
     setPagination: vi.fn(),
     sorting: [],
     setSorting: vi.fn(),
+    setPage: vi.fn(),
   }),
 }))
 
@@ -37,7 +38,6 @@ const base = { logs: [], total: 0, isLoading: false, mutate: vi.fn() }
 describe('AuditLogPage for a restricted data scope', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockUseAuditStats.mockReturnValue({ stats: undefined, isLoading: false })
   })
 
   it('shows the access state, not a load failure, on a 403 that names the requirement', () => {
@@ -51,10 +51,9 @@ describe('AuditLogPage for a restricted data scope', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByText('Retry')).not.toBeInTheDocument()
     expect(screen.queryByText('Events (7 days)')).not.toBeInTheDocument()
-    expect(mockUseAuditStats).toHaveBeenLastCalledWith(false)
   })
 
-  it('still shows the failure alert for other errors and keeps stats on', () => {
+  it('still shows the failure alert for other errors', () => {
     mockUseAuditLogs.mockReturnValue({
       ...base,
       isError: true,
@@ -62,7 +61,6 @@ describe('AuditLogPage for a restricted data scope', () => {
     })
     render(<AuditLogPage />)
     expect(screen.getAllByRole('alert').length).toBeGreaterThan(0)
-    expect(mockUseAuditStats).toHaveBeenLastCalledWith(true)
   })
 
   it('has the vi translation for both keys', () => {

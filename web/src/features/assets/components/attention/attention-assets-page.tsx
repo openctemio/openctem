@@ -9,75 +9,86 @@
  * own pages under the same tabs.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Lock } from 'lucide-react'
+import { useEffect, useMemo } from 'react'
 import { Main } from '@/components/layout'
-import { EmptyState, PageHeader, PageStack } from '@/features/shared'
+import {
+  ErrorState,
+  NoAccessState,
+  PageHeader,
+  PageStack,
+  usePhoneSelectMode,
+} from '@/features/shared'
+import { inSentence } from '@/features/asset-types/lib/type-view'
 import { useTranslation } from '@/context/i18n-provider'
+import { useIsMobile } from '@/hooks/use-mobile'
+import { useListParams } from '@/hooks/use-list-params'
+import { accessStateOf } from '@/lib/api/access-state'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { useAssets, type AssetSearchFilters } from '../../hooks/use-assets'
-import {
-  attributionQuery,
-  DEFAULT_PAGE_SIZE,
-  serializeInventoryFilters,
-} from '../../lib/inventory-url'
-import type { Asset } from '../../types/asset.types'
+import { attributionQuery, serializeInventoryFilters, SORT_FIELDS } from '../../lib/inventory-url'
 import { AssetsSectionTabs } from '../assets-section-tabs'
+import { QueueEmpty } from '@/features/shared/components/queue'
 import { AttentionQueueHeader } from './attention-queue-header'
 import { ATTENTION_FILTERS, type AttentionReason } from './attention-filters'
-import { InventoryBulkBar } from '../inventory/inventory-bulk-bar'
+import { useInventoryTableBulk } from '../inventory/inventory-bulk-bar'
 import { InventoryTable } from '../inventory/inventory-table'
 
 export { ATTENTION_FILTERS, type AttentionReason }
+
+/** Riskiest first: the order of every Needs attention queue at rest. */
+const DEFAULT_SORT = '-risk_score'
 
 export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
   const { t } = useTranslation()
   const { can } = usePermissions()
   const canRead = can(Permission.AssetsRead)
   const canWrite = can(Permission.AssetsWrite)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
-  const [sort, setSort] = useState<string | undefined>('-risk_score')
+  const isPhone = useIsMobile()
+  // Page, size and sort live in the address, so a queue position can be
+  // linked to and survives a reload (riskiest first by default).
+  const list = useListParams({
+    sortFields: Object.values(SORT_FIELDS),
+    defaultSort: DEFAULT_SORT,
+  })
+  const { page, perPage: pageSize, sort, searchTerm } = list
 
   const base = ATTENTION_FILTERS[reason]
   const query = useMemo<AssetSearchFilters>(
     () => ({
       ...base,
+      search: searchTerm || undefined,
       attribution: attributionQuery(base),
       withTriage: true,
       sort,
       page,
       pageSize,
     }),
-    [base, sort, page, pageSize]
+    [base, searchTerm, sort, page, pageSize]
   )
-  const { assets, total, isLoading, mutate } = useAssets(query)
+  const { assets, total, totalCapped, isLoading, hasLoaded, error, mutate } = useAssets(query)
+  // The first read draws skeleton rows; a later one keeps the rows on screen.
+  const firstLoad = isLoading && !hasLoaded
+  const noAccess = !!error && accessStateOf(error) === 'no_access'
 
-  const [selected, setSelected] = useState<Asset[]>([])
-  const [epoch, setEpoch] = useState(0)
-  const clearSelection = useCallback(() => {
-    setEpoch((n) => n + 1)
-    setSelected([])
-  }, [])
+  // The table draws the checkbox column and the bulk bar; a new page, size,
+  // sort or reason starts with nothing selected.
+  const tableBulk = useInventoryTableBulk({ canWrite, onDone: () => void mutate() })
+  const clearSelection = tableBulk.clear
   useEffect(() => {
     clearSelection()
-  }, [reason, page, pageSize, sort, clearSelection])
+  }, [reason, page, pageSize, sort, searchTerm, clearSelection])
+  // Phone cards have no header checkbox: "Select" is in the queue's More.
+  const phoneSelect = usePhoneSelectMode(isPhone && !!tableBulk.bulk)
 
   const title = t('assets.overview.title', 'Assets')
 
-  if (!canRead) {
+  if (!canRead || noAccess) {
     return (
       <Main>
-        <PageHeader title={title} />
-        <EmptyState
-          className="mt-8 border-dashed"
-          icon={Lock}
-          title={t('assets.inventoryPage.noAccess', "You don't have access to assets")}
-          description={t(
-            'assets.inventoryPage.noAccessHint',
-            'Ask an administrator for the assets:read permission to view the inventory.'
-          )}
-        />
+        <PageStack>
+          <PageHeader title={title} />
+          <NoAccessState title={inSentence(title)} permission={Permission.AssetsRead} />
+        </PageStack>
       </Main>
     )
   }
@@ -91,45 +102,67 @@ export function AttentionAssetsPage({ reason }: { reason: AttentionReason }) {
         <AssetsSectionTabs />
         <AttentionQueueHeader
           reason={reason}
-          count={isLoading ? undefined : total}
+          count={firstLoad || error ? undefined : total}
           inventoryHref={inventoryHref}
+          moreItems={phoneSelect.item ? [phoneSelect.item] : undefined}
         />
 
         <InventoryTable
           assets={assets}
           total={total}
+          totalCapped={totalCapped}
           page={page}
           pageSize={pageSize}
           sort={sort}
-          onPageChange={(p, size) => {
-            setPageSize(size)
-            setPage(size !== pageSize ? 1 : p)
+          onPageChange={(p, size) => list.setPagination({ pageIndex: p - 1, pageSize: size })}
+          onSortChange={(next) =>
+            list.setSorting(
+              next ? [{ id: next.replace(/^-/, ''), desc: next.startsWith('-') }] : []
+            )
+          }
+          // The queue's search, as on the inventory: the toolbar holds it with
+          // the Display menu, so the list starts under one toolbar row.
+          search={{
+            value: list.q,
+            onChange: list.setSearch,
+            placeholder: isPhone
+              ? t('assets.inventoryPage.searchShort', 'Search assets…')
+              : t('assets.inventoryPage.search', 'Search name, description or alias…'),
+            label: t('assets.inventoryPage.searchAria', 'Search assets'),
           }}
-          onSortChange={(next) => {
-            setSort(next)
-            setPage(1)
-          }}
-          onSelectionChange={setSelected}
-          resetSelectionKey={epoch}
+          onClearFilters={() => list.setSearch('')}
+          isLoading={firstLoad}
+          isRefreshing={isLoading && hasLoaded}
+          // A failed read keeps the queue's header; the table says what failed.
+          errorState={
+            error ? (
+              <ErrorState
+                title={t('assets.inventoryPage.errorTitle', 'assets')}
+                error={error}
+                onRetry={() => void mutate()}
+              />
+            ) : undefined
+          }
+          bulk={tableBulk.bulk}
+          selectMode={phoneSelect.selectMode}
+          resetSelectionKey={tableBulk.resetKey}
           onAssetUpdated={() => void mutate()}
-          hasFilters
-          emptyMessage={t('assets.attention.empty', 'Nothing needs attention here')}
-          emptyDescription={t(
-            'assets.attention.emptyHint',
-            'Every asset you can see has this covered.'
-          )}
+          hasFilters={Boolean(searchTerm)}
+          // An empty queue is done (the same block as the other queues); with
+          // a search it is "no match", with Clear filters.
+          emptyState={{
+            nothingYet: (
+              <QueueEmpty
+                kind="nothing-waiting"
+                title={t('assets.attention.empty', 'Nothing needs attention here')}
+                hint={t('assets.attention.emptyHint', 'Every asset you can see has this covered.')}
+              />
+            ),
+          }}
         />
       </PageStack>
 
-      <InventoryBulkBar
-        selected={selected}
-        canWrite={canWrite}
-        onClear={clearSelection}
-        onDone={() => {
-          clearSelection()
-          void mutate()
-        }}
-      />
+      {tableBulk.dialogs}
     </Main>
   )
 }

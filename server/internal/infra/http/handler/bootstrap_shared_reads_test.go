@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/openctemio/openctem/server/pkg/domain/module"
@@ -15,30 +16,38 @@ import (
 // answer what their endpoints answer for the same caller: the same permission
 // and module gates, the token's own tenant, and nothing when a source fails.
 
+// The bootstrap runs the reads in parallel, so the recorder is guarded.
 type sharedReadCalls struct {
+	mu               sync.Mutex
 	support, ai, sla bool
 	tenant           shared.ID
+}
+
+func (c *sharedReadCalls) record(flag *bool, tenantID shared.ID) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	*flag, c.tenant = true, tenantID
 }
 
 func sharedReadsHandler(c *sharedReadCalls, failing bool) *BootstrapHandler {
 	down := errors.New("source down")
 	return (&BootstrapHandler{logger: logger.NewNop()}).WithSession(BootstrapSession{
 		SupportAccess: func(_ context.Context, tenantID shared.ID) (*SupportActiveResponse, error) {
-			c.support, c.tenant = true, tenantID
+			c.record(&c.support, tenantID)
 			if failing {
 				return nil, down
 			}
 			return &SupportActiveResponse{Data: []SupportActiveGrant{{AdminName: "Support"}}}, nil
 		},
 		AIConfig: func(_ context.Context, tenantID shared.ID) (any, error) {
-			c.ai, c.tenant = true, tenantID
+			c.record(&c.ai, tenantID)
 			if failing {
 				return nil, down
 			}
 			return map[string]any{"mode": "platform", "is_enabled": true}, nil
 		},
 		SLA: func(_ context.Context, tenantID shared.ID) (*BootstrapSLA, error) {
-			c.sla, c.tenant = true, tenantID
+			c.record(&c.sla, tenantID)
 			if failing {
 				return nil, down
 			}

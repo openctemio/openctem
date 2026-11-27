@@ -6,37 +6,34 @@
  * never a person. Organization events link to the organization.
  */
 
-import { useState } from 'react'
+import { authProviderLabel } from '../lib/value-labels'
+import { EmptyCell } from '@/features/shared/components/empty-cell'
+import { useMemo, useState } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
 import Link from '@/components/link'
 import { UserPlus } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import { EmptyState, ErrorState, RelativeTime, PageStack } from '@/features/shared'
+  DataTable,
+  EmptyState,
+  ErrorState,
+  FilterSelect,
+  MetaLine,
+  MetricStrip,
+  RelativeTime,
+  PageStack,
+} from '@/features/shared'
+import { ListCount, ListToolbarTitle } from '@/features/shared/components/list-title-row'
 import { useTranslation } from '@/context/i18n-provider'
 import {
+  SIGNUP_EVENTS_PER_PAGE,
   SIGNUP_EVENT_KINDS,
   useSignupDaily,
   useSignupEvents,
   type SignupDailyCount,
+  type SignupEvent,
   type SignupEventKind,
 } from '../api/use-signup-events'
+import { organizationHref } from '../lib/console-links'
 
 const SUMMARY_DAYS = 30
 
@@ -45,6 +42,13 @@ const SUMMARY_DAYS = 30
 // word so secret scanners do not read the catalog line as a credential.
 function sourceKey(source: string): string {
   return source === 'password' ? 'emailAndPassword' : source
+}
+
+// A sign-up path: its own label, else the sign-in provider's name ("google"
+// reads as Google), else its words. Never the raw value.
+function sourceLabel(t: ReturnType<typeof useTranslation>['t'], source: string): string {
+  const own = t(`admin.signups.source.${sourceKey(source)}`, '\u0000')
+  return own !== '\u0000' ? own : authProviderLabel(t, source)
 }
 
 export function summarize(counts: SignupDailyCount[], today: string) {
@@ -66,7 +70,19 @@ export function summarize(counts: SignupDailyCount[], today: string) {
   return out
 }
 
-function SignupSummary() {
+/**
+ * The 30-day counts as one compact strip under the list: the list is the
+ * page's job and comes first on every width. Each tile shows the kind's count
+ * for today with its 7- and 30-day totals, and filters the list by that kind
+ * (the same request as the Event select).
+ */
+function SignupSummary({
+  kind,
+  onKind,
+}: {
+  kind: SignupEventKind | ''
+  onKind: (kind: SignupEventKind | '') => void
+}) {
   const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useSignupDaily(SUMMARY_DAYS)
   if (error) {
@@ -78,24 +94,74 @@ function SignupSummary() {
       />
     )
   }
-  if (isLoading || !data) return <Skeleton className="h-28 w-full" />
-  const totals = summarize(data, new Date().toISOString().slice(0, 10))
+  // While the counts load, the strip keeps its labels and a skeleton per value
+  // and per detail line, so nothing moves when the numbers arrive.
+  const loading = isLoading || !data
+  const totals = summarize(data ?? [], new Date().toISOString().slice(0, 10))
   return (
-    <div className="grid gap-4 sm:grid-cols-3">
-      {SIGNUP_EVENT_KINDS.map((kind) => (
-        <Card key={kind}>
-          <CardHeader className="pb-2">
-            <CardDescription>{t(`admin.signups.kind.${kind}`)}</CardDescription>
-            <CardTitle className="text-2xl tabular-nums">{totals[kind].today}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground">
-            {t('admin.signups.todayWeekMonth', undefined, {
-              week: totals[kind].week,
-              month: totals[kind].month,
-            })}
-          </CardContent>
-        </Card>
-      ))}
+    <MetricStrip
+      loading={loading}
+      items={SIGNUP_EVENT_KINDS.map((k) => ({
+        key: k,
+        label: t(`admin.signups.kind.${k}`),
+        value: totals[k].today,
+        detail: t('admin.signups.todayWeekMonth', undefined, {
+          week: totals[k].week,
+          month: totals[k].month,
+        }),
+        active: kind === k,
+        onClick: () => onKind(kind === k ? '' : k),
+      }))}
+    />
+  )
+}
+
+/**
+ * A sign-up event on a phone. Fixed slots, never a label/value grid; a value
+ * the event does not have is left out instead of showing a dash. The time
+ * ends the first line, so every card reaches its end with or without an
+ * organization:
+ *
+ *   Organization created                       11 hours ago
+ *   google                                Open organization
+ *   example.org   198.51.100.0/24
+ */
+export function SignupEventMobileCard({ event }: { event: SignupEvent }) {
+  const { t } = useTranslation()
+  return (
+    <div data-slot="signup-card" className="flex w-full min-w-0 flex-col gap-1 px-3 py-3">
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span className="min-w-0 flex-1 truncate font-medium">
+          {t(`admin.signups.kind.${event.kind}`)}
+        </span>
+        <RelativeTime
+          className="shrink-0 text-meta text-muted-foreground"
+          date={event.occurred_at}
+        />
+      </div>
+      {event.source || event.tenant_id ? (
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="min-w-0 flex-1 truncate text-meta text-muted-foreground">
+            {event.source ? sourceLabel(t, event.source) : null}
+          </span>
+          {event.tenant_id ? (
+            <Link
+              className="shrink-0 text-meta underline-offset-4 hover:underline"
+              href={organizationHref(event.tenant_id)}
+            >
+              {t('admin.signups.card.openOrganization', 'Open organization')}
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+      <MetaLine
+        data-testid="signup-card-origin"
+        className="font-mono"
+        items={[
+          event.email_domain ? <span key="domain">{event.email_domain}</span> : null,
+          event.ip_prefix ? <span key="network">{event.ip_prefix}</span> : null,
+        ]}
+      />
     </div>
   )
 }
@@ -104,122 +170,169 @@ export function SignupEventsPanel() {
   const { t } = useTranslation()
   const [kind, setKind] = useState<SignupEventKind | ''>('')
   const [page, setPage] = useState(1)
-  const { data, error, isLoading, mutate } = useSignupEvents(kind, page)
-  const rows = data?.data ?? []
-  const totalPages = data?.total_pages ?? 1
+  const { data, error, isLoading, isValidating, mutate } = useSignupEvents(kind, page)
+  const total = data?.total ?? 0
+
+  const columns = useMemo<ColumnDef<SignupEvent>[]>(
+    () => [
+      {
+        id: 'event',
+        header: t('admin.signups.col.event'),
+        // The event is the row's name; it stays in view while the table
+        // scrolls sideways.
+        meta: { kind: 'name', pin: 'start', minWidth: 200, label: t('admin.signups.col.event') },
+        cell: ({ row }) => (
+          <span className="block truncate font-medium">
+            {t(`admin.signups.kind.${row.original.kind}`)}
+          </span>
+        ),
+      },
+      {
+        id: 'when',
+        header: t('admin.signups.col.when'),
+        meta: { kind: 'datetime-recent', width: 152, label: t('admin.signups.col.when') },
+        cell: ({ row }) => <RelativeTime date={row.original.occurred_at} />,
+      },
+      {
+        id: 'source',
+        header: t('admin.signups.col.source'),
+        meta: {
+          kind: 'text',
+          width: 152,
+          hideBelow: 800,
+          label: t('admin.signups.col.source'),
+        },
+        cell: ({ row }) => (
+          <span className="block truncate">{sourceLabel(t, row.original.source)}</span>
+        ),
+      },
+      {
+        id: 'domain',
+        header: t('admin.signups.col.domain'),
+        meta: { kind: 'text', width: 176, label: t('admin.signups.col.domain') },
+        cell: ({ row }) =>
+          row.original.email_domain ? (
+            <span className="block truncate font-mono text-code" title={row.original.email_domain}>
+              {row.original.email_domain}
+            </span>
+          ) : (
+            <EmptyCell title={t('admin.signups.noDomain', 'No email domain')} />
+          ),
+      },
+      {
+        id: 'network',
+        header: t('admin.signups.col.network'),
+        meta: {
+          kind: 'text',
+          width: 152,
+          hideBelow: 900,
+          label: t('admin.signups.col.network'),
+        },
+        cell: ({ row }) =>
+          row.original.ip_prefix ? (
+            <span className="block truncate font-mono text-code">{row.original.ip_prefix}</span>
+          ) : (
+            <EmptyCell title={t('admin.signups.noNetwork', 'No network recorded')} />
+          ),
+      },
+      {
+        id: 'organization',
+        header: t('admin.signups.col.organization'),
+        meta: { kind: 'text', width: 128, label: t('admin.signups.col.organization') },
+        cell: ({ row }) =>
+          row.original.tenant_id ? (
+            <Link
+              className="block truncate underline-offset-4 hover:underline"
+              href={organizationHref(row.original.tenant_id)}
+            >
+              {t('admin.signups.openOrganization')}
+            </Link>
+          ) : (
+            <EmptyCell title={t('admin.signups.noOrganization', 'No organization yet')} />
+          ),
+      },
+    ],
+    [t]
+  )
 
   return (
     <PageStack>
-      <SignupSummary />
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          {data ? t('admin.signups.total', undefined, { count: data.total }) : ''}
-        </p>
-        <Select
-          value={kind || 'all'}
-          onValueChange={(v) => {
-            setKind(v === 'all' ? '' : (v as SignupEventKind))
-            setPage(1)
-          }}
-        >
-          <SelectTrigger className="w-56" aria-label={t('admin.signups.kindFilter')}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('admin.signups.allKinds')}</SelectItem>
-            {SIGNUP_EVENT_KINDS.map((k) => (
-              <SelectItem key={k} value={k}>
-                {t(`admin.signups.kind.${k}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {error ? (
-        <ErrorState
-          title={t('admin.signups.listError')}
-          error={error}
-          onRetry={() => void mutate()}
-        />
-      ) : isLoading && !data ? (
-        <Skeleton className="h-40 w-full" />
-      ) : rows.length === 0 ? (
-        <EmptyState
-          icon={UserPlus}
-          title={t('admin.signups.emptyTitle')}
-          description={t('admin.signups.emptyDesc')}
-        />
-      ) : (
-        <>
-          <div className="rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('admin.signups.col.when')}</TableHead>
-                  <TableHead>{t('admin.signups.col.event')}</TableHead>
-                  <TableHead>{t('admin.signups.col.source')}</TableHead>
-                  <TableHead>{t('admin.signups.col.domain')}</TableHead>
-                  <TableHead>{t('admin.signups.col.network')}</TableHead>
-                  <TableHead>{t('admin.signups.col.organization')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((e) => (
-                  <TableRow key={e.id}>
-                    <TableCell>
-                      <RelativeTime date={e.occurred_at} />
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{t(`admin.signups.kind.${e.kind}`)}</Badge>
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {t(`admin.signups.source.${sourceKey(e.source)}`, e.source)}
-                    </TableCell>
-                    <TableCell className="font-mono text-sm">{e.email_domain || '—'}</TableCell>
-                    <TableCell className="font-mono text-sm">{e.ip_prefix || '—'}</TableCell>
-                    <TableCell className="text-sm">
-                      {e.tenant_id ? (
-                        <Link
-                          className="underline-offset-4 hover:underline"
-                          href={`/organizations/${encodeURIComponent(e.tenant_id)}`}
-                        >
-                          {t('admin.signups.openOrganization')}
-                        </Link>
-                      ) : (
-                        '—'
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          {totalPages > 1 && (
-            <div className="flex items-center justify-end gap-2">
-              <span className="text-sm text-muted-foreground">
-                {t('admin.signups.page', undefined, { page, pages: totalPages })}
-              </span>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={page <= 1}
-                onClick={() => setPage(page - 1)}
-              >
-                {t('admin.signups.prev')}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={page >= totalPages}
-                onClick={() => setPage(page + 1)}
-              >
-                {t('admin.signups.next')}
-              </Button>
-            </div>
-          )}
-        </>
-      )}
+      <DataTable
+        // The view name and its count lead the toolbar row: the Event filter
+        // (on a phone, the Filters button) and Display share their line.
+        toolbarTitle={
+          <ListToolbarTitle
+            title={kind ? t(`admin.signups.kind.${kind}`) : t('admin.signups.allKinds')}
+            count={
+              <ListCount
+                total={total}
+                loading={!data && !error}
+                label={t('admin.signups.total', undefined, { count: total })}
+              />
+            }
+          />
+        }
+        columns={columns}
+        data={data?.data ?? []}
+        caption={t('admin.signups.caption', 'Sign-up events')}
+        getRowId={(e) => String(e.id)}
+        error={error}
+        onRetry={() => void mutate()}
+        errorTitle={t('admin.signups.listError')}
+        // The first read: skeleton rows under a toolbar that stays mounted.
+        isLoading={isLoading && !data}
+        isRefreshing={isValidating && !!data}
+        refreshingLabel={t('admin.signups.refreshing', 'Refreshing sign-ups')}
+        showSearch={false}
+        showSelectionCount={false}
+        // A phone card with fixed slots, not the automatic label/value card.
+        mobileRow={(e) => <SignupEventMobileCard event={e} />}
+        toolbarStart={
+          <FilterSelect<SignupEventKind>
+            label={t('admin.signups.kindFilter')}
+            value={kind}
+            foldLabel
+            allLabel={t('admin.signups.allKinds')}
+            options={SIGNUP_EVENT_KINDS.map((k) => ({
+              value: k,
+              label: t(`admin.signups.kind.${k}`),
+            }))}
+            onChange={(v) => {
+              setKind(v)
+              setPage(1)
+            }}
+          />
+        }
+        isFiltered={!!kind}
+        onClearFilters={() => {
+          setKind('')
+          setPage(1)
+        }}
+        emptyState={{
+          nothingYet: (
+            <EmptyState
+              icon={UserPlus}
+              title={t('admin.signups.emptyTitle')}
+              description={t('admin.signups.emptyDesc')}
+            />
+          ),
+          noMatch: { title: t('admin.signups.noMatch', 'No event of this kind') },
+        }}
+        manualPagination
+        pageCount={data?.total_pages ?? 1}
+        rowCount={total}
+        pagination={{ pageIndex: page - 1, pageSize: SIGNUP_EVENTS_PER_PAGE }}
+        onPaginationChange={(p) => setPage(p.pageIndex + 1)}
+        pageSizeOptions={[SIGNUP_EVENTS_PER_PAGE]}
+        paginationNoun={t('admin.signups.noun', 'events')}
+      />
+      <SignupSummary
+        kind={kind}
+        onKind={(k) => {
+          setKind(k)
+          setPage(1)
+        }}
+      />
       <p className="text-sm text-muted-foreground">{t('admin.signups.privacyNote')}</p>
     </PageStack>
   )

@@ -81,13 +81,15 @@ describe('welcomeNoticeHref', () => {
     ['PERSONAL_ACCOUNTS_BLOCKED', 'personal_accounts_blocked'],
     ['OWN_SIGN_IN_REQUIRED', 'own_sign_in_required'],
   ])('names the reason of %s and the organization', (code, notice) => {
-    expect(welcomeNoticeHref(code, 'acme')).toBe(`/welcome?notice=${notice}&org=acme`)
+    expect(welcomeNoticeHref(code, 'acme')).toBe(`/account/organizations?notice=${notice}&org=acme`)
   })
 
   it('is the plain account space for another code, and drops a slug that is not one', () => {
-    expect(welcomeNoticeHref('SOMETHING_NEW', 'acme')).toBe('/welcome')
-    expect(welcomeNoticeHref(undefined)).toBe('/welcome')
-    expect(welcomeNoticeHref('SSO_REQUIRED', '../evil?x=1')).toBe('/welcome?notice=sso_required')
+    expect(welcomeNoticeHref('SOMETHING_NEW', 'acme')).toBe('/account/organizations')
+    expect(welcomeNoticeHref(undefined)).toBe('/account/organizations')
+    expect(welcomeNoticeHref('SSO_REQUIRED', '../evil?x=1')).toBe(
+      '/account/organizations?notice=sso_required'
+    )
   })
 })
 

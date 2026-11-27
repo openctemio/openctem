@@ -19,13 +19,26 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useUrlParams, useUrlSettled } from '@/hooks/use-url-param'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { toast } from 'sonner'
 import { Main } from '@/components/layout'
+import { useBreadcrumbTitle } from '@/components/layout/breadcrumb-title'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
+import { PageHeader } from '@/features/shared/components/page-header'
+import { PageStack } from '@/features/shared/components/page-stack'
+import { useQueueAnnouncer } from '@/features/shared/components/queue'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { ApiClientError, getErrorMessage } from '@/lib/api/error-handler'
 import { useCanMutate } from '@/lib/permissions'
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import {
   cancelApproval,
   fetchFinding,
@@ -67,20 +80,24 @@ import { FINDING_STATUS_CONFIG, requiresApproval, type FindingStatus } from '../
 import { ApprovalDialog } from '../approval-dialog'
 import { AssigneeSelect, type AssigneeUser } from '../assignee-select'
 import { LifecycleMoveDialog, type LifecycleMoveInput } from '../lifecycle/lifecycle-move-dialog'
-import { TriageDecisionPanel } from './triage-decision-panel'
+import { TriageDecisionPanel, TriagePhoneBar } from './triage-decision-panel'
 import { TriageFindingSkeleton, TriageFindingView } from './triage-finding-view'
 import { TriageKeysDialog } from './triage-keys-dialog'
-import { TriageQueuePanel } from './triage-queue-panel'
-import { TriageTopBar } from './triage-top-bar'
-import { Kbd } from './kbd'
+import { OUTCOME_LABELS, TriageQueuePanel } from './triage-queue-panel'
+import { TriageHeaderActions, TriageStatusLine } from './triage-top-bar'
 import { TriageAiCard } from './triage-ai-card'
 import { TriageReceiptDialog } from './triage-receipt-dialog'
 
 type RequestTarget = 'false_positive' | 'accepted'
 
+/** Findings passed over one after another replace one note, not a stack of them. */
+const PASSED_OVER_TOAST = 'triage-passed-over'
+
 export function TriageMode() {
   const { t } = useTranslation()
   const router = useRouter()
+  // The header breadcrumb names this page in the reader's language.
+  useBreadcrumbTitle(t('findings.triageMode.title', 'Triage'))
   // Read only once the address bar holds this page's URL (see useUrlSettled).
   const params = useUrlParams()
   const settled = useUrlSettled()
@@ -116,6 +133,7 @@ export function TriageMode() {
 
   const [showEvidence, setShowEvidence] = useState(false)
   const [keysOpen, setKeysOpen] = useState(false)
+  const [queueOpen, setQueueOpen] = useState(false)
   const [requestTarget, setRequestTarget] = useState<RequestTarget | null>(null)
   // A status move the lifecycle gives a note or fields: the confirm of the
   // shown finding, or the inverse move of an Undo.
@@ -127,6 +145,44 @@ export function TriageMode() {
   const [taskOpen, setTaskOpen] = useState(false)
   const [receiptOpen, setReceiptOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Every outcome is said in one polite status region: each toast of this
+  // mode, each decision ("Confirmed: <title>") and each undo.
+  const { announce, region } = useQueueAnnouncer()
+  const say = useCallback(
+    (kind: 'info' | 'error', text: string, toastId?: string) => {
+      if (kind === 'info') toast.info(text, toastId ? { id: toastId } : undefined)
+      else toast.error(text)
+      announce(text)
+    },
+    [announce]
+  )
+  const titleOf = useCallback(
+    (id: string) => session?.items.find((item) => item.id === id)?.title ?? '',
+    [session]
+  )
+  const record = useCallback(
+    (...args: Parameters<typeof decide>) => {
+      decide(...args)
+      const [id, outcome] = args
+      const label = OUTCOME_LABELS[outcome]
+      announce(
+        t('findings.triageMode.announce.decided', '{outcome}: {title}', {
+          outcome: t(label.key, label.fallback),
+          title: titleOf(id),
+        })
+      )
+    },
+    [decide, announce, titleOf, t]
+  )
+  const undone = useCallback(
+    (entry: TriageUndo) => {
+      reverted(entry)
+      announce(
+        t('findings.triageMode.announce.undone', 'Undone: {title}', { title: titleOf(entry.id) })
+      )
+    },
+    [reverted, announce, titleOf, t]
+  )
   const assignRef = useRef<HTMLDivElement>(null)
   const centreRef = useRef<HTMLDivElement>(null)
   const currentId = current?.id
@@ -169,21 +225,27 @@ export function TriageMode() {
     if (!current || busy || outcome === 'changed' || direction.current !== 'forward') return
     if (isChanged && shown) {
       const cfg = FINDING_STATUS_CONFIG[shown.status]
-      toast.info(
+      say(
+        'info',
         t(
           'findings.triageMode.changedSkipped',
           'Changed by someone else (now {status}). Skipped.',
           {
             status: cfg ? t(cfg.labelKey, cfg.label) : shown.status,
           }
-        )
+        ),
+        PASSED_OVER_TOAST
       )
       decide(current.id, 'changed')
     } else if (gone) {
-      toast.info(t('findings.triageMode.goneSkipped', 'No longer available to you. Skipped.'))
+      say(
+        'info',
+        t('findings.triageMode.goneSkipped', 'No longer available to you. Skipped.'),
+        PASSED_OVER_TOAST
+      )
       decide(current.id, 'changed')
     }
-  }, [current, busy, outcome, isChanged, gone, shown, decide, direction, t])
+  }, [current, busy, outcome, isChanged, gone, shown, decide, direction, say, t])
 
   // A write's answer is the finding as it is now: keep it as the cached
   // detail, so coming back to it (k, Undo) shows and writes on that version.
@@ -194,7 +256,8 @@ export function TriageMode() {
   const reportWriteError = useCallback(
     (error: unknown, fallback: string) => {
       if (isFindingChanged(error)) {
-        toast.info(
+        say(
+          'info',
           t(
             'findings.conflict.changed',
             'Someone else changed this finding. It has been reloaded; check it and try again.'
@@ -203,9 +266,9 @@ export function TriageMode() {
         void reloadFinding()
         return
       }
-      toast.error(getErrorMessage(error, fallback))
+      say('error', getErrorMessage(error, fallback))
     },
-    [reloadFinding, t]
+    [reloadFinding, say, t]
   )
 
   const writeConfirm = useCallback(
@@ -223,7 +286,7 @@ export function TriageMode() {
           },
           shown.row_version
         )
-        decide(shown.id, 'confirmed', {
+        record(shown.id, 'confirmed', {
           id: shown.id,
           outcome: 'confirmed',
           previousStatus: shown.status,
@@ -235,7 +298,7 @@ export function TriageMode() {
         setBusy(false)
       }
     },
-    [shown, decide, cacheFinding, reportWriteError, t]
+    [shown, record, cacheFinding, reportWriteError, t]
   )
 
   // Every status decision asks the lifecycle first (the finding page's
@@ -251,7 +314,8 @@ export function TriageMode() {
           m.allowed && (wantRequest ? true : m.mode !== 'request')
         const move = moves.find((m) => ok(m) && !m.to_sub_status_id) ?? moves.find(ok)
         if (!move) {
-          toast.error(
+          say(
+            'error',
             firstReason(t, moves[0]?.blocked) ??
               t(
                 'findings.triageMode.moveNotAllowed',
@@ -261,7 +325,8 @@ export function TriageMode() {
         }
         return move
       } catch (error) {
-        toast.error(
+        say(
+          'error',
           getErrorMessage(error, t('findings.triage.statusFailed', 'Failed to update status'))
         )
         return undefined
@@ -269,7 +334,7 @@ export function TriageMode() {
         setBusy(false)
       }
     },
-    [t]
+    [say, t]
   )
 
   const confirm = useCallback(async () => {
@@ -305,7 +370,7 @@ export function TriageMode() {
       try {
         const updated = await writeFindingAssignee(shown.id, user?.id ?? null, shown.row_version)
         if (user)
-          decide(shown.id, 'assigned', {
+          record(shown.id, 'assigned', {
             id: shown.id,
             outcome: 'assigned',
             previousAssigneeId: shown.assigned_to ?? null,
@@ -317,7 +382,7 @@ export function TriageMode() {
         setBusy(false)
       }
     },
-    [shown, decide, cacheFinding, reportWriteError, t]
+    [shown, record, cacheFinding, reportWriteError, t]
   )
 
   const retest = useCallback(async () => {
@@ -325,15 +390,16 @@ export function TriageMode() {
     setBusy(true)
     try {
       await requestRetest(shown.id)
-      decide(shown.id, 'retest_requested')
+      record(shown.id, 'retest_requested')
     } catch (error) {
-      toast.error(
+      say(
+        'error',
         getErrorMessage(error, t('findings.triageMode.retestFailed', 'Retest failed to start'))
       )
     } finally {
       setBusy(false)
     }
-  }, [shown, busy, locked, canRetest, decide, t])
+  }, [shown, busy, locked, canRetest, record, say, t])
 
   // Writes an inverse status move of an Undo on the finding's current version.
   const writeUndoMove = useCallback(
@@ -356,14 +422,14 @@ export function TriageMode() {
           rowVersion
         )
         cacheFinding(updated)
-        reverted(entry)
+        undone(entry)
       } catch (error) {
         reportWriteError(error, t('findings.triageMode.undoFailed', 'Could not undo'))
       } finally {
         setBusy(false)
       }
     },
-    [reverted, cacheFinding, reportWriteError, t]
+    [undone, cacheFinding, reportWriteError, t]
   )
 
   /**
@@ -380,7 +446,7 @@ export function TriageMode() {
       switch (entry.outcome) {
         case 'skipped':
         case 'changed':
-          reverted(entry)
+          undone(entry)
           return
         case 'fp_requested':
         case 'accept_requested':
@@ -388,7 +454,7 @@ export function TriageMode() {
           setBusy(true)
           await cancelApproval(entry.approvalId)
           cacheFinding(await fetchFinding(entry.id))
-          reverted(entry)
+          undone(entry)
           return
         case 'assigned': {
           setBusy(true)
@@ -396,7 +462,7 @@ export function TriageMode() {
           cacheFinding(
             await writeFindingAssignee(entry.id, entry.previousAssigneeId ?? null, now.row_version)
           )
-          reverted(entry)
+          undone(entry)
           return
         }
         case 'confirmed':
@@ -408,7 +474,8 @@ export function TriageMode() {
           setBusy(false)
           const move = await allowedMove(entry.id, entry.previousStatus)
           if (!move) {
-            toast.info(
+            say(
+              'info',
               t(
                 'findings.triageMode.undoNoInverse',
                 'This decision cannot be undone here. Open the finding to change it.'
@@ -425,7 +492,8 @@ export function TriageMode() {
           return
         }
       }
-      toast.info(
+      say(
+        'info',
         t(
           'findings.triageMode.undoNoInverse',
           'This decision cannot be undone here. Open the finding to change it.'
@@ -440,12 +508,13 @@ export function TriageMode() {
   }, [
     lastUndo,
     busy,
-    reverted,
+    undone,
     dropUndo,
     allowedMove,
     writeUndoMove,
     cacheFinding,
     reportWriteError,
+    say,
     t,
   ])
 
@@ -481,6 +550,9 @@ export function TriageMode() {
         case 'help':
           setKeysOpen(true)
           return
+        case 'queue':
+          if (session && session.items.length > 0) setQueueOpen((v) => !v)
+          return
         case 'evidence':
           if (shown) setShowEvidence((v) => !v)
           return
@@ -489,7 +561,7 @@ export function TriageMode() {
           return
         case 'skip':
           if (current && !busy)
-            decide(current.id, 'skipped', { id: current.id, outcome: 'skipped' })
+            record(current.id, 'skipped', { id: current.id, outcome: 'skipped' })
           return
         case 'undo':
           void undo()
@@ -529,8 +601,9 @@ export function TriageMode() {
       request,
       retest,
       undo,
-      decide,
+      record,
       router,
+      session,
     ]
   )
 
@@ -560,10 +633,15 @@ export function TriageMode() {
         ? t('findings.quickView.needs_triage', 'Needs triage')
         : t('findings.triageMode.thisView', 'Selected view')
   const progress = session ? progressOf(session) : null
+  const isPhone = useIsMobile()
   const done = !!session && session.exhausted && session.index >= session.items.length
 
+  // The queue could not be read and nothing is on screen: the error and its Retry only.
+  const queueFailed = !!loadError && (!session || session.items.length === 0)
+  const showQueue = !!session && session.items.length > 0
+  const showPanel = !done && !queueFailed
   let centre: React.ReactNode
-  if (loadError && (!session || session.items.length === 0)) {
+  if (queueFailed) {
     centre = (
       <ErrorState
         title={t('findings.triageMode.queueTitle', 'the triage queue')}
@@ -594,14 +672,8 @@ export function TriageMode() {
                 }
               )}
         </p>
-        <div className="flex flex-wrap justify-center gap-2">
-          {session.undo.length > 0 && (
-            <Button variant="outline" onClick={() => void undo()} aria-keyshortcuts="u">
-              {t('findings.triageMode.action.undo', 'Undo last')}
-            </Button>
-          )}
-          <Button onClick={leave}>{t('findings.triageMode.backToList', 'Back to the list')}</Button>
-        </div>
+        {/* Undo last stays in the page header. */}
+        <Button onClick={leave}>{t('findings.triageMode.backToList', 'Back to the list')}</Button>
       </div>
     )
   } else if (gone) {
@@ -628,6 +700,8 @@ export function TriageMode() {
       <TriageFindingView
         finding={shown}
         showEvidence={showEvidence}
+        onToggleEvidence={() => onAction('evidence')}
+        onOpenPage={() => onAction('openPage')}
         note={note}
         advisory={
           <TriageAiCard
@@ -654,57 +728,58 @@ export function TriageMode() {
           'Findings people reported are decided in their own workflow. Open the full page.'
         )
       : undefined,
-    canConfirm,
-    canRequest,
-    canAssign,
-    canTask,
+    // Nothing to decide until a finding is on screen (first load, a failed queue).
+    canConfirm: canConfirm && !!shown,
+    canRequest: canRequest && !!shown,
+    canAssign: canAssign && !!shown,
+    canTask: canTask && !!shown,
     canRetest,
-    undoCount: session?.undo.length ?? 0,
     busy,
+    canPrev: !!session && session.index > 0,
+    canNext: !!session && session.index < session.items.length,
   }
 
+  // One finding at a time: the finding, then its decision under it in the
+  // same card. The queue opens on demand in a side sheet (Queue, `q`), never
+  // as a permanent column. On a phone the other decisions are folded and
+  // Previous, Skip and Confirm sit in a bar at the bottom of the screen.
   return (
-    <Main fluid>
-      <h1 className="sr-only">{t('findings.triageMode.pageTitle', 'Triage findings')}</h1>
-      <div className="flex min-h-[calc(100dvh-8rem)] flex-col overflow-hidden rounded-lg border bg-background">
-        {progress && (
-          <TriageTopBar
-            queueLabel={queueLabel}
-            progress={progress}
-            canPrev={!!session && session.index > 0}
-            canNext={!!session && session.index < session.items.length}
-            onPrev={prev}
-            onNext={next}
-            onExit={exit}
+    <Main>
+      <PageStack>
+        <PageHeader title={t('findings.triageMode.title', 'Triage')}>
+          <TriageHeaderActions
+            undoCount={session?.undo.length ?? 0}
+            busy={busy}
+            queueOpen={queueOpen}
+            hasQueue={showQueue}
+            onUndo={() => onAction('undo')}
+            onQueue={() => onAction('queue')}
+            onHelp={() => onAction('help')}
+            onExit={() => onAction('exit')}
           />
-        )}
-        <div className="grid min-h-0 flex-1 lg:grid-cols-[17rem_minmax(0,1fr)_22rem]">
-          {session && (
-            <TriageQueuePanel
-              session={session}
-              onSelect={(i) => go(i, i < session.index ? 'back' : 'forward')}
-            />
+        </PageHeader>
+        <TriageStatusLine queueLabel={queueLabel} progress={progress} />
+        <div
+          ref={centreRef}
+          tabIndex={-1}
+          className="min-w-0 space-y-6 outline-none md:rounded-lg md:border md:bg-card md:p-6"
+          aria-busy={loadingWindow || undefined}
+        >
+          {!!loadError && !!session && session.items.length > 0 && (
+            <p className="mb-3 text-sm text-destructive" role="alert">
+              {t('findings.triageMode.windowFailed', 'The next findings could not be loaded.')}{' '}
+              <button type="button" className="underline" onClick={retry}>
+                {t('common.retry', 'Retry')}
+              </button>
+            </p>
           )}
-          <div
-            ref={centreRef}
-            tabIndex={-1}
-            className="min-w-0 p-4 outline-none md:p-6"
-            aria-busy={loadingWindow || undefined}
-          >
-            {!!loadError && !!session && session.items.length > 0 && (
-              <p className="mb-3 text-sm text-destructive" role="alert">
-                {t('findings.triageMode.windowFailed', 'The next findings could not be loaded.')}{' '}
-                <button type="button" className="underline" onClick={retry}>
-                  {t('common.retry', 'Retry')}
-                </button>
-              </p>
-            )}
-            {centre}
-          </div>
-          {!done && (
+          {centre}
+          {showPanel && (
             <TriageDecisionPanel
               state={decisionState}
               onAction={onAction}
+              phone={isPhone}
+              className={isPhone ? undefined : 'border-t pt-6'}
               assignControl={
                 <div ref={assignRef}>
                   <AssigneeSelect
@@ -721,30 +796,37 @@ export function TriageMode() {
                     onChange={(u) => void assign(u)}
                     disabled={!shown || locked || !canAssign || busy}
                     placeholder={t('findings.triageMode.assignPlaceholder', 'Choose a person')}
-                    size="sm"
+                    layout="field"
                   />
                 </div>
               }
             />
           )}
         </div>
-        <div className="hidden flex-wrap items-center gap-4 border-t bg-card px-4 py-2 font-mono text-xs text-muted-foreground sm:flex">
-          <span>
-            <Kbd decorative={false}>?</Kbd> {t('findings.triageMode.action.help', 'All keys')}
-          </span>
-          <span>
-            <Kbd decorative={false}>j</Kbd> <Kbd decorative={false}>k</Kbd>{' '}
-            {t('findings.triageMode.footerMove', 'next and previous')}
-          </span>
-          <span>
-            <Kbd decorative={false}>e</Kbd> {t('findings.triageMode.action.evidence', 'Evidence')}
-          </span>
-          <span>
-            <Kbd decorative={false}>Enter</Kbd>{' '}
-            {t('findings.triageMode.action.openPage', 'Full page')}
-          </span>
-        </div>
-      </div>
+        {showPanel && isPhone && <TriagePhoneBar state={decisionState} onAction={onAction} />}
+      </PageStack>
+      {region}
+      {showQueue && (
+        <Sheet open={queueOpen} onOpenChange={setQueueOpen}>
+          <SheetContent side="right" data-testid="triage-queue-sheet">
+            <SheetHeader>
+              <SheetTitle>{t('findings.triageMode.queue', 'Queue')}</SheetTitle>
+              <SheetDescription>
+                {t('findings.triageMode.queueOrder', 'Queue, in the list order')}
+              </SheetDescription>
+            </SheetHeader>
+            <SheetBody>
+              <TriageQueuePanel
+                session={session}
+                onSelect={(i) => {
+                  setQueueOpen(false)
+                  go(i, i < session.index ? 'back' : 'forward')
+                }}
+              />
+            </SheetBody>
+          </SheetContent>
+        </Sheet>
+      )}
 
       {shown && requestTarget && (
         <ApprovalDialog
@@ -766,7 +848,7 @@ export function TriageMode() {
                 : alone
                   ? 'accept_applied'
                   : 'accept_requested'
-            decide(shown.id, outcome, {
+            record(shown.id, outcome, {
               id: shown.id,
               outcome,
               previousStatus: shown.status,
@@ -806,7 +888,7 @@ export function TriageMode() {
             if (!open) setTaskOpen(false)
           }}
           findings={[{ id: shown.id, title: current?.title ?? shown.id }]}
-          onDone={() => decide(shown.id, 'tasked', { id: shown.id, outcome: 'tasked' })}
+          onDone={() => record(shown.id, 'tasked', { id: shown.id, outcome: 'tasked' })}
         />
       )}
       {session && (

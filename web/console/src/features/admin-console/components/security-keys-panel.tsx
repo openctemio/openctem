@@ -48,6 +48,8 @@ import {
 } from '../api/use-console-factors'
 import { isWebAuthnSupported } from '../lib/webauthn'
 import { securityKeyErrorMessage } from '../lib/security-key-errors'
+import { formatDateTime } from '@/lib/app-locale'
+import { BreakText } from '@/features/shared/components/break-text'
 
 const NAME_MAX = 64
 
@@ -164,7 +166,9 @@ export function SecurityKeysPanel({
                 >
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium break-all">{k.name}</span>
+                      <span className="font-medium break-words">
+                        <BreakText>{k.name}</BreakText>
+                      </span>
                       {k.synced ? (
                         <Badge variant="secondary">
                           {t('admin.keys.synced', 'Synced passkey')}
@@ -304,7 +308,7 @@ export function SecurityKeysPanel({
 
 /** The policy and what this administrator still needs. */
 function PolicyState({ factors }: { factors: ConsoleFactors }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   if (!factors.webauthn_enabled) {
     return (
       <Alert>
@@ -359,7 +363,7 @@ function PolicyState({ factors }: { factors: ConsoleFactors }) {
             {t(
               'admin.keys.graceUntil',
               'Register a key before {date}: after that the authenticator app is no longer accepted for your account.',
-              { date: new Date(factors.webauthn_grace_until).toLocaleString(locale) }
+              { date: formatDateTime(new Date(factors.webauthn_grace_until)) }
             )}
           </p>
         )}
@@ -657,7 +661,7 @@ function RecoveryCodesDialog({ codes, onDone }: { codes: string[] | null; onDone
             aria-label={t('admin.keys.recoveryTitle', 'Recovery codes')}
           >
             {(codes ?? []).map((c) => (
-              <li key={c} className="break-all select-all">
+              <li key={c} className="break-words select-all">
                 {c}
               </li>
             ))}

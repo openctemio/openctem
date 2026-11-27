@@ -9,6 +9,7 @@
  * says the access ended (SUPPORT_GRANT_REQUIRED) the view closes.
  */
 
+import { EmptyCell } from '@/features/shared/components/empty-cell'
 import { useEffect, useState } from 'react'
 import { Loader2, ShieldAlert } from 'lucide-react'
 
@@ -295,7 +296,9 @@ function FindingsTab({ session, onEnded }: { session: SupportSessionState; onEnd
                     <SeverityBadge severity={asSeverity(f.severity)} />
                   </TableCell>
                   <TableCell className="whitespace-nowrap">{f.status}</TableCell>
-                  <TableCell className="max-w-48 truncate">{f.asset_name || '—'}</TableCell>
+                  <TableCell className="max-w-48 truncate">
+                    {f.asset_name || <EmptyCell title={t('admin.support.noAsset', 'No asset')} />}
+                  </TableCell>
                   <TableCell className="whitespace-nowrap">
                     {formatSupportTime(f.last_seen_at, locale)}
                   </TableCell>
@@ -350,29 +353,37 @@ function FindingDetail({
         <Skeleton className="h-48 w-full" />
       ) : (
         <DetailFieldGrid>
-          <DetailField label={t('admin.support.source', 'Source')}>
-            {data.source || '—'}
-          </DetailField>
-          <DetailField label={t('admin.support.rule', 'Rule')}>
-            <code className="text-xs break-all">{data.rule_id || '—'}</code>
-          </DetailField>
-          <DetailField label={t('admin.support.cve', 'CVE')}>{data.cve_id || '—'}</DetailField>
-          <DetailField label={t('admin.support.cwe', 'CWE')}>
-            {(data.cwe_ids ?? []).join(', ') || '—'}
-          </DetailField>
-          <DetailField label={t('admin.support.asset', 'Asset')}>
-            {data.asset_name
-              ? `${data.asset_name}${data.asset_type ? ` (${data.asset_type})` : ''}`
-              : '—'}
-          </DetailField>
-          <DetailField label={t('admin.support.sla', 'SLA')}>{data.sla_status || '—'}</DetailField>
-          <DetailField label={t('admin.support.location', 'Location')} full>
-            <code className="text-xs break-all">
-              {data.file_path
-                ? `${data.file_path}${data.start_line ? `:${data.start_line}` : ''}`
-                : '—'}
-            </code>
-          </DetailField>
+          {data.source && (
+            <DetailField label={t('admin.support.source', 'Source')}>{data.source}</DetailField>
+          )}
+          {data.rule_id && (
+            <DetailField label={t('admin.support.rule', 'Rule')}>
+              <code className="text-code break-all">{data.rule_id}</code>
+            </DetailField>
+          )}
+          {data.cve_id && (
+            <DetailField label={t('admin.support.cve', 'CVE')}>{data.cve_id}</DetailField>
+          )}
+          {(data.cwe_ids ?? []).length > 0 && (
+            <DetailField label={t('admin.support.cwe', 'CWE')}>
+              {(data.cwe_ids ?? []).join(', ')}
+            </DetailField>
+          )}
+          {data.asset_name && (
+            <DetailField label={t('admin.support.asset', 'Asset')}>
+              {`${data.asset_name}${data.asset_type ? ` (${data.asset_type})` : ''}`}
+            </DetailField>
+          )}
+          {data.sla_status && (
+            <DetailField label={t('admin.support.sla', 'SLA')}>{data.sla_status}</DetailField>
+          )}
+          {data.file_path && (
+            <DetailField label={t('admin.support.location', 'Location')} full>
+              <code className="text-code break-all">
+                {`${data.file_path}${data.start_line ? `:${data.start_line}` : ''}`}
+              </code>
+            </DetailField>
+          )}
           <DetailField label={t('admin.support.firstSeen', 'First seen')}>
             {formatSupportTime(data.first_detected_at, locale)}
           </DetailField>
@@ -481,7 +492,11 @@ function AssetsTab({ session, onEnded }: { session: SupportSessionState; onEnded
                     </button>
                   </TableCell>
                   <TableCell className="whitespace-nowrap">{a.type}</TableCell>
-                  <TableCell className="whitespace-nowrap">{a.criticality || '—'}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {a.criticality || (
+                      <EmptyCell title={t('admin.support.noCriticality', 'No criticality set')} />
+                    )}
+                  </TableCell>
                   <TableCell className="text-end tabular-nums">{a.risk_score ?? 0}</TableCell>
                   <TableCell className="text-end tabular-nums">{a.finding_count ?? 0}</TableCell>
                   <TableCell className="whitespace-nowrap">
@@ -537,12 +552,16 @@ function AssetDetail({
         <Skeleton className="h-48 w-full" />
       ) : (
         <DetailFieldGrid>
-          <DetailField label={t('admin.support.criticality', 'Criticality')}>
-            {data.criticality || '—'}
-          </DetailField>
-          <DetailField label={t('admin.support.exposure', 'Exposure')}>
-            {data.exposure || '—'}
-          </DetailField>
+          {data.criticality && (
+            <DetailField label={t('admin.support.criticality', 'Criticality')}>
+              {data.criticality}
+            </DetailField>
+          )}
+          {data.exposure && (
+            <DetailField label={t('admin.support.exposure', 'Exposure')}>
+              {data.exposure}
+            </DetailField>
+          )}
           <DetailField label={t('admin.support.risk', 'Risk')}>
             <span className="tabular-nums">{data.risk_score ?? 0}</span>
           </DetailField>

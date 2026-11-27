@@ -21,6 +21,10 @@ web console renders the title and explanation from its dictionaries by check id
 (`securityOverview.check.<id>.title` and `.desc`), so every language shows the
 same overview.
 
+The links name the settings pages the API has always stored. In the web console `/settings/authentication`
+and `/settings/domains` redirect permanently to Settings › Sign-in, which opens the tab that holds the
+linked setting.
+
 | Check id | Rule | Link |
 | --- | --- | --- |
 | `sign_in.mfa_admins_required` | two-factor required for everyone or for owners and administrators: pass, else risk | `/settings/authentication#two-factor` |

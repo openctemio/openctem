@@ -1,12 +1,15 @@
 'use client'
 
+import * as React from 'react'
 import { useId, useState, type ReactNode } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
+import { useFilterPanelClose } from './filter-panel-layout'
+import { useFilterSheetClearAll } from './filter-sheet'
 
 /**
  * Faceted filters for list pages (the left panel on Findings). Filters apply as
@@ -29,23 +32,60 @@ export function FacetPanel({
   className?: string
 }) {
   const { t } = useTranslation()
+  const onClose = useFilterPanelClose()
+  // In the filter sheet the sheet's title names the filters and its header
+  // holds Clear all: no second "Filters" heading here.
+  const lendClearAll = useFilterSheetClearAll()
+  const clearRef = React.useRef(onClearAll)
+  React.useLayoutEffect(() => {
+    clearRef.current = onClearAll
+  })
+  React.useEffect(() => {
+    if (!lendClearAll) return
+    lendClearAll({ activeCount, onClearAll: () => clearRef.current() })
+  }, [lendClearAll, activeCount])
+  React.useEffect(() => {
+    if (!lendClearAll) return
+    return () => lendClearAll(null)
+  }, [lendClearAll])
   return (
     <div className={cn('flex min-h-0 flex-col', className)}>
-      <div className="flex h-9 shrink-0 items-center justify-between">
-        <p className="text-sm font-semibold">{t('common.filters', 'Filters')}</p>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 px-2 text-xs"
-          onClick={onClearAll}
-          disabled={activeCount === 0}
-        >
-          {t('common.clearAll', 'Clear all')}
-        </Button>
-      </div>
+      {lendClearAll ? null : (
+        <div className="flex h-9 shrink-0 items-center justify-between">
+          <p className="text-sm font-semibold">{t('common.filters', 'Filters')}</p>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={onClearAll}
+              disabled={activeCount === 0}
+            >
+              {t('common.clearAll', 'Clear all')}
+            </Button>
+            {onClose ? (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                data-slot="filter-panel-close"
+                aria-label={t('common.filterPanel.close', 'Hide the filter panel')}
+                title={t('common.filterPanel.close', 'Hide the filter panel')}
+                onClick={onClose}
+              >
+                <X aria-hidden="true" />
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      )}
       {/* The sections scroll on their own, so the panel can be given a fixed
           height (e.g. the viewport) whatever the number of filters. */}
-      <div className="no-scrollbar min-h-0 flex-1 divide-y overflow-y-auto border-y">
+      <div
+        className={cn(
+          'no-scrollbar min-h-0 flex-1 divide-y overflow-y-auto',
+          lendClearAll ? 'border-b' : 'border-y'
+        )}
+      >
         {children}
       </div>
     </div>
@@ -155,7 +195,7 @@ export function FacetOption({
     >
       <Checkbox id={id} checked={checked} onCheckedChange={(v) => onCheckedChange(v === true)} />
       {adornment}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span className="min-w-0 flex-1 break-words">{label}</span>
     </label>
   )
 }

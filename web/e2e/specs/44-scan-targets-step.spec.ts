@@ -92,8 +92,8 @@ for (const width of [390, 1440]) {
       const result = dialog.getByTestId('targets-result')
       const fieldBox = (await field.boundingBox())!
       const resultBox = (await result.boundingBox())!
-      if (width < 768) expect(resultBox.y).toBeGreaterThan(fieldBox.y)
-      else expect(resultBox.x).toBeGreaterThan(fieldBox.x)
+      // One column at every width: the result sits under the field.
+      expect(resultBox.y).toBeGreaterThan(fieldBox.y)
 
       // The chip's remove button: a 44px tap area (32px plus the hit extension).
       const remove = field.getByRole('button', { name: /^remove /i }).first()
@@ -126,9 +126,11 @@ for (const width of [390, 1440]) {
       expect(n.x).toBeGreaterThan(b.x)
       await expect(dialog.getByRole('button', { name: /^cancel$/i })).toHaveCount(0)
 
-      if (width < 768) {
-        await expect(dialog.getByTestId('stepper-phone')).toHaveText(/step 2 of 5: targets/i)
-      }
+      // One step strip at every width; the hidden heading says the progress.
+      await expect(
+        dialog.getByRole('navigation', { name: 'Steps' }).locator('[aria-current="step"]')
+      ).toHaveText(/targets/i)
+      await expect(dialog.getByTestId('wizard-step-heading')).toHaveText(/step 2 of 5: targets/i)
 
       const body = dialog.locator('[data-slot="dialog-body"]')
       const box = await body.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }))

@@ -16,18 +16,20 @@
  */
 
 import * as React from 'react'
-import { ChevronDown, ChevronRight, Lock, MoreHorizontal, Network } from 'lucide-react'
+import {
+  ChevronDown,
+  ChevronRight,
+  Lock,
+  MoreHorizontal,
+  Network,
+  Pencil,
+  Trash2,
+} from 'lucide-react'
 import { mutate as globalMutate } from '@/lib/swr-mutate'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu } from '@/components/ui/action-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslation } from '@/context/i18n-provider'
 import { EmptyState } from '@/features/shared/components/empty-state'
@@ -35,6 +37,7 @@ import { ErrorState } from '@/features/shared/components/error-state'
 import { ListToolbar } from '@/features/shared/components/list-toolbar'
 import { AssetStatusBadge } from '@/features/asset-lifecycle/components/asset-status-badge'
 import { endpoints } from '@/lib/api/endpoints'
+import { safeHref } from '@/lib/safe-href'
 import { cn } from '@/lib/utils'
 import { AssetTypeIcon, getAssetTypeLabel } from '../../lib/asset-type-icon'
 import {
@@ -52,6 +55,8 @@ import {
 import { CriticalityBadge } from '../classification-badges'
 import type { Criticality } from '../../types'
 import { useSearchQuery } from '@/hooks/use-search-query'
+import { formatDateTime } from '@/lib/app-locale'
+import { BreakText } from '@/features/shared/components/break-text'
 
 const PAGE_SIZE = 25
 /** Rows per group before "Show all" in the full view. */
@@ -478,7 +483,9 @@ function RelatedRow({
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <AssetName item={item} onNavigateToAsset={onNavigateToAsset} className="font-medium" />
-          <span className="text-xs text-muted-foreground">{getAssetTypeLabel(a.type)}</span>
+          <span className="text-xs text-muted-foreground">
+            {t(`assets.typeLabel.${a.type}`, getAssetTypeLabel(a.type))}
+          </span>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           {showCrit && <CriticalityBadge criticality={crit} size="sm" />}
@@ -497,31 +504,43 @@ function RelatedRow({
         </div>
       </div>
       {(onEdit || onRemove) && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <ActionMenu
+          title={a.name}
+          label={t('assets.related.actions', 'Actions for {name}', { name: a.name })}
+          items={[
+            ...(onEdit
+              ? [
+                  {
+                    id: 'edit',
+                    label: t('assets.related.edit', 'Edit relationship'),
+                    icon: Pencil,
+                    onSelect: () => onEdit(item),
+                  },
+                ]
+              : []),
+            ...(onRemove
+              ? [
+                  {
+                    id: 'remove',
+                    label: t('assets.related.remove', 'Remove relationship'),
+                    icon: Trash2,
+                    destructive: true,
+                    onSelect: () => onRemove(item),
+                  },
+                ]
+              : []),
+          ]}
+          trigger={
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0"
+              className="shrink-0"
               aria-label={t('assets.related.actions', 'Actions for {name}', { name: a.name })}
             >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {onEdit && (
-              <DropdownMenuItem onClick={() => onEdit(item)}>
-                {t('assets.related.edit', 'Edit relationship')}
-              </DropdownMenuItem>
-            )}
-            {onRemove && onEdit && <DropdownMenuSeparator />}
-            {onRemove && (
-              <DropdownMenuItem className="text-destructive" onClick={() => onRemove(item)}>
-                {t('assets.related.remove', 'Remove relationship')}
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          }
+        />
       )}
     </li>
   )
@@ -570,10 +589,10 @@ function EdgeFacts({ item }: { item: RelatedAssetItem }) {
         <p className="mt-1 text-muted-foreground">
           {seen
             ? t('assets.related.lastSeenAt', 'Last reported {date}', {
-                date: seen.toLocaleString(),
+                date: formatDateTime(seen),
               })
             : t('assets.related.addedAt', 'Added {date}; not reported by a scan since', {
-                date: added.toLocaleString(),
+                date: formatDateTime(added),
               })}
         </p>
       </TooltipContent>
@@ -624,19 +643,29 @@ function AssetName({
   const { t } = useTranslation()
   const a = item.asset
   if (!onNavigateToAsset)
-    return <span className={cn('min-w-0 break-all', className)}>{a.name}</span>
+    return (
+      <span className={cn('min-w-0 break-words', className)}>
+        <BreakText>{a.name}</BreakText>
+      </span>
+    )
+  // A link, not a button: it opens a page (new tab with Ctrl/middle click
+  // works) and reads as text beside the row's menu button.
   return (
-    <button
-      type="button"
+    <a
+      href={safeHref(`/assets/${encodeURIComponent(a.id)}`)}
       className={cn(
-        'min-w-0 break-all rounded text-left underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'min-w-0 break-words rounded text-left underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         className
       )}
-      onClick={() => onNavigateToAsset(a.id, a.name)}
+      onClick={(e) => {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+        e.preventDefault()
+        onNavigateToAsset(a.id, a.name)
+      }}
       aria-label={t('assets.related.open', 'Open {name}', { name: a.name })}
     >
       {a.name}
-    </button>
+    </a>
   )
 }
 

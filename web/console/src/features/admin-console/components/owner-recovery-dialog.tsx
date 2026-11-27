@@ -40,6 +40,10 @@ export function OwnerRecoveryDialog({
         {t('admin.org.recovery.open', 'Recover ownership')}
       </Button>
       <AdminConfirmDialog
+        reasonPlaceholder={t(
+          'admin.org.recovery.reasonPlaceholder',
+          'The only owner left the company; the director asked in writing, ticket 2231'
+        )}
         open={open}
         onOpenChange={(next) => {
           setOpen(next)

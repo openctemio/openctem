@@ -36,6 +36,10 @@ const SOURCES = new Set(['lib/severity.ts', 'lib/criticality.ts'])
  */
 const NOT_A_SCALE = new Map<string, string>([
   [
+    'app/(dashboard)/settings/roles/page.tsx|critical,high,medium,low',
+    'role risk level (the access a role grants), not finding severity',
+  ],
+  [
     'features/compliance/schemas/compliance.schema.ts|critical,high,medium,low',
     'compliance control priority (pkg/domain/compliance Priority), no info level',
   ],
@@ -58,10 +62,6 @@ const NOT_A_SCALE = new Map<string, string>([
   [
     'features/attack-surface/components/easm-overview.tsx|critical,high,medium,low,info,none',
     'EASM exposure severity includes none (chk_exposures_severity); typed by ExposureSeverity',
-  ],
-  [
-    'app/(dashboard)/settings/audit-log/page.tsx|info,low,medium,high,critical',
-    'audit event severity (audit_logs.severity), a separate scale from finding severity',
   ],
   [
     'app/(dashboard)/(scoping)/compliance/page.tsx|critical,high,medium,low',

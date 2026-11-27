@@ -6,11 +6,14 @@ import { useSWRConfig } from 'swr'
 import { AlertCircle, PlayCircle } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Separator } from '@/components/ui/separator'
+import {
+  SettingsBlock,
+  SettingsFieldGrid,
+  SettingsSection,
+  SettingsSwitchRow,
+} from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useTenant } from '@/context/tenant-provider'
 import {
@@ -220,62 +223,57 @@ export function LifecycleSettingsForm({
   }
 
   return (
-    <form id={formId} className="space-y-5" onSubmit={handleSubmit}>
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <CardTitle>
-                {t('settings.assetLifecycle.staleDetection', 'Stale-asset detection')}
-              </CardTitle>
-              <CardDescription>
-                {t('settings.assetLifecycle.offByDefault', 'Off by default.')}
-              </CardDescription>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label htmlFor="enabled" className="text-sm text-muted-foreground">
-                {t('settings.assetLifecycle.enabled', 'Enabled')}
-              </Label>
-              <Switch
-                id="enabled"
-                checked={form.enabled}
-                onCheckedChange={(checked) => setForm((s) => ({ ...s, enabled: checked }))}
-                disabled={checked(needsDryRun)}
-              />
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {needsDryRun && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>
-                {t('settings.assetLifecycle.dryRunRequired', 'Dry run required before enabling')}
-              </AlertTitle>
-              <AlertDescription>
-                {t(
-                  'settings.assetLifecycle.dryRunRequiredHint',
-                  'Run a dry run to preview how many assets would be flagged stale with your current thresholds. The switch unlocks once the dry run completes without errors.'
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-          {dryRunDone && !form.enabled && (
-            <Alert>
-              <PlayCircle className="h-4 w-4" />
-              <AlertTitle>
-                {t('settings.assetLifecycle.dryRunDone', 'Dry run completed')}
-              </AlertTitle>
-              <AlertDescription>
-                {t(
-                  'settings.assetLifecycle.dryRunDoneHint',
-                  'You can now turn on the switch to start automatic stale-asset detection.'
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
+    <form id={formId} className="flex flex-col gap-section" onSubmit={handleSubmit}>
+      {/* One settings section per job, as on the sibling settings pages:
+          rows divided by hairlines, each switch at the end of its own row. */}
+      <SettingsSection
+        framed
+        id="stale-detection"
+        title={t('settings.assetLifecycle.staleDetection', 'Stale-asset detection')}
+      >
+        <SettingsSwitchRow
+          id="enabled"
+          label={t('settings.assetLifecycle.enableLabel', 'Flag assets that are no longer seen')}
+          hint={t('settings.assetLifecycle.offByDefault', 'Off by default.')}
+          checked={form.enabled}
+          onCheckedChange={(checked) => setForm((s) => ({ ...s, enabled: checked }))}
+          disabled={checked(needsDryRun)}
+        />
+        {(needsDryRun || (dryRunDone && !form.enabled)) && (
+          <SettingsBlock>
+            {needsDryRun && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>
+                  {t('settings.assetLifecycle.dryRunRequired', 'Dry run required before enabling')}
+                </AlertTitle>
+                <AlertDescription>
+                  {t(
+                    'settings.assetLifecycle.dryRunRequiredHint',
+                    'Run a dry run to preview how many assets would be flagged stale with your current thresholds. The switch unlocks once the dry run completes without errors.'
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+            {dryRunDone && !form.enabled && (
+              <Alert>
+                <PlayCircle className="h-4 w-4" />
+                <AlertTitle>
+                  {t('settings.assetLifecycle.dryRunDone', 'Dry run completed')}
+                </AlertTitle>
+                <AlertDescription>
+                  {t(
+                    'settings.assetLifecycle.dryRunDoneHint',
+                    'You can now turn on the switch to start automatic stale-asset detection.'
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+          </SettingsBlock>
+        )}
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <SettingsBlock>
+          <SettingsFieldGrid>
             <div className="space-y-2">
               <Label htmlFor="stale-threshold">
                 {t('settings.assetLifecycle.staleThreshold', 'Stale threshold (days)')}
@@ -314,10 +312,10 @@ export function LifecycleSettingsForm({
                 )}
               </p>
             </div>
-          </div>
+          </SettingsFieldGrid>
+        </SettingsBlock>
 
-          <Separator />
-
+        <SettingsBlock>
           <div className="space-y-3">
             <Label id="lifecycle-excluded-label">
               {t('settings.assetLifecycle.excludedTypes', 'Excluded source types')}
@@ -347,39 +345,40 @@ export function LifecycleSettingsForm({
                       variant={active ? 'default' : 'outline'}
                       className={active ? '' : 'opacity-60 hover:opacity-90'}
                     >
-                      {t(`settings.assetLifecycle.sourceType.${type}`, type)}
+                      {t(
+                        `settings.assetLifecycle.sourceType.${type}`,
+                        t('settings.assetLifecycle.sourceType.other', 'Other')
+                      )}
                     </Badge>
                   </button>
                 )
               })}
             </div>
           </div>
+        </SettingsBlock>
+      </SettingsSection>
 
-          <Separator />
-
-          <div className="space-y-4" data-testid="liveness-settings">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <Label htmlFor="close-findings-when-gone" className="font-medium">
-                  {t(
-                    'settings.assetLifecycle.liveness.close',
-                    'Close findings of assets that are gone'
-                  )}
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  {t(
-                    'settings.assetLifecycle.liveness.closeHint',
-                    'A name that has had no address long enough is gone. Its open findings close as obsolete asset, never as fixed, and reopen with their SLA deadline if it comes back. Unreachable assets keep their findings open. Run the dry run first.'
-                  )}
-                </p>
-              </div>
-              <Switch
-                id="close-findings-when-gone"
-                checked={form.close_findings_when_gone}
-                onCheckedChange={(c) => setForm((s) => ({ ...s, close_findings_when_gone: c }))}
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <SettingsSection
+        framed
+        id="liveness-settings"
+        title={t('settings.assetLifecycle.liveness.title', 'Assets that are gone')}
+      >
+        <div data-testid="liveness-settings">
+          <SettingsSwitchRow
+            id="close-findings-when-gone"
+            label={t(
+              'settings.assetLifecycle.liveness.close',
+              'Close findings of assets that are gone'
+            )}
+            hint={t(
+              'settings.assetLifecycle.liveness.closeHint',
+              'A name that has had no address long enough is gone. Its open findings close as obsolete asset, never as fixed, and reopen with their SLA deadline if it comes back. Unreachable assets keep their findings open. Run the dry run first.'
+            )}
+            checked={form.close_findings_when_gone}
+            onCheckedChange={(c) => setForm((s) => ({ ...s, close_findings_when_gone: c }))}
+          />
+          <SettingsBlock>
+            <SettingsFieldGrid>
               {LIVENESS_FIELDS.map((f) => (
                 <div key={f} className="space-y-2">
                   <Label htmlFor={`liveness-${f}`}>
@@ -397,33 +396,22 @@ export function LifecycleSettingsForm({
                   />
                 </div>
               ))}
-            </div>
-          </div>
-
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <div>
-              <Label htmlFor="pause-on-integration-failure" className="font-medium">
-                {t('settings.assetLifecycle.pauseSilent', 'Pause lifecycle when ingest is silent')}
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                {t(
-                  'settings.assetLifecycle.pauseSilentHint',
-                  'Skip the organization entirely if no asset has been seen in the past 48 hours. This stops a crashed sensor from wiping the fleet.'
-                )}
-              </p>
-            </div>
-            <Switch
-              id="pause-on-integration-failure"
-              checked={form.pause_on_integration_failure}
-              onCheckedChange={(checked) =>
-                setForm((s) => ({ ...s, pause_on_integration_failure: checked }))
-              }
-            />
-          </div>
-        </CardContent>
-      </Card>
+            </SettingsFieldGrid>
+          </SettingsBlock>
+        </div>
+        <SettingsSwitchRow
+          id="pause-on-integration-failure"
+          label={t('settings.assetLifecycle.pauseSilent', 'Pause lifecycle when ingest is silent')}
+          hint={t(
+            'settings.assetLifecycle.pauseSilentHint',
+            'Skip the organization entirely if no asset has been seen in the past 48 hours. This stops a crashed sensor from wiping the fleet.'
+          )}
+          checked={form.pause_on_integration_failure}
+          onCheckedChange={(checked) =>
+            setForm((s) => ({ ...s, pause_on_integration_failure: checked }))
+          }
+        />
+      </SettingsSection>
 
       <DryRunDialog
         open={dryRunOpen}

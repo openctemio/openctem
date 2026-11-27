@@ -5,6 +5,7 @@ import {
   type AdminRole,
   type AdminSystem,
 } from '../types'
+import type { NamedVar } from './named-vars'
 import { daysLeft, formatBytes, hoursAgo } from './system'
 import { PLATFORM_SENSORS_URL } from './installation-health'
 
@@ -21,6 +22,8 @@ export interface AttentionItem {
   detail: string
   /** Values substituted into title and detail ({count}, {name}, ...). */
   vars?: Record<string, string | number>
+  /** Values of `vars` that are identifiers, read in words. */
+  named?: NamedVar[]
   /** Where the one-click action goes; none when no console page handles it yet. */
   href?: string
   actionKey?: string
@@ -96,9 +99,9 @@ export function buildAttention(
       title: 'Emergency access was used',
       detailKey: 'admin.attention.breakGlass.detail',
       detail:
-        '{count, plural, one {# break-glass sign-in} other {# break-glass sign-ins}} in the last 7 days. Confirm each was expected.',
+        '{count, plural, one {# emergency sign-in} other {# emergency sign-ins}} in the last 7 days. Confirm each was expected.',
       vars: { count: o.security.break_glass_sign_ins_7d },
-      href: '/security/activity?action=console.break_glass_sign_in',
+      href: '/security/activity?kind=all&action=console.break_glass_sign_in',
       actionKey: 'admin.attention.review',
       action: 'Review',
     })
@@ -153,7 +156,7 @@ export function buildAttention(
       detailKey: 'admin.attention.failedActions.detail',
       detail: '{count} refused or failed in the last 24 hours (wrong codes, denied roles, errors).',
       vars: { count: o.security.failed_admin_actions_24h },
-      href: '/security/activity?outcome=failure',
+      href: '/security/activity?kind=all&outcome=failure',
       actionKey: 'admin.attention.review',
       action: 'Review',
     })
@@ -166,7 +169,7 @@ export function buildAttention(
       id: 'break-glass-test-overdue',
       severity: 'warning',
       titleKey: 'admin.attention.breakGlassTest.title',
-      title: 'Break-glass test overdue',
+      title: 'Emergency access test overdue',
       detailKey: 'admin.attention.breakGlassTest.detail',
       detail:
         '{count, plural, one {# emergency-access account} other {# emergency-access accounts}} not tested in 90 days.',
@@ -314,6 +317,7 @@ export function buildSystemAttention(sys: AdminSystem): AttentionItem[] {
         free: formatBytes(vol.free_bytes),
         percent: Math.round(vol.free_ratio * 100),
       },
+      named: [{ var: 'name', keyPrefix: 'admin.system.volume.', values: vols.map((v) => v.name) }],
       href: '/health',
       actionKey: 'admin.attention.inspect',
       action: 'Inspect',
@@ -373,6 +377,7 @@ export function buildSystemAttention(sys: AdminSystem): AttentionItem[] {
         detailKey: 'admin.attention.certificate.detail',
         detail: '{name} expires in {days} days.',
         vars: { name: cert.name, days: days ?? '?' },
+        named: [{ var: 'name', keyPrefix: 'admin.system.cert.', values: [cert.name] }],
         href: '/health',
         actionKey: 'admin.attention.inspect',
         action: 'Inspect',

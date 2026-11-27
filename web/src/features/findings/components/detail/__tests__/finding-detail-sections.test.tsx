@@ -73,6 +73,15 @@ function finding(over: Partial<FindingDetail> = {}): FindingDetail {
 }
 
 describe('FindingWhyItMatters', () => {
+  it('gives a closed finding no deadline', () => {
+    for (const status of ['resolved', 'false_positive', 'accepted'] as const) {
+      const { unmount } = render(<FindingWhyItMatters finding={finding({ status })} />)
+      const panel = screen.getByRole('region', { name: 'Why it matters' })
+      expect(within(panel).queryByText(/fix within/)).not.toBeInTheDocument()
+      unmount()
+    }
+  })
+
   it('leads with the P-class and the reason, then the grouped signals', () => {
     render(<FindingWhyItMatters finding={finding()} />)
     const panel = screen.getByRole('region', { name: 'Why it matters' })
@@ -153,7 +162,7 @@ describe('FindingWhyItMatters', () => {
     } as never)
     render(<FindingWhyItMatters finding={finding({ priorityClass: 'P2', severity: 'critical' })} />)
     expect(document.querySelector('[data-slot="sla-basis"]')).toHaveTextContent(
-      'The deadline follows the priority (P2: 15 days), not the severity (critical: 2 days).'
+      'The deadline follows the priority (P2: 15 days), not the severity (Critical: 2 days).'
     )
   })
 

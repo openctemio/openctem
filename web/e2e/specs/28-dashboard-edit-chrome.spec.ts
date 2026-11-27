@@ -1,12 +1,13 @@
 import { test, expect } from '../fixtures/authenticated-page'
+import { touchTargetHeight } from '../helpers/touch'
 import type { Page } from '@playwright/test'
 
 /**
  * Dashboard edit mode (Customize). Each widget header holds the drag handle,
  * the title, Configure and a More menu; nothing in it may stick out of its
  * widget, even on the narrow (one column of four) tiles, and the title keeps
- * readable room. On a phone the editor is a single-column list with 44px
- * targets. Screenshots at 1440 and 390, light and dark, are attached.
+ * readable room. On a phone the editor is a single-column list with 44px touch
+ * targets (drawn 36). Screenshots at 1440 and 390, light and dark, are attached.
  */
 
 async function openEditor(page: Page) {
@@ -19,14 +20,18 @@ async function openEditor(page: Page) {
     }, choice)
   await page.goto('/')
   await expect(page.getByTestId('dashboard-freshness')).toBeVisible({ timeout: 45_000 })
-  const button = page.getByRole('button', { name: 'Customize' })
+  // A freshly seeded layout also shows a "Customize" link in its notice: the first is the header's.
+  const button = page.getByRole('button', { name: 'Customize' }).first()
   if (await button.isVisible()) {
     await button.click()
   } else {
     const more = page.getByRole('button', { name: 'More dashboard actions' })
     test.skip((await more.count()) === 0, 'the landing dashboard is not editable')
     await more.click()
-    const item = page.getByRole('menuitem', { name: 'Customize' })
+    // A menu on a desktop, a bottom sheet of plain rows on a phone.
+    const item = page
+      .getByRole('menuitem', { name: 'Customize' })
+      .or(page.locator('[data-slot="action-sheet-row"]', { hasText: 'Customize' }))
     test.skip((await item.count()) === 0, 'the landing dashboard is not editable')
     await item.click()
   }
@@ -77,8 +82,7 @@ for (const vp of [
           expect(new Set(xs).size).toBe(1)
           const buttons = page.getByTestId('editor-chrome').first().locator('button:visible')
           for (const b of await buttons.all()) {
-            const box = await b.boundingBox()
-            if (box) expect(box.height).toBeGreaterThanOrEqual(43.5)
+            expect(await touchTargetHeight(b), 'touch target').toBeGreaterThanOrEqual(43.5)
           }
           const overflow = await page.evaluate(
             () => document.documentElement.scrollWidth - document.documentElement.clientWidth
@@ -96,7 +100,12 @@ for (const vp of [
           .first()
           .getByRole('button', { name: /^More actions for / })
           .click()
-        await expect(page.getByRole('menuitem', { name: /Remove/ })).toBeVisible()
+        // A menu on a desktop, a bottom sheet of plain rows on a phone.
+        await expect(
+          page
+            .getByRole('menuitem', { name: /Remove/ })
+            .or(page.locator('[data-slot="action-sheet-row"]', { hasText: /Remove/ }))
+        ).toBeVisible()
         await info.attach(`edit-${vp.width}-${scheme}-menu.png`, {
           body: await page.screenshot(),
           contentType: 'image/png',

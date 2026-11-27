@@ -216,6 +216,28 @@ export function SensorProductsSettings() {
 
   const notSet = t('sensors.customProducts.notSet')
 
+  // Products the sensors report and nobody recorded yet: one click records one.
+  const reported =
+    canWrite && suggestions.length > 0 ? (
+      <div className="space-y-2" data-testid="custom-product-suggestions">
+        <p className="text-sm text-muted-foreground">{t('sensors.customProducts.suggest')}</p>
+        <div className="flex flex-wrap gap-2 in-data-[slot=empty-state]:justify-center">
+          {suggestions.map((p) => (
+            <Button
+              key={p}
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setEditing({ product: p, latest: '', min: '', isNew: true })}
+            >
+              <Plus className="size-3.5" aria-hidden="true" />
+              {p}
+            </Button>
+          ))}
+        </div>
+      </div>
+    ) : null
+
   return (
     <PageStack>
       <PageHeader
@@ -229,35 +251,6 @@ export function SensorProductsSettings() {
           </Button>
         </Can>
       </PageHeader>
-      <Alert>
-        <Info className="h-4 w-4" />
-        <AlertDescription>{t('sensors.customProducts.note')}</AlertDescription>
-      </Alert>
-      {!canWrite && (
-        <p className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-          <Lock className="h-3.5 w-3.5" aria-hidden />
-          {t('sensors.customProducts.readOnly')}
-        </p>
-      )}
-      {canWrite && suggestions.length > 0 && (
-        <div className="space-y-2" data-testid="custom-product-suggestions">
-          <p className="text-sm text-muted-foreground">{t('sensors.customProducts.suggest')}</p>
-          <div className="flex flex-wrap gap-2">
-            {suggestions.map((p) => (
-              <Button
-                key={p}
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => setEditing({ product: p, latest: '', min: '', isNew: true })}
-              >
-                <Plus className="size-3.5" aria-hidden="true" />
-                {p}
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
       {isLoading && <Skeleton className="h-40 w-full" />}
       {error && !isLoading && (
         <ErrorState
@@ -271,6 +264,7 @@ export function SensorProductsSettings() {
           icon={Package}
           title={t('sensors.customProducts.emptyTitle')}
           description={t('sensors.customProducts.empty')}
+          action={reported ?? undefined}
         />
       )}
       {items && items.length > 0 && (
@@ -341,6 +335,19 @@ export function SensorProductsSettings() {
           </Table>
         </div>
       )}
+      {/* The note, the read-only line and the reported products come after
+          the list, so the products are the first thing on the page. */}
+      <Alert>
+        <Info className="h-4 w-4" />
+        <AlertDescription>{t('sensors.customProducts.note')}</AlertDescription>
+      </Alert>
+      {!canWrite && (
+        <p className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+          <Lock className="h-3.5 w-3.5" aria-hidden />
+          {t('sensors.customProducts.readOnly')}
+        </p>
+      )}
+      {items && items.length > 0 && reported}
       {editing && (
         <ProductDialog
           key={`${editing.isNew}:${editing.product}`}

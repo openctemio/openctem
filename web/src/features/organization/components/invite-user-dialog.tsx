@@ -31,6 +31,7 @@ import { TeamPicker } from './team-picker'
 import type { InvitationPreview } from '../types/member.types'
 import { dateInputDaysFromNow, endOfDayISO } from '../lib/external-access'
 import { RolePicker, defaultViewerRoleId } from './role-checklist'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 /**
  * `${origin}/invitations#token=<token>`: the page the invitee opens to join.
@@ -193,7 +194,7 @@ export function InviteUserDialog({
   }
 
   const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+    localeFormatDate(new Date(iso), { year: 'numeric', month: 'short', day: 'numeric' })
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>

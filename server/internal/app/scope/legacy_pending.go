@@ -16,6 +16,7 @@ import (
 
 	auditapp "github.com/openctemio/openctem/server/internal/app/audit"
 	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/logger"
@@ -56,8 +57,9 @@ func (s *Service) ActivateLeftoverPending(ctx context.Context) (int, error) {
 			s.logger.Warn("scope pending settle: tenant", "tenant_id", tid.String(), "error", logger.SanitizeError(err))
 		}
 		if n > 0 {
-			s.NotifyAdmins(ctx, tid, "Scope changes waiting for approval are now in effect",
-				fmt.Sprintf("%d scope change(s) submitted while your organization required approvals are now in effect: it no longer requires approvals for scope changes.", n))
+			s.NotifyAdminsMsg(ctx, tid, "Scope changes waiting for approval are now in effect",
+				fmt.Sprintf("%d scope change(s) submitted while your organization required approvals are now in effect: it no longer requires approvals for scope changes.", n),
+				notificationdom.Msg("scope.pending_settled", "count", n))
 			s.scheduleJoin(tid)
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/asset"
 	auditdom "github.com/openctemio/openctem/server/pkg/domain/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/cirun"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
@@ -63,7 +64,8 @@ func (s *Service) SetGateBaseline(ctx context.Context, tenantID, assetID shared.
 		WithMetadata("branch", b.Branch))
 	aid := assetID
 	s.alertAdmins(ctx, tenantID, breakGlassAlert(AdminAlert{
-		Title: "CI gate baseline recorded: " + name,
+		Message: notificationdom.Msg("ci.baseline_recorded", "by", adminActorParam(a.Email), "repository", name, "count", b.FindingsCount),
+		Title:   "CI gate baseline recorded: " + name,
 		Body: fmt.Sprintf("%s recorded the CI gate baseline of %s: its %d open findings no longer fail default-branch runs.",
 			nonEmpty(a.Email, "an administrator"), name, b.FindingsCount),
 		URL: "/ci-cd", Aggregate: "ci_gate_baseline", AggregateID: &aid,

@@ -93,36 +93,44 @@ func addsSSOExceptions(before, after []tenantdom.SSOException) bool {
 // notice sent to the administrators.
 func loosenedSummary(before, after tenantdom.SecuritySettings) string {
 	signIn, sensorJobs := loosenedParts(before, after)
-	return strings.Join(append(signIn, sensorJobs...), "; ")
+	texts := make([]string, 0, len(signIn)+len(sensorJobs))
+	for _, p := range append(signIn, sensorJobs...) {
+		texts = append(texts, p.text)
+	}
+	return strings.Join(texts, "; ")
 }
+
+// loosenedPart is one weakening change: its English words and its message
+// code (settings.security.change.<code>).
+type loosenedPart struct{ code, text string }
 
 // loosenedParts splits the weakening changes into the sign-in ones
 // (Authentication page) and the sensor scan-job ones (Sensor job safety page),
 // so the notice names and links the page where each can be undone.
-func loosenedParts(before, after tenantdom.SecuritySettings) (signIn, sensorJobs []string) {
-	add := func(dst *[]string, cond bool, text string) {
+func loosenedParts(before, after tenantdom.SecuritySettings) (signIn, sensorJobs []loosenedPart) {
+	add := func(dst *[]loosenedPart, cond bool, code, text string) {
 		if cond {
-			*dst = append(*dst, text)
+			*dst = append(*dst, loosenedPart{code: code, text: text})
 		}
 	}
-	add(&signIn, before.MFARequired && !after.MFARequired, "two-factor no longer required")
-	add(&signIn, before.MFARequiredForAdmins && !after.MFARequiredForAdmins && !after.MFARequired, "two-factor no longer required for administrators")
-	add(&signIn, before.SSOEnforced && !after.SSOEnforced, "single sign-on no longer enforced")
-	add(&signIn, len(before.IPWhitelist) > 0 && len(after.IPWhitelist) == 0, "IP allowlist emptied")
-	add(&signIn, len(before.IPWhitelist) > 0 && len(after.IPWhitelist) > 0 && widensNetworks(before.IPWhitelist, after.IPWhitelist), "IP allowlist widened")
-	add(&signIn, len(before.AllowedDomains) > 0 && (len(after.AllowedDomains) == 0 || addsEntries(before.AllowedDomains, after.AllowedDomains)), "allowed email domains widened")
-	add(&signIn, before.EmailVerificationMode != tenantdom.EmailVerificationNever && after.EmailVerificationMode == tenantdom.EmailVerificationNever, "email verification turned off")
-	add(&signIn, personalPolicyRank(after.PersonalAccounts) < personalPolicyRank(before.PersonalAccounts), "personal accounts policy relaxed")
-	add(&signIn, before.JITRequiresApproval && !after.JITRequiresApproval, "approval of new single sign-on members turned off")
-	add(&signIn, before.SSORequireMFAEvidence && !after.SSORequireMFAEvidence, "identity provider no longer has to prove two-factor")
-	add(&signIn, addsSSOExceptions(before.SSOExceptions, after.SSOExceptions), "single sign-on exception added")
-	add(&signIn, before.EffectiveInvitees() != tenantdom.InviteesAny && after.EffectiveInvitees() == tenantdom.InviteesAny, "anyone may be invited")
-	add(&signIn, before.ExternalAccessEndRequired && !after.ExternalAccessEndRequired, "end date no longer required for external access")
-	add(&signIn, stepup.Looser(before.EffectiveStepUp(), after.EffectiveStepUp()), "re-verification asked less often")
-	add(&sensorJobs, !before.AllowSensorInteractsh && after.AllowSensorInteractsh, "sensor out-of-band interaction allowed")
-	add(&sensorJobs, !before.AllowSensorCustomTemplates && after.AllowSensorCustomTemplates, "sensor custom templates allowed")
-	add(&sensorJobs, before.RequireSensorLocalPolicyForPrivateTargets && !after.RequireSensorLocalPolicyForPrivateTargets, "sensor local policy no longer required for private targets")
-	add(&sensorJobs, before.ForbidToolInsecureTLS && !after.ForbidToolInsecureTLS, "insecure TLS allowed for tools")
+	add(&signIn, before.MFARequired && !after.MFARequired, "mfa_off", "two-factor no longer required")
+	add(&signIn, before.MFARequiredForAdmins && !after.MFARequiredForAdmins && !after.MFARequired, "mfa_admins_off", "two-factor no longer required for administrators")
+	add(&signIn, before.SSOEnforced && !after.SSOEnforced, "sso_off", "single sign-on no longer enforced")
+	add(&signIn, len(before.IPWhitelist) > 0 && len(after.IPWhitelist) == 0, "ip_emptied", "IP allowlist emptied")
+	add(&signIn, len(before.IPWhitelist) > 0 && len(after.IPWhitelist) > 0 && widensNetworks(before.IPWhitelist, after.IPWhitelist), "ip_widened", "IP allowlist widened")
+	add(&signIn, len(before.AllowedDomains) > 0 && (len(after.AllowedDomains) == 0 || addsEntries(before.AllowedDomains, after.AllowedDomains)), "domains_widened", "allowed email domains widened")
+	add(&signIn, before.EmailVerificationMode != tenantdom.EmailVerificationNever && after.EmailVerificationMode == tenantdom.EmailVerificationNever, "email_verification_off", "email verification turned off")
+	add(&signIn, personalPolicyRank(after.PersonalAccounts) < personalPolicyRank(before.PersonalAccounts), "personal_relaxed", "personal accounts policy relaxed")
+	add(&signIn, before.JITRequiresApproval && !after.JITRequiresApproval, "jit_approval_off", "approval of new single sign-on members turned off")
+	add(&signIn, before.SSORequireMFAEvidence && !after.SSORequireMFAEvidence, "sso_mfa_evidence_off", "identity provider no longer has to prove two-factor")
+	add(&signIn, addsSSOExceptions(before.SSOExceptions, after.SSOExceptions), "sso_exception_added", "single sign-on exception added")
+	add(&signIn, before.EffectiveInvitees() != tenantdom.InviteesAny && after.EffectiveInvitees() == tenantdom.InviteesAny, "anyone_invited", "anyone may be invited")
+	add(&signIn, before.ExternalAccessEndRequired && !after.ExternalAccessEndRequired, "external_end_optional", "end date no longer required for external access")
+	add(&signIn, stepup.Looser(before.EffectiveStepUp(), after.EffectiveStepUp()), "stepup_looser", "re-verification asked less often")
+	add(&sensorJobs, !before.AllowSensorInteractsh && after.AllowSensorInteractsh, "interactsh", "sensor out-of-band interaction allowed")
+	add(&sensorJobs, !before.AllowSensorCustomTemplates && after.AllowSensorCustomTemplates, "custom_templates", "sensor custom templates allowed")
+	add(&sensorJobs, before.RequireSensorLocalPolicyForPrivateTargets && !after.RequireSensorLocalPolicyForPrivateTargets, "local_policy_off", "sensor local policy no longer required for private targets")
+	add(&sensorJobs, before.ForbidToolInsecureTLS && !after.ForbidToolInsecureTLS, "insecure_tls", "insecure TLS allowed for tools")
 	return signIn, sensorJobs
 }
 
@@ -135,6 +143,26 @@ func loosenedNotice(before, after tenantdom.SecuritySettings) (title, url string
 		return "Sensor job safety was loosened", "/settings/scanning/sensor-safety"
 	}
 	return "Sign-in security was loosened", "/settings/authentication"
+}
+
+// loosenedMessage is the language-neutral form of the notice for a weakening
+// change: settings.sign_in_loosened or settings.sensor_jobs_loosened, with
+// the actor and the list of what changed (the _plain code when nothing is
+// listed).
+func loosenedMessage(before, after tenantdom.SecuritySettings, who any) *notificationdom.Message {
+	signIn, sensorJobs := loosenedParts(before, after)
+	code := "settings.sign_in_loosened"
+	if len(signIn) == 0 && len(sensorJobs) > 0 {
+		code = "settings.sensor_jobs_loosened"
+	}
+	items := make([]*notificationdom.Message, 0, len(signIn)+len(sensorJobs))
+	for _, p := range append(signIn, sensorJobs...) {
+		items = append(items, notificationdom.Msg("settings.security.change."+p.code))
+	}
+	if len(items) == 0 {
+		return notificationdom.Msg(code+"_plain", "who", who)
+	}
+	return notificationdom.Msg(code, "who", who, "what", notificationdom.Lines("settings.security.changes", items))
 }
 
 // addsEntries reports whether after contains a value that before does not.
@@ -216,11 +244,11 @@ func (s *TenantService) notifySecurityLoosened(ctx context.Context, tenantID str
 	if err != nil {
 		return
 	}
-	who := "An administrator"
+	who, named := someAdministrator, ""
 	if actx.ActorID != "" && s.userInfoProvider != nil {
 		if uid, err := shared.IDFromString(actx.ActorID); err == nil {
 			if name, err := s.userInfoProvider.GetUserNameByID(ctx, uid); err == nil && name != "" {
-				who = name
+				who, named = name, name
 			}
 		}
 	}
@@ -229,9 +257,9 @@ func (s *TenantService) notifySecurityLoosened(ctx context.Context, tenantID str
 	if what := loosenedSummary(before, after); what != "" {
 		body = fmt.Sprintf("%s changed the organization's security settings: %s.", who, what)
 	}
-	s.notifyAdminsAbout(ctx, tid, adminNotice{
-		Type: notificationdom.TypeSystemAlert, ResourceType: "tenant_settings", URL: url,
-	}, title, body, notificationdom.SeverityHigh)
+	s.notifyAdminsAboutMsg(ctx, tid, adminNotice{
+		Type: notificationdom.TypeSystemAlert, ResourceType: resourceTenantSettings, URL: url,
+	}, loosenedMessage(before, after, actorParam(named)), title, body, notificationdom.SeverityHigh)
 }
 
 // auditStepUpPolicy records a change of the re-verification policy with the

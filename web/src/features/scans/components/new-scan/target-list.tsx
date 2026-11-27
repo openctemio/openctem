@@ -180,11 +180,11 @@ export function TargetList({
                     }
                   }}
                   aria-label={t('scans.paste.edit', undefined, { name: entry.input })}
-                  className="h-9 min-w-0 flex-1 font-mono text-sm"
+                  className="min-w-0 flex-1 font-mono text-sm"
                   autoCapitalize="none"
                   spellCheck={false}
                 />
-                <Button type="submit" size="sm" className="h-9">
+                <Button type="submit" size="sm">
                   {t('scans.paste.save')}
                 </Button>
               </form>
@@ -226,7 +226,7 @@ export function TargetList({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-9 w-9 shrink-0 max-sm:h-11 max-sm:w-11"
+                    className="shrink-0"
                     onClick={() => {
                       setDraft(entry.input)
                       setEditing(entry.input)
@@ -240,7 +240,7 @@ export function TargetList({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 shrink-0 max-sm:h-11 max-sm:w-11"
+                  className="shrink-0"
                   onClick={() => onRemove(entry)}
                   aria-label={t('scans.summary.remove', undefined, { name: entry.input })}
                 >

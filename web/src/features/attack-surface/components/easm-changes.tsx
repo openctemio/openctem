@@ -20,21 +20,23 @@ import {
   ShieldAlert,
   TimerReset,
   Unplug,
-  X,
   type LucideIcon,
 } from 'lucide-react'
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState, ErrorState, RelativeTime, SeverityBadge } from '@/features/shared'
+import {
+  EmptyState,
+  ErrorState,
+  FilterSelect,
+  RelativeTime,
+  SeverityBadge,
+} from '@/features/shared'
+import { ListToolbar } from '@/features/shared/components/list-toolbar'
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
+import { FilterChipsRow } from '@/features/shared/components/filter-chips-row'
+import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
 import { isLinkableAssetId } from '@/features/findings/lib/asset-link'
 import { AssetPeekLink } from '@/features/assets/components/asset-peek'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
@@ -49,6 +51,8 @@ import {
   parseTime,
   type ChangeKind,
 } from '../lib/changes'
+import { formatDate } from '@/lib/app-locale'
+import { BreakText } from '@/features/shared/components/break-text'
 
 const KIND_ICON: Record<ChangeKind, LucideIcon> = {
   dns_dangling: Link2Off,
@@ -109,19 +113,19 @@ function ChangeDetail({ change }: { change: EASMChange }) {
       {change.exposure_id &&
         change.new &&
         (exposureHref ? (
-          <Link href={exposureHref} className="break-all text-primary hover:underline">
+          <Link href={exposureHref} className="break-words text-primary hover:underline">
             {change.new}
           </Link>
         ) : (
-          <span className="break-all">{change.new}</span>
+          <span className="break-words">{change.new}</span>
         ))}
       {added.length > 0 && (
-        <span className="break-all">
+        <span className="break-words">
           {t('attackSurface.changes.added', 'Added: {values}', { values: added.join(', ') })}
         </span>
       )}
       {removed.length > 0 && (
-        <span className="break-all">
+        <span className="break-words">
           {t('attackSurface.changes.removed', 'Removed: {values}', { values: removed.join(', ') })}
         </span>
       )}
@@ -137,37 +141,49 @@ function ChangeRow({ change }: { change: EASMChange }) {
   const known = isChangeKind(change.kind ?? '')
   const kind = known ? (change.kind as ChangeKind) : undefined
   const Icon = kind ? KIND_ICON[kind] : History
-  const label = kind ? kindLabel(kind) : (change.kind ?? '').replace(/_/g, ' ')
+  const label = kind ? kindLabel(kind) : t('attackSurface.changes.kindOther', 'Other change')
   const name = change.asset_name || t('attackSurface.changes.noAsset', 'Not linked to an asset')
   return (
-    <li className="flex items-start gap-3 py-3">
+    // On a phone a grid: the time sits on the title row and the asset name
+    // and the detail take the whole width under it, so a long host name is
+    // never squeezed into a narrow column beside the time. From sm up the
+    // plain list row of the app: the content, then the time at its end.
+    <li className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 py-3 sm:flex sm:gap-3">
       <Icon
         aria-hidden
         className={cn(
-          'mt-0.5 h-4 w-4 shrink-0',
+          'col-start-1 row-start-1 mt-0.5 h-4 w-4 shrink-0',
           kind && RISKY.has(kind) ? 'text-destructive' : 'text-muted-foreground'
         )}
       />
-      <div className="min-w-0 flex-1 space-y-1">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-medium first-letter:uppercase">{label}</span>
-          {isLinkableAssetId(change.asset_id) ? (
-            <AssetPeekLink assetId={change.asset_id} className="break-all text-primary">
-              {name}
-            </AssetPeekLink>
-          ) : (
-            <span className="break-all text-muted-foreground">{name}</span>
-          )}
+      <div className="contents sm:block sm:min-w-0 sm:flex-1 sm:space-y-1">
+        <div className="contents text-sm sm:flex sm:flex-wrap sm:items-center sm:gap-2">
+          <span className="col-start-2 row-start-1 text-sm font-medium first-letter:uppercase">
+            {label}
+          </span>
+          <span className="col-start-2 col-end-4 row-start-2 min-w-0 text-sm">
+            {isLinkableAssetId(change.asset_id) ? (
+              <AssetPeekLink assetId={change.asset_id} className="break-words text-primary">
+                {name}
+              </AssetPeekLink>
+            ) : (
+              <span className="break-words text-muted-foreground">
+                <BreakText>{name}</BreakText>
+              </span>
+            )}
+          </span>
         </div>
-        <ChangeDetail change={change} />
+        <div className="col-start-2 col-end-4 row-start-3 min-w-0 empty:hidden">
+          <ChangeDetail change={change} />
+        </div>
       </div>
-      <RelativeTime date={change.at} className="shrink-0 text-xs" />
+      <RelativeTime date={change.at} className="col-start-3 row-start-1 shrink-0 text-xs" />
     </li>
   )
 }
 
 export function EASMChanges() {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const kindLabel = useKindLabel()
   const [kindParam, setKinds] = useUrlFilterList('kind')
   const [daysParam, setDays] = useUrlFilter('days', '7')
@@ -220,73 +236,86 @@ export function EASMChanges() {
 
   const fmt = (iso?: string) =>
     iso
-      ? new Date(iso).toLocaleDateString(locale, {
+      ? formatDate(new Date(iso), {
           year: 'numeric',
           month: 'short',
           day: 'numeric',
         })
       : ''
 
+  const kindChips = kinds.map((k) => (
+    <RemovableFilterChip
+      key={k}
+      text={t('attackSurface.changes.chip.kind', 'Kind is {kind}', { kind: kindLabel(k) })}
+      onRemove={() => toggle(k)}
+      removeLabel={t('attackSurface.changes.chip.remove', 'Remove filter {filter}', {
+        filter: kindLabel(k),
+      })}
+    />
+  ))
+  const chips = explicit
+    ? [
+        <RemovableFilterChip
+          key="window"
+          text={t('attackSurface.changes.window', '{from} to {to}', {
+            from: fmt(from),
+            to: fmt(to),
+          })}
+          onRemove={clearWindow}
+          removeLabel={t('attackSurface.changes.clearWindow', 'Back to recent changes')}
+        />,
+        ...kindChips,
+      ]
+    : kindChips
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        {explicit ? (
-          <div className="flex items-center gap-2 text-sm">
-            <span>
-              {t('attackSurface.changes.window', '{from} to {to}', {
-                from: fmt(from),
-                to: fmt(to),
-              })}
-            </span>
-            <Button variant="ghost" size="sm" onClick={clearWindow}>
-              <X className="me-1 h-4 w-4" aria-hidden />
-              {t('attackSurface.changes.clearWindow', 'Back to recent changes')}
-            </Button>
-          </div>
-        ) : (
-          <Select value={String(days)} onValueChange={setDays}>
-            <SelectTrigger
-              className="w-44"
-              aria-label={t('attackSurface.changes.windowLabel', 'Time window')}
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CHANGE_WINDOWS.map((d) => (
-                <SelectItem key={d} value={String(d)}>
-                  {t('attackSurface.changes.lastDays', 'Last {count} days', { count: d })}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </div>
-
-      <div
-        role="group"
-        aria-label={t('attackSurface.changes.kindsLabel', 'Change kinds')}
-        className="flex flex-wrap gap-2"
-      >
-        {CHANGE_KINDS.map((k) => {
-          const active = kinds.includes(k)
-          const Icon = KIND_ICON[k]
-          return (
-            <Button
-              key={k}
-              type="button"
-              size="sm"
-              variant={active ? 'secondary' : 'outline'}
-              className={cn(active && 'ring-1 ring-ring')}
-              aria-pressed={active}
-              onClick={() => toggle(k)}
-            >
-              <Icon className="me-1 h-3.5 w-3.5" aria-hidden />
-              {kindLabel(k)}
-              <span className="ms-1 tabular-nums">{counts[k] ?? 0}</span>
-            </Button>
-          )
-        })}
-      </div>
+      <ListToolbar
+        start={
+          <>
+            {!explicit && (
+              <FilterSelect<string>
+                label={t('attackSurface.changes.windowLabel', 'Time window')}
+                value={String(days)}
+                clearable={false}
+                options={CHANGE_WINDOWS.map((d) => ({
+                  value: String(d),
+                  label: t('attackSurface.changes.lastDays', 'Last {count} days', { count: d }),
+                }))}
+                onChange={(v) => setDays(v || '7')}
+              />
+            )}
+            <FilterSelect<ChangeKind>
+              label={t('attackSurface.changes.kindsLabel', 'Change kinds')}
+              value=""
+              options={CHANGE_KINDS.map((k) => ({
+                value: k,
+                label: kindLabel(k),
+                count: counts[k] ?? 0,
+              }))}
+              onChange={(v) => v && toggle(v)}
+            />
+          </>
+        }
+        below={
+          chips.length > 0 ? (
+            <FilterChipsRow
+              label={t('attackSurface.changes.activeFilters', 'Active filters')}
+              chips={chips}
+            />
+          ) : undefined
+        }
+      />
+      <ListTitleRow
+        title={t('attackSurface.changes.viewAll', 'All changes')}
+        count={
+          <ListCount
+            total={total}
+            loading={isLoading && items.length === 0}
+            label={t('attackSurface.changes.count', '{count} changes', { count: total })}
+          />
+        }
+      />
 
       {error ? (
         <ErrorState

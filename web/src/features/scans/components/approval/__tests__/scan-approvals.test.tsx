@@ -13,31 +13,56 @@ const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
 
 const api = vi.hoisted(() => ({
-  list: { data: [] as ScanApprovalRequest[], total: 0 },
+  list: { data: [] as ScanApprovalRequest[], total: 0 } as
+    { data: ScanApprovalRequest[]; total: number } | undefined,
+  error: undefined as unknown,
+  read: vi.fn(),
   approve: vi.fn(),
   reject: vi.fn(),
   selfApprove: vi.fn(),
+  remind: vi.fn(),
+  cancel: vi.fn(),
   mutate: vi.fn(),
-  loadMore: vi.fn(),
+  refresh: vi.fn(),
 }))
 vi.mock('@/lib/api/scan-approval-hooks', () => ({
-  useScanApprovals: () => ({
-    data: api.list,
-    error: undefined,
-    isLoading: false,
-    mutate: api.mutate,
-    loadMore: api.loadMore,
-    isLoadingMore: false,
-  }),
+  useScanApprovals: (...args: unknown[]) => {
+    api.read(...args)
+    return {
+      data: api.list,
+      error: api.error,
+      isLoading: false,
+      isValidating: false,
+      mutate: api.mutate,
+    }
+  },
+  refreshScanApprovals: api.refresh,
   approveScanRequest: api.approve,
   rejectScanRequest: api.reject,
   selfApproveScanRequest: api.selfApprove,
-  remindScanApprovers: vi.fn(),
-  cancelScanRequest: vi.fn(),
+  remindScanApprovers: api.remind,
+  cancelScanRequest: api.cancel,
 }))
+// The status lens and the page live in the URL through useListParams.
+const listState = vi.hoisted(() => ({ status: '', setFilter: vi.fn() }))
+vi.mock('@/hooks/use-list-params', () => ({
+  useListParams: () => ({
+    page: 2,
+    perPage: 25,
+    filters: { status: listState.status },
+    pagination: { pageIndex: 1, pageSize: 25 },
+    setPagination: vi.fn(),
+    setFilter: listState.setFilter,
+  }),
+}))
+// "Mine" is decided by the profile's id (useMyUserId); the auth store and the
+// display user hold different ids, so a regression to either would fail these tests.
+vi.mock('@/hooks/use-my-user-id', () => ({ useMyUserId: () => 'me' }))
 vi.mock('@/stores/auth-store', () => ({
-  useAuthStore: (sel: (s: { user: { id: string } }) => unknown) => sel({ user: { id: 'me' } }),
+  useAuthStore: (sel: (s: { user: { id: string } }) => unknown) =>
+    sel({ user: { id: 'auth-store-id' } }),
 }))
+vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: 'display-user-id' }) }))
 vi.mock('@/components/link', () => ({
   default: ({ href, children }: { href: string; children: React.ReactNode }) => (
     <a href={href}>{children}</a>
@@ -86,6 +111,8 @@ function request(over: Partial<ScanApprovalRequest> = {}): ScanApprovalRequest {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  api.error = undefined
+  listState.status = ''
 })
 
 describe('New Scan approval notice', () => {
@@ -110,7 +137,7 @@ describe('New Scan approval notice', () => {
       />
     )
     expect(
-      screen.getByText(/Needs approval by 2 distinct approvers: an administrator/)
+      screen.getByText(/Needs approval by 2 distinct approvers: administrators/)
     ).toBeInTheDocument()
     expect(screen.getByText('Production')).toBeInTheDocument()
     expect(screen.getByLabelText('Justification')).toBeInTheDocument()
@@ -138,56 +165,102 @@ describe('New Scan approval notice', () => {
 })
 
 describe('Approvals inbox', () => {
-  it('approves with a note when the API allows the viewer', async () => {
+  it('approves with a note when the API allows the viewer, and says so', async () => {
     api.list = { data: [request()], total: 1 }
     api.approve.mockResolvedValue(request({ status: 'approved' }))
     const user = userEvent.setup()
     render(<ScanApprovalsInbox />)
-    expect(screen.getByText('Web pentest')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Show details' }))
-    expect(screen.getByText('Changed since the last approval')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Approve' }))
+    expect(screen.getAllByText('Web pentest').length).toBeGreaterThan(0)
+    // What the scan will do opens on demand, from the row's More.
+    await user.click(screen.getAllByRole('button', { name: 'Actions for Web pentest' })[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'Details' }))
+    expect(await screen.findByText('Changed since the last approval')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await user.click(screen.getAllByRole('button', { name: 'Approve Web pentest' })[0])
     await user.type(await screen.findByLabelText('Note (optional)'), 'ok')
-    const buttons = screen.getAllByRole('button', { name: 'Approve' })
-    await user.click(buttons[buttons.length - 1])
+    await user.click(screen.getByRole('button', { name: 'Approve' }))
     await waitFor(() => expect(api.approve).toHaveBeenCalledWith('r1', 'ok'))
+    await waitFor(() => expect(api.refresh).toHaveBeenCalled())
+    expect(document.querySelector('[data-slot=queue-announcer]')).toHaveTextContent(
+      'Approval recorded'
+    )
   })
 
-  // The API returns at most 100 requests a page; the rest was dropped without a word.
-  it('says how many requests exist and loads more', async () => {
-    api.loadMore.mockClear()
+  // The API returns at most 100 requests a page; nothing past it may be dropped.
+  it('reads the page in the URL and counts every request', () => {
     api.list = {
-      data: Array.from({ length: 100 }, (_, i) => request({ id: `r${i}` })),
+      data: Array.from({ length: 25 }, (_, i) => request({ id: `r${i}` })),
       total: 130,
     }
     render(<ScanApprovalsInbox />)
-    expect(screen.getByTestId('scan-approvals-count')).toHaveTextContent('Showing 100 of 130')
-    await userEvent.click(screen.getByRole('button', { name: 'Load more' }))
-    expect(api.loadMore).toHaveBeenCalledTimes(1)
+    expect(api.read).toHaveBeenCalledWith('pending', 2, 25)
+    expect(screen.getByText('130')).toBeInTheDocument()
   })
 
-  it('shows no count or Load more when everything is loaded', () => {
-    api.list = { data: [request()], total: 1 }
+  it('reads every request under All and one status under its lens', () => {
+    api.list = { data: [request({ status: 'approved' })], total: 1 }
+    listState.status = 'all'
+    const { unmount } = render(<ScanApprovalsInbox />)
+    expect(api.read).toHaveBeenLastCalledWith('', 2, 25)
+    expect(document.querySelector('[data-slot=list-title-row]')).toHaveTextContent(
+      'All scan requests'
+    )
+    unmount()
+    listState.status = 'expired'
     render(<ScanApprovalsInbox />)
-    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
+    expect(api.read).toHaveBeenLastCalledWith('expired', 2, 25)
   })
 
-  it('marks the active filter as pressed', async () => {
+  it("names the intensity with the scans' translated label, never the raw value", () => {
     api.list = { data: [request()], total: 1 }
     render(<ScanApprovalsInbox />)
-    const pending = screen.getByRole('button', { name: 'Awaiting approval' })
-    const all = screen.getByRole('button', { name: 'All requests' })
-    expect(pending).toHaveAttribute('aria-pressed', 'true')
-    expect(all).toHaveAttribute('aria-pressed', 'false')
-    await userEvent.click(all)
-    expect(all).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getAllByText('Intrusive (full)').length).toBeGreaterThan(0)
+    expect(screen.queryByText('intrusive')).toBeNull()
+  })
+
+  it('offers Show all when nothing waits', async () => {
+    api.list = { data: [], total: 0 }
+    render(<ScanApprovalsInbox />)
+    expect(screen.getByText('No scan waits for approval')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Show all requests' }))
+    expect(listState.setFilter).toHaveBeenCalledWith('status', 'all')
+  })
+
+  it('a refused read says no access, without Retry', () => {
+    api.list = undefined
+    api.error = Object.assign(new Error('forbidden'), { statusCode: 403 })
+    render(<ScanApprovalsInbox />)
+    expect(screen.queryByRole('button', { name: /Retry/ })).toBeNull()
+    expect(screen.queryByRole('table')).toBeNull()
   })
 
   it('offers no decision when the API says the viewer may not approve', () => {
     api.list = { data: [request({ can_approve: false })], total: 1 }
     render(<ScanApprovalsInbox />)
-    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Approve/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Reject/ })).not.toBeInTheDocument()
+  })
+
+  it('a requester reminds, and withdraws only after a confirm', async () => {
+    api.list = {
+      data: [request({ can_approve: false, requested_by: { id: 'me', name: 'Me' } })],
+      total: 1,
+    }
+    api.remind.mockResolvedValue(request())
+    api.cancel.mockResolvedValue(request({ status: 'canceled' }))
+    const user = userEvent.setup()
+    render(<ScanApprovalsInbox />)
+    expect(screen.getAllByText('Your request').length).toBeGreaterThan(0)
+    await user.click(screen.getAllByRole('button', { name: 'Actions for Web pentest' })[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'Remind' }))
+    await waitFor(() => expect(api.remind).toHaveBeenCalledWith('r1'))
+    await user.click(screen.getAllByRole('button', { name: 'Actions for Web pentest' })[0])
+    await user.click(await screen.findByRole('menuitem', { name: 'Withdraw' }))
+    expect(api.cancel).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Withdraw this request?')
+    await user.click(screen.getByRole('button', { name: 'Withdraw' }))
+    await waitFor(() => expect(api.cancel).toHaveBeenCalledWith('r1'))
   })
 
   it('self-approval needs a reason and an authenticator code', async () => {
@@ -204,8 +277,8 @@ describe('Approvals inbox', () => {
     api.selfApprove.mockResolvedValue(request({ status: 'approved' }))
     const user = userEvent.setup()
     render(<ScanApprovalsInbox />)
-    expect(screen.getByRole('button', { name: 'Remind' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /Approve my own scan/ }))
+    await user.click(screen.getAllByRole('button', { name: 'Actions for Web pentest' })[0])
+    await user.click(await screen.findByRole('menuitem', { name: /Approve my own scan/ }))
     const confirm = screen.getAllByRole('button', { name: 'Approve' }).pop()!
     expect(confirm).toBeDisabled()
     await user.type(screen.getByLabelText('Reason'), 'only owner')

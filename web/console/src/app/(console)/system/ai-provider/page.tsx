@@ -1,9 +1,7 @@
 'use client'
 
-import { Main } from '@/components/layout'
-import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { SettingsPage } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { usePlatformAI } from '@console/features/admin-console/api/use-platform-settings'
 import { PlatformAIForm } from '@console/features/admin-console/components/platform-ai-form'
@@ -14,32 +12,23 @@ export default function AIProviderSettingsPage() {
   const { t } = useTranslation()
   const me = useAdmin()
   const { data, error, isLoading, mutate } = usePlatformAI()
+  const canEdit = adminHas(me, 'platform.settings.ai.write')
   return (
-    <Main>
-      <PageStack>
-        <PageHeader
-          title={t('admin.nav.aiProvider', 'AI provider')}
-          description={t(
-            'admin.ai.pageDescription',
-            'The AI provider organizations use when they do not bring their own key.'
-          )}
-        />
-        {error ? (
-          <ErrorState
-            title={t('admin.ai.errorTitle', 'the AI provider')}
-            error={error}
-            onRetry={() => void mutate()}
-          />
-        ) : isLoading || !data ? (
-          <Skeleton className="h-72 w-full" />
-        ) : (
-          <PlatformAIForm
-            settings={data}
-            canEdit={adminHas(me, 'platform.settings.ai.write')}
-            onSaved={() => void mutate()}
-          />
-        )}
-      </PageStack>
-    </Main>
+    <SettingsPage
+      title={t('admin.nav.aiProvider', 'AI provider')}
+      description={t(
+        'admin.ai.pageDescription',
+        'The AI provider organizations use when they do not bring their own key.'
+      )}
+      state={error ? 'error' : isLoading || !data ? 'loading' : 'ready'}
+      error={error}
+      onRetry={() => void mutate()}
+      readOnly={
+        !canEdit &&
+        t('admin.settings.superAdminOnly', 'Only a super admin can change this setting.')
+      }
+    >
+      {data && <PlatformAIForm settings={data} canEdit={canEdit} onSaved={() => void mutate()} />}
+    </SettingsPage>
   )
 }

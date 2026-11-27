@@ -32,6 +32,7 @@ import {
 import { useTenant } from '@/context/tenant-provider'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ScreenReaderTable } from '@/components/screen-reader-table'
 import {
   Select,
   SelectContent,
@@ -40,6 +41,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip } from '@/components/charts'
+import { CHART_AXIS } from '@/components/charts/chart-defaults'
 import { CHART_TOOLTIP_PROPS } from '../lib/ctem-colors'
 import {
   useExecutiveSummary,
@@ -290,7 +292,7 @@ export function ProgramHealthView() {
     addAct(
       dgStatus,
       'downgrade',
-      t('insights.programHealth.act.downgrade', 'Validation downgrades are out of range'),
+      t('insights.programHealth.act.downgrade', 'Too many findings ranked lower after validation'),
       dgDisplay ?? undefined,
       PROGRAM_HEALTH_LINKS.validation
     )
@@ -302,7 +304,8 @@ export function ProgramHealthView() {
     // One strip, at most five tiles; a tile opens its list. A figure with no
     // measurement says so and opens nothing.
     const notMeasuredNode = (
-      <span className="text-sm font-normal text-muted-foreground">
+      // Small on a phone, so it fits one line in a third of the strip.
+      <span className="text-xs font-normal whitespace-nowrap text-muted-foreground sm:text-sm">
         {t('insights.status.pending', 'Not measured')}
       </span>
     )
@@ -312,13 +315,19 @@ export function ProgramHealthView() {
       p0Days === null
         ? {
             key: 'p0-time',
-            label: t('dashboardMetrics.program.p0MeanTime', 'Mean time to fix, P0'),
+            label: t(
+              'dashboardMetrics.program.p0MeanTime',
+              'Average time to fix, highest priority (P0)'
+            ),
             value: notMeasuredNode,
             notMeasured: true,
           }
         : {
             key: 'p0-time',
-            label: t('dashboardMetrics.program.p0MeanTime', 'Mean time to fix, P0'),
+            label: t(
+              'dashboardMetrics.program.p0MeanTime',
+              'Average time to fix, highest priority (P0)'
+            ),
             value: t('insights.programHealth.days', '{value}d', { value: p0Days.toFixed(1) }),
             hint: target(t('insights.programHealth.targetDays', '< {value} days', { value: 14 })),
             description: t(
@@ -384,7 +393,7 @@ export function ProgramHealthView() {
             key: 'trend',
             label: t('dashboardMetrics.program.exposureTrend', 'Open findings trend'),
             value: trendDisplay,
-            hint: target(t('insights.programHealth.trendingDown', 'Trending down')),
+            hint: target(t('insights.programHealth.trendingDown', 'Falling over time')),
             description: t(
               'dashboardMetrics.program.exposureTrendMeasures',
               'Open findings now vs {window} ago, which should fall after ramp-up',
@@ -393,22 +402,24 @@ export function ProgramHealthView() {
             href: PROGRAM_HEALTH_LINKS.open,
           }
     )
+    // With no validation yet there is no rate to show: the tile says it is
+    // not measured (the act list keeps "0% (no validations yet)").
     strip.push(
-      dgDisplay === null
+      dgDisplay === null || (dgValidated ?? 0) <= 0
         ? {
             key: 'downgrade',
-            label: t('insights.programHealth.downgrade', 'Validation downgrade %'),
+            label: t('insights.programHealth.downgrade', 'Findings ranked lower after validation'),
             value: notMeasuredNode,
             notMeasured: true,
           }
         : {
             key: 'downgrade',
-            label: t('insights.programHealth.downgrade', 'Validation downgrade %'),
+            label: t('insights.programHealth.downgrade', 'Findings ranked lower after validation'),
             value: dgDisplay,
             hint: target('25–40%'),
             description: t(
               'insights.programHealth.downgradeMeasures',
-              'Findings de-prioritised after validation proved them non-exploitable'
+              'Findings ranked lower after validation showed they cannot be exploited'
             ),
             href: PROGRAM_HEALTH_LINKS.validation,
           }
@@ -500,7 +511,7 @@ export function ProgramHealthView() {
         >
           <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
             <SelectTrigger
-              className="h-9 w-[150px]"
+              className="w-auto sm:w-[150px]"
               aria-label={t('insights.period.label', 'Period')}
             >
               <SelectValue />
@@ -533,7 +544,10 @@ export function ProgramHealthView() {
             <div className="grid gap-page lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
               {view.completion === null ? (
                 <OverviewAnswer
-                  question={t('insights.programHealth.answer.question', 'P0 fixed within target')}
+                  question={t(
+                    'insights.programHealth.answer.question',
+                    'Highest priority (P0) fixed within target'
+                  )}
                   notMeasured={{
                     label: t('insights.status.pending', 'Not measured'),
                     reason: t(
@@ -553,7 +567,10 @@ export function ProgramHealthView() {
                 </OverviewAnswer>
               ) : (
                 <OverviewAnswer
-                  question={t('insights.programHealth.answer.question', 'P0 fixed within target')}
+                  question={t(
+                    'insights.programHealth.answer.question',
+                    'Highest priority (P0) fixed within target'
+                  )}
                   value={fmtPct(view.completion, locale) ?? ''}
                   tone={answerTone}
                   sentence={t(
@@ -637,19 +654,11 @@ function ExposureTrend({
           <AreaChart data={points} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
             <XAxis
               dataKey="date"
-              tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
-              tickLine={false}
-              axisLine={false}
+              {...CHART_AXIS}
               minTickGap={24}
               tickFormatter={(d: string) => formatTickDate(d, locale)}
             />
-            <YAxis
-              tick={{ fontSize: 12, fill: 'var(--muted-foreground)' }}
-              tickLine={false}
-              axisLine={false}
-              width={36}
-              allowDecimals={false}
-            />
+            <YAxis {...CHART_AXIS} width={36} allowDecimals={false} />
             <Tooltip
               {...CHART_TOOLTIP_PROPS}
               labelFormatter={(d) => formatTickDate(String(d), locale)}
@@ -666,7 +675,7 @@ function ExposureTrend({
           </AreaChart>
         </ResponsiveContainer>
       </div>
-      <table className="sr-only">
+      <ScreenReaderTable>
         <caption>{title}</caption>
         <thead>
           <tr>
@@ -682,7 +691,7 @@ function ExposureTrend({
             </tr>
           ))}
         </tbody>
-      </table>
+      </ScreenReaderTable>
     </div>
   )
 }

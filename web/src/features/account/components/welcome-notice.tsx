@@ -94,7 +94,7 @@ export function WelcomeNotice({ notice, org, email }: WelcomeNoticeProps) {
   }[notice]
 
   return (
-    <Alert role="alert" data-testid="welcome-notice">
+    <Alert data-testid="welcome-notice">
       <AlertTriangle className="size-4" aria-hidden />
       <AlertTitle>{t(`auth.welcome.notice.${key}Title${named}`, undefined, vars)}</AlertTitle>
       <AlertDescription className="flex flex-col items-start gap-3">

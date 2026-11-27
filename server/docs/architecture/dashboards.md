@@ -14,7 +14,7 @@ here as they ship.
 | Widget data endpoint reading the facts (personal: viewer scope; organization: whole organization), preview | **Shipped** |
 | Snapshots, the refresher, Refresh now (migration `003260_dashboard_snapshots`) | **Shipped** |
 | Widget kit (web): one frame with every widget state, visualizations over the result shapes, validated chart palettes | **Shipped** |
-| Dashboard home on `/`: one renderer for stored dashboards, Organization / Mine switcher, scope badge, freshness line, Refresh now, schedule picker | **Shipped** |
+| Dashboard home on `/`: one renderer for stored dashboards, Organization / Mine switcher on the title, scope badge, freshness line, Refresh now, schedule in the actions menu | **Shipped** |
 
 The typed widget endpoints read the facts, and `/` renders only stored
 dashboards of typed widgets; the built-in CTEM and Classic views are removed.
@@ -1251,15 +1251,17 @@ widget kit's frame, with its own error boundary.
   - Four columns; each visualization has a fixed set of sizes: single
     figures 3x1 (in runs of four), the key figures strip, levers and brief
     12x1, bar lists 6x1, charts 6x2 or 12x2, heatmap, posture and attack
-    paths 6x2, lists 12x3, the flow and tables 12x4.
+    paths 6x2, lists 6x2 or 12x3, the flow and tables 12x4, the CTEM stage
+    row 12x1.
   - Rows are full at four columns, hold one height and one height band
-    (single figures, short bar lists, charts and lists, or a full-width
-    widget alone): rows grow to their tallest widget, so a bar list beside a
+    (single figures, short bar lists, charts and half-width lists, or a
+    full-width widget alone): rows grow to their tallest widget, so a bar list beside a
     chart would stretch into blank space. No hole at two columns or on a
     phone.
   - Sections in order: headline figures first (strip or four figures), the
-    hero visual (flow, posture or a full-width chart), what to act on
-    (levers, brief, lists, attack paths), trends, then breakdowns.
+    hero visual (flow, stage row, posture or a full-width chart), what to
+    act on (levers, brief, lists, attack paths) and trends (one rank, so
+    Fix next reads beside the new-versus-fixed chart), then breakdowns.
   - At most ten widgets; never the same metric, grouping and filter twice;
     never two widgets with the same figures (the strip and a single figure
     it carries, the brief and the levers, the flow and intake or the loop).
@@ -1269,33 +1271,48 @@ widget kit's frame, with its own error boundary.
   - A full-width widget with no figure yet takes one row; a narrower one
     keeps its row height with its message centred, so no hole opens beside
     a taller neighbour.
-  `/dashboards` copies one into a personal dashboard ("Use
-  template"); the copy is a stored dashboard like any other. Stored
+  `/dashboards` lists the person's own dashboards in the shared table
+  (name with the default star, widgets, columns, last change; the name and
+  the row open the dashboard, the row menu holds Customize, Edit details,
+  Set as my default and Delete; a failed read shows the error state with
+  Retry), with New dashboard (blank) in the header and the templates below
+  it. "Use template" copies one into a personal dashboard; the copy is a
+  stored dashboard like any other. Stored
   dashboards are never rearranged when a template changes: copies get the
   new layout offer above.
   `server/pkg/domain/dashboard/templates_test.go` parses every template widget
   with the server's spec validation, so a template is never refused on save.
+  The default CTEM template opens on the key figures strip and the stage
+  row (`ctem.loop`), then Fix next at half width beside new versus fixed;
+  the exposure flow is not in it (the stage row carries the stages), and a
+  copy of the earlier default is offered the new layout (hint version 8).
   Names and descriptions are in the `dashboards` i18n namespace.
 - **Widget titles**: a widget without a title of its own shows the metric's
   name, followed by "by <dimension>" when it groups by something other than
   the metric's default ("Open findings by SLA state"), so two widgets of one
   metric are told apart.
-- **Switcher**: one menu with "Organization" (shown only with
+- **Switcher**: the dashboard's name is the switcher: a chevron button right
+  after the page title (outside the heading; its accessible name is "Switch
+  dashboard: <name>") opens one menu with "Organization" (shown only with
   `dashboards:org:view` or `dashboards:org:manage`; without them the list is
   never requested) and "Mine", search above eight entries, New and Manage.
 - **Scope badge**: "Organization-wide" or "Your scope", from the response's
   `scope`; drill-downs open lists in the viewer's own access.
-- **Toolbar**: on a phone (below 640px) one row with the switcher filling the
-  width, an icon-only Refresh now and an icon-only More menu (44px targets,
-  accessible names); Customize and the refresh schedule move into More. From
-  640px one row: switcher, Customize, schedule picker, Refresh now, More. The
-  dashboard description is hidden on a phone.
-- **Freshness line**: one muted line under the toolbar, "Your scope · Updated
-  2m ago · Next in 58m" (narrow relative times, full dates on hover); the next refresh
-  truncates first on narrow screens; a status line appears under it only when the
+- **Toolbar**: at the end of the title row at every width: Customize (from
+  640px; an item of More below it), an icon-only Refresh now and an icon-only
+  More menu (accessible names; 44px touch targets on a phone). The refresh
+  schedule is a submenu of More at every width. The dashboard description is
+  hidden on a phone.
+- **Freshness line**: one muted line under the dashboard's name with three
+  items, "Your scope", "Updated 2m ago" and "Next in 58m" (narrow relative
+  times, full dates on hover); below 640px, where it shares the title row with
+  Refresh now and More, it never wraps: the next refresh and "Refreshed on
+  request only" are visually left out (a screen reader still reads them) and
+  a long scope label is shortened before the time, so the header keeps its
+  height as the minutes tick; a status line appears under it only when the
   figures are stale, the last refresh failed, or the data is being built for
   the first time. Refresh now answers a 429 with a message. The schedule
-  picker is offered to the owner of a personal dashboard or a manager of an
+  submenu is offered to the owner of a personal dashboard or a manager of an
   organization dashboard (the server checks both).
 - **Actions**: Customize (personal), Duplicate to mine (organization), Set as
   default (personal; organization for managers), Delete (personal).

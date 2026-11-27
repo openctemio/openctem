@@ -350,7 +350,8 @@ func (s *Service) noticeApprovalOff(ctx context.Context, tenantID shared.ID, act
 		if err := s.notifier.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &u,
 			NotificationType: notificationdom.TypeSystemAlert, Severity: notificationdom.SeverityHigh,
-			Title: "Content install approval is being switched off",
+			Message: notificationdom.Msg("content.approval_off", "effective_at", at.UTC().Format(time.RFC3339)),
+			Title:   "Content install approval is being switched off",
 			Body: "Installs, updates, rollbacks and uninstalls of content will no longer need a second person from " +
 				at.Format(time.RFC3339) + ". Turn approval back on before then to cancel.",
 			ResourceType: "settings", URL: "/settings/content", ActorID: actor,

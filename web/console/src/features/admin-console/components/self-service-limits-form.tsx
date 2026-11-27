@@ -5,18 +5,9 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
+import { SettingsBlock, SettingsRow, SettingsSaveBar, SettingsSection } from '@/features/shared'
 import { useLimitKeyLabel } from '@/features/limits/components/limits-usage-table'
 import { LIMIT_KEYS, parseLimit, UNLIMITED, type LimitKey } from '@/features/limits/lib/limit-keys'
 import type { SelfServiceLimitsResponse } from '@/lib/api/generated'
@@ -112,24 +103,18 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            {t('limits.console.defaults.title', 'Limits of self-service organizations')}
-          </CardTitle>
-          <CardDescription>
-            {t(
-              'limits.console.defaults.description',
-              'The limits an organization starts with when a person creates it themselves. Leave a value empty for no limit (the default). Organizations created in this console have no limits, and existing organizations keep theirs.'
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {sources.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="limit-sources">
-              <span className="text-muted-foreground">
-                {t('limits.console.sources', 'Also set by:')}
-              </span>
+      <SettingsSection
+        framed
+        id="self-service-limits"
+        title={t('limits.console.defaults.title', 'Defaults for self-service organizations')}
+        description={t(
+          'limits.console.defaults.description',
+          'The limits an organization starts with when a person creates it themselves. Leave a value empty for no limit (the default). Organizations created in this console have no limits, and existing organizations keep theirs.'
+        )}
+        meta={
+          sources.length > 0 && (
+            <span className="flex flex-wrap items-center gap-2" data-testid="limit-sources">
+              {t('limits.console.sources', 'Also set by:')}
               {sources.map((s) => (
                 <Badge key={s} variant="secondary">
                   {s === 'control_plane'
@@ -137,63 +122,47 @@ export function SelfServiceLimitsForm({ defaults, canEdit, onSaved }: SelfServic
                     : s}
                 </Badge>
               ))}
-            </div>
-          )}
-          <div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('limits.col.item', 'Limit')}</TableHead>
-                  <TableHead>{t('limits.console.defaults.start', 'Starts with')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {LIMIT_KEYS.map((k) => (
-                  <TableRow key={k}>
-                    <TableCell className="font-medium">{keyLabel(k)}</TableCell>
-                    <TableCell>
-                      <Input
-                        value={values[k]}
-                        onChange={(e) => setValues((v) => ({ ...v, [k]: e.target.value }))}
-                        placeholder={t('limits.unlimited', 'Unlimited')}
-                        inputMode="numeric"
-                        className="h-8 w-28"
-                        disabled={!canEdit}
-                        aria-label={keyLabel(k)}
-                        aria-invalid={parseLimit(values[k]) === null}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          {invalid && (
-            <p className="text-sm text-destructive">
-              {t(
-                'limits.console.invalidValue',
-                'Use a whole number of 0 or more, or leave it empty for no limit.'
-              )}
-            </p>
-          )}
-          <div className="flex justify-end">
-            {canEdit ? (
-              <SettingsSaveBar
-                className="basis-full"
-                dirty={dirty}
-                saving={busy}
-                saveDisabled={invalid}
-                onSave={() => {
-                  setConfirmOpen(true)
-                }}
-                onDiscard={reset}
-              />
-            ) : (
-              <RoleRequiredNotice needed="super_admin" />
+            </span>
+          )
+        }
+      >
+        {LIMIT_KEYS.map((k) => (
+          <SettingsRow key={k} label={keyLabel(k)}>
+            <Input
+              value={values[k]}
+              onChange={(e) => setValues((v) => ({ ...v, [k]: e.target.value }))}
+              placeholder={t('limits.unlimited', 'Unlimited')}
+              inputMode="numeric"
+              className="w-28"
+              disabled={!canEdit}
+              aria-label={keyLabel(k)}
+              aria-invalid={parseLimit(values[k]) === null}
+            />
+          </SettingsRow>
+        ))}
+        {(invalid || !canEdit) && (
+          <SettingsBlock>
+            {invalid && (
+              <p role="alert" className="text-dense text-destructive">
+                {t(
+                  'limits.console.invalidValue',
+                  'Use a whole number of 0 or more, or leave it empty for no limit.'
+                )}
+              </p>
             )}
-          </div>
-        </CardContent>
-      </Card>
+            {!canEdit && <RoleRequiredNotice needed="super_admin" />}
+          </SettingsBlock>
+        )}
+      </SettingsSection>
+      {canEdit && (
+        <SettingsSaveBar
+          dirty={dirty}
+          saving={busy}
+          saveDisabled={invalid}
+          onSave={() => setConfirmOpen(true)}
+          onDiscard={reset}
+        />
+      )}
 
       <ConfirmDialog
         open={confirmOpen}

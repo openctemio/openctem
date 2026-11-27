@@ -41,9 +41,9 @@ describe('inventoryChips', () => {
       'types=subdomain,service&criticalities=critical,high&business_unit_ids=bu-1&internet_facing=true&has_owner=false'
     ).map((c) => c.text)
     expect(texts).toEqual([
-      'Type is Subdomain, Service',
-      'Criticality is Critical, High',
-      'Business unit is Retail',
+      'Type: Subdomain, Service',
+      'Criticality: Critical, High',
+      'Business unit: Retail',
       'Unowned',
       'Internet-facing',
     ])
@@ -59,10 +59,10 @@ describe('inventoryChips', () => {
         'Has open findings',
         'Risk score at least 70',
         'No successful scan in 30 days',
-        'Tag is prod, pci',
+        'Tag: prod, pci',
         'Tag is not old',
-        'Technology is nginx',
-        'OS family is linux',
+        'Technology: nginx',
+        'OS family: linux',
         'First seen after 2026-10-01',
       ])
     )
@@ -70,7 +70,7 @@ describe('inventoryChips', () => {
 
   it('shortens long value lists and names the all-attribution view', () => {
     expect(chipsOf('criticalities=critical,high,medium,low')[0].text).toBe(
-      'Criticality is Critical, High, Medium +1'
+      'Criticality: Critical, High, Medium +1'
     )
     expect(chipsOf('attribution=all')[0].text).toBe(
       'Every name, including awaiting review and not ours'

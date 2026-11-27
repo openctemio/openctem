@@ -15,6 +15,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { PasteSource } from '../target-picker/paste-source'
 import { parsePastedTargets } from '../../lib/target-format'
 import { MAX_DIRECT_TARGETS } from '../../lib/scan-form'
+import { formatNumber } from '@/lib/app-locale'
 
 interface BulkTargetsPanelProps {
   id: string
@@ -68,9 +69,9 @@ export function BulkTargetsPanel({
       {over && (
         <p role="alert" className="text-xs text-destructive" id={`${id}-over`}>
           {t('scans.bulk.overLimit', undefined, {
-            count: fresh.length.toLocaleString(),
-            room: capacity.toLocaleString(),
-            max: MAX_DIRECT_TARGETS.toLocaleString(),
+            count: formatNumber(fresh.length),
+            room: formatNumber(capacity),
+            max: formatNumber(MAX_DIRECT_TARGETS),
           })}
         </p>
       )}

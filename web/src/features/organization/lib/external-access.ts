@@ -4,6 +4,7 @@
  */
 
 import type { MemberWithUser } from '../types/member.types'
+import { formatDate } from '@/lib/app-locale'
 
 /** Longest end of access the API accepts for an external member. */
 export const MAX_EXTERNAL_ACCESS_DAYS = 365
@@ -134,7 +135,7 @@ export function memberBadges(
 }
 
 export function formatShortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', {
+  return formatDate(new Date(iso), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

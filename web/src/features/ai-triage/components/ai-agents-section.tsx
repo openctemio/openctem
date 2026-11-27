@@ -38,11 +38,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { DataTableRowActions, EmptyState, TonePill, type RowAction } from '@/features/shared'
+import { useMyUserId } from '@/hooks/use-my-user-id'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { formatDateSafe } from '@/lib/format-date'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { toDisplayText } from '@/lib/untrusted-text'
-import { useAuthStore } from '@/stores/auth-store'
 
 import {
   createAIAgent,
@@ -133,7 +133,7 @@ export function AIAgentsSection() {
   const { t } = useTranslation()
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
-  const userId = useAuthStore((s) => s.user?.id)
+  const userId = useMyUserId()
   const canManage = can(Permission.ServiceAccountsManage)
   const aiAgents = useAIAgents(true)
 
@@ -275,6 +275,7 @@ export function AIAgentsSection() {
                   <TableCell>{formatDateSafe(a.attest_due_at)}</TableCell>
                   <TableCell>
                     <DataTableRowActions
+                      title={toDisplayText(a.name, 80)}
                       actions={actionsOf(a)}
                       label={t('settings.ai.agents.rowActions', 'Actions for {name}', {
                         name: toDisplayText(a.name, 80),

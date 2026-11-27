@@ -51,9 +51,9 @@ base.describe('Access denied view', { tag: ['@shell'] }, () => {
   })
 })
 
-test.describe('Organization authentication settings', { tag: ['@shell'] }, () => {
+test.describe('Organization sign-in settings', { tag: ['@shell'] }, () => {
   test('each two-factor switch has its own accessible name', async ({ page }) => {
-    await page.goto('/settings/authentication')
+    await page.goto('/settings/sign-in')
     // Everyone, and owners and administrators only (#1413): two switches, two names
     // (the card title above them says two-factor).
     await expect(

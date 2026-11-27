@@ -182,6 +182,8 @@ set_value METRICS_TOKEN "$(secret 32)"
 # The bundled shared sensor's single-use enrollment token
 # (docker-compose.sensor.yml): octe_ and 49 base62 characters.
 set_value SENSOR_INSTANCE_ENROLLMENT_TOKEN "octe_$(base62 49)"
+# The optional relay sensor's own token (docker-compose.relay-sensor.yml).
+set_value SENSOR_RELAY_ENROLLMENT_TOKEN "octe_$(base62 49)"
 # --set values last: they win over the defaults and the generated values.
 for kv in ${extra[@]+"${extra[@]}"}; do
   env_put "$tmp" "${kv%%=*}" "${kv#*=}"
@@ -236,4 +238,7 @@ database schema owner from .env, which the running API never receives):
 
 Optional bundled shared sensor (enrolls with SENSOR_INSTANCE_ENROLLMENT_TOKEN):
   docker compose -f docker-compose.yml -f docker-compose.sensor.yml up -d
+
+Optional feed relay sensor (no tools; relays the signed feeds, enrolls with
+SENSOR_RELAY_ENROLLMENT_TOKEN): add docker-compose.relay-sensor.yml to the files.
 MSG

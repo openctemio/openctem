@@ -29,6 +29,7 @@ import { ChevronRight, Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { copyToClipboard } from '@/lib/clipboard'
+import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { Meter } from './meter'
 
@@ -198,30 +199,46 @@ export function DetailField({ label, children, full, className }: DetailFieldPro
 // ============================================================================
 
 /**
- * A row of compact numbers under a detail view's header: one bordered strip
- * split into cells (not a card per number), two per row on phones and one
- * row from `sm`. Give it 2–4 `DetailStat`s and leave out a number the data
- * does not have rather than showing a dash.
+ * The compact numbers under a detail view's header: one bordered strip split
+ * into cells (not a card per number). Give it 2–4 `DetailStat`s and leave out
+ * a number the data does not have rather than showing a dash.
+ *
+ * The columns follow the width the strip has, not the viewport (a container
+ * query on a wrapper): two per row, and all in one row only where each cell
+ * gets about 10rem. A drawer about 36rem wide on a wide screen keeps two per
+ * row instead of four squeezed cells that cut their captions.
  */
+const ONE_ROW: Record<number, string> = {
+  1: 'grid-cols-1',
+  2: 'grid-cols-2',
+  3: '@min-[30rem]:grid-cols-3 @min-[30rem]:[&>*:last-child:nth-child(odd)]:col-span-1',
+  4: '@min-[40rem]:grid-cols-4',
+}
+const ONE_ROW_MANY =
+  '@min-[50rem]:grid-cols-[repeat(var(--detail-stat-cols),minmax(0,1fr))] @min-[50rem]:[&>*:last-child:nth-child(odd)]:col-span-1'
+
 export function DetailStatGrid({ className, children, ...props }: React.ComponentProps<'dl'>) {
   const count = React.Children.toArray(children).filter(Boolean).length
   if (count === 0) return null
   return (
-    <dl
-      data-slot="detail-stat-grid"
-      className={cn(
-        'grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border',
-        // An odd count on phones: the last cell takes the whole row instead
-        // of leaving an empty, border-coloured cell beside it.
-        '[&>*:last-child:nth-child(odd)]:col-span-2 sm:[&>*:last-child:nth-child(odd)]:col-span-1',
-        'sm:grid-cols-[repeat(var(--detail-stat-cols),minmax(0,1fr))]',
-        className
-      )}
-      style={{ '--detail-stat-cols': count } as React.CSSProperties}
-      {...props}
-    >
-      {children}
-    </dl>
+    // The wrapper is the container the columns measure; a caller's classes
+    // (a width cap) go on it so the cap counts.
+    <div data-slot="detail-stat-frame" className={cn('@container min-w-0', className)}>
+      <dl
+        data-slot="detail-stat-grid"
+        className={cn(
+          'grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border',
+          // An odd count over two columns: the last cell takes the whole row
+          // instead of leaving an empty, border-coloured cell beside it.
+          '[&>*:last-child:nth-child(odd)]:col-span-2',
+          ONE_ROW[count] ?? ONE_ROW_MANY
+        )}
+        style={{ '--detail-stat-cols': count } as React.CSSProperties}
+        {...props}
+      >
+        {children}
+      </dl>
+    </div>
   )
 }
 
@@ -241,10 +258,8 @@ export interface DetailStatProps {
   value: React.ReactNode
   /** Smaller text right after the value ("/ 5"). */
   unit?: React.ReactNode
-  /** One short muted line under the value. */
+  /** One short muted line under the value; it wraps rather than being cut. */
   caption?: React.ReactNode
-  /** Let the caption wrap onto several lines instead of truncating it. */
-  wrapCaption?: boolean
   /** A thin bar under the value (value / max), e.g. slots in use. */
   meter?: { value: number; max: number; label: string }
   /** Colour the value: only for a problem (style contract: never a zero). */
@@ -262,12 +277,11 @@ export function DetailStat({
   meter,
   tone = 'default',
   title,
-  wrapCaption,
   className,
 }: DetailStatProps) {
   return (
     <div className={cn('min-w-0 bg-card px-3 py-2.5', className)} data-slot="detail-stat">
-      <dt className="truncate text-xs text-muted-foreground">{label}</dt>
+      <dt className="text-xs break-words text-muted-foreground">{label}</dt>
       <dd className="mt-0.5 flex min-w-0 items-baseline gap-1" title={title}>
         <span
           className={cn(
@@ -287,12 +301,7 @@ export function DetailStat({
         </dd>
       )}
       {caption && (
-        <dd
-          className={cn(
-            'mt-1 text-xs text-muted-foreground tabular-nums',
-            wrapCaption ? 'min-w-0 break-words' : 'truncate'
-          )}
-        >
+        <dd className="mt-1 min-w-0 text-xs break-words text-muted-foreground tabular-nums">
           {caption}
         </dd>
       )}
@@ -409,22 +418,31 @@ export function DetailCopyId({
   copiedMessage,
   className,
 }: DetailCopyIdProps) {
+  const { t } = useTranslation()
+  const lowerLabel = `${label.charAt(0).toLowerCase()}${label.slice(1)}`
   return (
     <button
       type="button"
       // The name contains the visible ID (WCAG 2.5.3, label in name), so a
       // speech user can say what they see.
-      aria-label={`${ariaLabel ?? `Copy ${label.charAt(0).toLowerCase()}${label.slice(1)}`} ${id}`}
+      title={id}
+      aria-label={`${ariaLabel ?? t('components.shared.detail.copy', 'Copy {label}', { label: lowerLabel })} ${id}`}
       className={cn(
         'inline-flex max-w-full items-center gap-1.5 rounded-sm font-mono text-xs text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
         className
       )}
       onClick={() => {
         copyToClipboard(id)
-        toast.success(copiedMessage ?? `${label} copied`)
+        toast.success(
+          copiedMessage ?? t('components.shared.detail.copied', '{label} copied', { label })
+        )
       }}
     >
-      <span className="truncate">{id}</span>
+      {/* An ID is copied, not read: it may end in an ellipsis, whole in the
+          title, the accessible name and the clipboard. */}
+      <span className="truncate" data-cut-tooltip="">
+        {id}
+      </span>
       <Copy className="h-3 w-3 shrink-0" aria-hidden />
     </button>
   )
@@ -475,7 +493,7 @@ export function DetailChipList({ chips, label, empty = 'none', className }: Deta
           <li
             key={c.key}
             {...data}
-            className="inline-flex h-7 items-center gap-1.5 rounded-md border bg-card px-2 text-sm"
+            className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border bg-card px-2 text-sm"
           >
             {Icon && (
               <Icon
@@ -483,7 +501,14 @@ export function DetailChipList({ chips, label, empty = 'none', className }: Deta
                 aria-label={c.iconLabel}
               />
             )}
-            <span className={cn(c.muted && 'text-muted-foreground')}>{c.label}</span>
+            {/* A chip holds a name (a tool, a role): one line, whole in its title. */}
+            <span
+              className={cn('min-w-0 truncate', c.muted && 'text-muted-foreground')}
+              title={typeof c.label === 'string' ? c.label : undefined}
+              data-cut-tooltip=""
+            >
+              {c.label}
+            </span>
             {c.meta}
             {c.tag}
           </li>

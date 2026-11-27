@@ -8,7 +8,6 @@ import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
   DialogContent,
@@ -34,12 +33,14 @@ import type { Integration } from '@/features/integrations'
 import {
   DataTable,
   DataTableRowActions,
-  EmptyState,
-  ErrorState,
   PageHeader,
   StackedCell,
   PageStack,
 } from '@/features/shared'
+import {
+  IntegrationList,
+  integrationStatusGroup,
+} from '@/features/integrations/components/integration-list'
 import { useTranslation } from '@/context/i18n-provider'
 
 const META = (i: Integration, k: string): string => {
@@ -179,6 +180,10 @@ export default function SIEMIntegrationPage() {
       enableSorting: false,
       cell: ({ row }) => (
         <DataTableRowActions
+          title={row.original.name}
+          label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+            name: row.original.name,
+          })}
           actions={[
             {
               label:
@@ -209,61 +214,55 @@ export default function SIEMIntegrationPage() {
     resetForm()
   }
 
+  const addButton = (
+    <Can route="PUT /api/v1/integrations/{id}">
+      <Button size="sm" onClick={() => setShowForm(true)}>
+        <Plus className="me-2 h-4 w-4" />
+        {t('siemIntegration.add', 'Add Splunk HEC')}
+      </Button>
+    </Can>
+  )
+
   return (
     <Main>
       <PageStack>
         <PageHeader
-          title={t('siemIntegration.title', 'SIEM')}
+          title={t('siemIntegration.title', 'Event forwarding')}
           description={t(
             'siemIntegration.description',
             'Forward findings, exposures, scans and SLA breaches to Splunk through the HTTP Event Collector (HEC).'
           )}
         >
-          <Can route="PUT /api/v1/integrations/{id}">
-            <Button size="sm" onClick={() => setShowForm(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('siemIntegration.add', 'Add Splunk HEC')}
-            </Button>
-          </Can>
+          {/* The create button stays in the header; the empty state only explains. */}
+          {addButton}
         </PageHeader>
 
-        {error ? (
-          <ErrorState
-            title={t('siemIntegration.errorTitle', 'SIEM integrations')}
-            error={error}
-            onRetry={() => void mutate()}
-          />
-        ) : isLoading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-9 w-full max-w-sm" />
-            <Skeleton className="h-48 w-full" />
-          </div>
-        ) : splunkIntegrations.length === 0 ? (
-          <EmptyState
-            icon={Shield}
-            title={t('siemIntegration.empty.title', 'No SIEM integrations yet')}
-            description={t(
+        <IntegrationList
+          rows={splunkIntegrations}
+          isLoading={isLoading}
+          error={error}
+          onRetry={() => void mutate()}
+          errorTitle={t('siemIntegration.errorTitle', 'event forwarding')}
+          groupOf={(i) => integrationStatusGroup(i.status)}
+          empty={{
+            icon: Shield,
+            title: t('siemIntegration.empty.title', 'No event forwarding yet'),
+            description: t(
               'siemIntegration.empty.description',
               'Add a Splunk HTTP Event Collector to start forwarding security events to your SIEM.'
-            )}
-            action={
-              <Can route="PUT /api/v1/integrations/{id}">
-                <Button size="sm" onClick={() => setShowForm(true)}>
-                  <Plus className="me-2 h-4 w-4" />
-                  {t('siemIntegration.add', 'Add Splunk HEC')}
-                </Button>
-              </Can>
-            }
-          />
-        ) : (
-          <DataTable
-            columns={columns}
-            data={splunkIntegrations}
-            getRowId={(i) => i.id}
-            searchPlaceholder={t('siemIntegration.searchPlaceholder', 'Search integrations…')}
-            showSelectionCount={false}
-          />
-        )}
+            ),
+          }}
+        >
+          {(visible) => (
+            <DataTable
+              columns={columns}
+              data={visible}
+              getRowId={(i) => i.id}
+              searchPlaceholder={t('siemIntegration.searchPlaceholder', 'Search integrations…')}
+              showSelectionCount={false}
+            />
+          )}
+        </IntegrationList>
 
         <Dialog open={showForm} onOpenChange={(open) => (open ? setShowForm(true) : closeForm())}>
           <DialogContent>

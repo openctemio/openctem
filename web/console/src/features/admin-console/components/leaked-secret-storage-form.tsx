@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useId, useState } from 'react'
 import { toast } from 'sonner'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSaveBar } from '@/features/shared/components/settings-save-bar'
+import { SettingsBlock, SettingsSaveBar, SettingsSection } from '@/features/shared'
 import { saveLeakedSecretStorage } from '../api/use-platform-settings'
 import type { LeakedSecretStorageSettings } from '../types'
 import {
@@ -87,37 +86,16 @@ export function LeakedSecretStorageForm({
 
   return (
     <>
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('admin.leakedSecrets.title', 'Leaked secret values')}</CardTitle>
-          <CardDescription>
-            {t(
-              'admin.leakedSecrets.description',
-              'Whether the password, token or key of an imported leaked credential is kept, for organizations that have not chosen. Each organization can change it for itself.'
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <RadioGroup
-            value={choice}
-            onValueChange={(v) => setChoice(v as Choice)}
-            disabled={!canEdit}
-            aria-label={t('admin.leakedSecrets.title', 'Leaked secret values')}
-            className="gap-2"
-          >
-            {(['keep', 'drop'] as Choice[]).map((c) => (
-              <div key={c} className="flex items-start gap-3 rounded-lg border p-3">
-                <RadioGroupItem value={c} id={`${id}-${c}`} className="mt-0.5" />
-                <div className="space-y-0.5">
-                  <Label htmlFor={`${id}-${c}`} className="font-medium">
-                    {label[c]}
-                  </Label>
-                  <p className="text-xs text-muted-foreground">{hint[c]}</p>
-                </div>
-              </div>
-            ))}
-          </RadioGroup>
-          <p className="text-xs text-muted-foreground">
+      <SettingsSection
+        framed
+        id="leaked-secret-values"
+        title={t('admin.leakedSecrets.title', 'Default for organizations')}
+        description={t(
+          'admin.leakedSecrets.description',
+          'Applies to every organization that has not chosen. Each organization can change it for itself.'
+        )}
+        meta={
+          <>
             {settings.source === 'default'
               ? settings.default
                 ? t(
@@ -128,23 +106,43 @@ export function LeakedSecretStorageForm({
                     'admin.leakedSecrets.sourceDefaultDrop',
                     'Server default: not kept (managed service).'
                   )
-              : t('admin.leakedSecrets.sourceConsole', 'Set in this console.')}
-          </p>
-          <SettingChangedLine change={settings} />
-          {canEdit ? (
-            <SettingsSaveBar
-              className="basis-full"
-              dirty={dirty}
-              onSave={() => setConfirmOpen(true)}
-              onDiscard={reset}
-            />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {t('admin.settings.superAdminOnly', 'Only a super admin can change this setting.')}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+              : t('admin.leakedSecrets.sourceConsole', 'Set in this console.')}{' '}
+            <SettingChangedLine change={settings} />
+          </>
+        }
+      >
+        <SettingsBlock>
+          <RadioGroup
+            value={choice}
+            onValueChange={(v) => setChoice(v as Choice)}
+            disabled={!canEdit}
+            aria-label={t('admin.leakedSecrets.choice', 'Leaked secret values')}
+          >
+            {(['keep', 'drop'] as Choice[]).map((c) => (
+              <div key={c} className="flex items-start gap-3">
+                <RadioGroupItem
+                  value={c}
+                  id={`${id}-${c}`}
+                  className="mt-1"
+                  aria-describedby={`${id}-${c}-hint`}
+                />
+                <div className="grid gap-1">
+                  <Label htmlFor={`${id}-${c}`}>{label[c]}</Label>
+                  <span
+                    id={`${id}-${c}-hint`}
+                    className="text-cap text-muted-foreground text-pretty"
+                  >
+                    {hint[c]}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </RadioGroup>
+        </SettingsBlock>
+      </SettingsSection>
+      {canEdit && (
+        <SettingsSaveBar dirty={dirty} onSave={() => setConfirmOpen(true)} onDiscard={reset} />
+      )}
       <ReasonConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}

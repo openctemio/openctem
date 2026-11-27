@@ -1,9 +1,13 @@
 import axe from 'axe-core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-import { SavedViewsMenu, summarizeChanges } from '../components/saved-views-menu'
+import {
+  SavedViewsMenu,
+  summarizeChanges,
+  type SavedViewsActions,
+} from '../components/saved-views-menu'
 import { createSavedView, updateSavedView, type SavedView } from '../api/use-saved-views'
 import type { ViewChange } from '../lib/view-changes'
 
@@ -86,6 +90,20 @@ describe('unsaved-changes dot', () => {
     )
   })
 
+  it('puts the dot on the button corner, out of the layout, so the icon stays centred', () => {
+    menu()
+    const dot = screen.getByTestId('saved-view-dirty-dot')
+    const button = screen.getByRole('button', { name: 'Crown jewels, unsaved changes' })
+    expect(dot.parentElement).toBe(button)
+    expect(dot).toHaveAttribute('data-slot', 'corner-dot')
+    expect(dot).toHaveAttribute('aria-hidden')
+    // Absolute on the corner: never a flex item beside the icon.
+    for (const c of ['absolute', '-top-1', '-end-1', 'pointer-events-none'])
+      expect(dot).toHaveClass(c)
+    expect(dot.className).not.toMatch(/\bms-/)
+    expect(button.className).toContain('relative')
+  })
+
   it('shows none when nothing changed', () => {
     menu({ changes: [] })
     expect(screen.queryByTestId('saved-view-dirty-dot')).toBeNull()
@@ -164,6 +182,36 @@ describe('the menu of a view with unsaved changes', () => {
     await waitFor(() => expect(onDiscard).toHaveBeenCalled())
   })
 
+  it('Save changes with a text filter stores its checked document, never the view under it', async () => {
+    const document = { v: 1, filter: { any: [{ field: 'severity', op: 'in', value: ['low'] }] } }
+    const resolveFilter = vi.fn(() => Promise.resolve({ filter: document }))
+    const { onDiscard } = menu({
+      resolveFilter,
+      changes: [{ kind: 'query' }],
+      pageParams: { mode: 'query' },
+    })
+    await userEvent.click(screen.getByRole('button', { name: /unsaved changes/ }))
+    expect(await screen.findByText(/query text changed/)).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Save changes' }))
+    await waitFor(() => expect(updateSavedView).toHaveBeenCalled())
+    const [id, body] = vi.mocked(updateSavedView).mock.calls[0]
+    expect(id).toBe(V1)
+    expect(body.filter).toEqual(document)
+    expect(body.query).toBeUndefined()
+    expect(body.page_params).toEqual({ mode: 'query' })
+    // Then the view is opened again (Reset's path): view=<id>, its new text.
+    await waitFor(() => expect(onDiscard).toHaveBeenCalled())
+  })
+
+  it('a view someone else owns, changed by a query text, can only be saved as a new one', async () => {
+    state.views = [theirs]
+    menu({ activeId: V2, changes: [{ kind: 'query' }] })
+    await userEvent.click(screen.getByRole('button', { name: /unsaved changes/ }))
+    expect(screen.queryByRole('menuitem', { name: 'Save changes' })).toBeNull()
+    expect(await screen.findByRole('menuitem', { name: 'Save as new view…' })).toBeInTheDocument()
+    expect(await screen.findByRole('menuitem', { name: /discard/i })).toBeInTheDocument()
+  })
+
   it('a view someone else owns can only be saved as a new one', async () => {
     state.views = [theirs]
     menu({ activeId: V2 })
@@ -202,8 +250,8 @@ describe('the menu of a view with unsaved changes', () => {
 })
 
 describe('sharing', () => {
-  async function openSave() {
-    menu({ activeId: undefined, changes: undefined })
+  async function openSave(props: Partial<React.ComponentProps<typeof SavedViewsMenu>> = {}) {
+    menu({ activeId: undefined, changes: undefined, ...props })
     await userEvent.click(screen.getByRole('button', { name: 'Views' }))
     await userEvent.click(await screen.findByRole('menuitem', { name: /save current filters/i }))
     await userEvent.click(await screen.findByRole('combobox', { name: 'Visible to' }))
@@ -245,7 +293,64 @@ describe('sharing', () => {
     expect(typeof body.query).toBe('string')
     expect(Object.keys(body).sort()).toEqual(expect.arrayContaining(['name', 'page', 'query']))
     for (const k of Object.keys(body)) {
-      expect(['page', 'name', 'query', 'group_id', 'group_by', 'columns', 'density']).toContain(k)
+      expect([
+        'page',
+        'name',
+        'query',
+        'group_id',
+        'group_by',
+        'columns',
+        'density',
+        'page_params',
+      ]).toContain(k)
     }
+  })
+
+  it('saves the search mode beside the filter, as a page param', async () => {
+    await openSave({ pageParams: { mode: 'query' } })
+    await userEvent.click(await screen.findByRole('option', { name: 'Only me' }))
+    await userEvent.type(screen.getByLabelText('Name'), 'Query view')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(createSavedView).toHaveBeenCalled())
+    const body = vi.mocked(createSavedView).mock.calls.at(-1)![0]
+    expect(body.page_params).toEqual({ mode: 'query' })
+    expect(body.query ?? '').not.toContain('mode=')
+  })
+
+  it('keeps the dialog open with the name and shows why when the save fails', async () => {
+    vi.mocked(createSavedView).mockRejectedValueOnce(new Error('Invalid request body'))
+    await openSave()
+    await userEvent.click(await screen.findByRole('option', { name: 'Only me' }))
+    await userEvent.type(screen.getByLabelText('Name'), 'Keep me')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Could not save the view: Invalid request body')
+    // Still open, the name is kept and Save works again.
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByLabelText('Name')).toHaveValue('Keep me')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    // Typing again clears the message; a second try saves.
+    await userEvent.type(screen.getByLabelText('Name'), '!')
+    expect(screen.queryByRole('alert')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+  })
+})
+
+describe('the title row asks the menu to save', () => {
+  it('opens the one save dialog and saves the open view through the handle', async () => {
+    let actions: SavedViewsActions | null = null
+    const { onDiscard } = menu({
+      actionsRef: (a) => {
+        actions = a
+      },
+    })
+    expect(actions).not.toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    act(() => actions!.openSave())
+    expect(await screen.findByRole('dialog', { name: 'Save view' })).toBeInTheDocument()
+    await act(() => actions!.saveChanges())
+    expect(updateSavedView).toHaveBeenCalledWith(V1, expect.objectContaining({ name: mine.name }))
+    expect(onDiscard).toHaveBeenCalled()
   })
 })

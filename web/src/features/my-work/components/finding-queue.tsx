@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
 import Link from '@/components/link'
 import { DataTable, DataTableColumnHeader } from '@/features/shared'
+import { QueueCard } from '@/features/shared/components/queue'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { SeverityBadge } from '@/features/shared/components/severity-badge'
 import { RelativeTime } from '@/features/shared/components/relative-time'
@@ -16,6 +17,8 @@ import { SlaDueChip } from '@/features/sla/components/sla-due-chip'
 import { useTranslation } from '@/context/i18n-provider'
 import { FindingTitleCell } from '@/features/findings/components/cells/finding-title-cell'
 import { findingLocation } from '@/features/findings/lib/finding-location'
+import { maskSensitiveText } from '@/lib/mask-sensitive'
+import { toDisplayText } from '@/lib/untrusted-text'
 import { QUEUE_SIZE, type FindingQueueTab } from '../lib/queues'
 
 function findingName(f: ApiFinding): string | undefined {
@@ -36,6 +39,7 @@ export function FindingQueue({
   error,
   onRetry,
   toolbarStart,
+  toolbarBelow,
   toolbarEnd,
   empty,
 }: {
@@ -45,7 +49,10 @@ export function FindingQueue({
   isLoading: boolean
   error: unknown
   onRetry: () => void
+  /** The queue's filter token: the toolbar's start. */
   toolbarStart?: ReactNode
+  /** The queue's locked rule and how much is on screen: the line under the toolbar. */
+  toolbarBelow?: ReactNode
   toolbarEnd?: ReactNode
   empty: ReactNode
 }) {
@@ -56,6 +63,7 @@ export function FindingQueue({
     const cols: ColumnDef<ApiFinding>[] = [
       {
         accessorKey: 'priority_class',
+        meta: { kind: 'priority' },
         enableSorting: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('myWork.columns.priority')} />
@@ -64,7 +72,6 @@ export function FindingQueue({
           <PriorityClassBadge
             priorityClass={row.original.priority_class}
             assetId={row.original.asset?.id}
-            showWord
           />
         ),
       },
@@ -93,6 +100,7 @@ export function FindingQueue({
       },
       {
         accessorKey: 'severity',
+        meta: { kind: 'severity' },
         enableSorting: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('myWork.columns.severity')} />
@@ -117,6 +125,7 @@ export function FindingQueue({
       cols.push(
         {
           id: 'sla',
+          meta: { kind: 'due' },
           enableSorting: false,
           header: ({ column }) => (
             <DataTableColumnHeader column={column} title={t('myWork.columns.sla')} />
@@ -131,6 +140,9 @@ export function FindingQueue({
         },
         {
           accessorKey: 'status',
+          // Whole or not at all: below a 700 px frame (a tablet) the column
+          // leaves (the finding's page and the phone card show the status).
+          meta: { kind: 'status', hideBelow: 700 },
           enableSorting: false,
           header: ({ column }) => (
             <DataTableColumnHeader column={column} title={t('myWork.columns.status')} />
@@ -141,6 +153,54 @@ export function FindingQueue({
     }
     return cols
   }, [t, tab])
+
+  // A phone card on the queue card's slots: the title (two lines at most)
+  // with the status at its end, then one line of facts (priority, severity,
+  // the deadline or the acceptance end, where the finding is) and the
+  // chevron to the finding.
+  const mobileRow = (f: ApiFinding) => {
+    const location = findingLocation(f).full
+    const href = `/findings/${encodeURIComponent(f.id)}`
+    // Masked and escaped as the table row's FindingTitleCell does: a secret in
+    // a scanner title never shows in clear on a phone either.
+    const raw = findingName(f)
+    const name = raw ? toDisplayText(maskSensitiveText(raw), 500) : ''
+    return (
+      <QueueCard
+        data-testid="my-work-finding-card"
+        href={href}
+        title={
+          <Link href={href} className="block min-w-0 text-sm font-medium hover:underline">
+            <span data-cut-tooltip title={name || undefined} className="line-clamp-2 break-words">
+              {name || t('myWork.untitled')}
+            </span>
+          </Link>
+        }
+        state={
+          tab === 'expiring' ? undefined : <FindingStatusBadge status={f.status as FindingStatus} />
+        }
+        meta={[
+          <span key="marks" className="flex items-center gap-1.5">
+            <PriorityClassBadge priorityClass={f.priority_class} assetId={f.asset?.id} showWord />
+            <SeverityBadge severity={f.severity} />
+          </span>,
+          tab === 'expiring' ? (
+            <span key="due">
+              {t('myWork.columns.acceptanceEnds')} <RelativeTime date={f.acceptance_expires_at} />
+            </span>
+          ) : (
+            <SlaDueChip
+              key="due"
+              status={f.sla_status}
+              deadline={f.sla_deadline}
+              kevCapped={f.sla_kev_capped}
+            />
+          ),
+          location ? <span key="where">{location}</span> : null,
+        ]}
+      />
+    )
+  }
 
   if (error) {
     return <ErrorState title={t('myWork.loadError')} onRetry={onRetry} />
@@ -158,6 +218,8 @@ export function FindingQueue({
       onRowClick={(f) => router.push(`/findings/${encodeURIComponent(f.id)}`)}
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
+      toolbarBelow={toolbarBelow}
+      mobileRow={mobileRow}
       emptyState={total === 0 ? empty : undefined}
     />
   )

@@ -17,6 +17,7 @@ import {
   RelativeTime,
   StackedCell,
 } from '@/features/shared'
+import { ListCount, ListToolbarTitle } from '@/features/shared/components/list-title-row'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   approveAdminApproval,
@@ -135,6 +136,8 @@ export default function AdminApprovalsPage() {
       },
       {
         id: 'actions',
+        // Labelled buttons: as wide as they need (the 48 px actions column cut them).
+        meta: { kind: 'decisions' },
         header: '',
         cell: ({ row }) => {
           const a = row.original
@@ -160,7 +163,8 @@ export default function AdminApprovalsPage() {
                     toast.error(
                       adminErrorMessage(
                         err,
-                        t('admin.confirm.failed', 'The action failed. Try again.')
+                        t('admin.confirm.failed', 'The action failed. Try again.'),
+                        t('admin.login.tooMany', 'Too many attempts. Wait a minute and try again.')
                       )
                     )
                   }
@@ -233,7 +237,7 @@ export default function AdminApprovalsPage() {
                   <p>
                     {t(
                       'admin.approvals.offBody',
-                      'No other super admin can approve, so these actions run on your confirmation alone. Each one is recorded as critical in the admin activity log and e-mailed to every administrator. Add a second named super admin to turn approvals on; break-glass accounts do not count, because their credentials are often held by the same people.'
+                      'No other super admin can approve, so these actions run on your confirmation alone. Each one is recorded as critical in the admin activity log and e-mailed to every administrator. Add a second named super admin to turn approvals on; emergency access accounts do not count, because their credentials are often held by the same people.'
                     )}
                   </p>
                   <Button asChild size="sm" variant="outline">
@@ -244,6 +248,35 @@ export default function AdminApprovalsPage() {
                 </AlertDescription>
               </Alert>
             )}
+            <DataTable
+              columns={columns}
+              data={data?.data ?? []}
+              getRowId={(a) => a.id}
+              isLoading={isLoading}
+              showSearch={false}
+              showColumnToggle={false}
+              showSelectionCount={false}
+              mobileCards
+              emptyMessage={t('admin.approvals.empty', 'No requests in the last 30 days')}
+              // The list's name and count share the Display menu's row; how
+              // approvals work is said under the list.
+              toolbarTitle={
+                <ListToolbarTitle
+                  title={t('admin.approvals.listTitle', 'Requests')}
+                  count={
+                    <ListCount
+                      total={data?.data?.length ?? 0}
+                      loading={!data}
+                      label={t(
+                        'admin.approvals.total',
+                        '{count, plural, one {# request} other {# requests}}',
+                        { count: data?.data?.length ?? 0 }
+                      )}
+                    />
+                  }
+                />
+              }
+            />
             {data && data.four_eyes.active && (
               <p className="text-sm text-muted-foreground">
                 {t(
@@ -257,25 +290,22 @@ export default function AdminApprovalsPage() {
               <p className="text-sm text-muted-foreground">
                 {t(
                   'admin.approvals.breakGlassNote',
-                  'This account is a break-glass account: it can ask and reject, but never approve.'
+                  'This account is an emergency access account: it can ask and reject, but never approve.'
                 )}
               </p>
             )}
-            <DataTable
-              columns={columns}
-              data={data?.data ?? []}
-              getRowId={(a) => a.id}
-              isLoading={isLoading}
-              showSearch={false}
-              showColumnToggle={false}
-              showSelectionCount={false}
-              mobileCards
-              emptyMessage={t('admin.approvals.empty', 'No requests in the last 30 days')}
-            />
           </>
         )}
         {deciding && (
           <AdminConfirmDialog
+            reasonPlaceholder={
+              deciding.kind === 'approve'
+                ? t(
+                    'admin.approvals.reasonApprove',
+                    'Checked with the requester by phone, ticket 2231'
+                  )
+                : t('admin.approvals.reasonReject', 'Not planned in any change request')
+            }
             open
             onOpenChange={(open) => !open && setDeciding(null)}
             title={

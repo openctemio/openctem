@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	roledom "github.com/openctemio/openctem/server/pkg/domain/role"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // PrivilegeNotifier tells an organization's administrators that a member
-// gained privileges (TenantService.NotifyPrivilegeIncrease, RFC-058).
+// gained privileges (TenantService.NotifyPrivilegeIncreaseMsg, RFC-058).
 type PrivilegeNotifier interface {
-	NotifyPrivilegeIncrease(ctx context.Context, tenantID, userID shared.ID, what string)
+	NotifyPrivilegeIncreaseMsg(ctx context.Context, tenantID, userID shared.ID, what string, whatMsg *notificationdom.Message)
 }
 
 // SetPrivilegeNotifier wires the privilege-increase notice.
@@ -40,6 +41,7 @@ func (s *RoleService) notifyElevated(ctx context.Context, tid roledom.ID, users 
 		if err != nil {
 			continue
 		}
-		s.privilege.NotifyPrivilegeIncrease(ctx, tenantID, uid, fmt.Sprintf("role %q granted", r.Name()))
+		s.privilege.NotifyPrivilegeIncreaseMsg(ctx, tenantID, uid, fmt.Sprintf("role %q granted", r.Name()),
+			notificationdom.Msg("member.privilege.role_granted", "role_name", r.Name()))
 	}
 }

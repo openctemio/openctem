@@ -18,6 +18,7 @@ import type { AssetSearchFilters } from '../hooks/use-assets'
 import { isCoverageCause } from './coverage-cause'
 import { TABS_LENS, tabById, tabFromTypes } from './inventory-tabs'
 import type { AssetType, Criticality, ExposureLevel, AssetScope } from '../types/asset.types'
+import { DEFAULT_TABLE_PAGE_SIZE } from '@/lib/page-size-options'
 
 /** The subset of AssetSearchFilters the inventory page drives + syncs to the URL. */
 export type InventoryFilters = Pick<
@@ -82,6 +83,8 @@ export type InventoryFilters = Pick<
   group?: 'network'
   /** The open saved view (`?view=<id>`). */
   view?: string
+  /** The search field is in Query mode (`?mode=query`; Basic when absent). */
+  queryMode?: boolean
 }
 
 /** The risk score from which an asset counts as high risk (the API's high_risk_count). */
@@ -92,6 +95,8 @@ const TAB_PARAM = 'tab'
 const FQ_PARAM = 'fq'
 const GROUP_PARAM = 'group'
 const VIEW_PARAM = 'view'
+/** The search field's mode (the shared MODE_PARAM of features/query). */
+const MODE_PARAM = 'mode'
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
@@ -293,6 +298,7 @@ export function parseInventoryFilters(sp: URLSearchParams): InventoryFilters {
   if (sp.get(GROUP_PARAM) === 'network') out.group = 'network'
   const view = sp.get(VIEW_PARAM)
   if (view && UUID_RE.test(view)) out.view = view
+  if (sp.get(MODE_PARAM) === 'query') out.queryMode = true
   sp.forEach((value, key) => {
     if (value !== '' && isExtraParam(key)) (out.extra ??= {})[key] = value
   })
@@ -341,6 +347,7 @@ export function serializeInventoryFilters(f: InventoryFilters): URLSearchParams 
   if (f.advanced) sp.set(FQ_PARAM, f.advanced)
   if (f.group) sp.set(GROUP_PARAM, f.group)
   if (f.view) sp.set(VIEW_PARAM, f.view)
+  if (f.queryMode) sp.set(MODE_PARAM, 'query')
   for (const key of Object.keys(f.extra ?? {}).sort()) {
     if (isExtraParam(key) && f.extra?.[key]) sp.set(key, f.extra[key])
   }
@@ -482,8 +489,8 @@ export function attributionQuery(f: InventoryFilters): string[] {
   return f.attribution?.length ? f.attribution : DEFAULT_ATTRIBUTION
 }
 
-/** Same default as the other server-paginated lists (Findings). */
-export const DEFAULT_PAGE_SIZE = 20
+/** The default every list shares (25). */
+export const DEFAULT_PAGE_SIZE = DEFAULT_TABLE_PAGE_SIZE
 
 /** True when no filter (other than pagination/sort) is active. */
 export function isInventoryFilterEmpty(f: InventoryFilters): boolean {

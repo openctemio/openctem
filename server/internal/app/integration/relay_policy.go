@@ -100,6 +100,7 @@ func (s *IntegrationService) notifyOwnersRelayStopped(ctx context.Context, intg 
 				NotificationType: notificationdom.TypeSystemAlert,
 				Title:            title,
 				Body:             body,
+				Message:          notificationdom.Msg("relay.email_channel_stopped", "channel", intg.Name()),
 				Severity:         notificationdom.SeverityHigh,
 				ResourceType:     "integration",
 				ResourceID:       &integrationID,

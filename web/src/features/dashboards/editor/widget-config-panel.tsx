@@ -247,6 +247,7 @@ export function WidgetConfigPanel({
                       }}
                       value={preview}
                       loading={!preview}
+                      menu={false}
                     />
                   )}
                 </div>

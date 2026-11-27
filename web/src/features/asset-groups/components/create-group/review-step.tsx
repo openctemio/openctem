@@ -15,6 +15,7 @@ import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import { CRITICALITY_DOT_COLORS } from '@/lib/criticality-colors'
 import {
+  CRITICALITY_LABEL_KEYS,
   CRITICALITY_LABELS,
   RATED_CRITICALITY_LEVELS,
   type RatedCriticality,
@@ -25,17 +26,18 @@ import type { CreateGroupFormData } from './types'
 import { useTranslation } from '@/context/i18n-provider'
 import { draftToDocument, isDraftEmpty, parseDomains } from '../../lib/group-rule'
 import { countPasteLines } from '../../lib/group-paste'
+import { formatNumber } from '@/lib/app-locale'
 
 interface ReviewStepProps {
   data: CreateGroupFormData
   ungroupedAssets: Asset[]
 }
 
-const ENVIRONMENT_LABELS = {
-  production: 'Production',
-  staging: 'Staging',
-  development: 'Development',
-  testing: 'Testing',
+const ENVIRONMENT_KEYS = {
+  production: 'assetGroups.environment.production',
+  staging: 'assetGroups.environment.staging',
+  development: 'assetGroups.environment.development',
+  testing: 'assetGroups.environment.testing',
 }
 
 const CRITICALITY_CONFIG = Object.fromEntries(
@@ -85,11 +87,15 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
   // Validation warnings
   const warnings: string[] = []
   if (!data.name.trim()) {
-    warnings.push('Group name is required')
+    warnings.push(t('assetGroups.create.nameRequired', 'Group name is required'))
   }
   data.newAssets.forEach((asset, index) => {
     if (!asset.name.trim()) {
-      warnings.push(`New asset ${index + 1} is missing a name`)
+      warnings.push(
+        t('assetGroups.review.assetMissingName', 'New asset {n} is missing a name', {
+          n: index + 1,
+        })
+      )
     }
   })
 
@@ -100,17 +106,21 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-medium">Review and Create</h3>
+          <h3 className="text-sm font-medium">
+            {t('assetGroups.review.title', 'Review and create')}
+          </h3>
           <p className="text-xs text-muted-foreground">
-            Review your group settings before creating
+            {t('assetGroups.review.subtitle', 'Review your group settings before creating')}
           </p>
         </div>
         {warnings.length === 0 ? (
-          <HealthStatus state="ok" label="Ready to create" />
+          <HealthStatus state="ok" label={t('assetGroups.review.ready', 'Ready to create')} />
         ) : (
           <Badge variant="destructive">
             <AlertCircle className="h-3 w-3 me-1" />
-            {warnings.length} issue(s)
+            {t('assetGroups.review.issues', '{count, plural, one {# issue} other {# issues}}', {
+              count: warnings.length,
+            })}
           </Badge>
         )}
       </div>
@@ -120,7 +130,9 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3">
           <div className="flex items-center gap-2 text-destructive mb-2">
             <AlertCircle className="h-4 w-4" />
-            <span className="text-sm font-medium">Please fix these issues:</span>
+            <span className="text-sm font-medium">
+              {t('assetGroups.review.fixIssues', 'Please fix these issues:')}
+            </span>
           </div>
           <ul className="text-sm text-destructive/80 space-y-1 ms-6 list-disc">
             {warnings.map((warning, i) => (
@@ -139,21 +151,29 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                 <FolderOpen className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <h4 className="font-semibold">{data.name || 'Unnamed Group'}</h4>
+                <h4 className="font-semibold">
+                  {data.name || t('assetGroups.review.unnamed', 'Unnamed group')}
+                </h4>
                 <p className="text-sm text-muted-foreground">
-                  {data.description || 'No description'}
+                  {data.description || t('assetGroups.detail.noDescription', 'No description')}
                 </p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div>
-                <p className="text-xs text-muted-foreground mb-1">Environment</p>
-                <Badge variant="outline">{ENVIRONMENT_LABELS[data.environment]}</Badge>
+                <p className="text-xs text-muted-foreground mb-1">
+                  {t('assetGroups.bulk.environment', 'Environment')}
+                </p>
+                <Badge variant="outline">{t(ENVIRONMENT_KEYS[data.environment])}</Badge>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground mb-1">Criticality</p>
-                <Badge className={cn(critConfig.color, 'text-white')}>{critConfig.label}</Badge>
+                <p className="text-xs text-muted-foreground mb-1">
+                  {t('assetGroups.bulk.criticality', 'Criticality')}
+                </p>
+                <Badge className={cn(critConfig.color, 'text-white')}>
+                  {t(CRITICALITY_LABEL_KEYS[data.criticality], critConfig.label)}
+                </Badge>
               </div>
             </div>
 
@@ -163,14 +183,18 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                 {data.businessUnit && (
                   <div className="flex items-center gap-2 text-sm">
                     <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-muted-foreground">Business Unit:</span>
+                    <span className="text-muted-foreground">
+                      {t('assetGroups.review.businessUnit', 'Business unit:')}
+                    </span>
                     <span className="font-medium">{data.businessUnit}</span>
                   </div>
                 )}
                 {data.owner && (
                   <div className="flex items-center gap-2 text-sm">
                     <User className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-muted-foreground">Owner:</span>
+                    <span className="text-muted-foreground">
+                      {t('assetGroups.review.owner', 'Owner:')}
+                    </span>
                     <span className="font-medium">{data.owner}</span>
                     {data.ownerEmail && (
                       <span className="text-muted-foreground">({data.ownerEmail})</span>
@@ -180,7 +204,9 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                 {data.tags.length > 0 && (
                   <div className="flex items-center gap-2 text-sm flex-wrap">
                     <Tags className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-muted-foreground">Tags:</span>
+                    <span className="text-muted-foreground">
+                      {t('assetGroups.review.tags', 'Tags:')}
+                    </span>
                     {data.tags.map((tag) => (
                       <Badge key={tag} variant="secondary" className="text-xs">
                         {tag}
@@ -224,7 +250,7 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                     'assetGroups.members.review.paste',
                     '{count} pasted lines are matched when the group is created',
                     {
-                      count: pasteLines.toLocaleString(),
+                      count: formatNumber(pasteLines),
                     }
                   )}
                 </p>
@@ -235,17 +261,23 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
           {/* Assets Summary */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-medium">Assets Summary</h4>
+              <h4 className="text-sm font-medium">
+                {t('assetGroups.review.assetsSummary', 'Assets summary')}
+              </h4>
               <Badge variant="secondary">
                 <Server className="h-3 w-3 me-1" />
-                {totalAssets} total
+                {t('assetGroups.review.total', '{count} total', { count: totalAssets })}
               </Badge>
             </div>
 
             {totalAssets === 0 && (ruleOn || pasteLines > 0) ? null : totalAssets === 0 ? (
               <div className="rounded-lg border border-dashed p-4 text-center text-muted-foreground">
-                <p className="text-sm">No assets will be added to this group</p>
-                <p className="text-xs">You can add assets later</p>
+                <p className="text-sm">
+                  {t('assetGroups.review.noAssets', 'No assets will be added to this group')}
+                </p>
+                <p className="text-xs">
+                  {t('assetGroups.review.addLater', 'You can add assets later')}
+                </p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -253,7 +285,9 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                 {selectedAssets.length > 0 && (
                   <div className="rounded-lg border p-3">
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm font-medium">Existing Assets</p>
+                      <p className="text-sm font-medium">
+                        {t('assetGroups.review.existingAssets', 'Existing assets')}
+                      </p>
                       <Badge variant="outline">{selectedAssets.length}</Badge>
                     </div>
                     <div className="flex flex-wrap gap-1">
@@ -273,7 +307,11 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                         )
                       })}
                       {selectedAssets.length > 8 && (
-                        <Badge variant="outline">+{selectedAssets.length - 8} more</Badge>
+                        <Badge variant="outline">
+                          {t('assetGroups.review.more', '+{count} more', {
+                            count: selectedAssets.length - 8,
+                          })}
+                        </Badge>
                       )}
                     </div>
                   </div>
@@ -285,7 +323,7 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-medium flex items-center gap-1">
                         <Plus className="h-3 w-3" />
-                        New Assets
+                        {t('assetGroups.review.newAssets', 'New assets')}
                       </p>
                       <Badge variant="outline">{data.newAssets.length}</Badge>
                     </div>
@@ -301,12 +339,16 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                             <span className={cn('text-xs', colors.text)}>
                               {asset.type.charAt(0).toUpperCase()}
                             </span>
-                            {asset.name || 'Unnamed'}
+                            {asset.name || t('assetGroups.review.unnamedAsset', 'Unnamed')}
                           </Badge>
                         )
                       })}
                       {data.newAssets.length > 8 && (
-                        <Badge variant="outline">+{data.newAssets.length - 8} more</Badge>
+                        <Badge variant="outline">
+                          {t('assetGroups.review.more', '+{count} more', {
+                            count: data.newAssets.length - 8,
+                          })}
+                        </Badge>
                       )}
                     </div>
                   </div>
@@ -315,7 +357,9 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                 {/* By type breakdown */}
                 {assetsByType.length > 0 && (
                   <div className="rounded-lg bg-muted/50 p-3">
-                    <p className="text-xs text-muted-foreground mb-2">Breakdown by type:</p>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      {t('assetGroups.review.breakdown', 'Breakdown by type:')}
+                    </p>
                     <div className="grid grid-cols-2 gap-2">
                       {assetsByType.map(([type, counts]) => {
                         const colors = ASSET_TYPE_TILE
@@ -329,7 +373,7 @@ export function ReviewStep({ data, ungroupedAssets }: ReviewStepProps) {
                                   colors.bg
                                 )}
                               >
-                                <span className={cn('text-xs font-bold', colors.text)}>
+                                <span className={cn('text-xs font-semibold', colors.text)}>
                                   {type.charAt(0).toUpperCase()}
                                 </span>
                               </div>

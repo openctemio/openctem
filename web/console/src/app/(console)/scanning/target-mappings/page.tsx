@@ -1,5 +1,6 @@
 'use client'
 
+import { EmptyCell } from '@/features/shared/components/empty-cell'
 import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Plus, Waypoints } from 'lucide-react'
@@ -8,17 +9,10 @@ import { Main } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   DataTable,
   DataTableRowActions,
   EmptyState,
-  ErrorState,
+  FilterSelect,
   MetricStrip,
   PageHeader,
   PageStack,
@@ -26,9 +20,10 @@ import {
   StackedCell,
   type MetricStripItem,
 } from '@/features/shared'
+import { ListToolbarTitle } from '@/features/shared/components/list-title-row'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
-import { AssetTypeIcon, getAssetTypeLabel } from '@/features/assets/lib/asset-type-icon'
+import { AssetTypeIcon } from '@/features/assets/lib/asset-type-icon'
 import {
   deleteTargetMapping,
   updateTargetMapping,
@@ -44,7 +39,6 @@ import { useTargetTypeText } from '@console/features/admin-console/lib/target-ma
 import { type TargetMapping, adminHas } from '@console/features/admin-console/types'
 import { useTranslation } from '@/context/i18n-provider'
 
-const ALL = 'all'
 const PAGE_SIZES = [20, 50, 100]
 
 function withStoredValues(
@@ -67,7 +61,7 @@ export default function TargetMappingsPage() {
   const text = useTargetTypeText()
   const types = useTargetMappingTypes().data
   const pairLabel = (m: TargetMapping) =>
-    `${text.label(m.target_type)} → ${getAssetTypeLabel(m.asset_type)}`
+    `${text.label(m.target_type)} → ${text.asset(m.asset_type)}`
   // The API is the authority (every change needs a super admin, a step-up and
   // a reason); this only decides which controls to show.
   const canWrite = adminHas(me, 'platform.content.manage')
@@ -134,9 +128,9 @@ export default function TargetMappingsPage() {
     text.label
   )
   const assetFilterOptions = withStoredValues(
-    (types?.asset_types ?? []).map((v) => ({ value: v, label: getAssetTypeLabel(v) })),
+    (types?.asset_types ?? []).map((v) => ({ value: v, label: text.asset(v) })),
     s?.by_asset_type,
-    getAssetTypeLabel
+    text.asset
   )
   const metrics: MetricStripItem[] = [
     {
@@ -175,24 +169,44 @@ export default function TargetMappingsPage() {
         accessorKey: 'target_type',
         header: t('admin.scanningTargetMappingsPage.targetType', 'Target type'),
         enableSorting: false,
-        cell: ({ row }) => (
-          <StackedCell
-            primary={text.label(row.original.target_type)}
-            secondary={text.hint(row.original.target_type) || undefined}
-          />
-        ),
+        // The target type is the row's name: its label, then what it means
+        // on a line under it. It stays in view while the table scrolls sideways.
+        meta: {
+          kind: 'name',
+          pin: 'start',
+          minWidth: 200,
+          label: t('admin.scanningTargetMappingsPage.targetType', 'Target type'),
+        },
+        cell: ({ row }) => {
+          const hint = text.hint(row.original.target_type)
+          // The meaning on a line under the label, wrapping, never cut beside it.
+          return (
+            <span className="block min-w-0" title={hint || undefined}>
+              <StackedCell
+                primary={text.label(row.original.target_type)}
+                secondary={hint}
+                secondaryLines={2}
+              />
+            </span>
+          )
+        },
       },
       {
         accessorKey: 'asset_type',
         header: t('admin.scanningTargetMappingsPage.assetType', 'Asset type'),
         enableSorting: false,
+        meta: {
+          kind: 'text',
+          width: 184,
+          label: t('admin.scanningTargetMappingsPage.assetType', 'Asset type'),
+        },
         cell: ({ row }) => (
-          <span className="flex items-center gap-2 text-sm">
+          <span className="flex min-w-0 items-center gap-2">
             <AssetTypeIcon
               type={row.original.asset_type}
               className="size-4 shrink-0 text-muted-foreground"
             />
-            {getAssetTypeLabel(row.original.asset_type)}
+            <span className="truncate">{text.asset(row.original.asset_type)}</span>
           </span>
         ),
       },
@@ -200,9 +214,14 @@ export default function TargetMappingsPage() {
         accessorKey: 'priority',
         header: t('admin.scanningTargetMappingsPage.priority', 'Priority'),
         enableSorting: false,
+        meta: {
+          kind: 'number',
+          width: 144,
+          label: t('admin.scanningTargetMappingsPage.priority', 'Priority'),
+        },
         cell: ({ row }) => (
           <span className="flex items-center gap-2">
-            <span className="text-sm tabular-nums">{row.original.priority}</span>
+            <span className="tabular-nums">{row.original.priority}</span>
             {row.original.is_primary && (
               <Badge variant="secondary">
                 {t('admin.scanningTargetMappingsPage.primary', 'Primary')}
@@ -215,6 +234,11 @@ export default function TargetMappingsPage() {
         accessorKey: 'is_active',
         header: t('admin.scanningTargetMappingsPage.status', 'Status'),
         enableSorting: false,
+        meta: {
+          kind: 'status',
+          width: 120,
+          label: t('admin.scanningTargetMappingsPage.status', 'Status'),
+        },
         cell: ({ row }) =>
           row.original.is_active ? (
             <Badge variant="secondary">
@@ -230,28 +254,53 @@ export default function TargetMappingsPage() {
         accessorKey: 'description',
         header: t('admin.scanningTargetMappingsPage.description', 'Description'),
         enableSorting: false,
+        meta: {
+          kind: 'text',
+          width: 240,
+          hideBelow: 1100,
+          label: t('admin.scanningTargetMappingsPage.description', 'Description'),
+        },
         cell: ({ row }) =>
           row.original.description ? (
-            <span className="line-clamp-2 max-w-xs text-sm">{row.original.description}</span>
+            <span className="block truncate" title={row.original.description}>
+              {row.original.description}
+            </span>
           ) : (
-            <span className="text-sm text-muted-foreground">-</span>
+            <EmptyCell
+              title={t('admin.scanningTargetMappingsPage.noDescription', 'No description')}
+            />
           ),
       },
       {
         accessorKey: 'updated_at',
         header: t('admin.scanningTargetMappingsPage.updated', 'Updated'),
         enableSorting: false,
-        cell: ({ row }) => <RelativeTime date={row.original.updated_at} className="text-sm" />,
+        meta: {
+          kind: 'datetime-recent',
+          width: 152,
+          hideBelow: 900,
+          label: t('admin.scanningTargetMappingsPage.updated', 'Updated'),
+        },
+        cell: ({ row }) => <RelativeTime date={row.original.updated_at} />,
       },
     ]
     if (canWrite) {
       cols.push({
         id: 'actions',
+        header: '',
         enableSorting: false,
+        meta: { kind: 'actions' },
         cell: ({ row }) => {
           const m = row.original
           return (
             <DataTableRowActions
+              label={t(
+                'admin.scanningTargetMappingsPage.rowActions',
+                'Actions for the mapping {pair}',
+                {
+                  pair: `${text.label(m.target_type)} → ${text.asset(m.asset_type)}`,
+                }
+              )}
               actions={[
                 {
                   label: t('admin.scanningTargetMappingsPage.edit', 'Edit'),
@@ -285,7 +334,13 @@ export default function TargetMappingsPage() {
     </Button>
   ) : null
 
-  const noMappingsAtAll = !list.isLoading && !filtered && list.data?.total === 0
+  const total = list.data?.total ?? 0
+  const clearFilters = () => {
+    setTargetType('')
+    setAssetType('')
+    setStatus('')
+    resetPage()
+  }
 
   return (
     <Main>
@@ -299,120 +354,98 @@ export default function TargetMappingsPage() {
         >
           {newButton}
         </PageHeader>
-        <MetricStrip items={metrics} loading={stats.isLoading} />
-        {list.error ? (
-          <ErrorState
-            title={t('admin.scanningTargetMappingsPage.targetMappings2', 'target mappings')}
-            error={list.error}
-            onRetry={refresh}
-          />
-        ) : noMappingsAtAll ? (
-          <EmptyState
-            icon={Waypoints}
-            title={t('admin.targetMappings.emptyTitle', 'No custom mappings')}
-            description={t(
-              'admin.targetMappings.empty',
-              'No custom mappings. The built-in pairs already cover the standard asset types; add a mapping only when a scanner needs one more.'
-            )}
-            action={newButton}
-          />
-        ) : (
-          <DataTable
-            columns={columns}
-            data={list.data?.data ?? []}
-            getRowId={(m) => m.id}
-            isLoading={list.isLoading}
-            showSearch={false}
-            showColumnToggle={false}
-            showSelectionCount={false}
-            mobileCards
-            emptyMessage={t(
-              'admin.scanningTargetMappingsPage.noMappingMatchesTheseFilters',
-              'No mapping matches these filters'
-            )}
-            manualPagination
-            pageCount={list.data?.total_pages ?? 1}
-            rowCount={list.data?.total ?? 0}
-            pageSizeOptions={PAGE_SIZES}
-            pagination={{ pageIndex: page - 1, pageSize: perPage }}
-            onPaginationChange={listParams.setPagination}
-            toolbarStart={
-              <div className="flex w-full flex-col gap-2 sm:flex-row">
-                <Select
-                  value={targetType || ALL}
-                  onValueChange={(v) => {
-                    setTargetType(v === ALL ? '' : v)
-                    resetPage()
-                  }}
-                >
-                  <SelectTrigger
-                    className="sm:w-48"
-                    aria-label={t(
-                      'admin.scanningTargetMappingsPage.filterByTargetType',
-                      'Filter by target type'
-                    )}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL}>
-                      {t('admin.scanningTargetMappingsPage.allTargetTypes', 'All target types')}
-                    </SelectItem>
-                    {targetFilterOptions.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select
-                  value={assetType || ALL}
-                  onValueChange={(v) => {
-                    setAssetType(v === ALL ? '' : v)
-                    resetPage()
-                  }}
-                >
-                  <SelectTrigger
-                    className="sm:w-56"
-                    aria-label={t(
-                      'admin.scanningTargetMappingsPage.filterByAssetType',
-                      'Filter by asset type'
-                    )}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ALL}>
-                      {t('admin.scanningTargetMappingsPage.allAssetTypes', 'All asset types')}
-                    </SelectItem>
-                    {assetFilterOptions.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {filtered && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="sm:self-center"
-                    onClick={() => {
-                      setTargetType('')
-                      setAssetType('')
-                      setStatus('')
-                      resetPage()
-                    }}
-                  >
-                    {t('admin.scanningTargetMappingsPage.clearFilters', 'Clear filters')}
-                  </Button>
+        {/* On a phone the list comes first: the strip's status filters follow it
+            (their two rows would push the first card below the fold). */}
+        <MetricStrip items={metrics} loading={stats.isLoading} listFirst />
+        <DataTable
+          // The view name leads the toolbar row: the filters (on a phone, the
+          // Filters button) and Display share its line.
+          toolbarTitle={
+            <ListToolbarTitle
+              title={
+                status === 'active'
+                  ? t('admin.scanningTargetMappingsPage.viewActive', 'Active mappings')
+                  : status === 'inactive'
+                    ? t('admin.scanningTargetMappingsPage.viewInactive', 'Inactive mappings')
+                    : t('admin.scanningTargetMappingsPage.viewAll', 'All custom mappings')
+              }
+            />
+          }
+          // When the table scrolls sideways the row menu stays in view.
+          pinActions
+          columns={columns}
+          data={list.data?.data ?? []}
+          caption={t('admin.scanningTargetMappingsPage.targetMappings', 'Target mappings')}
+          getRowId={(m) => m.id}
+          error={list.error}
+          onRetry={refresh}
+          errorTitle={t('admin.scanningTargetMappingsPage.targetMappings2', 'target mappings')}
+          // The first read: skeleton rows under a toolbar that stays mounted.
+          isLoading={list.isLoading && !list.data}
+          isRefreshing={!!list.isValidating && !!list.data}
+          refreshingLabel={t('admin.scanningTargetMappingsPage.refreshing', 'Refreshing mappings')}
+          showSearch={false}
+          showSelectionCount={false}
+          mobileCards
+          isFiltered={filtered}
+          onClearFilters={clearFilters}
+          emptyState={{
+            nothingYet: (
+              <EmptyState
+                icon={Waypoints}
+                title={t('admin.targetMappings.emptyTitle', 'No custom mappings')}
+                description={t(
+                  'admin.targetMappings.empty',
+                  'No custom mappings. The built-in pairs already cover the standard asset types; add a mapping only when a scanner needs one more.'
                 )}
-              </div>
-            }
-          />
-        )}
+                action={newButton}
+              />
+            ),
+            noMatch: {
+              title: t(
+                'admin.scanningTargetMappingsPage.noMappingMatchesTheseFilters',
+                'No mapping matches these filters'
+              ),
+            },
+          }}
+          manualPagination
+          pageCount={list.data?.total_pages ?? 1}
+          rowCount={total}
+          pageSizeOptions={PAGE_SIZES}
+          pagination={{ pageIndex: page - 1, pageSize: perPage }}
+          onPaginationChange={listParams.setPagination}
+          paginationNoun={t('admin.scanningTargetMappingsPage.noun', 'mappings')}
+          toolbarStart={
+            <>
+              <FilterSelect
+                label={t('admin.scanningTargetMappingsPage.targetType', 'Target type')}
+                value={targetType}
+                foldLabel
+                allLabel={t('admin.scanningTargetMappingsPage.allTargetTypes', 'All target types')}
+                options={targetFilterOptions}
+                onChange={(v) => {
+                  setTargetType(v)
+                  resetPage()
+                }}
+              />
+              <FilterSelect
+                label={t('admin.scanningTargetMappingsPage.assetType', 'Asset type')}
+                value={assetType}
+                foldLabel
+                allLabel={t('admin.scanningTargetMappingsPage.allAssetTypes', 'All asset types')}
+                options={assetFilterOptions}
+                onChange={(v) => {
+                  setAssetType(v)
+                  resetPage()
+                }}
+              />
+            </>
+          }
+        />
 
-        <TargetMappingRegistryPanel />
+        {/* Drawn once the list is known: it sits under the list, so it never
+            moves when the rows arrive. */}
+        {(list.data || list.error) && <TargetMappingRegistryPanel />}
 
         {dialog && (
           <TargetMappingDialog
@@ -427,6 +460,17 @@ export default function TargetMappingsPage() {
 
         {pending && (
           <AdminConfirmDialog
+            reasonPlaceholder={
+              pending.kind === 'delete'
+                ? t(
+                    'admin.targetMappings.reasonDelete',
+                    'Replaced by the built-in pair, change 2231'
+                  )
+                : t(
+                    'admin.targetMappings.reasonToggle',
+                    'Paused while the new scanner version is checked, change 2231'
+                  )
+            }
             key={`${pending.kind}-${pending.mapping.id}`}
             open
             onOpenChange={(open) => !open && setPending(null)}
@@ -452,7 +496,7 @@ export default function TargetMappingsPage() {
                 ? t(
                     'confirm.targetMapping.deleteDesc',
                     'Scanners that only reach {type} assets through it will skip them, in every organization. To pause it instead, deactivate it.',
-                    { type: getAssetTypeLabel(pending.mapping.asset_type) }
+                    { type: text.asset(pending.mapping.asset_type) }
                   )
                 : pending.mapping.is_active
                   ? t(

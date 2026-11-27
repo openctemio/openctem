@@ -6,6 +6,7 @@
  * unread dot, and one click (or `C`) to open the ActivityPanel.
  */
 
+import { CornerDot } from '@/components/ui/corner-dot'
 import { forwardRef, useEffect } from 'react'
 import { AlertCircle, ChevronRight, MessageSquare } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -97,8 +98,12 @@ export const ActivityTrigger = forwardRef<HTMLButtonElement, ActivityTriggerProp
     const headline =
       headlineProp ??
       (comments.length > 0
-        ? `${comments.length} comment${comments.length === 1 ? '' : 's'}`
-        : `${eventCount} event${eventCount === 1 ? '' : 's'}`)
+        ? comments.length === 1
+          ? t('activity.trigger.commentsOne', '{count} comment', { count: 1 })
+          : t('activity.trigger.commentsMany', '{count} comments', { count: comments.length })
+        : eventCount === 1
+          ? t('activity.trigger.eventsOne', '{count} event', { count: 1 })
+          : t('activity.trigger.eventsMany', '{count} events', { count: eventCount }))
 
     // The snippet line: the latest comment, else the latest change.
     let preview: React.ReactNode = null
@@ -146,9 +151,7 @@ export const ActivityTrigger = forwardRef<HTMLButtonElement, ActivityTriggerProp
           className="relative mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
         >
           <MessageSquare className="h-4 w-4" />
-          {unread > 0 && (
-            <span className="absolute -top-0.5 -end-0.5 size-2.5 rounded-full bg-primary ring-2 ring-card" />
-          )}
+          {unread > 0 && <CornerDot tone="primary" className="ring-card" />}
         </span>
         <span className="min-w-0 flex-1" aria-hidden>
           <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">

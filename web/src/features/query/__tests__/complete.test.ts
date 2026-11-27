@@ -3,6 +3,7 @@ import {
   applyCompletion,
   applyFix,
   contextAt,
+  fieldByName,
   fieldCompletions,
   formatCount,
   localValues,
@@ -102,9 +103,138 @@ describe('completions', () => {
     expect(quoteValue('-x')).toBe('"-x"')
     expect(quoteValue('a"b')).toBe('"a\\"b"')
   })
+  it('quotes operator characters, reserved words, brackets, backslashes and control characters', () => {
+    for (const v of [
+      'a=b',
+      'x!=y',
+      'a:b',
+      'a<b',
+      'a>b',
+      'a~b',
+      'a|b',
+      'a)b',
+      '(',
+      'a,b',
+      'or',
+      'NOT',
+      'In',
+      'and',
+    ])
+      expect(quoteValue(v)).toBe(`"${v}"`)
+    expect(quoteValue('a\\b')).toBe('"a\\\\b"')
+    expect(quoteValue('a\nb\tc')).toBe('"a b c"')
+    expect(quoteValue('a..b')).toBe('"a..b"')
+    expect(quoteValue('api.example.com')).toBe('api.example.com')
+    expect(quoteValue('CVE-2024-1234')).toBe('CVE-2024-1234')
+  })
+  it('a completed value reads back as one value token', async () => {
+    const { queryTokens } = await import('../lib/highlight')
+    for (const v of ['a=b', 'or', 'x != y', 'a) OR (b', 'say "hi"']) {
+      const toks = queryTokens(`tool=${quoteValue(v)}`)
+      expect(toks.filter((t) => t.type === 'string')).toHaveLength(1)
+      expect(toks.map((t) => t.value).join('')).toBe(`tool=${quoteValue(v)}`)
+    }
+  })
   it('caps counts at 10,000', () => {
     expect(formatCount(9999, 'en')).toBe('9,999')
     expect(formatCount(10000, 'en')).toBe('10,000')
     expect(formatCount(10001, 'en')).toBe('10,000+')
+  })
+})
+
+describe('localProblem (checked while typing, no request)', () => {
+  it('passes balanced text, quoted parentheses and escaped quotes', async () => {
+    const { localProblem } = await import('../lib/complete')
+    expect(localProblem('severity>=high (kev=true OR epss>0.5)')).toBeNull()
+    expect(localProblem('title~"a (b" tool="x\\"y"')).toBeNull()
+    expect(localProblem('practice!=compliance state=fixed')).toBeNull()
+  })
+  it('names an unclosed quote, an unclosed or an extra parenthesis with its place', async () => {
+    const { localProblem } = await import('../lib/complete')
+    expect(localProblem('tool="nuclei')).toEqual({ code: 'unclosed_quote', start: 5, end: 6 })
+    expect(localProblem('(a=1 OR (b=2)')).toEqual({ code: 'unclosed_paren', start: 0, end: 1 })
+    expect(localProblem('a=1)')).toEqual({ code: 'extra_paren', start: 3, end: 4 })
+  })
+})
+
+// The schema's order and groups (common first, ids last), with short names.
+const ranked: QuerySchemaField[] = [
+  { path: 'severity', type: 'enum', operators: ['='], enum: ['high'], group: 'common' },
+  { path: 'is_in_kev', type: 'boolean', operators: ['=', '!='], aliases: ['kev'], group: 'common' },
+  { path: 'assigned_to', type: 'id', operators: ['='], aliases: ['assignee'], group: 'common' },
+  {
+    path: 'asset.domain',
+    type: 'string',
+    operators: ['='],
+    aliases: ['domain', 'asset_domain'],
+    group: 'common',
+  },
+  { path: 'asset.type', type: 'enum', operators: ['='], enum: ['host'], group: 'asset' },
+  { path: 'informational', type: 'boolean', operators: ['='], group: 'more' },
+  { path: 'asset_id', type: 'id', operators: ['='], group: 'identifier' },
+  { path: 'id', type: 'id', operators: ['='], group: 'identifier' },
+]
+
+describe('field suggestions: order, short names, groups', () => {
+  it('offers every field in the schema order under its group when nothing is typed', () => {
+    const all = fieldCompletions(contextAt('severity=high ', 14), ranked)
+    expect(all.map((c) => c.label)).toEqual([
+      'severity',
+      'kev',
+      'assignee',
+      'domain',
+      'asset.type',
+      'informational',
+      'asset_id',
+      'id',
+    ])
+    expect(all.map((c) => c.group)).toEqual([
+      'common',
+      'common',
+      'common',
+      'common',
+      'asset',
+      'more',
+      'identifier',
+      'identifier',
+    ])
+    // A row inserts the short name and carries its field (for its description).
+    expect(all[1]).toMatchObject({ kind: 'field', insert: 'kev', field: ranked[1] })
+  })
+  it('puts prefix matches before substring matches, showing the name that matched', () => {
+    expect(fieldCompletions(contextAt('a', 1), ranked).map((c) => c.label)).toEqual([
+      'AND',
+      'assignee',
+      'asset.domain',
+      'asset.type',
+      'asset_id',
+      'informational',
+    ])
+    // A former name still finds its field.
+    expect(fieldCompletions(contextAt('asset_d', 7), ranked).map((c) => c.label)).toEqual([
+      'asset_domain',
+    ])
+    // An identifier is offered when its name is typed.
+    expect(fieldCompletions(contextAt('asset_i', 7), ranked).map((c) => c.label)).toEqual([
+      'asset_id',
+    ])
+    expect(fieldCompletions(contextAt('ke', 2), ranked).map((c) => c.label)).toEqual(['kev'])
+  })
+  it('offers operators after a short name as after a path', () => {
+    expect(fieldCompletions(contextAt('kev', 3), ranked).map((c) => c.label)).toEqual([
+      'kev=',
+      'kev!=',
+    ])
+    expect(fieldCompletions(contextAt('is_in_kev', 9), ranked).map((c) => c.label)).toEqual([
+      'is_in_kev=',
+      'is_in_kev!=',
+    ])
+  })
+  it('resolves a short name to its field for values', () => {
+    expect(fieldByName(ranked, 'kev')).toBe(ranked[1])
+    expect(fieldByName(ranked, 'asset_domain')).toBe(ranked[3])
+    expect(fieldByName(ranked, 'nope')).toBeUndefined()
+    const ctx = contextAt('kev=t', 5)
+    expect(localValues(fieldByName(ranked, ctx.path), ctx)?.map((c) => c.label)).toEqual(['true'])
   })
 })

@@ -82,7 +82,10 @@ describe('ScanApprovalPanel', () => {
     const submit = screen
       .getAllByRole('button', { name: 'Submit for approval' })
       .at(-1) as HTMLElement
-    expect(submit).toBeDisabled()
+    expect(submit).toBeEnabled()
+    await user.click(submit)
+    expect(await screen.findByText('Add a justification for the approvers.')).toBeInTheDocument()
+    expect(api.submit).not.toHaveBeenCalled()
     await user.type(screen.getByLabelText('Justification'), 'quarterly pentest')
     await user.click(submit)
     await waitFor(() =>
@@ -102,7 +105,10 @@ describe('ScanApprovalPanel', () => {
     render(<ScanApprovalPanel scanId="s1" onRan={onRan} />)
     await user.click(screen.getByRole('button', { name: /Emergency run/ }))
     const run = screen.getByRole('button', { name: 'Run now' })
-    expect(run).toBeDisabled()
+    expect(run).toBeEnabled()
+    await user.click(run)
+    expect(await screen.findByText('Say why this cannot wait for approval.')).toBeInTheDocument()
+    expect(api.emergency).not.toHaveBeenCalled()
     await user.type(screen.getByLabelText('Reason'), 'active incident')
     await user.click(run)
     await waitFor(() => expect(api.emergency).toHaveBeenCalledWith('s1', 'active incident', 4))

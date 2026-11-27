@@ -551,6 +551,8 @@ export default function CrownJewelsPage() {
         const jewel = row.original
         return (
           <DataTableRowActions
+            title={jewel.name}
+            label={t('common.rowActions.actionsFor', 'Actions for {name}', { name: jewel.name })}
             actions={[
               {
                 label: t('crownJewels.viewDetails', 'View details'),
@@ -583,7 +585,7 @@ export default function CrownJewelsPage() {
       <Main>
         <PageStack>
           <PageHeader
-            title={t('crownJewels.title', 'Crown jewels')}
+            title={t('nav.item.business-context', 'Business context')}
             description={t(
               'crownJewels.description',
               'The assets whose compromise would hurt the business most.'
@@ -601,7 +603,7 @@ export default function CrownJewelsPage() {
             label={t('businessContext.sectionsLabel', 'Business context sections')}
           />
 
-          <MetricStrip loading={isLoading} items={metrics} />
+          <MetricStrip loading={isLoading} items={metrics} listFirst />
 
           <div>
             <DataTable
@@ -628,7 +630,7 @@ export default function CrownJewelsPage() {
                 <>
                   <Select value={filterExposure} onValueChange={setFilterExposure}>
                     <SelectTrigger
-                      className="h-9 w-auto min-w-36"
+                      className="w-auto min-w-36"
                       aria-label={t('crownJewels.filter.exposure.aria', 'Filter by exposure')}
                     >
                       <SelectValue />
@@ -648,7 +650,7 @@ export default function CrownJewelsPage() {
                   {assetTypes.length > 1 && (
                     <Select value={filterType} onValueChange={setFilterType}>
                       <SelectTrigger
-                        className="h-9 w-auto min-w-32"
+                        className="w-auto min-w-32"
                         aria-label={t('crownJewels.filter.type.aria', 'Filter by asset type')}
                       >
                         <SelectValue />
@@ -669,9 +671,10 @@ export default function CrownJewelsPage() {
               }
               toolbarEnd={
                 <Button
+                  iconOnlyBelow="md"
                   variant="outline"
                   size="sm"
-                  className="h-9"
+
                   onClick={handleExport}
                   disabled={crownJewels.length === 0}
                 >
@@ -1061,7 +1064,7 @@ export default function CrownJewelsPage() {
                   {viewJewel.owner || t('crownJewels.unassigned', 'Unassigned')}
                 </p>
                 {viewJewel.ownerEmail ? (
-                  <p className="flex items-center gap-1 text-sm break-all text-muted-foreground">
+                  <p className="flex items-center gap-1 text-sm break-words text-muted-foreground">
                     <Mail className="h-3 w-3 shrink-0" />
                     {viewJewel.ownerEmail}
                   </p>

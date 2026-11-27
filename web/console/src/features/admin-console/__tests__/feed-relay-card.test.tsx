@@ -133,12 +133,13 @@ describe('FeedRelayCard', () => {
       'quiet: the feed relay is turned off on its host (SENSOR_FEED_RELAY=0)'
     )
 
-    const save = screen.getByRole('button', { name: 'Save' })
-    expect(save).toBeDisabled() // relay needs at least one sensor
+    // The save bar: relay with no sensor cannot be saved yet.
+    expect(screen.getByRole('button', { name: /Save changes/ })).toBeDisabled()
     await userEvent.click(screen.getByLabelText('edge-1'))
     await userEvent.click(screen.getByLabelText('edge-2'))
     await userEvent.click(screen.getByLabelText('edge-3'))
     expect(screen.getByLabelText('edge-4')).toBeDisabled()
+    const save = screen.getByRole('button', { name: /Save changes/ })
     expect(save).toBeEnabled()
 
     await userEvent.click(save)
@@ -157,7 +158,13 @@ describe('FeedRelayCard', () => {
   it('shows the relay status: alerts, age, round progress, claimer, the stale reason with its fix and relay stats', () => {
     mocks.status.current = relaying()
     render(<FeedRelayCard canEdit={false} />)
-    expect(screen.getByRole('alert')).toHaveTextContent('No relay sensor online for over an hour')
+    // A raised relay alert is a notice in the card, read politely, not an interruption.
+    expect(
+      screen
+        .getAllByRole('status')
+        .some((e) => e.textContent?.includes('No relay sensor online for over an hour'))
+    ).toBe(true)
+    expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByText('50 hours')).toBeInTheDocument()
     expect(
       screen.getByText(/Downloading data files: 5 of 12 files, 1\.0 KiB received/)

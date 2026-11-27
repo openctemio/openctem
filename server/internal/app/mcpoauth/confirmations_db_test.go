@@ -144,3 +144,50 @@ func TestConfirmationSummaryIsCleaned(t *testing.T) {
 		t.Fatalf("summary not cleaned: %q", view.Summary)
 	}
 }
+
+// The summary message is stored and read back with the confirmation, only
+// for its own user; a malformed one is dropped and the English summary kept.
+func TestConfirmationSummaryMessage(t *testing.T) {
+	h := newHarness(t)
+	svc := h.withConfirmations()
+	ctx := context.Background()
+	alice := h.member(h.tenant, "owner")
+	bob := h.member(h.tenant, "owner")
+	tok, oerr := h.exchange(h.approve(alice, h.tenant, authorizeQuery(nil)), verifier, nil)
+	if oerr != nil {
+		t.Fatal(oerr)
+	}
+	p, err := h.principal(tok.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenant := shared.MustIDFromString(h.tenant)
+	msg := &mcpoauth.SummaryMessage{Code: "mcp.add_finding_comment", Params: map[string]any{
+		"finding": "SQL injection", "severity": "high", "content": "note", "client_visible": false,
+	}}
+	pending, err := svc.RequestConfirmationWith(ctx, p, "add_finding_comment", "d1", "Add a comment", msg, mcpoauth.Actor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := svc.GetConfirmation(ctx, tenant, alice, shared.MustIDFromString(pending.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.SummaryCode != "mcp.add_finding_comment" || v.SummaryParams["content"] != "note" ||
+		v.SummaryParams["client_visible"] != false || v.Summary != "Add a comment" {
+		t.Fatalf("view %+v", v)
+	}
+	if _, err := svc.GetConfirmation(ctx, tenant, bob, shared.MustIDFromString(pending.ID)); !errors.Is(err, mcpoauthdom.ErrNotFound) {
+		t.Fatalf("other user read the confirmation: %v", err)
+	}
+
+	bad := &mcpoauth.SummaryMessage{Code: "Not A Code", Params: map[string]any{"content": "x"}}
+	pending, err = svc.RequestConfirmationWith(ctx, p, "add_finding_comment", "d2", "Add a comment", bad, mcpoauth.Actor{})
+	if err != nil {
+		t.Fatalf("a malformed message failed the request: %v", err)
+	}
+	v, err = svc.GetConfirmation(ctx, tenant, alice, shared.MustIDFromString(pending.ID))
+	if err != nil || v.SummaryCode != "" || v.SummaryParams != nil || v.Summary != "Add a comment" {
+		t.Fatalf("malformed message stored: %+v %v", v, err)
+	}
+}

@@ -126,13 +126,12 @@ describe('OriginWebSection', () => {
     expect(link.getAttribute('rel')).toBe('noopener noreferrer nofollow')
   })
 
-  it('Endpoints tab renders a hostile path as text, not a link or HTML', async () => {
-    const { container } = render(<OriginWebSection assetId="a1" properties={{}} />)
-    await userEvent.click(screen.getByRole('tab', { name: 'Endpoints' }))
-    expect(screen.getAllByText(XSS).length).toBeGreaterThan(0)
-    expectInert(container)
-    expect(screen.queryByRole('link', { name: /img/ })).toBeNull()
-    expect(screen.getByRole('button', { name: /export csv/i })).toBeInTheDocument()
+  it('has no endpoint list of its own: the Endpoints figure opens Paths', async () => {
+    const onOpenPaths = vi.fn()
+    render(<OriginWebSection assetId="a1" properties={{}} onOpenPaths={onOpenPaths} />)
+    expect(screen.queryByRole('tab', { name: 'Endpoints' })).toBeNull()
+    await userEvent.click(screen.getAllByRole('button', { name: /Endpoints/ })[0])
+    expect(onOpenPaths).toHaveBeenCalled()
   })
 
   it('Parameters tab flattens parameters and renders names as text', async () => {

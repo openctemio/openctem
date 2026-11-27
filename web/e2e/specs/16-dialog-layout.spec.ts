@@ -20,11 +20,10 @@ const SIZES = [
 
 async function openAddFinding(page: Page) {
   await page.goto('/findings')
-  // "Add finding" sits in the header's Add menu, next to Import results.
-  const menu = page.getByRole('button', { name: 'Add', exact: true })
-  await expect(menu).toBeVisible({ timeout: 20_000 })
-  await menu.click()
-  await page.getByRole('menuitem', { name: 'Add finding' }).click()
+  // "Finding" is a single button in the page header.
+  const add = page.getByRole('button', { name: 'Add finding', exact: true })
+  await expect(add).toBeVisible({ timeout: 20_000 })
+  await add.click()
   const dialog = page.getByRole('dialog', { name: /add finding/i })
   await expect(dialog).toBeVisible()
   // Let the open animation finish and the form load (sources, assets): on a

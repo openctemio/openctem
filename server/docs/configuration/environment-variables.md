@@ -365,10 +365,10 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 | `PROGRAMFEED_MIRRORS` | list | empty |  |  | Comma-separated https mirrors of the chunked program feed, tried after `PROGRAMFEED_URL`. |
 | `PROGRAMFEED_ROOT_KEY_ID` | string | empty |  |  | Pinned offline root key id of the public program feed. Unset: no program feed is imported. |
 | `PROGRAMFEED_URL` | url | empty |  |  | https release URL of the chunked public program feed, tried before `PROGRAMFEED_DIR`. |
-| `VULNFEED_BASE_URL` | url | `https://github.com/openctemio/vulnfeed-bundles/releases` |  |  | Release base URL of the signed vulnerability bundles. Compose passes it from `.env`. |
-| `VULNFEED_BUNDLE_DIR` | path | empty |  |  | Air-gapped platforms: local directory holding a vulnerability bundle release's files. Compose passes it from `.env` but does not mount the folder: add a read-only volume in an extra compose file. |
-| `VULNFEED_MIRRORS` | list | empty |  |  | Comma-separated https mirrors tried after the release for chunked vulnerability bundles. Compose passes it from `.env`. |
-| `VULNFEED_ROOT_KEY_ID` | string | `official root` |  |  | Pinned root key id of the vulnerability bundles. Defaults to the root of the official feed (openctemio/vulnfeed-bundles releases); set it only for a private collector. Compose passes it from `.env`. |
+| `VULNFEED_BASE_URL` | url | `https://github.com/openctemio/vulnfeed-bundles/releases` |  |  | Release base URL of the signed vulnerability bundles. Unset: the platform owner may change it in the console (System > Threat intelligence > Vulnerability feed address); set: it pins the address and the console shows it locked. A mirror on a private address needs its range in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`, checked at start-up. Compose passes it from `.env`. |
+| `VULNFEED_BUNDLE_DIR` | path | empty |  |  | Air-gapped platforms: local directory holding a vulnerability bundle release's files. Server only: the console shows whether it is set, never the path. Compose passes it from `.env` but does not mount the folder: add a read-only volume in an extra compose file. |
+| `VULNFEED_MIRRORS` | list | empty |  |  | Comma-separated https mirrors tried after the release for chunked vulnerability bundles (direct mode only). Setting it, like `VULNFEED_BASE_URL`, pins the feed address; unset, the console manages the mirrors. A mirror on a private address needs its range in `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS`, checked at start-up. |
+| `VULNFEED_ROOT_KEY_ID` | string | `official root` |  |  | Pinned root key id of the vulnerability bundles. Defaults to the root of the official feed (openctemio/vulnfeed-bundles releases); set it only for a private collector. A trust anchor: server only, the console shows it read-only. Compose passes it from `.env`. |
 
 ### Integrations
 
@@ -392,7 +392,7 @@ Prefixes the API owns: `APP_`, `BRAND_`, `SERVER_`, `DB_`, `REDIS_`, `LOG_`, `AU
 
 | Variable | Type | Default | Required | Secret | Description |
 |---|---|---|---|---|---|
-| `ACCOUNT_PORTAL_URL` | url | empty |  |  | A hosted service's account page (absolute https URL). When set, Settings > Usage & limits links to it for owners and admins whenever a limit applies to their organization. Empty (the default): no link. |
+| `ACCOUNT_PORTAL_URL` | url | empty |  |  | A hosted service's account page (absolute https URL). When set, Settings > Usage and limits links to it for owners and admins whenever a limit applies to their organization. Empty (the default): no link. |
 | `INTERNAL_API_ADDR` | string | empty |  |  | Listen address of the internal entitlements API, for example `10.0.0.5:9443` (a loopback or private IP; any other address, or a hostname, needs `INTERNAL_API_ALLOW_ALL_INTERFACES=true`). Empty (the default) turns it off. It is for the control plane of a hosted service only: expose it on a private network, never through the public gateway. When set, every other `INTERNAL_API_` variable is required. |
 | `INTERNAL_API_ALLOW_ALL_INTERFACES` | bool | `false` |  |  | `true` lets `INTERNAL_API_ADDR` be any address: every interface (`:9443`, `0.0.0.0:9443`, `[::]:9443`), a public or link-local IP, or a hostname. Off: only a loopback or private IP (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`) is accepted and the API refuses to start otherwise. Set it only when the network itself keeps the port private, such as a container network with no published port. |
 | `INTERNAL_API_TLS_CERT` | path | empty |  |  | PEM server certificate of the internal API (TLS 1.3 only). |
@@ -543,7 +543,7 @@ Read by the Next.js web console. `NEXT_PUBLIC_*` values are compiled into the br
 | `ADMIN_API_URL` | string | empty |  |  | Platform console app only (`openctem-console`): internal URL of the API's console listener (`ADMIN_LISTEN_ADDR`), where the console's proxy sends `/api/v1/admin`. Unset: `BACKEND_API_URL`. Compose: `http://api:8081`. The tenant web app never reads it. |
 | `BACKEND_API_URL` | string | `http://localhost:8080` | yes |  | Internal URL of the API. The console proxies the browser's `/api/v1` calls and the WebSocket upgrade to it. Compose: `http://api:8080`. |
 | `SECURE_COOKIES` | string | `true` |  |  | `Secure` flag on the cookies the console sets. Only `false` turns it off (local `http://` development). |
-| `TRUST_PROXY_HEADERS` | string | `false` |  |  | Forward `X-Real-IP` / `X-Forwarded-For` to the API. Set `true` only when a proxy in front of the console overwrites those headers (the gateway does), otherwise a browser could choose its own address. |
+| `TRUST_PROXY_HEADERS` | string | `false` |  |  | Pass the client address on to the API (audit log, sessions, IP allowlists, request limits). Set `true` only when every request reaches the console through a proxy that sets `X-Forwarded-For` (the gateway does). The console then sends the API one address, the right-most `X-Forwarded-For` entry (the one that proxy wrote; `X-Real-IP` only when `X-Forwarded-For` is absent); entries to its left are never passed on. Off: no address is sent and the API sees the console's own. |
 | `COOKIE_MAX_AGE` | string | `604800` |  |  | Lifetime in seconds of the session cookies the console sets. |
 | `NODE_ENV` | string | `production` |  |  | Node.js environment. |
 | `PORT` | string | `3000` |  |  | Listen port and address of the console. |

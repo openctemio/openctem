@@ -7,10 +7,7 @@ import { SuggestionsInbox } from '@/features/remediation-hub/components/suggesti
 export default function RemediationSuggestionsPage() {
   const { t } = useTranslation()
   return (
-    <HubPage
-      title={t('remediationHub.suggestions.title')}
-      description={t('remediationHub.suggestions.description')}
-    >
+    <HubPage description={t('remediationHub.suggestions.description')}>
       <SuggestionsInbox />
     </HubPage>
   )

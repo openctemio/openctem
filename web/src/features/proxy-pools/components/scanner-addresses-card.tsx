@@ -107,13 +107,14 @@ export function ScannerAddressesCard({ enabled = true }: { enabled?: boolean }) 
                         </Badge>
                       )}
                     </div>
-                    <p className="truncate text-xs text-muted-foreground">{sourceText(a, t)}</p>
+                    {/* A sentence: it wraps rather than end in an ellipsis. */}
+                    <p className="text-xs break-words text-muted-foreground">{sourceText(a, t)}</p>
                   </div>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 shrink-0"
+                    className="shrink-0"
                     aria-label={t('proxyPools.scanner.copyOne', undefined, { address: a.address })}
                     onClick={() => void copy(a.address, t)}
                   >
@@ -138,7 +139,7 @@ export function ScannerAddressesCard({ enabled = true }: { enabled?: boolean }) 
                 </Button>
               </div>
               <Tabs value={format} onValueChange={(v) => setFormat(v as AllowlistFormat)}>
-                <TabsList className="h-auto max-w-full flex-wrap justify-start">
+                <TabsList>
                   {ALLOWLIST_FORMATS.map((f) => (
                     <TabsTrigger key={f} value={f} className="text-xs">
                       {t(`proxyPools.scanner.format.${f}`)}

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import type { Asset } from '../../../types/asset.types'
 
 const updateAsset = vi.fn()
@@ -11,6 +12,7 @@ vi.mock('../../../hooks/use-assets', () => ({
 vi.mock('../../../hooks/use-asset-owners', () => ({ addAssetOwner: vi.fn() }))
 vi.mock('../inventory-business-context-actions', () => ({
   InventoryBusinessContextActions: () => null,
+  useBusinessContextAccess: () => ({ canUnit: false, canService: false }),
 }))
 vi.mock('swr', () => ({ default: () => ({ data: undefined, isLoading: false }) }))
 vi.mock('@/context/tenant-provider', () => ({ useTenant: () => ({ currentTenant: { id: 't1' } }) }))
@@ -47,11 +49,14 @@ beforeEach(() => {
 })
 
 describe('bulk remove tags', () => {
-  it('is offered only when the selection carries tags', () => {
+  it('is dimmed with the reason when the selection carries no tags', async () => {
     render(
       <InventoryBulkBar selected={[asset('a', [])]} canWrite onClear={vi.fn()} onDone={vi.fn()} />
     )
-    expect(screen.queryByRole('button', { name: 'Remove tags' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    const item = await screen.findByRole('menuitem', { name: /Remove tags/ })
+    expect(item).toHaveAttribute('aria-disabled', 'true')
+    expect(item).toHaveTextContent('The selected assets have no tags')
   })
 
   it('removes the ticked tags from the assets that carry them, keeping the others', async () => {
@@ -64,12 +69,13 @@ describe('bulk remove tags', () => {
         onDone={onDone}
       />
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Remove tags' }))
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Remove tags' }))
     const dialog = await screen.findByRole('dialog')
     // Most common first, with how many selected assets carry each.
     expect(within(dialog).getByText('2 of 3')).toBeInTheDocument()
     fireEvent.click(within(dialog).getByLabelText(/^pci/))
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove 1 tags from 3 selected' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove 1 tag from 3 selected' }))
     await waitFor(() => expect(onDone).toHaveBeenCalled())
     // Only asset a carries pci: one change naming only that tag, applied by
     // the API to the stored tags (never a list built from the row's copy).
@@ -90,7 +96,8 @@ describe('bulk add tag', () => {
         onDone={onDone}
       />
     )
-    fireEvent.click(screen.getByRole('button', { name: 'Add tag' }))
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Add tag' }))
     const dialog = await screen.findByRole('dialog')
     fireEvent.change(within(dialog).getByLabelText('Tag'), { target: { value: ' dmz ' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Add tag to 2 selected' }))

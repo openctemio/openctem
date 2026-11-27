@@ -78,11 +78,12 @@ func (s *TenantService) UpdateScanGovernanceSettings(
 	s.logAudit(ctx, actx, event)
 	switch {
 	case modeLowered:
-		s.notifyPolicyLoosened(ctx, tenantID, actx, "Scan approval lowered",
+		s.notifyPolicyLoosenedWith(ctx, tenantID, actx, "settings.scan_approval_lowered", "Scan approval lowered",
 			fmt.Sprintf("scan approval from %s to %s (fewer scans wait for an approver)", before.EffectiveMode(), after.EffectiveMode()),
-			"/settings/scanning/scan-approval")
+			"/settings/scanning/scan-approval",
+			"from_mode", scanModeParam(before.EffectiveMode()), "to_mode", scanModeParam(after.EffectiveMode()))
 	case rulesLoosened:
-		s.notifyPolicyLoosened(ctx, tenantID, actx, "Scan approval rules loosened",
+		s.notifyPolicyLoosenedWith(ctx, tenantID, actx, "settings.scan_rules_loosened", "Scan approval rules loosened",
 			"the scan approval rules (a rule that held scans for approval was removed, turned off, set to monitor or edited)",
 			"/settings/scanning/scan-approval")
 	}

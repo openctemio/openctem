@@ -3,8 +3,8 @@
 /**
  * The `/` dashboard (api docs/architecture/dashboards.md): one renderer for
  * every stored dashboard, a switcher between the organization's dashboards
- * and the viewer's own, the scope badge, the freshness line with Refresh now
- * and the schedule, and the dashboard's actions. Every figure comes from the
+ * and the viewer's own, the scope badge and the freshness line under the
+ * name, Refresh now, the schedule, and the dashboard's actions. Every figure comes from the
  * dashboard's stored snapshot; the server decides whose numbers they are.
  */
 
@@ -12,29 +12,34 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { useSWRConfig } from 'swr'
-import { Copy, MoreHorizontal, Pencil, SlidersHorizontal, Star, Trash2, X } from 'lucide-react'
+import {
+  Copy,
+  LayoutGrid,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  SlidersHorizontal,
+  Star,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import Link from '@/components/link'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
+import { useIsBelowSm } from '@/hooks/use-mobile'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
-import { PageHeader, PageStack } from '@/features/shared'
+import { EmptyState, PageHeader, PageStack } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { Permission, usePermissions } from '@/lib/permissions'
-import { cn } from '@/lib/utils'
 import {
   DASHBOARDS_KEY,
   addFlowPanel,
   createDashboard,
+  fetchMyDashboards,
   deleteDashboard,
   duplicateOrgDashboard,
   setDashboardSchedule,
@@ -67,16 +72,16 @@ import {
 import { flowPanelEligible } from '../lib/flow-panel'
 import { metricNameKey } from '../metrics'
 import {
+  DashboardDataNotice,
+  DashboardFirstBuild,
   DashboardFreshness,
+  hasDataNotice,
+  isFirstBuild,
   RefreshButton,
-  ScheduleMenuItems,
-  ScheduleSelect,
+  scheduleSubmenu,
 } from './dashboard-freshness'
-import { DashboardSwitcher } from './dashboard-switcher'
+import { DashboardSwitcher, DashboardSwitcherPending } from './dashboard-switcher'
 import { DashboardView } from './dashboard-view'
-
-/** Menu rows are 44px tall on a phone (touch target), the kit default from 640px. */
-const ITEM = 'min-h-11 sm:min-h-8'
 
 export function DashboardSkeleton() {
   return (
@@ -125,6 +130,7 @@ export function DashboardHome() {
   const canOrgManage = can(Permission.DashboardsOrgManage)
   const { mutate } = useSWRConfig()
   const revalidate = useRevalidateAllDashboards()
+  const belowSm = useIsBelowSm()
 
   // One request opens the page: both lists and the landing dashboard's
   // figures arrive together (the server applies the landing rule to the
@@ -154,7 +160,11 @@ export function DashboardHome() {
 
   // A person with no dashboard at all (none of their own, none from the
   // organization) gets a personal copy of the default template, computed in
-  // their own scope. Created once; a failure leaves the empty state.
+  // their own scope. Created once. When the copy is refused, another tab of
+  // the same person may have made it a moment earlier (names are unique per
+  // person, so the server answers the second copy with a conflict): the list
+  // is read once more and the page lands on what is there. Only an empty list
+  // after that leaves the empty state.
   const seeding = useRef(false)
   const [seededName, setSeeded] = useState<string | null>(null)
   const [seedFailed, setSeedFailed] = useState(false)
@@ -184,7 +194,14 @@ export function DashboardHome() {
         setChosen({ kind: 'personal', id: d.id })
         writeChoice({ kind: 'personal', id: d.id })
       })
-      .catch(() => setSeedFailed(true))
+      .catch(async () => {
+        const list = await fetchMyDashboards().catch(() => null)
+        if (list && list.data.length > 0) {
+          await mutate(DASHBOARDS_KEY, list, { revalidate: false })
+          return
+        }
+        setSeedFailed(true)
+      })
   }, [nothing, mutate, t])
 
   const active = useMemo(
@@ -210,6 +227,8 @@ export function DashboardHome() {
   const data = useDashboardData(active?.kind ?? 'personal', active?.id ?? null, {
     revalidateIfStale: !(home.status === 'ready' && home.dataKey === activeDataKey),
   })
+  // The figures are being counted for the first time: one notice.
+  const firstBuild = isFirstBuild(data.data)
 
   const choose = useCallback((ref: DashboardRef) => {
     setChosen(ref)
@@ -392,139 +411,146 @@ export function DashboardHome() {
   const canSchedule = !!dashboard && (isOrg ? canOrgManage : true)
   const isDefault = dashboard ? (isOrg ? dashboard.is_org_default : dashboard.is_default) : false
 
+  // Customize is a toolbar button from 640px and an item of this menu below
+  // it; the refresh schedule is an item of this menu at every width.
+  const menuItems: ActionMenuEntry[] = []
+  if (dashboard) {
+    if (canCustomize && belowSm)
+      menuItems.push({
+        id: 'customize',
+        label: t('dashboards.actions.customize', 'Customize'),
+        icon: SlidersHorizontal,
+        disabledReason: customizing
+          ? t('dashboards.actions.customizing', 'Already customizing')
+          : undefined,
+        onSelect: () => setCustomizing(true),
+      })
+    if (isOrg)
+      menuItems.push({
+        id: 'duplicate',
+        label: t('dashboards.actions.duplicate', 'Duplicate to mine'),
+        icon: Copy,
+        onSelect: () => void duplicate(dashboard.id),
+      })
+    if (!isDefault && (!isOrg || canOrgManage))
+      menuItems.push({
+        id: 'default',
+        label: isOrg
+          ? t('dashboards.actions.setOrgDefault', 'Set as organization default')
+          : t('dashboards.actions.setDefault', 'Set as my default'),
+        icon: Star,
+        onSelect: () =>
+          isOrg ? setPendingOrgDefault(dashboard) : void setDefault(dashboard, false),
+      })
+    if (!isOrg || canOrgManage)
+      menuItems.push({
+        id: 'edit',
+        label: t('dashboards.actions.edit', 'Edit details'),
+        icon: Pencil,
+        href: `/dashboards?edit=${encodeURIComponent(dashboard.id)}${isOrg ? '&kind=organization' : ''}`,
+      })
+    if (canSchedule && !customizing)
+      menuItems.push({
+        ...scheduleSubmenu(t, dashboard.refresh_schedule, schedule),
+        section: 'schedule',
+      })
+    if (!isOrg)
+      menuItems.push({
+        id: 'delete',
+        label: t('dashboards.actions.delete', 'Delete'),
+        icon: Trash2,
+        destructive: true,
+        onSelect: () => setPendingDelete(dashboard),
+      })
+  }
+
   return (
     <Main>
       <PageStack>
-        {/* Phone: the switcher fills row 1 beside icon-only Refresh and More;
-            Customize and the schedule move into More. From 640px one toolbar
-            row: switcher, Customize, schedule, Refresh now, More. */}
+        {/* The dashboard's name is the switcher (a chevron right after it).
+            The actions sit at the end of the title row at every width:
+            Customize (from 640px; in More below it), Refresh now and More,
+            which also holds the refresh schedule. */}
         <PageHeader
           title={dashboard?.name ?? t('dashboards.title', 'Dashboard')}
-          actionsClassName="basis-full sm:basis-auto"
-        >
-          <div
-            className="flex w-full min-w-0 flex-nowrap items-center gap-2 sm:w-auto"
-            data-testid="dashboard-toolbar"
-          >
-            <DashboardSwitcher
-              personal={personal}
-              organization={organization}
-              active={active}
-              onChoose={choose}
-              className="h-11 min-w-0 max-w-none flex-1 justify-start sm:h-8 sm:max-w-[16rem] sm:flex-none"
-            />
-            {canCustomize && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="hidden sm:inline-flex"
-                onClick={() => setCustomizing(true)}
-                disabled={customizing}
-              >
-                <SlidersHorizontal className="me-2 h-4 w-4" aria-hidden />
-                {t('dashboards.actions.customize', 'Customize')}
-              </Button>
-            )}
-            {canSchedule && !customizing && (
-              <ScheduleSelect
-                schedule={dashboard?.refresh_schedule}
-                onSchedule={schedule}
-                className="hidden sm:flex"
+          titleAction={
+            listsLoading ? (
+              <DashboardSwitcherPending />
+            ) : (
+              <DashboardSwitcher
+                personal={personal}
+                organization={organization}
+                active={active}
+                onChoose={choose}
               />
-            )}
-            {dashboard && !customizing && <RefreshButton onRefresh={refresh} />}
-            {dashboard && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+            )
+          }
+          // Whose figures these are and how fresh: one line under the name,
+          // part of the header, so the widgets start right below it. While
+          // the lists load, a line of the same height holds its place. A
+          // building or stale notice is under the header, never inside it,
+          // so the title row's controls never move.
+          description={
+            dashboard && active ? (
+              <DashboardFreshness kind={active.kind} data={data.data} />
+            ) : listsLoading ? (
+              <Skeleton className="h-4 w-56 max-w-full" data-testid="dashboard-meta-pending" />
+            ) : undefined
+          }
+        >
+          {dashboard && (
+            <div
+              className="flex min-w-0 flex-nowrap items-center gap-2"
+              data-testid="dashboard-toolbar"
+            >
+              {canCustomize && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="hidden sm:inline-flex"
+                  onClick={() => setCustomizing(true)}
+                  disabled={customizing}
+                >
+                  <SlidersHorizontal className="me-2 h-4 w-4" aria-hidden />
+                  {t('dashboards.actions.customize', 'Customize')}
+                </Button>
+              )}
+              {!customizing && <RefreshButton onRefresh={refresh} iconOnly />}
+              <ActionMenu
+                title={dashboard.name}
+                label={t('dashboards.actions.more', 'More dashboard actions')}
+                items={menuItems}
+                trigger={
                   <Button
                     variant="outline"
-                    size="icon"
-                    className="h-11 w-11 shrink-0 sm:h-8 sm:w-8"
+                    size="icon-sm"
+                    className="shrink-0"
                     aria-label={t('dashboards.actions.more', 'More dashboard actions')}
                   >
                     <MoreHorizontal className="h-4 w-4" aria-hidden />
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64">
-                  {canCustomize && (
-                    <DropdownMenuItem
-                      className={cn(ITEM, 'sm:hidden')}
-                      onSelect={() => setCustomizing(true)}
-                      disabled={customizing}
-                    >
-                      <SlidersHorizontal className="me-2 h-4 w-4" aria-hidden />
-                      {t('dashboards.actions.customize', 'Customize')}
-                    </DropdownMenuItem>
-                  )}
-                  {isOrg && (
-                    <DropdownMenuItem className={ITEM} onSelect={() => duplicate(dashboard.id)}>
-                      <Copy className="me-2 h-4 w-4" aria-hidden />
-                      {t('dashboards.actions.duplicate', 'Duplicate to mine')}
-                    </DropdownMenuItem>
-                  )}
-                  {!isDefault && (!isOrg || canOrgManage) && (
-                    <DropdownMenuItem
-                      className={ITEM}
-                      onSelect={() =>
-                        isOrg ? setPendingOrgDefault(dashboard) : setDefault(dashboard, false)
-                      }
-                    >
-                      <Star className="me-2 h-4 w-4" aria-hidden />
-                      {isOrg
-                        ? t('dashboards.actions.setOrgDefault', 'Set as organization default')
-                        : t('dashboards.actions.setDefault', 'Set as my default')}
-                    </DropdownMenuItem>
-                  )}
-                  {(!isOrg || canOrgManage) && (
-                    <DropdownMenuItem className={ITEM} asChild>
-                      <Link
-                        href={`/dashboards?edit=${encodeURIComponent(dashboard.id)}${isOrg ? '&kind=organization' : ''}`}
-                      >
-                        <Pencil className="me-2 h-4 w-4" aria-hidden />
-                        {t('dashboards.actions.edit', 'Edit details')}
-                      </Link>
-                    </DropdownMenuItem>
-                  )}
-                  {canSchedule && !customizing && (
-                    <div className="sm:hidden">
-                      <DropdownMenuSeparator />
-                      <ScheduleMenuItems
-                        schedule={dashboard.refresh_schedule}
-                        onSchedule={schedule}
-                      />
-                    </div>
-                  )}
-                  {!isOrg && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className={cn(ITEM, 'text-destructive focus:text-destructive')}
-                        onSelect={() => setPendingDelete(dashboard)}
-                      >
-                        <Trash2 className="me-2 h-4 w-4" aria-hidden />
-                        {t('dashboards.actions.delete', 'Delete')}
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
+                }
+              />
+            </div>
+          )}
         </PageHeader>
-        {dashboard && active && !customizing && (
-          <DashboardFreshness kind={active.kind} data={data.data} />
-        )}
 
         {listsLoading ? (
           <DashboardSkeleton />
         ) : !dashboard || !active ? (
           seedFailed || !nothing ? (
-            <div className="rounded-lg border border-dashed py-12 text-center text-sm text-muted-foreground">
-              {t('dashboards.view.none', 'You have no dashboards yet.')}{' '}
-              <Link href="/dashboards" className="font-medium text-foreground underline">
-                {t('dashboards.switcher.new', 'New dashboard')}
-              </Link>
-            </div>
+            <EmptyState
+              icon={LayoutGrid}
+              title={t('dashboards.view.none', 'You have no dashboards yet.')}
+              action={
+                <Button asChild>
+                  <Link href="/dashboards">
+                    <Plus aria-hidden />
+                    {t('dashboards.switcher.new', 'New dashboard')}
+                  </Link>
+                </Button>
+              }
+            />
           ) : (
             <DashboardSkeleton />
           )
@@ -540,14 +566,23 @@ export function DashboardHome() {
           />
         ) : (
           <>
+            {/* A building or stale notice is a line of its own only when no
+                other note shows here; otherwise it opens that note's line,
+                so the widgets never sit under two rows of notes. */}
+            {!seededName && !layoutHint && !firstBuild && <DashboardDataNotice data={data.data} />}
             {seededName && (
               <p
                 className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground"
                 role="status"
               >
+                {hasDataNotice(data.data) && !firstBuild && (
+                  <>
+                    <DashboardDataNotice data={data.data} inline />{' '}
+                  </>
+                )}
                 {t(
                   'dashboards.view.seeded',
-                  'This is the {name} layout, computed for your own access.',
+                  'This is the {name} layout, shown for what you can access.',
                   { name: seededName }
                 )}{' '}
                 <button
@@ -569,6 +604,11 @@ export function DashboardHome() {
                 data-testid="layout-hint"
               >
                 <span className="min-w-0 flex-1 basis-60 text-muted-foreground">
+                  {hasDataNotice(data.data) && !firstBuild && (
+                    <>
+                      <DashboardDataNotice data={data.data} inline />{' '}
+                    </>
+                  )}
                   {layoutHint.missing.length > 0
                     ? t('dashboards.layoutHint.text', 'New on the {template} layout: {names}.', {
                         template: t(templateNameKey(layoutHint.template), layoutHint.template),
@@ -607,7 +647,7 @@ export function DashboardHome() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="h-8 w-8"
+
                   onClick={dismissHint}
                   aria-label={t('dashboards.layoutHint.dismiss', 'Dismiss')}
                 >
@@ -615,13 +655,19 @@ export function DashboardHome() {
                 </Button>
               </div>
             )}
-            <DashboardView
-              dashboard={dashboard}
-              data={data.data}
-              loading={data.isLoading}
-              failed={!!data.error && !data.data}
-              onRetry={() => data.mutate()}
-            />
+            {/* The first count of the figures: one notice, not a box per
+                widget that each says "No data yet". */}
+            {firstBuild ? (
+              <DashboardFirstBuild />
+            ) : (
+              <DashboardView
+                dashboard={dashboard}
+                data={data.data}
+                loading={data.isLoading}
+                failed={!!data.error && !data.data}
+                onRetry={() => data.mutate()}
+              />
+            )}
           </>
         )}
       </PageStack>

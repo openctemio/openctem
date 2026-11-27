@@ -13,6 +13,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { cn } from '@/lib/utils'
 import { safeHref } from '@/lib/safe-href'
 import type { PostureCategoryRow, PostureResult } from './types'
+import { formatNumber } from '@/lib/app-locale'
 
 export type PostureGradeLetter = 'A' | 'B' | 'C' | 'D' | 'F'
 
@@ -72,9 +73,9 @@ function meterTone(c: PostureCategoryRow): MeterTone {
 }
 
 /** Formats a deduction ("−4.2", or "0"). */
-export function formatDeduction(d: number, locale: string): string {
+export function formatDeduction(d: number, _locale: string): string {
   if (d <= 0) return '0'
-  return `−${d.toLocaleString(locale, { maximumFractionDigits: 1 })}`
+  return `−${formatNumber(d, { maximumFractionDigits: 1 })}`
 }
 
 export interface PostureCategoryListProps {
@@ -97,9 +98,11 @@ export function PostureCategoryList({
         const name = t(`dashboardKit.posture.category.${c.category}`, c.category)
         return (
           <li key={c.category} className="flex flex-col gap-1" data-category={c.category}>
-            <div className="flex items-baseline justify-between gap-3 text-sm">
-              <span className="truncate">{name}</span>
-              <span className="flex shrink-0 items-baseline gap-3 tabular-nums">
+            {/* The name keeps its words whole: where the figures do not fit
+                beside it (a phone), they move under it, at the end. */}
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-sm">
+              <span className="min-w-0 break-words">{name}</span>
+              <span className="ms-auto flex shrink-0 items-baseline gap-3 tabular-nums">
                 <span className="text-xs text-muted-foreground">
                   {t('dashboardKit.posture.issues', '{count} issues', { count: c.issues })}
                 </span>

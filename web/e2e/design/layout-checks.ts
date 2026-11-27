@@ -12,6 +12,11 @@
  *             2 px in both directions (line boxes, so wrapped links count
  *             per line), neither inside the other; a button drawn inside a
  *             field (show password, clear) is an adornment, not an overlap
+ *   popup     an open menu, popover or select list comes nearer a screen edge
+ *             than the 16 px gutter (8 for a phone top-bar sheet as wide as
+ *             the screen less 16), or an action sheet is not inside the
+ *             viewport
+ *   target    a row of a phone action sheet is shorter than 44 px
  *
  * Elements hidden from everyone (display none, visibility hidden, opacity 0,
  * zero size) and screen-reader-only text (clipped to 1 px on purpose) are
@@ -19,7 +24,7 @@
  */
 
 export interface LayoutIssue {
-  kind: 'sideways' | 'clipped' | 'overlap'
+  kind: 'sideways' | 'clipped' | 'overlap' | 'popup' | 'target'
   detail: string
 }
 
@@ -96,6 +101,35 @@ export function layoutIssues(): LayoutIssue[] {
         if ((outX || outY) && !truncated(el, clip.box)) {
           issues.push({ kind: 'clipped', detail: `${label(el)} is cut off by ${label(clip.box)}` })
         }
+      }
+    }
+  }
+
+  const vw = doc.clientWidth
+  const vh = window.innerHeight
+  const popups = document.body.querySelectorAll(
+    '[data-slot="dropdown-menu-content"], [data-slot="dropdown-menu-sub-content"], [data-slot="popover-content"], [data-slot="select-content"]'
+  )
+  for (const el of popups) {
+    if (!visible(el)) continue
+    const r = el.getBoundingClientRect()
+    const gutter = r.width >= vw - 17 ? 8 : 16
+    if (r.left < gutter - 1 || r.right > vw - gutter + 1) {
+      issues.push({
+        kind: 'popup',
+        detail: `${label(el)} spans ${Math.round(r.left)}..${Math.round(r.right)} in a ${vw}px viewport (gutter ${gutter})`,
+      })
+    }
+  }
+  for (const sheet of document.body.querySelectorAll('[data-slot="action-sheet"]')) {
+    if (!visible(sheet)) continue
+    const r = sheet.getBoundingClientRect()
+    if (r.left < -1 || r.right > vw + 1 || r.bottom > vh + 1 || r.top < 0) {
+      issues.push({ kind: 'popup', detail: `${label(sheet)} is outside the viewport` })
+    }
+    for (const row of sheet.querySelectorAll('[data-slot="action-sheet-row"]')) {
+      if (visible(row) && row.getBoundingClientRect().height < 44 - 0.5) {
+        issues.push({ kind: 'target', detail: `${label(row)} is shorter than 44px` })
       }
     }
   }

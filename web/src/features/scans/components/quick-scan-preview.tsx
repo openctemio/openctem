@@ -16,6 +16,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
 import { post } from '@/lib/api/client'
 import { scanEndpoints } from '@/lib/api/endpoints'
+import { BreakText } from '@/features/shared/components/break-text'
 
 export interface QuickPreviewSkip {
   reason: string
@@ -115,7 +116,9 @@ export function QuickScanPreviewPanel({ targets, scannerName, onDiscover, discov
     <ul className="space-y-2" data-testid="quick-scan-preview">
       {data.targets.map((p) => (
         <li key={p.target} className="rounded-md border p-2 text-xs">
-          <p className="font-medium break-all">{p.target}</p>
+          <p className="font-medium break-words">
+            <BreakText>{p.target}</BreakText>
+          </p>
           {p.refused_code ? (
             <p className="text-destructive">
               {t(REFUSED_KEYS[p.refused_code] ?? REFUSED_KEYS.run_refused)}
@@ -168,7 +171,7 @@ function TargetBody({
         </p>
       )}
       {(p.sample ?? []).length > 0 && (
-        <p className="break-all">
+        <p className="break-words">
           {t('scans.quickPreview.sample', undefined, { names: (p.sample ?? []).join(', ') })}
         </p>
       )}

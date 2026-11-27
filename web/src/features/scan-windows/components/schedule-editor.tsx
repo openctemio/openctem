@@ -61,7 +61,7 @@ export function SlotsEditor({ slots, onChange, errors, disabled }: SlotsEditorPr
                     type="button"
                     size="sm"
                     variant={on ? 'default' : 'outline'}
-                    className="h-8 px-2.5"
+                    className="px-2.5"
                     aria-pressed={on}
                     aria-label={dayLong(d.iso, t)}
                     onClick={() =>
@@ -107,7 +107,7 @@ export function SlotsEditor({ slots, onChange, errors, disabled }: SlotsEditorPr
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 className="ms-auto"
                 aria-label={t('scanWindows.form.removeSlot', 'Remove weekly window {n}', { n })}
                 onClick={() => onChange(slots.filter((_, j) => j !== i))}
@@ -208,7 +208,7 @@ export function OneOffsEditor({
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="icon-sm"
                 className="ms-auto"
                 aria-label={t('scanWindows.form.removeOneOff', 'Remove dated window {n}', { n })}
                 onClick={() => onChange(oneOffs.filter((_, j) => j !== i))}

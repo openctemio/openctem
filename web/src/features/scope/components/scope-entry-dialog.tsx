@@ -99,6 +99,7 @@ import {
   ScopeTargetTypeSelect,
   type ScopeKind,
 } from './scope-target-type'
+import { formatDate } from '@/lib/app-locale'
 
 export type ScopeEntryDuration = 'permanent' | 'one_off'
 export type DomainCoverage = 'name' | 'subdomains'
@@ -286,16 +287,21 @@ export function ScopeEntryDialog({
   const tierCeilings = settings?.approval_policy?.tier_ceilings ?? true
 
   const expiresOn = expiring ? formatDay(expiryDateFor(expiryDays), locale) : ''
-  const summary = [
+  const summaryText = [
     ...(multi
       ? [t('scope.list.entries', '{count} entries', { count: listItems.length })]
       : one
-        ? [coversText({ pattern, target_type: type })]
+        ? [coversText({ pattern, target_type: type }, t)]
         : []),
     expiring
       ? t('scope.entry.expiresOn', 'expires on {date}', { date: expiresOn })
       : t('scope.entry.permanent', 'permanent'),
   ].join(', ')
+  // The summary is the title of its box: with nothing typed it is only the
+  // duration, which then starts with a capital ("Permanent", not
+  // "permanent"); a name or address at its start is never capitalised.
+  const summary =
+    multi || one ? summaryText : summaryText.charAt(0).toUpperCase() + summaryText.slice(1)
 
   // Domain proof (RFC-054 §8.1): only when the platform requires it, for
   // platform sensors and for intrusive probes on any sensor.
@@ -769,7 +775,7 @@ export function ScopeEntryDialog({
                         <SelectItem key={l.id} value={l.id}>
                           {t('scope.entry.letter', 'Letter: {title} (until {date})', {
                             title: l.title,
-                            date: new Date(l.valid_until).toLocaleDateString(locale),
+                            date: formatDate(new Date(l.valid_until)),
                           })}
                         </SelectItem>
                       ))}

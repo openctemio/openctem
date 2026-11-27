@@ -4,6 +4,7 @@ import { MetricStrip, type MetricStripItem } from '@/features/shared/components/
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import type { EPSSStats, KEVStats } from '@/lib/api/threatintel-types'
+import { formatNumber } from '@/lib/app-locale'
 
 /** EPSS probabilities the API counts the organization's open findings at (intel_service.go). */
 const EPSS_HIGH = 0.1
@@ -60,8 +61,8 @@ export function ThreatIntelOverview({
       detail:
         kevOpen > 0
           ? t('threatIntel.landscape.kevOpenDetail', undefined, {
-              ransomware: (kevStats?.tenant_ransomware_open_count ?? 0).toLocaleString(),
-              recent: (kevStats?.tenant_new_kev_matches_30d ?? 0).toLocaleString(),
+              ransomware: formatNumber(kevStats?.tenant_ransomware_open_count ?? 0),
+              recent: formatNumber(kevStats?.tenant_new_kev_matches_30d ?? 0),
             })
           : undefined,
       description: t('threatIntel.landscape.kevOpenHint'),
@@ -98,15 +99,15 @@ export function ThreatIntelOverview({
             </dt>
             <dd>
               {t('threatIntel.landscape.epssCatalogValue', undefined, {
-                count: (epssStats.total_scores ?? 0).toLocaleString(),
+                count: formatNumber(epssStats.total_scores ?? 0),
               })}
             </dd>
             <dt className="font-medium text-foreground">{t('threatIntel.landscape.kevCatalog')}</dt>
             <dd>
               {t('threatIntel.landscape.kevCatalogValue', undefined, {
-                count: (kevStats.total_entries ?? 0).toLocaleString(),
-                recent: (kevStats.recently_added_last_30_days ?? 0).toLocaleString(),
-                ransomware: (kevStats.ransomware_related_count ?? 0).toLocaleString(),
+                count: formatNumber(kevStats.total_entries ?? 0),
+                recent: formatNumber(kevStats.recently_added_last_30_days ?? 0),
+                ransomware: formatNumber(kevStats.ransomware_related_count ?? 0),
               })}
             </dd>
           </dl>

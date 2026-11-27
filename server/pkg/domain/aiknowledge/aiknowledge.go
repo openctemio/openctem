@@ -250,4 +250,6 @@ type Repository interface {
 	// source, else a team source is named only to a member of one of its
 	// teams.
 	Citations(ctx context.Context, tenantID, runID, viewer shared.ID, viewerAll bool) ([]Citation, RetrievalMode, error)
+	// RunExcerptOrdinals lists the ordinals of the excerpts a run carried.
+	RunExcerptOrdinals(ctx context.Context, tenantID, runID shared.ID) ([]int, error)
 }

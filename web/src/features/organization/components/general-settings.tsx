@@ -1,28 +1,30 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import Link from '@/components/link'
-import { Building, HardDrive, LayoutDashboard, Lock, Upload, UserCog } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Trash2, Upload } from 'lucide-react'
 import { toast } from 'sonner'
-import { Main } from '@/components/layout'
 import {
   DangerZone,
   DangerZoneItem,
-  PageHeader,
-  PageStack,
+  SettingsBlock,
+  SettingsField,
+  SettingsFieldGrid,
+  SettingsValue,
+  SettingsPage,
+  SettingsRow,
   SettingsSaveBar,
+  SettingsSection,
 } from '@/features/shared'
+import { TextLink } from '@/components/ui/text-link'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTranslation } from '@/context/i18n-provider'
 import { useTenant } from '@/context/tenant-provider'
 import { useAppHost } from '@/hooks/use-app-origin'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { getErrorMessage } from '@/lib/api/error-handler'
+import { apiErrorFields, apiFieldMessage } from '@/lib/api/error-message'
 import { useCanMutate, usePermissions } from '@/lib/permissions'
 import { safeImageSrc } from '@/lib/safe-href'
 import { OrganizationRegion } from '@/features/tenant/components/region-note'
@@ -41,10 +43,17 @@ import {
 import { TimezoneSelect } from '@/features/scans/components/timezone-select'
 import { DashboardDataCard } from './dashboard-data-card'
 import { DeleteOrganizationItem } from './delete-organization'
-import { SettingsLoadError, SettingsLoading } from './settings-load-state'
-import { StorageConfigCard } from './storage-config-card'
+import {
+  StorageConfigSection,
+  type StorageConfigHandle,
+  type StorageFormState,
+} from './storage-config-card'
 
-const GENERAL_TABS = ['general', 'storage', 'dashboard-data'] as const
+/** The old in-page tabs (`?tab=`), now sections of the one page: the link still lands on its part. */
+const TAB_SECTION: Record<string, string> = {
+  storage: 'storage',
+  'dashboard-data': 'dashboard-data',
+}
 
 const EMPTY_GENERAL: GeneralSettingsValues = {
   timezone: 'UTC',
@@ -52,6 +61,11 @@ const EMPTY_GENERAL: GeneralSettingsValues = {
   industry: '',
   website: '',
 }
+
+/** The fields of this form a refused save can be about (named as in the API). */
+const ORG_FIELDS = ['name', 'slug', 'website', 'timezone'] as const
+type OrgField = (typeof ORG_FIELDS)[number]
+type FieldErrors = Partial<Record<OrgField, string>>
 
 /** Downscale an image file to at most 200×200 px, as a JPEG data URL. */
 function readLogo(file: File): Promise<string> {
@@ -86,16 +100,17 @@ function readLogo(file: File): Promise<string> {
 }
 
 /**
- * Organization › General: the organization's name, URL, logo and website
- * (one sticky Save for the tab), the file storage tab, and the owner's
- * danger zone (transfer ownership, delete). Leaving an organization is in
- * My account › Profile, where every member can reach it.
+ * Organization › General: one page of sections. The organization's name, URL,
+ * logo, website and time zone; where files are stored; the dashboard data
+ * state; and the owner's danger zone (transfer ownership, delete). One save
+ * bar saves the organization form and the file storage form together.
+ * Leaving an organization is in My account › Profile, where every member can
+ * reach it.
  */
 export function GeneralSettings() {
   const { t } = useTranslation()
   const appHost = useAppHost()
-  const [tabParam, setTabParam] = useUrlFilter('tab', 'general')
-  const activeTab = (GENERAL_TABS as readonly string[]).includes(tabParam) ? tabParam : 'general'
+  const [tabParam] = useUrlFilter('tab', 'general')
 
   const { currentTenant, updateCurrentTenant, refreshTenants } = useTenant()
   const tenantId = currentTenant?.id
@@ -116,7 +131,6 @@ export function GeneralSettings() {
   const { updateTenant, isUpdating: savingTenant } = useUpdateTenant(tenantId)
   const { updateGeneralSettings, isUpdating: savingGeneral } = useUpdateGeneralSettings(tenantId)
   const { updateBrandingSettings, isUpdating: savingBranding } = useUpdateBrandingSettings(tenantId)
-  const saving = savingTenant || savingGeneral || savingBranding
 
   const savedGeneral = useMemo<GeneralSettingsValues>(
     () => ({
@@ -129,7 +143,7 @@ export function GeneralSettings() {
   )
   const branding = useMemo(
     () => ({
-      primary_color: settings?.branding.primary_color || '#3B82F6',
+      primary_color: settings?.branding.primary_color || '#3B82F6', // design-ok: the stored brand colour default the API expects, not a UI colour
       logo_dark_url: settings?.branding.logo_dark_url || '',
       logo_data: settings?.branding.logo_data || null,
     }),
@@ -147,7 +161,20 @@ export function GeneralSettings() {
     currentTenant?.logo_url
   )
 
-  const reset = useCallback(() => {
+  // The file storage section keeps its own form; the page's bar saves it.
+  const storageRef = useRef<StorageConfigHandle>(null)
+  const [storage, setStorage] = useState<StorageFormState>({
+    dirty: false,
+    invalid: false,
+    saving: false,
+  })
+  const [saveError, setSaveError] = useState(false)
+  // The field a refused save was about: its message shows under it.
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
+  const clearFieldError = (field: OrgField) =>
+    setFieldErrors((e) => (e[field] ? { ...e, [field]: undefined } : e))
+
+  const restoreSaved = useCallback(() => {
     setOrgInfo({ name: currentTenant?.name || '', slug: currentTenant?.slug || '' })
     setGeneral(savedGeneral)
     setLogoDraft(undefined)
@@ -155,8 +182,15 @@ export function GeneralSettings() {
 
   // Load the saved values into the form (and again after every save).
   useEffect(() => {
-    reset()
-  }, [reset])
+    restoreSaved()
+  }, [restoreSaved])
+
+  const discard = () => {
+    restoreSaved()
+    storageRef.current?.discard()
+    setSaveError(false)
+    setFieldErrors({})
+  }
 
   const plan = useMemo(
     () =>
@@ -170,21 +204,42 @@ export function GeneralSettings() {
       }),
     [orgInfo, currentTenant, general, settings, savedGeneral, branding, logoDraft]
   )
-  const dirty = planHasChanges(plan)
+  const dirty = planHasChanges(plan) || storage.dirty
+  const saving = savingTenant || savingGeneral || savingBranding || storage.saving
 
-  const handleSave = async () => {
-    if (!planHasChanges(plan)) return
+  // What the bar counts and lists: one name per changed setting.
+  const changes = useMemo(() => {
+    const out: string[] = []
+    if (plan.orgChanges?.name !== undefined) out.push(t('org.general.name', 'Organization name'))
+    if (plan.orgChanges?.slug !== undefined) out.push(t('org.general.slug', 'URL slug'))
+    if (plan.general) {
+      if (general.website !== savedGeneral.website) out.push(t('org.general.website', 'Website'))
+      if (general.timezone !== savedGeneral.timezone)
+        out.push(t('org.general.timezone', 'Time zone'))
+    }
+    if (plan.branding) out.push(t('org.general.logo', 'Logo'))
+    if (storage.dirty) out.push(t('org.general.tab.storage', 'File storage'))
+    return out
+  }, [plan, general, savedGeneral, storage.dirty, t])
+
+  const saveOrg = async (): Promise<boolean> => {
+    if (!planHasChanges(plan)) return true
+    // The fields of the request being sent, to mark the one a refusal is about.
+    let sent: OrgField[] = []
     try {
       if (plan.orgChanges) {
+        sent = ORG_FIELDS.filter((f) => f in (plan.orgChanges ?? {}))
         await updateTenant(plan.orgChanges)
         updateCurrentTenant(plan.orgChanges)
         refreshTenants()
       }
       if (plan.general) {
+        sent = (['website', 'timezone'] as const).filter((f) => general[f] !== savedGeneral[f])
         const result = await updateGeneralSettings(plan.general)
         if (result) await mutate(result, { revalidate: false })
       }
       if (plan.branding) {
+        sent = []
         const result = await updateBrandingSettings(plan.branding)
         if (result) {
           await mutate(result, { revalidate: false })
@@ -193,271 +248,304 @@ export function GeneralSettings() {
         setLogoDraft(undefined)
       }
       toast.success(t('org.general.saved', 'Organization settings saved'))
+      return true
     } catch (err) {
-      toast.error(
-        getErrorMessage(
-          err,
-          t('org.general.saveFailed', 'Could not save the organization settings')
-        )
+      const message = getErrorMessage(
+        err,
+        t('org.general.saveFailed', 'Could not save the organization settings')
       )
+      // The field the answer names, else the one field the request carried.
+      const named = apiErrorFields(err).filter((f): f is OrgField =>
+        (ORG_FIELDS as readonly string[]).includes(f)
+      )
+      const marked = named.length > 0 ? named : sent.length === 1 ? sent : []
+      if (marked.length > 0) {
+        setFieldErrors(
+          Object.fromEntries(marked.map((f) => [f, apiFieldMessage(err, f) ?? message]))
+        )
+        document.getElementById(`org-${marked[0]}`)?.focus()
+      } else {
+        toast.error(message)
+      }
+      return false
     }
   }
 
-  const header = (
-    <PageHeader
-      title={t('org.general.title', 'General')}
-      description={t(
-        'org.general.desc',
-        "Your organization's name, logo and file storage, and the owner's danger zone."
-      )}
-    />
+  // Each part saves on its own and keeps its changes when it fails.
+  const handleSave = async () => {
+    setSaveError(false)
+    setFieldErrors({})
+    const orgOk = await saveOrg()
+    const storageOk = (await storageRef.current?.save()) ?? true
+    if (!orgOk || !storageOk) setSaveError(true)
+  }
+
+  // ?tab=storage and ?tab=dashboard-data were tabs of this page: land on the section.
+  const ready = !isLoading && !isError
+  const section = TAB_SECTION[tabParam]
+  useEffect(() => {
+    if (!ready || !section) return
+    document.getElementById(section)?.scrollIntoView({ block: 'start' })
+  }, [ready, section])
+
+  const title = t('org.general.title', 'General')
+  const description = t(
+    'org.general.desc',
+    "Your organization's name, logo and file storage, and the owner's danger zone."
   )
-  if (isLoading) return <SettingsLoading header={header} />
-  if (isError)
-    return <SettingsLoadError header={header} error={error} onRetry={() => void mutate()} />
+  if (!ready) {
+    return (
+      <SettingsPage
+        title={title}
+        description={description}
+        state={isLoading ? 'loading' : 'error'}
+        error={error}
+        onRetry={() => void mutate()}
+      />
+    )
+  }
 
   const logoPreview =
     logoDraft === null ? undefined : safeImageSrc(logoDraft ?? (branding.logo_data || logoSrc))
+  const hasLogo = logoDraft === undefined && Boolean(logoSrc || currentTenant?.logo_url)
+  const savedName = currentTenant?.name || ''
 
   return (
-    <Main>
-      <PageStack>
-        {header}
-        <Tabs value={activeTab} onValueChange={(v) => setTabParam(v === 'general' ? '' : v)}>
-          <TabsList className="overflow-x-auto">
-            <TabsTrigger value="general">
-              <Building aria-hidden />
-              {t('org.general.tab.general', 'General')}
-            </TabsTrigger>
-            <TabsTrigger value="storage">
-              <HardDrive aria-hidden />
-              {t('org.general.tab.storage', 'File storage')}
-            </TabsTrigger>
-            {canSeeDashboardData && (
-              <TabsTrigger value="dashboard-data">
-                <LayoutDashboard aria-hidden />
-                {t('org.general.tab.dashboardData', 'Dashboard data')}
-              </TabsTrigger>
-            )}
-          </TabsList>
-
-          <TabsContent value="general">
-            <PageStack>
-              <Card id="org-profile">
-                <CardHeader>
-                  <CardTitle>{t('org.general.profile', 'Organization information')}</CardTitle>
-                  <CardDescription>
-                    {t('org.general.profileDesc', 'How your organization is named and recognised.')}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex flex-col gap-8 lg:flex-row">
-                    <div className="flex flex-col items-center gap-3 lg:items-start lg:border-e lg:pe-8">
-                      <Avatar className="h-24 w-24 ring-2 ring-border">
-                        <AvatarImage src={logoPreview} alt="" />
-                        <AvatarFallback className="bg-primary/10 text-3xl">
-                          {currentTenant?.name?.charAt(0) || 'O'}
-                        </AvatarFallback>
-                      </Avatar>
-                      {canUpdateTenant ? (
-                        <div className="flex flex-col items-center gap-1">
-                          <Button variant="outline" size="sm" asChild>
-                            <label className="cursor-pointer">
-                              <Upload className="h-4 w-4" aria-hidden />
-                              {t('org.general.logoUpload', 'Upload logo')}
-                              <input
-                                type="file"
-                                accept="image/png,image/jpeg,image/webp"
-                                className="sr-only"
-                                onChange={async (e) => {
-                                  const file = e.target.files?.[0]
-                                  e.target.value = ''
-                                  if (!file) return
-                                  try {
-                                    setLogoDraft(await readLogo(file))
-                                  } catch {
-                                    toast.error(
-                                      t(
-                                        'org.general.logoUnreadable',
-                                        'That image could not be read'
-                                      )
-                                    )
-                                  }
-                                }}
-                              />
-                            </label>
-                          </Button>
-                          <p className="text-center text-xs text-muted-foreground">
-                            {t(
-                              'org.general.logoHint',
-                              'PNG, JPEG or WebP, shown at up to 200 × 200 px'
-                            )}
-                          </p>
-                          {logoDraft === undefined && (logoSrc || currentTenant?.logo_url) && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive" // label-ok: destructive text action, not a label
-                              onClick={() => setLogoDraft(null)}
-                            >
-                              {t('org.general.logoRemove', 'Remove logo')}
-                            </Button>
-                          )}
-                          {logoDraft !== undefined && (
-                            <p className="text-xs text-muted-foreground">
-                              {logoDraft === null
-                                ? t(
-                                    'org.general.logoWillRemove',
-                                    'The logo is removed when you save.'
-                                  )
-                                : t(
-                                    'org.general.logoWillReplace',
-                                    'The new logo is used when you save.'
-                                  )}
-                            </p>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="text-center text-xs text-muted-foreground">
-                          {t('org.general.logoLocked', 'Only administrators can change the logo.')}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex-1 space-y-4">
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label htmlFor="org-name">
-                            {t('org.general.name', 'Organization name')}
-                          </Label>
-                          <Input
-                            id="org-name"
-                            value={orgInfo.name}
-                            onChange={(e) => setOrgInfo((p) => ({ ...p, name: e.target.value }))}
-                            disabled={!canUpdateTenant}
-                            maxLength={100}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="org-slug">{t('org.general.slug', 'URL slug')}</Label>
-                          <div className="flex">
-                            <span
-                              data-testid="slug-host-prefix"
-                              className="inline-flex items-center rounded-s-md border border-e-0 bg-muted px-3 text-sm text-muted-foreground"
-                            >
-                              {appHost}/
-                            </span>
-                            <Input
-                              id="org-slug"
-                              value={orgInfo.slug}
-                              onChange={(e) =>
-                                setOrgInfo((p) => ({
-                                  ...p,
-                                  slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                                }))
-                              }
-                              className="rounded-s-none"
-                              disabled={!canUpdateTenant || !owner}
-                              aria-describedby="org-slug-help"
-                            />
-                          </div>
-                          <p
-                            id="org-slug-help"
-                            className="flex items-start gap-1 text-xs text-muted-foreground"
-                          >
-                            {!owner && <Lock className="mt-0.5 size-3 shrink-0" aria-hidden />}
-                            {owner
-                              ? t(
-                                  'org.general.slugHelpOwner',
-                                  'Lowercase letters, numbers and hyphens. Changing it breaks saved links, and it cannot change while single sign-on is configured.'
-                                )
-                              : t(
-                                  'org.general.slugHelpLocked',
-                                  'Only the owner can change the URL.'
-                                )}
-                          </p>
-                          <OrganizationRegion slug={currentTenant?.slug} />
-                        </div>
-                      </div>
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label htmlFor="org-website">{t('org.general.website', 'Website')}</Label>
-                          <Input
-                            id="org-website"
-                            type="url"
-                            placeholder="https://example.com"
-                            value={general.website}
-                            onChange={(e) => setGeneral((g) => ({ ...g, website: e.target.value }))}
-                            disabled={!canUpdateTenant}
-                          />
-                        </div>
-                        <div className="space-y-2" id="org-timezone-setting">
-                          <Label htmlFor="org-timezone">
-                            {t('org.general.timezone', 'Time zone')}
-                          </Label>
-                          <TimezoneSelect
-                            id="org-timezone"
-                            value={general.timezone}
-                            onChange={(zone) => setGeneral((g) => ({ ...g, timezone: zone }))}
-                            disabled={!canUpdateTenant}
-                            aria-describedby="org-timezone-help"
-                          />
-                          <p id="org-timezone-help" className="text-xs text-muted-foreground">
-                            {t(
-                              'org.general.timezoneHelp',
-                              'The organization clock: alert quiet hours, the daily digest and scan approval hours use it.'
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {owner && (
-                <div id="danger-zone">
-                  <DangerZone>
-                    <DangerZoneItem
-                      title={t('org.danger.transferTitle', 'Transfer ownership')}
-                      description={t(
-                        'org.danger.transferDesc',
-                        'Make another member the owner. You choose your new role; the new owner must accept. Open the member in Members and choose Transfer ownership.'
-                      )}
-                      action={
-                        <Button variant="outline" size="sm" asChild>
-                          <Link href="/settings/members">
-                            <UserCog className="h-4 w-4" aria-hidden />
-                            {t('org.danger.transferAction', 'Choose the new owner')}
-                          </Link>
-                        </Button>
+    <SettingsPage title={title} description={description} readOnly={!canUpdateTenant}>
+      <SettingsSection
+        framed
+        id="org-profile"
+        title={t('org.general.profile', 'Organization information')}
+        description={t('org.general.profileDesc', 'How your organization is named and recognised.')}
+      >
+        <SettingsRow
+          wide
+          label={t('org.general.logo', 'Logo')}
+          hint={
+            <>
+              {t('org.general.logoHint', 'PNG, JPEG or WebP, shown at up to 200 × 200 px')}
+              {'. '}
+              {!canUpdateTenant
+                ? t('org.general.logoLocked', 'Only administrators can change the logo.')
+                : logoDraft === null
+                  ? t('org.general.logoWillRemove', 'The logo is removed when you save.')
+                  : logoDraft !== undefined
+                    ? t('org.general.logoWillReplace', 'The new logo is used when you save.')
+                    : null}
+            </>
+          }
+        >
+          <Avatar className="size-10 rounded-md">
+            <AvatarImage src={logoPreview} alt="" />
+            <AvatarFallback className="rounded-md text-cap-m">
+              {currentTenant?.name?.charAt(0) || 'O'}
+            </AvatarFallback>
+          </Avatar>
+          {canUpdateTenant && (
+            <>
+              <Button variant="outline" asChild>
+                <label className="cursor-pointer has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50">
+                  <Upload aria-hidden />
+                  {t('org.general.logoUpload', 'Upload logo')}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="sr-only"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0]
+                      e.target.value = ''
+                      if (!file) return
+                      try {
+                        setLogoDraft(await readLogo(file))
+                      } catch {
+                        toast.error(t('org.general.logoUnreadable', 'That image could not be read'))
                       }
-                    />
-                    <DeleteOrganizationItem />
-                  </DangerZone>
-                </div>
+                    }}
+                  />
+                </label>
+              </Button>
+              {hasLogo && (
+                <Button variant="outline" onClick={() => setLogoDraft(null)}>
+                  <Trash2 aria-hidden />
+                  {t('org.general.logoRemove', 'Remove logo')}
+                </Button>
               )}
-
-              <SettingsSaveBar
-                dirty={dirty}
-                saving={saving}
-                onSave={() => void handleSave()}
-                onDiscard={reset}
-              />
-            </PageStack>
-          </TabsContent>
-
-          <TabsContent value="storage">
-            <StorageConfigCard />
-          </TabsContent>
-
-          {canSeeDashboardData && (
-            <TabsContent value="dashboard-data">
-              <DashboardDataCard />
-            </TabsContent>
+            </>
           )}
-        </Tabs>
-      </PageStack>
-    </Main>
+        </SettingsRow>
+
+        <SettingsBlock>
+          <SettingsFieldGrid>
+            <SettingsField
+              id="org-name"
+              label={t('org.general.name', 'Organization name')}
+              error={fieldErrors.name}
+              hint={
+                orgInfo.name !== savedName && savedName
+                  ? t('org.general.was', 'Was "{value}".', { value: savedName })
+                  : undefined
+              }
+            >
+              {(control) =>
+                canUpdateTenant ? (
+                  <Input
+                    {...control}
+                    value={orgInfo.name}
+                    onChange={(e) => {
+                      clearFieldError('name')
+                      setOrgInfo((p) => ({ ...p, name: e.target.value }))
+                    }}
+                    maxLength={100}
+                  />
+                ) : (
+                  <SettingsValue {...control} value={orgInfo.name} />
+                )
+              }
+            </SettingsField>
+            <SettingsField
+              id="org-website"
+              label={t('org.general.website', 'Website')}
+              error={fieldErrors.website}
+            >
+              {(control) =>
+                canUpdateTenant ? (
+                  <Input
+                    {...control}
+                    type="url"
+                    placeholder="https://example.com"
+                    value={general.website}
+                    onChange={(e) => {
+                      clearFieldError('website')
+                      setGeneral((g) => ({ ...g, website: e.target.value }))
+                    }}
+                  />
+                ) : (
+                  <SettingsValue {...control} value={general.website} />
+                )
+              }
+            </SettingsField>
+            <SettingsField
+              id="org-slug"
+              label={t('org.general.slug', 'URL slug')}
+              error={fieldErrors.slug}
+              lock={owner ? undefined : t('org.general.ownerOnly', 'Owner only')}
+              hint={
+                owner
+                  ? t(
+                      'org.general.slugHelpOwner',
+                      'Lowercase letters, numbers and hyphens. Changing it breaks saved links, and it cannot change while single sign-on is configured.'
+                    )
+                  : t('org.general.slugHelpLocked', 'Only the owner can change the URL.')
+              }
+            >
+              {(control) =>
+                !canUpdateTenant || !owner ? (
+                  <SettingsValue {...control} mono value={`${appHost}/${orgInfo.slug}`} />
+                ) : (
+                  <div className="flex min-w-0">
+                    <span
+                      data-testid="slug-host-prefix"
+                      className="inline-flex max-w-[50%] min-w-0 shrink-0 items-center rounded-s-md border border-e-0 bg-muted px-3 text-code text-muted-foreground"
+                      title={`${appHost}/`}
+                    >
+                      {/* The host keeps its width (the slug field shrinks
+                          first); only a host longer than half the field ends
+                          in an ellipsis, whole in the title. The ellipsis
+                          needs a block box: text directly in a flex box is
+                          cut without one. */}
+                      <span data-cut-tooltip className="truncate">
+                        {appHost}/
+                      </span>
+                    </span>
+                    <Input
+                      {...control}
+                      value={orgInfo.slug}
+                      onChange={(e) => {
+                        clearFieldError('slug')
+                        setOrgInfo((p) => ({
+                          ...p,
+                          slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                        }))
+                      }}
+                      className="rounded-s-none"
+                    />
+                  </div>
+                )
+              }
+            </SettingsField>
+            <div id="org-timezone-setting" className="min-w-0">
+              <SettingsField
+                id="org-timezone"
+                label={t('org.general.timezone', 'Time zone')}
+                error={fieldErrors.timezone}
+                hint={t(
+                  'org.general.timezoneHelp',
+                  'The organization clock: alert quiet hours, the daily digest and scan approval hours use it.'
+                )}
+              >
+                {(control) =>
+                  canUpdateTenant ? (
+                    <TimezoneSelect
+                      id={control.id}
+                      aria-describedby={control['aria-describedby']}
+                      value={general.timezone}
+                      onChange={(zone) => {
+                        clearFieldError('timezone')
+                        setGeneral((g) => ({ ...g, timezone: zone }))
+                      }}
+                    />
+                  ) : (
+                    <SettingsValue {...control} value={general.timezone} />
+                  )
+                }
+              </SettingsField>
+            </div>
+          </SettingsFieldGrid>
+          <OrganizationRegion slug={currentTenant?.slug} />
+        </SettingsBlock>
+      </SettingsSection>
+
+      <StorageConfigSection ref={storageRef} onStateChange={setStorage} />
+
+      {canSeeDashboardData && <DashboardDataCard />}
+
+      {owner && (
+        <DangerZone
+          id="danger-zone"
+          description={t('org.danger.ownerOnly', 'Shown to the owner only.')}
+        >
+          <DangerZoneItem
+            title={t('org.danger.transferTitle', 'Transfer ownership')}
+            description={t(
+              'org.danger.transferDesc',
+              'Make another member the owner. You choose your new role; the new owner must accept. Open the member in Members and choose Transfer ownership.'
+            )}
+            action={
+              <TextLink
+                href="/settings/members"
+                className="text-dense font-medium text-signal-text"
+              >
+                {t('org.danger.transferAction', 'Choose the new owner')}
+              </TextLink>
+            }
+          />
+          <DeleteOrganizationItem />
+        </DangerZone>
+      )}
+
+      <SettingsSaveBar
+        dirty={dirty}
+        saving={saving}
+        saveDisabled={storage.dirty && storage.invalid}
+        changes={changes}
+        error={
+          saveError
+            ? t('settings.saveBar.failed', "Couldn't save. Your changes are kept.")
+            : undefined
+        }
+        onSave={() => void handleSave()}
+        onDiscard={discard}
+      />
+    </SettingsPage>
   )
 }

@@ -5,21 +5,23 @@
  * first (sign-in, people, credentials, scanning, organization). The API
  * computes statuses; this component renders the wording from the dictionaries
  * by check id, so every language reads the same overview.
+ *
+ * Settings page frame (web/docs/ui-style-contract.md, "Settings pages"): the
+ * score first, then one section per group with the checks that need a look,
+ * and the passed checks folded at the end (shown on demand).
  */
 
-import { AlertCircle, AlertTriangle, CheckCircle2, Info, RefreshCw, XCircle } from 'lucide-react'
+import { useId, useMemo, useState } from 'react'
+import { RefreshCw } from 'lucide-react'
 
-import Link from '@/components/link'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
-import { Skeleton } from '@/components/ui/skeleton'
+import { HealthStatus } from '@/components/ui/health-status'
+import { TextLink } from '@/components/ui/text-link'
 import { useTranslation } from '@/context/i18n-provider'
-import { getErrorMessage } from '@/lib/api/error-handler'
-import { cn } from '@/lib/utils'
+import { MetricStrip, SettingsPage, SettingsRow, SettingsSection } from '@/features/shared'
+import { formatRelative } from '@/lib/format-date'
 import { safeInternalHref } from '@/lib/safe-href'
+import { cn } from '@/lib/utils'
 
 import { useSecurityOverview } from '../api/use-security-overview'
 import {
@@ -29,186 +31,206 @@ import {
   type CheckStatus,
   type OverviewCheck,
 } from '../lib/checks'
-import { PageStack } from '@/features/shared'
 
-const STATUS_ICON = {
-  risk: { Icon: XCircle, className: 'text-destructive' },
-  warn: { Icon: AlertTriangle, className: 'text-warning' },
-  pass: { Icon: CheckCircle2, className: 'text-success' },
-  info: { Icon: Info, className: 'text-muted-foreground' },
-} as const
-
-const STATUS_BADGE: Record<CheckStatus, string> = {
-  risk: 'border-destructive/40 text-destructive',
-  warn: 'border-warning/50 text-warning',
-  pass: 'border-success/40 text-success',
-  info: 'text-muted-foreground',
-}
+/** The shared state chip of each check status (state words, not colour only). */
+const STATUS_HEALTH = {
+  risk: 'down',
+  warn: 'warn',
+  pass: 'ok',
+  info: 'unknown',
+} as const satisfies Record<CheckStatus, string>
 
 function CheckRow({ check }: { check: OverviewCheck }) {
   const { t } = useTranslation()
-  const { Icon, className } = STATUS_ICON[check.status]
-  const link = safeInternalLink(check.link)
+  const link = check.status === 'pass' ? null : safeInternalHref(safeInternalLink(check.link))
   const base = `securityOverview.check.${check.id}`
   const title = t(`${base}.title`, check.id)
   const desc = t(`${base}.desc.${check.status}`, '', { count: check.count ?? 0 })
-  const showCount = check.count !== undefined && check.count > 0 && check.status !== 'pass'
   return (
-    <li className="flex items-start gap-3 py-3" data-testid={`check-${check.id}`}>
-      <Icon className={cn('mt-0.5 size-5 shrink-0', className)} aria-hidden="true" />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium">{title}</span>
-          <Badge variant="outline" className={STATUS_BADGE[check.status]}>
-            {t(`securityOverview.status.${check.status}`, check.status)}
-          </Badge>
-          {showCount && (
-            <Badge
-              variant="secondary"
-              aria-label={t('securityOverview.count', 'Count: {count}', {
-                count: check.count ?? 0,
-              })}
+    <SettingsRow
+      id={`check-${check.id}`}
+      // The Review link follows the check's title, so it stays next to the
+      // text at every width instead of drifting to the far end of the row.
+      label={
+        <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+          <HealthStatus
+            state={STATUS_HEALTH[check.status]}
+            label={t(`securityOverview.status.${check.status}`, check.status)}
+          />
+          <span className="min-w-0">{title}</span>
+          {link && (
+            <TextLink
+              href={link}
+              className="text-dense font-medium text-signal-text"
+              aria-label={t('securityOverview.reviewNamed', 'Review: {name}', { name: title })}
             >
-              {check.count}
-            </Badge>
+              {check.count && check.count > 0
+                ? t('securityOverview.reviewCount', 'Review {count}', { count: check.count })
+                : t('securityOverview.review', 'Review')}
+            </TextLink>
           )}
-        </div>
-        {desc && <p className="mt-0.5 text-sm text-muted-foreground">{desc}</p>}
-      </div>
-      {link && check.status !== 'pass' && (
-        <Button asChild variant="outline" size="sm" className="shrink-0">
-          <Link href={safeInternalHref(link) ?? '/settings/security'}>
-            {t('securityOverview.review', 'Review')}
-          </Link>
-        </Button>
-      )}
-    </li>
-  )
-}
-
-function OverviewSkeleton() {
-  return (
-    <div className="space-y-4" data-testid="security-overview-loading" aria-busy="true">
-      <Skeleton className="h-32 w-full" />
-      <Skeleton className="h-48 w-full" />
-      <Skeleton className="h-48 w-full" />
-    </div>
+        </span>
+      }
+      hint={desc || undefined}
+    />
   )
 }
 
 export function SecurityOverview() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const { data, error, isLoading, isValidating, mutate } = useSecurityOverview()
+  const [showPassed, setShowPassed] = useState(false)
+  const passedListId = useId()
 
+  const { open, passed } = useMemo(() => {
+    const checks = normalizeChecks(data?.checks ?? [])
+    return {
+      open: groupChecks(checks.filter((c) => c.status !== 'pass')),
+      passed: checks.filter((c) => c.status === 'pass'),
+    }
+  }, [data])
+
+  const title = t('securityOverview.title', 'Security overview')
+  const description = t(
+    'securityOverview.description',
+    'How well this organization is protected, and what to fix first.'
+  )
+  const firstGroupOf = (status: CheckStatus) => {
+    const hit = open.find(([, checks]) => checks.some((c) => c.status === status))
+    return hit ? `#security-group-${hit[0]}` : '#security-score'
+  }
   const recheck = (
     <Button
+      iconOnlyBelow="sm"
       variant="outline"
-      size="sm"
       onClick={() => void mutate()}
-      disabled={isValidating}
+      disabled={isLoading || isValidating}
       aria-busy={isValidating}
     >
-      <RefreshCw className={cn('me-2 size-4', isValidating && 'animate-spin')} aria-hidden="true" />
-      {t('securityOverview.recheck', 'Re-check')}
+      <RefreshCw className={cn(isValidating && 'animate-spin')} aria-hidden="true" />
+      {/* On a phone the button shows its icon only, so it stays beside the
+          title instead of taking a header row of its own; the label stays for
+          screen readers. */}
+      <span className="sr-only sm:not-sr-only">{t('securityOverview.recheck', 'Re-check')}</span>
     </Button>
   )
 
-  if (isLoading) return <OverviewSkeleton />
-
-  // An error is not an empty overview: say it failed and offer a retry.
-  if (error || !data) {
+  if (isLoading || error || !data) {
     return (
-      <Alert variant="destructive" role="alert">
-        <AlertCircle className="size-4" />
-        <AlertTitle>
-          {t('securityOverview.error.title', 'Could not load the security overview')}
-        </AlertTitle>
-        <AlertDescription>
-          <p>
-            {error
-              ? getErrorMessage(error)
-              : t('securityOverview.error.empty', 'The server returned no data.')}
-          </p>
-          <Button variant="outline" size="sm" className="mt-3" onClick={() => void mutate()}>
-            <RefreshCw className="me-2 size-4" aria-hidden="true" />
-            {t('securityOverview.error.retry', 'Try again')}
-          </Button>
-        </AlertDescription>
-      </Alert>
+      <SettingsPage
+        title={title}
+        description={description}
+        actions={recheck}
+        state={isLoading ? 'loading' : 'error'}
+        error={error}
+        onRetry={() => void mutate()}
+      />
     )
   }
 
   const score = Math.max(0, Math.min(100, Math.round(data.score ?? 0)))
   const counts = data.counts ?? {}
-  const groups = groupChecks(normalizeChecks(data.checks ?? []))
-  const scoreLabel = t('securityOverview.score.aria', 'Security score: {score} out of 100', {
-    score,
-  })
+  const checked = formatRelative(data.generated_at, '', locale)
 
   return (
-    <PageStack>
-      <Card>
-        <CardContent className="flex flex-col gap-4 pt-6 sm:flex-row sm:items-center">
-          <div className="min-w-0 flex-1 space-y-2">
-            <div className="flex items-baseline gap-2">
-              <span className="text-4xl font-semibold tabular-nums" data-testid="security-score">
-                {score}
-              </span>
-              <span className="text-sm text-muted-foreground">
-                {t('securityOverview.score.outOf', '/ 100')}
-              </span>
-              <span className="ms-2 text-sm font-medium">
-                {t('securityOverview.score.title', 'Security score')}
-              </span>
-            </div>
-            <Progress value={score} aria-label={scoreLabel} />
-            <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-              <div className="flex items-center gap-1.5">
-                <dt className="text-muted-foreground">
-                  {t('securityOverview.counts.risk', 'Risks')}
-                </dt>
-                <dd className="font-medium tabular-nums" data-testid="count-risk">
-                  {counts.risk ?? 0}
-                </dd>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <dt className="text-muted-foreground">
-                  {t('securityOverview.counts.warn', 'Warnings')}
-                </dt>
-                <dd className="font-medium tabular-nums" data-testid="count-warn">
-                  {counts.warn ?? 0}
-                </dd>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <dt className="text-muted-foreground">
-                  {t('securityOverview.counts.pass', 'Passed')}
-                </dt>
-                <dd className="font-medium tabular-nums" data-testid="count-pass">
-                  {counts.pass ?? 0}
-                </dd>
-              </div>
-            </dl>
-          </div>
-          <div className="shrink-0">{recheck}</div>
-        </CardContent>
-      </Card>
+    <SettingsPage title={title} description={description} actions={recheck}>
+      <section
+        id="security-score"
+        aria-label={t('securityOverview.score.title', 'Security score')}
+        className="space-y-2"
+      >
+        <MetricStrip
+          items={[
+            {
+              key: 'score',
+              href:
+                firstGroupOf('risk') !== '#security-score'
+                  ? firstGroupOf('risk')
+                  : firstGroupOf('warn'),
+              label: t('securityOverview.score.title', 'Security score'),
+              value: <span data-testid="security-score">{score}</span>,
+              hint: t('securityOverview.score.outOf', '/ 100'),
+              description: t('securityOverview.score.aria', 'Security score: {score} out of 100', {
+                score,
+              }),
+            },
+            {
+              key: 'risk',
+              href: firstGroupOf('risk'),
+              label: t('securityOverview.counts.risk', 'Checks at risk'),
+              value: <span data-testid="count-risk">{counts.risk ?? 0}</span>,
+              tone: (counts.risk ?? 0) > 0 ? 'danger' : 'default',
+            },
+            {
+              key: 'warn',
+              href: firstGroupOf('warn'),
+              label: t('securityOverview.counts.warn', 'Checks with a warning'),
+              value: <span data-testid="count-warn">{counts.warn ?? 0}</span>,
+              tone: (counts.warn ?? 0) > 0 ? 'warning' : 'default',
+            },
+            {
+              key: 'pass',
+              href: passed.length > 0 ? '#security-passed' : '#security-score',
+              label: t('securityOverview.counts.pass', 'Checks passed'),
+              value: <span data-testid="count-pass">{counts.pass ?? 0}</span>,
+            },
+          ]}
+        />
+      </section>
 
-      {groups.map(([group, checks]) => (
-        <Card key={group}>
-          <CardHeader className="pb-0">
-            <CardTitle className="text-base">
-              {t(`securityOverview.group.${group}`, group)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ul className="divide-y">
-              {checks.map((c) => (
-                <CheckRow key={c.id} check={c} />
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+      {open.map(([group, checks]) => (
+        <SettingsSection
+          key={group}
+          framed
+          id={`security-group-${group}`}
+          title={t(`securityOverview.group.${group}`, group)}
+        >
+          {checks.map((c) => (
+            <CheckRow key={c.id} check={c} />
+          ))}
+        </SettingsSection>
       ))}
-    </PageStack>
+
+      {passed.length > 0 && (
+        <SettingsSection
+          framed
+          id="security-passed"
+          title={t('securityOverview.passed.title', 'Passed checks')}
+          description={t('securityOverview.passed.description', 'Nothing to do here.')}
+          actions={
+            <Button
+              variant="ghost"
+              aria-expanded={showPassed}
+              aria-controls={passedListId}
+              onClick={() => setShowPassed((v) => !v)}
+            >
+              {showPassed
+                ? t(
+                    'securityOverview.passed.hide',
+                    '{count, plural, one {Hide the passed check} other {Hide the # passed checks}}',
+                    { count: passed.length }
+                  )
+                : t(
+                    'securityOverview.passed.show',
+                    '{count, plural, one {Show the passed check} other {Show the # passed checks}}',
+                    { count: passed.length }
+                  )}
+            </Button>
+          }
+        >
+          <div id={passedListId} hidden={!showPassed}>
+            {showPassed && passed.map((c) => <CheckRow key={c.id} check={c} />)}
+          </div>
+        </SettingsSection>
+      )}
+
+      {/* When the checks ran: a caption at the end, not a row of its own
+          above the score. */}
+      {checked && (
+        <p className="text-cap text-muted-foreground">
+          {t('securityOverview.checkedAgo', 'Checked {when}', { when: checked })}
+        </p>
+      )}
+    </SettingsPage>
   )
 }

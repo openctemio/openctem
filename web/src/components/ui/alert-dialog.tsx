@@ -5,6 +5,7 @@ import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog'
 
 import { cn } from '@/lib/utils'
 import { buttonVariants } from '@/components/ui/button'
+import { FloatingFocusScope, type TouchTypingSurface } from '@/components/ui/touch-focus'
 import {
   MODAL_SIZE,
   ModalBody,
@@ -58,9 +59,17 @@ function AlertDialogContent({
   className,
   children,
   size = 'md',
+  typingSurface,
   ref,
   ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Content> & { size?: ModalSize }) {
+}: React.ComponentProps<typeof AlertDialogPrimitive.Content> & {
+  size?: ModalSize
+  /**
+   * Its one purpose is typing (`TOUCH_TYPING_SURFACES`): a field inside may
+   * take focus on open on a touch screen too.
+   */
+  typingSurface?: TouchTypingSurface
+}) {
   const [node, setNode] = React.useState<HTMLDivElement | null>(null)
   const setRefs = React.useCallback(
     (el: HTMLDivElement | null) => {
@@ -89,7 +98,9 @@ function AlertDialogContent({
         )}
         {...props}
       >
-        <ModalLayoutContext.Provider value={layout}>{children}</ModalLayoutContext.Provider>
+        <ModalLayoutContext.Provider value={layout}>
+          <FloatingFocusScope typingSurface={typingSurface}>{children}</FloatingFocusScope>
+        </ModalLayoutContext.Provider>
       </AlertDialogPrimitive.Content>
     </AlertDialogPortal>
   )

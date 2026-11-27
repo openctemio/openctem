@@ -58,8 +58,13 @@ test.describe('first sign-in', { tag: ['@auth'] }, () => {
       if (r.url().includes('/auth/logout')) logouts.push(r.url())
     })
     await page.goto('/login')
+    // The page is interactive once its requests settle: a click before that is lost.
+    await page.waitForLoadState('networkidle')
     await page.getByRole('button', { name: 'Google' }).click()
-    await page.waitForURL((u) => !u.pathname.startsWith('/auth/'), { timeout: 30_000 })
+    // Off the sign-in page (still there = the click did nothing) and past the callback.
+    await page.waitForURL((u) => u.pathname !== '/login' && !u.pathname.startsWith('/auth/'), {
+      timeout: 30_000,
+    })
     return logouts
   }
 
@@ -116,12 +121,12 @@ test.describe('first sign-in', { tag: ['@auth'] }, () => {
     page,
   }) => {
     const logouts = await signInWithGoogle(page, env.E2E_SOCIAL_INVITED_EMAIL!)
-    await expect(page).toHaveURL(/\/welcome/)
+    await expect(page).toHaveURL(/\/account\/organizations/)
     await expect(page.getByText(env.E2E_INVITE_ORG!)).toBeVisible({ timeout: 30_000 })
     // Account settings work without an organization.
     await page.goto('/account/security')
     await expect(page).toHaveURL(/\/account\/security/)
-    await page.goto('/welcome')
+    await page.goto('/account/organizations')
     await page.getByRole('button', { name: 'Join' }).first().click()
     await page.waitForURL((u) => u.pathname === '/', { timeout: 30_000 })
     expect(await sessionOrgSlug(page)).toBe(env.E2E_INVITE_ORG_SLUG)
@@ -142,7 +147,7 @@ test.describe('first sign-in', { tag: ['@auth'] }, () => {
     page,
   }) => {
     const logouts = await signInWithGoogle(page, env.E2E_SOCIAL_MFA_EMAIL!)
-    await expect(page).toHaveURL(/\/welcome/)
+    await expect(page).toHaveURL(/\/account\/organizations/)
     await page.getByRole('button', { name: 'Join' }).first().click()
     // Joined; the organization asks for two-factor authentication first.
     await page.waitForURL(/\/two-factor-setup/, { timeout: 30_000 })
@@ -170,7 +175,7 @@ test.describe('first sign-in', { tag: ['@auth'] }, () => {
     await page.getByLabel('Email').fill(env.E2E_PASSWORD_MFA_EMAIL!)
     await page.getByLabel('Password', { exact: true }).fill(env.E2E_PASSWORD_MFA_PASSWORD!)
     await submitSignIn(page, (url) => !url.pathname.startsWith('/login'))
-    await expect(page).toHaveURL(/\/welcome/)
+    await expect(page).toHaveURL(/\/account\/organizations/)
     await page.getByRole('button', { name: 'Join' }).first().click()
     await page.waitForURL(/\/two-factor-setup/, { timeout: 30_000 })
     await enrollTotp(page)

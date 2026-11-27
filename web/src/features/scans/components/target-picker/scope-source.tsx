@@ -32,6 +32,7 @@ import {
 } from '../../lib/scope-pick'
 import { targetKey } from '../../lib/target-format'
 import { PickerList } from './picker-list'
+import { formatNumber } from '@/lib/app-locale'
 
 /** Entries listed at once (the API's largest page). */
 export const SCOPE_PAGE_SIZE = 100
@@ -139,8 +140,8 @@ export function ScopeSource({ present, onChange }: ScopeSourceProps) {
       if (fresh.length > room) {
         toast.warning(
           t('scans.assets.selectedFirst', undefined, {
-            max: MAX_DIRECT_TARGETS.toLocaleString(),
-            total: (present.size + fresh.length).toLocaleString(),
+            max: formatNumber(MAX_DIRECT_TARGETS),
+            total: formatNumber(present.size + fresh.length),
           })
         )
       }
@@ -184,7 +185,7 @@ export function ScopeSource({ present, onChange }: ScopeSourceProps) {
               type="button"
               variant="outline"
               size="sm"
-              className="h-8 max-sm:min-h-11"
+              className="max-sm:min-h-11"
               onClick={() => void addAll()}
               disabled={adding}
               data-testid="scope-add-all"

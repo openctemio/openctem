@@ -86,10 +86,10 @@ func (s *TenantService) UpdateClosureSettings(
 	if loosened && view.PendingAt != nil {
 		at := view.PendingAt.UTC().Format(time.RFC3339)
 		event = event.WithSeverity(audit.SeverityHigh).WithMetadata("takes_effect_at", at)
-		s.notifyPolicyLoosened(ctx, tenantID, actx, "Closing mode loosened",
+		s.notifyPolicyLoosenedWith(ctx, tenantID, actx, "settings.closing_mode_loosened", "Closing mode loosened",
 			fmt.Sprintf("how findings close (mode %s, critical findings without review: %t), taking effect at %s unless an owner or administrator cancels it",
 				next.EffectiveMode(), next.CriticalAutoClose, at),
-			"/settings/closing-findings")
+			"/settings/closing-findings", closureLoosenedParams(next, at)...)
 	}
 	s.logAudit(ctx, actx, event)
 	return &view, nil

@@ -96,7 +96,7 @@ describe('license policy form', () => {
         canEdit
       />
     )
-    expect(screen.getByText(/Use one SPDX license id/)).toBeTruthy()
+    expect(screen.getByText(/Use one license id/)).toBeTruthy()
     ;(document.getElementById('lp2') as HTMLFormElement).requestSubmit()
     await new Promise((r) => setTimeout(r, 10))
     expect(updateLicensePolicy).not.toHaveBeenCalled()
