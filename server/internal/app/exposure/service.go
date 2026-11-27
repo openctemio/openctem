@@ -120,13 +120,10 @@ func (s *ExposureService) assertAssetRef(ctx context.Context, tenantID, assetID 
 
 // assertExposureScope returns ErrNotFound unless the request's caller may
 // see the exposure's asset. An exposure with no asset is in nobody's asset
-// scope, so it is hidden from restricted members.
+// scope, so it is hidden from restricted members, and visible to every
+// other caller (as in the list).
 func (s *ExposureService) assertExposureScope(ctx context.Context, tenantID shared.ID, event *exposuredom.ExposureEvent) error {
-	var assetID shared.ID
-	if event.AssetID() != nil {
-		assetID = *event.AssetID()
-	}
-	return s.dataScope.AssertAsset(ctx, tenantID, assetID)
+	return s.dataScope.AssertOptionalAsset(ctx, tenantID, event.AssetID())
 }
 
 // SetSecretProtector installs the protector built from the platform
