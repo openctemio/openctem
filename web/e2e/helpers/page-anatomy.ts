@@ -485,9 +485,13 @@ export async function probeRowMix(page: Page, opts: { fonts?: boolean } = {}): P
         const isField = (el: Element) =>
           el.matches('input,select,textarea,[data-slot=list-search],[data-slot=select-trigger]') ||
           !!el.querySelector('input')
+        // Text size only where there is text: an icon-only button has none.
+        const texted = rw.filter(
+          (b) => isField(b.el) || ((b.el as HTMLElement).innerText ?? '').trim() !== ''
+        )
         const fontsDiffer =
           fonts &&
-          [rw.filter((b) => isField(b.el)), rw.filter((b) => !isField(b.el))].some(
+          [texted.filter((b) => isField(b.el)), texted.filter((b) => !isField(b.el))].some(
             (g) => g.length > 1 && spread(g.map((b) => fontOf(b.el))) > TOL
           )
         if (spread(hs) <= TOL && spread(cs) <= TOL && !fontsDiffer) continue
