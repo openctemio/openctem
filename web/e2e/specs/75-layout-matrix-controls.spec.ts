@@ -218,6 +218,17 @@ const row = (a: string, b: string) => `<main style="width:900px">
   </div></main>`
 
 test.describe('layout matrix detector: sizes in one row', { tag: ['@shell'] }, () => {
+  test('leaves a fact list out: a long value goes under its label', async ({ page }) => {
+    await page.setViewportSize({ width: 1024, height: 900 })
+    await page.setContent(
+      doc(`<main style="width:700px"><dl style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><dt>Assignee</dt><dd style="margin:0"><button data-slot="button" style="height:32px">Owner</button></dd></div>
+        <div style="display:flex;gap:8px"><dt>Watchers</dt><dd style="margin:0"><button data-slot="button" style="height:32px">2 watching</button></dd></div>
+        </dl></main>`)
+    )
+    expect(await probeRowMix(page, { fonts: true })).toEqual([])
+  })
+
   const size = (p: Parameters<typeof probeRowMix>[0]) => probeRowMix(p, { fonts: true })
   const doc32 = 'height:32px;font-size:14px'
 
