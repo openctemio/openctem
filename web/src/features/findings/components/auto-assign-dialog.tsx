@@ -33,7 +33,21 @@ export function AutoAssignDialog({ open, onOpenChange, onSuccess }: AutoAssignDi
         },
       })
 
-      const ownerCount = Object.keys(data.by_owner).length
+      const ownerCount = Object.keys(data.by_owner ?? {}).length
+      if (!data.assigned) {
+        // Nothing assigned is never a success toast.
+        toast.warning(t('findings.autoAssign.none', 'No findings were assigned'), {
+          description:
+            data.unassigned > 0
+              ? t('findings.autoAssign.noOwner', '{count} findings have no asset owner', {
+                  count: data.unassigned,
+                })
+              : undefined,
+        })
+        onSuccess?.()
+        onOpenChange(false)
+        return
+      }
       toast.success(
         ownerCount === 1
           ? t('findings.autoAssign.successOne', '{count} findings assigned to {owners} owner', {

@@ -36,6 +36,7 @@ interface MarkFixedDialogProps {
 interface FixAppliedResponse {
   updated: number
   skipped: number
+  failed?: number
   by_cve?: Record<string, number>
   assets_affected: number
 }
@@ -99,19 +100,45 @@ export function MarkFixedDialog({
 
       const result = await post<FixAppliedResponse>('/api/v1/findings/actions/fix-applied', body)
 
-      toast.success(
-        t('findings.markFixed.success', '{count} findings marked as fix applied', {
-          count: result.updated,
-        }),
-        {
+      // 200 also when nothing could be marked (not the caller's to fix, or
+      // no longer open): that is never a success.
+      if (!result.updated) {
+        toast.warning(t('findings.markFixed.none', 'No findings were marked as fix applied'), {
+          description:
+            (result.skipped ?? 0) + (result.failed ?? 0) > 0
+              ? t(
+                  'findings.markFixed.noneReason',
+                  'They are not yours to fix (assigned to you, your group or an asset you own), or no longer open.'
+                )
+              : undefined,
+        })
+        onOpenChange(false)
+        resetForm()
+        onSuccess?.()
+        return
+      }
+      const notMarked = (result.skipped ?? 0) + (result.failed ?? 0)
+      const message = t('findings.markFixed.success', '{count} findings marked as fix applied', {
+        count: result.updated,
+      })
+      if (notMarked > 0) {
+        toast.warning(message, {
+          description: t(
+            'findings.markFixed.someNotMarked',
+            '{count} not marked: not yours to fix, or no longer open.',
+            { count: notMarked }
+          ),
+        })
+      } else {
+        toast.success(message, {
           description:
             result.assets_affected > 0
               ? t('findings.markFixed.assetsAffected', '{count} assets affected', {
                   count: result.assets_affected,
                 })
               : undefined,
-        }
-      )
+        })
+      }
 
       onOpenChange(false)
       resetForm()
