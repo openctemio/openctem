@@ -78,6 +78,13 @@ import { TABLE_DENSITIES, useTableDensity, type TableDensity } from './use-table
 import { pinStartColumns, PIN_SELECT_WIDTH, type StartPin } from './pin-columns'
 import { fitColumnWidths } from './fit-columns'
 import {
+  allocateColumnWidths,
+  columnsToDrop,
+  mergeNatural,
+  type SizingColumn,
+} from './column-sizing'
+import { measureColumns } from './measure-columns'
+import {
   ariaSort,
   columnKind,
   columnLayout,
@@ -301,6 +308,20 @@ interface DataTableProps<TData, TValue> {
    * next tick brought the stale selection back).
    */
   resetSelectionKey?: string | number
+  /**
+   * How column widths are chosen. `content`: from the header and the rows on
+   * screen, within the kind's floor and cap, the spare room to the flexible
+   * columns (the title first), the shortfall taken from them first
+   * (column-sizing.ts). `kind` (default while lists migrate): the kind's
+   * fixed defaults. A page `meta.width` is an exact override in both modes.
+   */
+  columnSizing?: 'kind' | 'content'
+  /**
+   * The data set the rows come from (filters, search, scope). The content
+   * widths settle once per data set: paging, sorting and refreshing keep
+   * them; a new key measures again from scratch.
+   */
+  sizingKey?: string | number
   /**
    * Hide the "N of M selected" note, e.g. when a bulk-action bar shows it.
    * The note is drawn under the rows, never in the toolbar.
@@ -1163,6 +1184,8 @@ export function DataTable<TData, TValue>({
   stickyFirstColumn = true,
   pinActions = false,
   resetSelectionKey,
+  columnSizing = 'kind',
+  sizingKey,
   showSelectionCount = true,
   mobileRow,
   mobileCards = true,
@@ -1182,7 +1205,7 @@ export function DataTable<TData, TValue>({
   bulk,
   selectMode: selectModeProp,
 }: DataTableProps<TData, TValue>) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   // With `bulk`, the table owns the checkbox column (the page's own `select`
   // column, if any, is dropped). The row label is read through a ref so the
   // columns keep their identity while the page re-renders.
@@ -1291,11 +1314,54 @@ export function DataTable<TData, TValue>({
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+  // Content sizing: natural widths kept per data set (column-sizing.ts
+  // `mergeNatural`), measured before paint by the effect after the rows.
+  const contentSizing = columnSizing === 'content'
+  const [naturalWidths, setNaturalWidths] = React.useState<ReadonlyMap<string, number>>(
+    () => new Map()
+  )
+  const sizingScope = `${sizingKey ?? ''}|${locale}`
+  const [naturalScope, setNaturalScope] = React.useState(sizingScope)
+  if (naturalScope !== sizingScope) {
+    // A new data set or language: measure again from scratch (state reset
+    // during render, before the effect below reads it).
+    setNaturalScope(sizingScope)
+    setNaturalWidths(new Map())
+  }
   const [forcedOn, setForcedOn] = React.useState<ReadonlySet<string>>(() => new Set())
   const visibilityControlled = columnVisibilityProp !== undefined
   const autoHidden = React.useMemo(() => {
     const ids = new Set<string>()
     if (frameWidth === 0) return ids
+    if (contentSizing) {
+      // Column priority by content (column-sizing.ts `columnsToDrop`): the
+      // columns the frame cannot hold at their floors drop, `dropOrder` 1
+      // first. A column the viewer turned on or off keeps that choice.
+      // The table's own columns (with the bulk checkbox column, if any).
+      const candidates = tableColumns.flatMap((c) => {
+        const id = columnIdOf(c)
+        if (!id || columnVisibility[id] === false) return []
+        const meta = c.meta as DataTableColumnMeta | undefined
+        const chosen = forcedOn.has(id) || (!visibilityControlled && id in columnVisibility)
+        const kind = columnKind(id, meta)
+        return [
+          {
+            id,
+            kind,
+            natural: naturalWidths.get(id),
+            fixed: id === 'select' ? SELECT_COL_WIDTH : meta?.width,
+            min: meta?.minWidth,
+            max: meta?.maxWidth,
+            drop: chosen ? undefined : meta?.dropOrder,
+          },
+        ]
+      })
+      return columnsToDrop(
+        candidates,
+        frameWidth,
+        typeof window === 'undefined' ? 0 : window.innerWidth
+      )
+    }
     for (const c of columns) {
       const id = columnIdOf(c)
       const hideBelow = (c.meta as { hideBelow?: number } | undefined)?.hideBelow
@@ -1304,7 +1370,16 @@ export function DataTable<TData, TValue>({
       ids.add(id)
     }
     return ids
-  }, [columns, columnVisibility, frameWidth, forcedOn, visibilityControlled])
+  }, [
+    columns,
+    columnVisibility,
+    frameWidth,
+    forcedOn,
+    visibilityControlled,
+    contentSizing,
+    naturalWidths,
+    tableColumns,
+  ])
   const effectiveVisibility = React.useMemo(() => {
     if (autoHidden.size === 0) return columnVisibility
     const next: VisibilityState = { ...columnVisibility }
@@ -1471,24 +1546,61 @@ export function DataTable<TData, TValue>({
   // columns (`meta.pin`, else the first data column), within a share of the
   // frame (pin-columns.ts); the row actions column at the end.
   const visibleColumns = table.getVisibleLeafColumns()
+  // Content widths (column-sizing.ts): one width per visible column from
+  // the measured natural widths, or null until measured (kind defaults).
+  const sizingColumns: SizingColumn[] = visibleColumns.map((c) => {
+    const meta = c.columnDef.meta as DataTableColumnMeta | undefined
+    const kind = columnKind(c.id, meta)
+    if (c.id === 'select') return { id: c.id, kind, fixed: SELECT_COL_WIDTH }
+    return {
+      id: c.id,
+      kind,
+      natural: naturalWidths.get(c.id),
+      fixed: meta?.width,
+      min: meta?.minWidth,
+      max: meta?.maxWidth,
+    }
+  })
+  const allocated =
+    contentSizing && !phoneCards
+      ? allocateColumnWidths(
+          sizingColumns,
+          frameWidth,
+          typeof window === 'undefined' ? 0 : window.innerWidth
+        )
+      : null
+  const allocatedTotal = allocated
+    ? [...allocated.values()].reduce((sum, w) => sum + w, 0)
+    : undefined
   const pinned: Map<string, StartPin> = stickyFirstColumn
     ? pinStartColumns(
         visibleColumns.map((c) => {
           const meta = c.columnDef.meta as DataTableColumnMeta | undefined
           const style = columnLayout(c.id, meta).style
-          return { id: c.id, pin: meta?.pin, width: style?.width, minWidth: style?.minWidth }
+          const width = allocated?.get(c.id) ?? style?.width
+          return { id: c.id, pin: meta?.pin, width, minWidth: style?.minWidth }
         }),
         frameWidth
       )
     : new Map()
   // Columns with a range give way before the table scrolls sideways (fit-columns.ts).
-  const fitted = fitColumnWidths(
-    visibleColumns.map((c) => {
-      const style = columnLayout(c.id, c.columnDef.meta as DataTableColumnMeta | undefined).style
-      return { id: c.id, width: style?.width, minWidth: style?.minWidth, maxWidth: style?.maxWidth }
-    }),
-    frameWidth
-  )
+  const fitted = allocated
+    ? new Map<string, number>()
+    : fitColumnWidths(
+        visibleColumns.map((c) => {
+          const style = columnLayout(
+            c.id,
+            c.columnDef.meta as DataTableColumnMeta | undefined
+          ).style
+          return {
+            id: c.id,
+            width: style?.width,
+            minWidth: style?.minWidth,
+            maxWidth: style?.maxWidth,
+          }
+        }),
+        frameWidth
+      )
   const actionsPinned = pinActions && visibleColumns[visibleColumns.length - 1]?.id === 'actions'
   const pinnedPropsBase = (columnId: string) => {
     const isSelect = columnId === 'select'
@@ -1535,6 +1647,42 @@ export function DataTable<TData, TValue>({
       ?.primary
     return primary ? { ...props, className: cn(props.className, NAME_COLUMN_FLOOR) } : props
   }
+
+  // Content sizing: measure the header and the rows on screen before paint
+  // and keep the natural widths (no jump on page, sort or refresh:
+  // `mergeNatural`). Skeleton rows are not measured; until real rows are,
+  // the kind defaults hold.
+  const visibleIdsKey = visibleColumns.map((c) => c.id).join(' ')
+  React.useLayoutEffect(() => {
+    if (!contentSizing || phoneCards) return
+    const root = tableWrapRef.current
+    if (!root) return
+    const ids = visibleIdsKey.split(' ').filter((id) => id && id !== 'select')
+    const { widths, rows } = measureColumns(root, ids)
+    // Only real rows count: a header over skeleton rows (or no rows) would
+    // settle the title at its header's width.
+    if (widths.size === 0 || !rows) return
+    const kinds = new Map(
+      visibleColumns.map((c) => [
+        c.id,
+        columnKind(c.id, c.columnDef.meta as DataTableColumnMeta | undefined),
+      ])
+    )
+    // An empty actions column measures as its padding only: no width.
+    if (actionsEmpty && widths.has('actions')) widths.set('actions', 0)
+    setNaturalWidths((prev) => mergeNatural(prev, widths, kinds, rows))
+    // visibleColumns follows visibleIdsKey; the rows follow data.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    contentSizing,
+    phoneCards,
+    data,
+    visibleIdsKey,
+    density,
+    naturalScope,
+    actionsEmpty,
+    isLoading,
+  ])
 
   // After every render: does any row of the page draw an action? (A page's
   // actions cell returns nothing for a row that has none.)
@@ -1723,22 +1871,28 @@ export function DataTable<TData, TValue>({
   const cellProps = (columnId: string, head: boolean) => {
     const pin = pinnedProps(columnId)
     const layout = layoutOf(columnId)
+    const sized = allocated?.get(columnId)
     const narrowed = fitted.get(columnId)
     const declared =
-      narrowed !== undefined
-        ? { ...layout.style, width: narrowed, maxWidth: narrowed }
-        : layout.style
+      sized !== undefined
+        ? { width: sized, minWidth: sized, maxWidth: sized }
+        : narrowed !== undefined
+          ? { ...layout.style, width: narrowed, maxWidth: narrowed }
+          : layout.style
     // The pinned actions column is as wide as its widest real content (one
     // line, `whitespace-nowrap`), never wider than the declared width: a
     // width of 1px in the automatic table layout grows to the widest cell, so
     // rows without actions add nothing.
     const style =
-      columnId === 'actions' && actionsPinned
+      columnId === 'actions' && actionsPinned && sized === undefined
         ? actionsEmpty
           ? { width: 0, minWidth: 0, maxWidth: 0 }
           : { width: 1, maxWidth: declared?.maxWidth ?? declared?.width }
         : declared
     return {
+      'data-column-id': columnId,
+      // Content sizing: the measured width (layout checks and debugging).
+      'data-natural-width': head ? naturalWidths.get(columnId) : undefined,
       'data-pinned-actions': columnId === 'actions' && actionsPinned ? '' : undefined,
       // The column's kind, for the layout checks: a name may end in an
       // ellipsis (with its full text reachable), no other value may.
@@ -2202,6 +2356,10 @@ export function DataTable<TData, TValue>({
         <TableRefreshBar active={isRefreshing} label={refreshingLabel} />
         <Table
           {...DENSE_ATTRS}
+          // Content widths: a fixed layout holds exactly the allocated widths,
+          // header and rows alike, whatever a cell holds.
+          className={allocated ? 'table-fixed' : undefined}
+          style={allocatedTotal !== undefined ? { width: allocatedTotal } : undefined}
           scroll={stickyHeader ? scrollMode : 'scroll'}
           containerStyle={stickyHeader && scrollMode === 'scroll' ? SCROLL_FRAME_STYLE : undefined}
           aria-labelledby={caption ? undefined : labelledBy}

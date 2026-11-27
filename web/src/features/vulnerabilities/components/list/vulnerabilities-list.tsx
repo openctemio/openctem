@@ -84,7 +84,6 @@ import {
   ProductCell,
   RemediationCell,
   SeverityCell,
-  SIGNALS_WIDTH,
   SignalsCell,
   VulnTitleCell,
 } from './vuln-list-cells'
@@ -119,36 +118,19 @@ import { formatNumber } from '@/lib/app-locale'
 const PANEL_ID = 'vulnerability-list-filters'
 
 /**
- * Column widths (px) and the table-frame width under which a column steps
- * aside (it stays under Display > Columns): Last seen first, then
- * Remediation, then Fix, then EPSS, the severity and the reach (each threshold
- * is the sum of the columns still shown with it: checkbox 40, CVE 132, title
- * floor 130, signals 224, priority 76, reach 96, severity 144, EPSS 112), so
- * a tablet frame folds them instead of cutting a header. The CVE, the title,
- * the signals and the priority always show; with EPSS, severity and reach
- * they fit the table of a 1280 screen (954). The widths hold the longest
- * Vietnamese values ("Nghiêm trọng 9.8", "Chưa có bản sửa").
+ * Column priority: when the frame cannot hold every column at its floor (the
+ * table measures them, column-sizing.ts), Last seen steps aside first (it
+ * stays under Display > Columns), then Remediation, Fix, EPSS, the severity
+ * and the reach. The CVE, the title, the signals and the priority always
+ * show; the title takes the room left.
  */
-const VULN_WIDTH = {
-  cve: 132,
-  title: 130,
-  signals: SIGNALS_WIDTH,
-  priority: 76,
-  severity: 144,
-  epss: 112,
-  assets: 96,
-  product: 240,
-  fix: 128,
-  remediation: 136,
-  seen: 104,
-}
-const VULN_HIDE_BELOW = {
-  lastSeen: 1560,
-  remediation: 1450,
-  fix: 1180,
-  epss: 950,
-  severity: 840,
-  assets: 698,
+const VULN_DROP_ORDER = {
+  lastSeen: 1,
+  remediation: 2,
+  fix: 3,
+  epss: 4,
+  severity: 5,
+  assets: 6,
 } as const
 
 // Below 1024 px the toolbar keeps one row by moving the order (the select of
@@ -659,7 +641,6 @@ function VulnerabilitiesListBody() {
         meta: {
           kind: 'id',
           pin: 'start',
-          width: VULN_WIDTH.cve,
           label: t('vulnPage.list.col.cve', 'CVE'),
         },
         enableSorting: true,
@@ -678,7 +659,6 @@ function VulnerabilitiesListBody() {
         meta: {
           kind: 'name',
           primary: true,
-          minWidth: VULN_WIDTH.title,
           label: t('vulnPage.list.col.vulnerability', 'Vulnerability'),
         },
         enableSorting: false,
@@ -690,7 +670,6 @@ function VulnerabilitiesListBody() {
         header: t('vulnPage.list.col.signals', 'Exploitation'),
         meta: {
           kind: 'signals',
-          width: VULN_WIDTH.signals,
           label: t('vulnPage.list.col.signals', 'Exploitation'),
         },
         enableSorting: false,
@@ -701,7 +680,6 @@ function VulnerabilitiesListBody() {
         header: t('vulnPage.list.col.priority', 'Priority'),
         meta: {
           kind: 'priority',
-          width: VULN_WIDTH.priority,
           label: t('vulnPage.list.col.priority', 'Priority'),
         },
         enableSorting: false,
@@ -712,8 +690,7 @@ function VulnerabilitiesListBody() {
         header: t('vulnPage.list.col.severity', 'Severity'),
         meta: {
           kind: 'severity',
-          width: VULN_WIDTH.severity,
-          hideBelow: VULN_HIDE_BELOW.severity,
+          dropOrder: VULN_DROP_ORDER.severity,
           label: t('vulnPage.list.col.severity', 'Severity'),
         },
         enableSorting: true,
@@ -724,8 +701,7 @@ function VulnerabilitiesListBody() {
         header: t('vulnPage.list.col.epss', 'EPSS'),
         meta: {
           kind: 'number',
-          width: VULN_WIDTH.epss,
-          hideBelow: VULN_HIDE_BELOW.epss,
+          dropOrder: VULN_DROP_ORDER.epss,
           label: t('vulnPage.list.col.epss', 'EPSS'),
         },
         enableSorting: true,
@@ -736,8 +712,7 @@ function VulnerabilitiesListBody() {
         header: t('vulnPage.list.col.assets', 'Assets'),
         meta: {
           kind: 'text',
-          width: VULN_WIDTH.assets,
-          hideBelow: VULN_HIDE_BELOW.assets,
+          dropOrder: VULN_DROP_ORDER.assets,
           sortFirst: 'desc',
           label: t('vulnPage.list.col.assets', 'Assets'),
         },
@@ -749,7 +724,6 @@ function VulnerabilitiesListBody() {
         header: t('vulnPage.list.col.product', 'Affected product'),
         meta: {
           kind: 'text',
-          width: VULN_WIDTH.product,
           label: t('vulnPage.list.col.product', 'Affected product'),
         },
         enableSorting: false,
@@ -759,9 +733,9 @@ function VulnerabilitiesListBody() {
         id: 'fix',
         header: t('vulnPage.list.col.fix', 'Fix'),
         meta: {
-          kind: 'text',
-          width: VULN_WIDTH.fix,
-          hideBelow: VULN_HIDE_BELOW.fix,
+          // A version: whole, never cut.
+          kind: 'id',
+          dropOrder: VULN_DROP_ORDER.fix,
           label: t('vulnPage.list.col.fix', 'Fix'),
         },
         enableSorting: false,
@@ -771,9 +745,9 @@ function VulnerabilitiesListBody() {
         id: 'remediation',
         header: t('vulnPage.list.col.remediation', 'Remediation'),
         meta: {
-          kind: 'text',
-          width: VULN_WIDTH.remediation,
-          hideBelow: VULN_HIDE_BELOW.remediation,
+          // A state ("No task", "Task open"): whole, never cut.
+          kind: 'status',
+          dropOrder: VULN_DROP_ORDER.remediation,
           label: t('vulnPage.list.col.remediation', 'Remediation'),
         },
         enableSorting: false,
@@ -806,7 +780,6 @@ function VulnerabilitiesListBody() {
         header: t('vulnPage.list.col.firstSeen', 'First seen'),
         meta: {
           kind: 'datetime-recent',
-          width: VULN_WIDTH.seen,
           label: t('vulnPage.list.col.firstSeen', 'First seen'),
         },
         enableSorting: true,
@@ -817,8 +790,7 @@ function VulnerabilitiesListBody() {
         header: t('vulnPage.list.col.lastSeen', 'Last seen'),
         meta: {
           kind: 'datetime-recent',
-          width: VULN_WIDTH.seen,
-          hideBelow: VULN_HIDE_BELOW.lastSeen,
+          dropOrder: VULN_DROP_ORDER.lastSeen,
           label: t('vulnPage.list.col.lastSeen', 'Last seen'),
         },
         enableSorting: true,
@@ -1147,6 +1119,8 @@ function VulnerabilitiesListBody() {
         ) : (
           <DataTable
             columns={columns}
+            // Widths follow the header and the rows on screen (column-sizing.ts).
+            columnSizing="content"
             data={rows}
             error={readError}
             onRetry={() => void mutate()}

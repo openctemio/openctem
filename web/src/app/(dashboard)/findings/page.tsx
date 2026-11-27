@@ -514,29 +514,12 @@ function FindingsTableSkeleton() {
 }
 
 /**
- * The Priority column holds its header word with the sort arrow in English and
- * Vietnamese ("Priority" needs 72, "Ưu tiên" 70, with the cell padding); the
- * class badge needs less.
+ * Column priority: when the frame cannot hold every column at its floor (the
+ * table measures them, column-sizing.ts), Severity drops first, then Signals
+ * and EPSS, then Due / SLA. Priority, Title, Location, Status and the row
+ * menu always show; the title takes the room left.
  */
-const FINDINGS_PRIORITY_WIDTH = 76
-
-/**
- * Column priority (the table's frame width below which a column drops), so the
- * title never gets narrower than 248: Severity below a 1524 px screen, Signals
- * and EPSS below 1364, Due / SLA below 1204, with the 256 px sidebar open
- * (the frame is the screen less the sidebar, the page padding and the
- * scrollbar gutter: 326 px). The frame decides, so a collapsed sidebar or the
- * filter panel open move the points with it. A point is never below the sum
- * of the widths shown at it (each width holds its cell padding): checkbox 40,
- * Priority 76, Title 248, Location 144, Status 120 and the row menu 48 are
- * always there (676); with Due / SLA (140) 816, with Signals (160) 976, with
- * Severity (128) 1104; the rest is the title's (Location grows to 176 at most,
- * so spare width goes to the title, not to the location). Below 676 the
- * shared table narrows Location toward its floor (112) before it scrolls
- * sideways: the floors add up to 644, under the 650 px frame of a 768 px
- * tablet, so the row menu is never cut there.
- */
-const FINDINGS_HIDE_BELOW = { severity: 1198, signals: 1038, slaStatus: 878 } as const
+const FINDINGS_DROP_ORDER = { severity: 1, signals: 2, slaStatus: 3 } as const
 
 /**
  * Table columns the API can sort by (FindingAllowedSortFields), keyed by column
@@ -1027,7 +1010,8 @@ function FindingsContent() {
   }, [unownedParams, unknownParams, searchParams])
   const extraKey = JSON.stringify(extraParams)
 
-  const filterKey = [
+  // The rows' data set (filters and search); the sort is not part of it.
+  const dataSetKey = [
     assetIdFilter,
     scanIdFilter,
     cveParam,
@@ -1058,8 +1042,8 @@ function FindingsContent() {
     acceptanceExpiresParam,
     extraKey,
     debouncedSearch,
-    sortParam,
   ].join('|')
+  const filterKey = `${dataSetKey}|${sortParam}`
   // The rows a selection was made on: one page of one filtered, sorted list.
   // Any change of page, page size, filter, search, sort or view starts with
   // nothing selected, so a bulk action only ever reaches rows on screen.
@@ -1704,7 +1688,6 @@ function FindingsContent() {
         accessorKey: 'priorityClass',
         meta: {
           kind: 'priority',
-          width: FINDINGS_PRIORITY_WIDTH,
           // Priority and the title identify the row: frozen while the table scrolls sideways.
           pin: 'start',
           label: t('findings.columns.priority', 'Priority'),
@@ -1729,7 +1712,6 @@ function FindingsContent() {
         accessorKey: 'title',
         meta: {
           kind: 'name',
-          minWidth: 248,
           pin: 'start',
           label: t('findings.columns.title', 'Title'),
           primary: true,
@@ -1788,13 +1770,6 @@ function FindingsContent() {
         id: 'asset',
         meta: {
           kind: 'asset',
-          // 144, down to 112 on a narrow frame; with spare width it grows to
-          // 176 only, then the title (floor 248) takes the rest: the title is
-          // the meaning of the row, the location a host name that truncates
-          // with its full value in the tooltip (fit-columns.ts).
-          width: 144,
-          minWidth: 112,
-          maxWidth: 176,
           label: t('findings.list.location'),
         },
         enableSorting: false,
@@ -1810,7 +1785,7 @@ function FindingsContent() {
         id: 'severity',
         meta: {
           kind: 'severity',
-          hideBelow: FINDINGS_HIDE_BELOW.severity,
+          dropOrder: FINDINGS_DROP_ORDER.severity,
           label: t('findings.columns.severity', 'Severity'),
         },
         header: ({ column }) => (
@@ -1829,9 +1804,7 @@ function FindingsContent() {
         id: 'signals',
         meta: {
           kind: 'signals',
-          // EPSS bar, KEV and "+1" on one line (exploit-signals.tsx `cell`).
-          width: 160,
-          hideBelow: FINDINGS_HIDE_BELOW.signals,
+          dropOrder: FINDINGS_DROP_ORDER.signals,
           label: t('findings.columns.exploitSignals', 'Signals and EPSS'),
         },
         enableSorting: false,
@@ -1850,7 +1823,7 @@ function FindingsContent() {
       },
       {
         accessorKey: 'status',
-        meta: { kind: 'status', width: 120, label: t('findings.columns.status', 'Status') },
+        meta: { kind: 'status', label: t('findings.columns.status', 'Status') },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('findings.columns.status', 'Status')} />
         ),
@@ -1870,7 +1843,7 @@ function FindingsContent() {
         id: 'slaStatus',
         meta: {
           kind: 'due',
-          hideBelow: FINDINGS_HIDE_BELOW.slaStatus,
+          dropOrder: FINDINGS_DROP_ORDER.slaStatus,
           label: t('findings.columns.sla', 'Due / SLA'),
         },
         enableSorting: true,
@@ -1887,7 +1860,8 @@ function FindingsContent() {
       },
       {
         id: 'source',
-        meta: { width: 130, label: t('findings.columns.source', 'Source') },
+        // A classification chip: whole, never cut.
+        meta: { kind: 'status', label: t('findings.columns.source', 'Source') },
         accessorFn: (row) => row.source || '-',
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('findings.columns.source', 'Source')} />
@@ -1899,8 +1873,7 @@ function FindingsContent() {
       },
       {
         accessorKey: 'createdAt',
-        // 120: "15 thg 11, 2026" on one line.
-        meta: { kind: 'date', width: 120, label: t('findings.columns.created', 'Created') },
+        meta: { kind: 'date', label: t('findings.columns.created', 'Created') },
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('findings.columns.created', 'Created')} />
         ),
@@ -3179,6 +3152,10 @@ function FindingsContent() {
       ) : (
         <DataTable
           columns={columns}
+          // Widths follow the header and the rows on screen; they settle once
+          // per filter set (paging and sorting keep them).
+          columnSizing="content"
+          sizingKey={dataSetKey}
           // The first load keeps the real toolbar and chips row over
           // placeholder rows: nothing above the rows moves when they arrive.
           isLoading={!findingsResponse && findingsLoading}
