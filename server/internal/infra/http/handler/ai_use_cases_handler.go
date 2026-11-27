@@ -157,7 +157,7 @@ func (h *AISettingsHandler) UpdateUseCase(w http.ResponseWriter, r *http.Request
 	v, err := store.SaveUseCase(r.Context(), tenantID, r.PathValue("use_case"),
 		tenantai.UseCaseInput{Mode: req.Mode, Ceiling: req.Ceiling, MinConfidence: req.MinConfidence}, h.actx(r))
 	if err != nil {
-		if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
+		if middleware.WriteStepUpError(w, aiStepUpErr(err), authapp.StepUpWindow) {
 			return
 		}
 		if errors.Is(err, tenantai.ErrNoActor) {
