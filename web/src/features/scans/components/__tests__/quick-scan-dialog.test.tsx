@@ -77,7 +77,7 @@ describe('QuickScanDialog', () => {
       targets: ['example.com', 'api.example.com'],
       scanner_name: 'nuclei',
     })
-    expect(await screen.findByText('Scan started on 2 target(s)')).toBeInTheDocument()
+    expect(await screen.findByText('Scan started on 2 targets')).toBeInTheDocument()
     expect(saveQuickScan).not.toHaveBeenCalled()
   })
 
