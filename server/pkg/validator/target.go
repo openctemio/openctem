@@ -2,6 +2,7 @@
 package validator
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -645,23 +646,22 @@ func ValidateWebhookURL(rawURL string) error {
 		return fmt.Errorf("localhost URLs are not allowed")
 	}
 
-	// Block internal/private IPs. Literal-IP fast-path preserves the
-	// original error message for direct-IP webhooks.
-	if ip := net.ParseIP(host); ip != nil {
-		if isInternalIP(ip) || isLocalhostIP(ip) {
-			return fmt.Errorf("internal IP addresses are not allowed")
-		}
-		return nil
-	}
-
-	// Hostname: resolve DNS and reject if it maps to a blocked range.
-	// The literal-IP check above only catches IPs typed directly into the
-	// URL; a hostname that resolves to 169.254.169.254 / 10.x / ::1 would
-	// otherwise pass. httpsec.ValidateURL re-checks scheme + dangerous
-	// aliases and resolves every A/AAAA record against the blocklist,
-	// failing closed on lookup failure.
+	// One guard for a typed address and a resolved name: httpsec, the table
+	// the guarded HTTP client dials through (built from the shared address
+	// scope). It re-checks the scheme and the dangerous aliases, resolves
+	// every A/AAAA record and fails closed on a lookup failure; the private
+	// ranges an operator opened are open here exactly as at dial time.
 	if _, err := httpsec.ValidateURL(rawURL); err != nil {
-		return fmt.Errorf("URL host resolves to a blocked address")
+		switch {
+		case errors.Is(err, httpsec.ErrUnresolvable):
+			return fmt.Errorf("URL host does not resolve")
+		case errors.Is(err, httpsec.ErrBlockedDestination) && net.ParseIP(host) != nil:
+			return fmt.Errorf("internal IP addresses are not allowed")
+		case errors.Is(err, httpsec.ErrBlockedDestination):
+			return fmt.Errorf("URL host resolves to a blocked address")
+		default:
+			return fmt.Errorf("invalid URL format")
+		}
 	}
 
 	return nil
