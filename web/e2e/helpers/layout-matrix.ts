@@ -52,6 +52,26 @@ import { submitSignIn } from './auth'
  *                    canvas, the shared empty state (it centres itself in the
  *                    room it is given). A line reads `card ends <gap>px below
  *                    its last content (<height>px tall) at <selector>`.
+ *   deadSpace        a control with a trailing icon (combobox, menu or popup
+ *                    button, a button ending in an svg) whose icon stands more
+ *                    than 12 px from its inner end, or more than 16 px after
+ *                    its text ("Target: All" sized for "Known exploited", its
+ *                    chevron mid-way, owner 2026-11-27). The second is not
+ *                    asked of a control holding one width by design
+ *                    (`data-hold-width`, a ToolbarSlot) or of a field filling
+ *                    its column
+ *   floatingAction   a list row's (li, listitem, 480 px and wider) kit button
+ *                    with nothing of the row after it, yet more than 64 px
+ *                    from both the row's start and its end ("Validate" mid-way
+ *                    along a 1500 px "Waiting for you" row)
+ *   tallControl      a button, select or filter token more than 1.5x (and
+ *                    12 px) taller than the median of the controls beside it
+ *                    in its flex or grid row (a select wrapped onto 3 lines)
+ *   pastEdge         a control past the window's edge, or past the page
+ *                    column (#content), outside a box made to scroll sideways
+ *                    (table scroller, tab strip, canvas, `data-scroll-x`, or a
+ *                    box that does scroll sideways): toolbar buttons cut at
+ *                    the window's right edge
  */
 
 export type MatrixBreaks = {
@@ -64,6 +84,10 @@ export type MatrixBreaks = {
   emptyTail: string[]
   cutMeaning: string[]
   hollowCard: string[]
+  deadSpace: string[]
+  floatingAction: string[]
+  tallControl: string[]
+  pastEdge: string[]
 }
 
 export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
@@ -76,6 +100,10 @@ export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
   'emptyTail',
   'cutMeaning',
   'hollowCard',
+  'deadSpace',
+  'floatingAction',
+  'tallControl',
+  'pastEdge',
 ]
 
 /** Widths of the v2 matrix with the height of their device class. */
@@ -606,6 +634,10 @@ export async function findMatrixBreaks(
       emptyTail: [] as string[],
       cutMeaning: [] as string[],
       hollowCard: [] as string[],
+      deadSpace: [] as string[],
+      floatingAction: [] as string[],
+      tallControl: [] as string[],
+      pastEdge: [] as string[],
     }
     const roots = Array.from(document.querySelectorAll(scope))
     if (!roots.length) return out
@@ -1451,6 +1483,222 @@ export async function findMatrixBreaks(
       out.hollowCard.push(
         `card ends ${h.m.gap}px below its last content (${h.m.height}px tall, limit ${h.m.limit}px) at ${sel}${n > 1 ? ` (${n} cards)` : ''} "${short(h.el.textContent, 40)}"`
       )
+
+    // ---- The control-shape kinds (owner reports 2026-11-27): a chevron
+    // floating mid-control, a queue row's action floating mid-row, a select
+    // three lines tall in a 32 px toolbar, a toolbar's buttons cut by the
+    // window's edge.
+    const rtlOf = (el: Element) => getComputedStyle(el).direction === 'rtl'
+    const innerBox = (el: Element) => {
+      const r = el.getBoundingClientRect()
+      const s = getComputedStyle(el)
+      return {
+        left: r.left + parseFloat(s.borderLeftWidth) + parseFloat(s.paddingLeft),
+        right: r.right - parseFloat(s.borderRightWidth) - parseFloat(s.paddingRight),
+      }
+    }
+    const painted = (el: Element) => {
+      const s = getComputedStyle(el)
+      return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0'
+    }
+    // Horizontal extents of what a box paints: its text line boxes, its svgs
+    // and images, and boxes with a background or border, each cut to the box.
+    const contentSpans = (box: Element, skip: Element | null) => {
+      const spans: { left: number; right: number }[] = []
+      const rg = document.createRange()
+      const walk = (e: Element) => {
+        if (e === skip || !painted(e)) return
+        if (e.getAttribute('aria-hidden') === 'true' && e.tagName !== 'svg') return
+        if (/^(svg|IMG)$/.test(e.tagName)) {
+          const r = e.getBoundingClientRect()
+          if (r.width >= 1) spans.push({ left: r.left, right: r.right })
+          return
+        }
+        const s = getComputedStyle(e)
+        if (e !== box && (!clear(s.backgroundColor) || parseFloat(s.borderLeftWidth) > 0)) {
+          const r = e.getBoundingClientRect()
+          if (r.width >= 2 && r.height >= 2) spans.push({ left: r.left, right: r.right })
+        }
+        for (const n of Array.from(e.childNodes)) {
+          if (n.nodeType === 3 && (n.textContent ?? '').trim()) {
+            rg.selectNodeContents(n)
+            for (const b of Array.from(rg.getClientRects()))
+              if (b.width >= 1) spans.push({ left: b.left, right: b.right })
+          } else if (n.nodeType === 1) walk(n as Element)
+        }
+      }
+      walk(box)
+      return spans
+    }
+
+    // ---- deadSpace: a control with a trailing icon (a chevron, a caret: a
+    // combobox, a menu or popup button, a button ending in an svg) whose icon
+    // stands more than 12 px from the control's inner end, or more than 16 px
+    // after the control's text (empty room inside the control: "Target: All"
+    // in a box sized for "Known exploited"). Exempt from the second only a
+    // control that holds one width by design (`data-hold-width`, a
+    // `ToolbarSlot` sized by every value it can show) and a field that fills
+    // its column (a form's full-width select: its chevron is at its end).
+    const TRAILING =
+      '[role=combobox]:not(input), button[aria-haspopup], [role=button][aria-haspopup], [data-slot="select-trigger"], [data-slot="button"], button'
+    for (const root of roots) {
+      for (const c of Array.from(root.querySelectorAll(TRAILING))) {
+        if (!shown(c) || c.closest('.react-flow, [data-layout-canvas]')) continue
+        const r = c.getBoundingClientRect()
+        if (r.width < 48 || r.height > 64) continue
+        // The trailing icon: the last element child, if it is an svg.
+        const kids = Array.from(c.children).filter(
+          (k) => painted(k) && k.getBoundingClientRect().width >= 1
+        )
+        const last = kids[kids.length - 1]
+        if (!last || last.tagName !== 'svg' || kids.length < 2) continue
+        const icon = last.getBoundingClientRect()
+        if (icon.width > 24) continue
+        const rtl = rtlOf(c)
+        const inner = innerBox(c)
+        const tail = Math.round(rtl ? icon.left - inner.left : inner.right - icon.right)
+        const name = nameOf(c)
+        if (tail > 12) {
+          out.deadSpace.push(
+            `trailing icon ${tail}px from the end of "${name}" (${Math.round(r.width)}px wide)`
+          )
+          continue
+        }
+        if (c.closest('[data-hold-width]') || c.querySelector('[data-slot="toolbar-slot"]'))
+          continue
+        const p = c.parentElement
+        if (p && painted(p)) {
+          const pi = innerBox(p)
+          if (r.width >= pi.right - pi.left - 2) continue
+        }
+        const spans = contentSpans(c, last).filter((s) =>
+          rtl ? s.left >= icon.right - 1 : s.right <= icon.left + 1
+        )
+        if (!spans.length) continue
+        const end = rtl
+          ? Math.min(...spans.map((s) => s.left))
+          : Math.max(...spans.map((s) => s.right))
+        const gap = Math.round(rtl ? end - icon.right : icon.left - end)
+        if (gap > 16)
+          out.deadSpace.push(
+            `${gap}px of empty room before the trailing icon of "${name}" (${Math.round(r.width)}px wide)`
+          )
+      }
+    }
+
+    // ---- floatingAction: a list row's action that stands neither at the
+    // row's start nor at its end: nothing of the row after it, yet more than
+    // 64 px short of the row's inner end ("Validate" in the middle of a
+    // 1500 px "Waiting for you" row).
+    for (const root of roots) {
+      for (const row of Array.from(root.querySelectorAll('li, [role=listitem]'))) {
+        if (!shown(row)) continue
+        const rr = row.getBoundingClientRect()
+        if (rr.width < 480) continue
+        const rtl = rtlOf(row)
+        const inner = innerBox(row)
+        const actions = Array.from(row.querySelectorAll('[data-slot="button"]')).filter(
+          (b) => shown(b) && b.closest('li, [role=listitem]') === row
+        )
+        for (const b of actions) {
+          const br = b.getBoundingClientRect()
+          const fromEnd = Math.round(rtl ? br.left - inner.left : inner.right - br.right)
+          const fromStart = Math.round(rtl ? inner.right - br.right : br.left - inner.left)
+          if (fromEnd <= 64 || fromStart <= 64) continue
+          // Anything of the row past the action, on the action's line?
+          const after = contentSpans(row, b).some((s) => {
+            return rtl ? s.right <= br.left + 1 && s.right > inner.left : s.left >= br.right - 1
+          })
+          if (after) continue
+          out.floatingAction.push(
+            `action "${nameOf(b)}" floats ${fromEnd}px short of its row's end (${Math.round(rr.width)}px row)`
+          )
+        }
+      }
+    }
+
+    // ---- tallControl: a button, select or filter token more than 1.5x as
+    // tall as the other controls of its row (a select whose value wrapped
+    // onto three lines beside 32 px buttons). The row is the nearest flex or
+    // grid box that lays the control out beside others.
+    const SHAPED =
+      '[data-slot="button"], [data-slot="select-trigger"], [data-slot="filter-select"], [role=combobox]:not(input)'
+    for (const root of roots) {
+      const ctrls = Array.from(root.querySelectorAll(SHAPED)).filter(
+        (c) => shown(c) && !c.parentElement?.closest(SHAPED)
+      )
+      const seen = new Set<Element>()
+      for (const c of ctrls) {
+        const r = c.getBoundingClientRect()
+        let box: Element | null = c.parentElement
+        for (; box && box !== root.parentElement; box = box.parentElement) {
+          const s = getComputedStyle(box)
+          if (s.display === 'contents') continue
+          if (/flex/.test(s.display) && !/column/.test(s.flexDirection)) break
+          if (/grid/.test(s.display)) break
+        }
+        if (!box) continue
+        const peers = ctrls.filter((o) => {
+          if (o === c || !box!.contains(o)) return false
+          const or = o.getBoundingClientRect()
+          // Beside it: the two share part of their height band.
+          return Math.min(or.bottom, r.bottom) - Math.max(or.top, r.top) > 4
+        })
+        if (!peers.length) continue
+        const hs = peers.map((o) => o.getBoundingClientRect().height).sort((a, b) => a - b)
+        const median = hs[Math.floor(hs.length / 2)]
+        if (r.height > median * 1.5 && r.height - median > 12 && !seen.has(c)) {
+          seen.add(c)
+          out.tallControl.push(
+            `control "${nameOf(c)}" is ${Math.round(r.height)}px tall beside ${Math.round(median)}px controls`
+          )
+        }
+      }
+    }
+
+    // ---- pastEdge: a control drawn past the window's edge, or past the
+    // page column's edge, outside a box made to scroll sideways (a table's
+    // scroller, the page tab strip, a canvas): the toolbar's "Refresh" and
+    // "Display" cut at the right of the window.
+    const SIDEWAYS =
+      '[data-slot="table-container"], [data-tab-strip], .react-flow, [data-layout-canvas], [data-scroll-x]'
+    const content = document.querySelector('#content')
+    for (const root of roots) {
+      // The page column bounds a page's controls; an overlay (a dialog, a
+      // sheet) is bounded by the window only.
+      const column = content && content.contains(root) ? content : document.documentElement
+      const colBox = column.getBoundingClientRect()
+      const edgeR = Math.min(vw, colBox.right)
+      const edgeL = Math.max(0, colBox.left)
+      for (const c of Array.from(root.querySelectorAll(CONTROL))) {
+        const outer = c.parentElement?.closest(CONTROL)
+        if (outer && root.contains(outer)) continue
+        if (!shown(c) || c.closest(SIDEWAYS)) continue
+        // Inside a box of its own that scrolls sideways (a wide preview): a
+        // control out of view there is reached by scrolling.
+        let scrolls = false
+        for (
+          let a = c.parentElement;
+          a && a !== column && a !== document.body;
+          a = a.parentElement
+        ) {
+          if (
+            /auto|scroll/.test(getComputedStyle(a).overflowX) &&
+            a.scrollWidth > a.clientWidth + 1
+          ) {
+            scrolls = true
+            break
+          }
+        }
+        if (scrolls) continue
+        const r = c.getBoundingClientRect()
+        const past = Math.round(Math.max(r.right - edgeR, edgeL - r.left))
+        if (past > 1)
+          out.pastEdge.push(
+            `control "${nameOf(c)}" ${past}px past the ${r.right > edgeR ? (edgeR === vw ? 'window' : 'page column') : 'start'} edge`
+          )
+      }
+    }
 
     for (const k of Object.keys(out) as (keyof typeof out)[]) out[k] = [...new Set(out[k])]
     return out
