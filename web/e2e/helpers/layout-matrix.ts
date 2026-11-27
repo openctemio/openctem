@@ -72,6 +72,12 @@ import { submitSignIn } from './auth'
  *                    (table scroller, tab strip, canvas, `data-scroll-x`, or a
  *                    box that does scroll sideways): toolbar buttons cut at
  *                    the window's right edge
+ *   sizeMismatch     controls side by side in one row (a toolbar, a header, a
+ *                    button group) that differ in height or centre line, or
+ *                    whose buttons (or fields) differ in font size
+ *                    (probeRowMix of helpers/page-anatomy.ts with `fonts`, on
+ *                    the page, not over an overlay): "All severities" wrapped
+ *                    taller than the search beside it
  */
 
 export type MatrixBreaks = {
@@ -88,6 +94,7 @@ export type MatrixBreaks = {
   floatingAction: string[]
   tallControl: string[]
   pastEdge: string[]
+  sizeMismatch: string[]
 }
 
 export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
@@ -104,6 +111,7 @@ export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
   'floatingAction',
   'tallControl',
   'pastEdge',
+  'sizeMismatch',
 ]
 
 /** Widths of the v2 matrix with the height of their device class. */
@@ -636,6 +644,8 @@ export async function findMatrixBreaks(
       floatingAction: [] as string[],
       tallControl: [] as string[],
       pastEdge: [] as string[],
+      // Filled by the matrix run (probeRowMix with fonts, helpers/page-anatomy.ts).
+      sizeMismatch: [] as string[],
     }
     const roots = Array.from(document.querySelectorAll(scope))
     if (!roots.length) return out
