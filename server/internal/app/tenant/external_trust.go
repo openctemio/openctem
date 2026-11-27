@@ -41,7 +41,7 @@ func (s *TenantService) SuspendExternalMembersFromHome(ctx context.Context, host
 		done++
 	}
 	if done > 0 {
-		s.notifyAdmins(ctx, host, "External members suspended",
+		s.notifyAdminsMsg(ctx, host, notificationdom.Msg("trust.members_suspended", "count", done), "External members suspended",
 			fmt.Sprintf("%d member(s) from an organization you no longer trust were suspended. Open Members to review them.", done),
 			notificationdom.SeverityMedium)
 	}
@@ -74,7 +74,13 @@ func (s *TenantService) suspendExternalMember(ctx context.Context, m *tenantdom.
 // NotifyAdmins tells every active owner and administrator of tenantID,
 // in-app (best effort).
 func (s *TenantService) NotifyAdmins(ctx context.Context, tenantID shared.ID, title, body, severity string) {
-	s.notifyAdmins(ctx, tenantID, title, body, severity)
+	s.notifyAdminsMsg(ctx, tenantID, nil, title, body, severity)
+}
+
+// NotifyAdminsMsg is NotifyAdmins with the language-neutral message the web
+// renders from its catalogs (nil leaves the English text only).
+func (s *TenantService) NotifyAdminsMsg(ctx context.Context, tenantID shared.ID, msg *notificationdom.Message, title, body, severity string) {
+	s.notifyAdminsMsg(ctx, tenantID, msg, title, body, severity)
 }
 
 // TenantName returns an organization's display name (empty when unknown).

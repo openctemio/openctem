@@ -227,7 +227,7 @@ func (s *Service) CreateTarget(ctx context.Context, input CreateTargetInput) (*s
 	case target.IsPending():
 		s.notifyRequested(ctx, target)
 	case !input.Actor.system() && !input.batch:
-		s.notifyWidened(ctx, target, "Scope entry added")
+		s.notifyWidened(ctx, target, "Scope entry added", "scope.entry_added")
 	}
 	if target.IsActive() {
 		s.scheduleJoin(tenantID)
@@ -365,10 +365,10 @@ func (s *Service) UpdateTarget(ctx context.Context, targetID string, tenantID st
 		if target.IsPending() {
 			s.notifyRequested(ctx, target)
 		} else if !input.Actor.system() {
-			s.notifyWidened(ctx, target, "Scope entry widened")
+			s.notifyWidened(ctx, target, "Scope entry widened", "scope.entry_widened")
 		}
 	} else if discoveryOn && !input.Actor.system() {
-		s.notifyWidened(ctx, target, "Discovery turned on for a scope entry")
+		s.notifyWidened(ctx, target, "Discovery turned on for a scope entry", "scope.discovery_on")
 	}
 
 	if target.IsActive() {
@@ -678,7 +678,7 @@ func (s *Service) ActivateTarget(ctx context.Context, targetID string, tenantID 
 	if target.IsPending() {
 		s.notifyRequested(ctx, target)
 	} else if !actor.system() {
-		s.notifyWidened(ctx, target, "Scope entry activated")
+		s.notifyWidened(ctx, target, "Scope entry activated", "scope.entry_activated")
 	}
 
 	if target.IsActive() {

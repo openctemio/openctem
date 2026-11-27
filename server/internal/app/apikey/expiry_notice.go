@@ -64,6 +64,8 @@ func (s *Service) NotifyExpiring(ctx context.Context, now time.Time, batch int) 
 			Title:            "API key expires soon",
 			Body: fmt.Sprintf("The API key %q (%s…) expires on %s, in about %d day(s). Create a new key and switch to it before then.",
 				k.Name, k.Prefix, k.ExpiresAt.UTC().Format("2006-01-02"), days),
+			Message: notificationdom.Msg("api_key.expiring", "key_name", k.Name, "prefix", k.Prefix,
+				"expires_at", k.ExpiresAt.UTC().Format(time.RFC3339), "days", days),
 			Severity:     notificationdom.SeverityMedium,
 			ResourceType: "api_key",
 			ResourceID:   &k.ID,

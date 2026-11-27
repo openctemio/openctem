@@ -366,6 +366,18 @@ Sender-constrained tokens (RFC 9449), `pkg/dpop` and `mcpoauth/dpop.go`:
 | Web | `/mcp/confirm/<id>` (signed-in session; same user and organization; summary shown as text) |
 | API | `GET /api/v1/mcp-access/confirmations/{id}`, `POST …/approve`, `POST …/deny` (API keys refused) |
 
+The summary is also stored as a stable message: `summary_code` (for
+example `mcp.add_finding_comment`) and `summary_params`, a JSON object of
+typed values (`finding`, `severity`, `content`, and `client_visible` on a
+pentest finding; migration `mcp_confirmation_summary_code`). The web
+translates the code and shows the AI-written `content` and the client
+visibility as separate fields, so a comment that imitates a "Visible to the
+campaign's client" line cannot pass for the real one. The English `summary`
+stays as the fallback, for audit and older consoles. A code that does not
+match `^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$` or values over 12 KiB are not stored
+(the request still succeeds with the English summary alone). Both fields are
+omitted from `GET /api/v1/mcp-access/confirmations/{id}` when empty.
+
 Flow: `tools/list` shows a write tool only to an OAuth connection holding
 its permission. First call: arguments validated, data scope checked, a
 pending confirmation created (`mcp_action.requested`), result

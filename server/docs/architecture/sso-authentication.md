@@ -496,6 +496,61 @@ The identity store is required: a login that carries an identity is refused
 when it is not wired. Erasing a member's personal data deletes their
 identities, so a later sign-in never finds the anonymised account.
 
+## No password for accounts the organization's SSO manages
+
+An account that an organization's SSO signs in and that has no password of
+its own gets no password through a self-service path
+(`internal/app/auth/managed_sign_in.go`, research 539).
+
+**The record.** Every organization sign-on (OIDC and SAML, whether or not
+the IdP sends a stable identifier) records itself on the account before the
+session is issued: `users.sso_signed_in_at` (first time) and
+`users.sso_tenant_id` (the organization whose SSO signed it in first; never
+overwritten). The same statement clears any outstanding set-password or reset
+link of an account without a password. A failure to record refuses the
+sign-in. Migration `20261126054521` fills both columns for accounts that
+already hold an SSO identity (the organization only for SAML identities;
+OIDC accounts get it at their next SSO sign-in).
+
+**SSO-managed** = a local account with no password and `sso_signed_in_at`
+set. Nothing is inferred from identities or sign-in history.
+
+- **Forgot-password** stores no token and sends nothing for it. The HTTP
+  answer is the one every address gets (the lookup runs after the response),
+  and the service result is the one an unknown address gets. A failed lookup
+  refuses the same way (fail closed); so does a server without the record
+  wired, for any password-less account that has signed in.
+- **Set-password and reset links.** The SSO sign-in clears an outstanding
+  link in the database, so an administrator's 24-hour setup link stops
+  working once the person signs in through the IdP. A link that still reaches
+  an SSO-managed account (one written by any path after the sign-in) sets no
+  password: `POST /auth/reset-password` answers "invalid or expired", as for a
+  used link. The token clear and the conditional token consume are each one
+  statement, so a reset racing the first SSO sign-in either consumes the link
+  before the sign-in or finds it gone.
+- **Password accounts are unaffected**, including one that linked the
+  organization's SSO itself: its password and its own reset stay its own.
+- **Break-glass.** Two kinds of account keep forgot-password even when
+  SSO-managed:
+  - an active **owner of the managing organization** (`sso_tenant_id`), while
+    that organization is active and not scheduled for deletion. Its owners
+    are its way in when its IdP fails (an SSO-enforced organization admits an
+    owner with password plus second factor, below), and who owns it is that
+    organization's own decision. Owning **any other** organization does not
+    count, so an account cannot make itself break-glass by creating an
+    organization. An account whose managing organization is unknown (an OIDC
+    account not signed in since the upgrade) is not exempt until its next SSO
+    sign-in.
+  - an active **platform administrator** (the admin console needs a password
+    of its own). A deactivated administrator does not count.
+
+  Their link from before the SSO sign-in is still voided; they request a new
+  one. The sealed console break-glass accounts never sign in through an
+  organization's SSO, so they never become SSO-managed.
+- The platform console's "send password reset" for such an account answers
+  that no link can be sent; its copied reset link (installations without
+  email) does not set a password either.
+
 ## Linking an existing account
 
 A federated sign-in never adopts a password account because the identity

@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	"github.com/openctemio/openctem/server/pkg/domain/scanzone"
 	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 	"github.com/openctemio/openctem/server/pkg/domain/scope/ipset"
@@ -187,8 +188,9 @@ func (s *Service) replaceTarget(ctx context.Context, in ReplaceTargetInput, prev
 	if next.IsPending() {
 		s.notifyRequested(ctx, next)
 	} else if !in.Actor.system() {
-		s.NotifyAdmins(ctx, tenantID, "Scope entry pattern replaced",
-			fmt.Sprintf("%s %s replaced %s (%s). Reason: %s", targetType, pattern, old.Pattern(), res.Change, reason))
+		s.NotifyAdminsMsg(ctx, tenantID, "Scope entry pattern replaced",
+			fmt.Sprintf("%s %s replaced %s (%s). Reason: %s", targetType, pattern, old.Pattern(), res.Change, reason),
+			replacedMessage(targetType, pattern, old.Pattern(), res.Change, reason))
 	}
 	if next.IsActive() {
 		s.scheduleJoin(tenantID)
@@ -404,4 +406,16 @@ func (s *Service) zonesUsing(ctx context.Context, tenantID shared.ID, t scopedom
 		out = append(out, use)
 	}
 	return out, nil
+}
+
+// replacedMessage is the pattern-replaced notice as a message code.
+func replacedMessage(tt scopedom.TargetType, pattern, oldPattern string, c scopedom.CoverageChange, reason string) *notificationdom.Message {
+	list := func(l []string) any {
+		if len(l) == 0 {
+			return notificationdom.Msg("scope.change.nothing")
+		}
+		return strings.Join(l, ", ")
+	}
+	return notificationdom.Msg("scope.pattern_replaced", "target_type", targetTypeMessage(tt),
+		"pattern", pattern, "old_pattern", oldPattern, "added", list(c.Added), "removed", list(c.Removed), "reason", reason)
 }

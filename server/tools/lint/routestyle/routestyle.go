@@ -328,8 +328,17 @@ func Check(routes []Route) []Violation {
 	return uniq
 }
 
+// pinnedNames fixes the preferred parameter name of a collection whose two
+// names are used by about as many routes each, so that one more route of
+// the minority never flips the verdict onto every route of the other name:
+// organizations are {tenant} on the user plane and {tenantId} on the
+// console's routes, which stay listed in the baseline.
+var pinnedNames = map[string]string{ //nolint:gochecknoglobals // fixed rule table
+	"tenants": "{tenant}",
+}
+
 // preferredNames maps each collection to the parameter name most routes use
-// for it (R3: one collection, one parameter name).
+// for it (R3: one collection, one parameter name), or its pinned name.
 func preferredNames(routes []Route) map[string]string {
 	names := map[string]map[string]int{}
 	for _, r := range routes {
@@ -352,6 +361,11 @@ func preferredNames(routes []Route) map[string]string {
 			}
 		}
 		preferred[coll] = best
+	}
+	for coll, name := range pinnedNames {
+		if _, used := preferred[coll]; used {
+			preferred[coll] = name
+		}
 	}
 	return preferred
 }

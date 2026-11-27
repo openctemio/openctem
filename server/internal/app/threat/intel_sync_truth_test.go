@@ -110,7 +110,7 @@ func TestRecordBundleSeen_RecentCopyIsASuccess(t *testing.T) {
 func TestRecordBundleSeen_OldCopyFails(t *testing.T) {
 	now := time.Now().UTC()
 	s, repo := newTruthService(t, now, map[string]any{})
-	if err := s.RecordBundleSeen(context.Background(), "kev", BundleStream{FetchedAt: now.Add(-7 * time.Hour), Sequence: 94}); err != nil {
+	if err := s.RecordBundleSeen(context.Background(), "kev", BundleStream{FetchedAt: now.Add(-13 * time.Hour), Sequence: 94}); err != nil {
 		t.Fatal(err)
 	}
 	st := repo.st.st
@@ -119,6 +119,28 @@ func TestRecordBundleSeen_OldCopyFails(t *testing.T) {
 	}
 	if !errors.Is(ErrSourceStale, ErrSourceStale) || !strings.Contains(st.LastSyncError(), "the collector last read kev") {
 		t.Fatalf("error text: %q", st.LastSyncError())
+	}
+}
+
+// KEV rides the release, so a copy as old as a gap between two releases is
+// current (the limit is the bundle's, never a stricter one of its own), and
+// a raised limit (an offline site) applies to KEV too.
+func TestRecordBundleSeen_KEVFollowsTheBundleLimit(t *testing.T) {
+	now := time.Now().UTC()
+	s, repo := newTruthService(t, now, map[string]any{})
+	// The longest gap seen between two releases, plus a cycle.
+	if err := s.RecordBundleSeen(context.Background(), "kev", BundleStream{FetchedAt: now.Add(-6*time.Hour - 15*time.Minute), Sequence: 95}); err != nil {
+		t.Fatal(err)
+	}
+	if st := repo.st.st; st.LastSyncStatus() != threatintel.SyncStateSuccess {
+		t.Fatalf("a 6 h copy failed KEV: %v %v", st.LastSyncStatus(), st.Metadata())
+	}
+	s.SetLimits(func(context.Context) feedstatus.Limits { return feedstatus.Limits{Vulnfeed: 48 * time.Hour} })
+	if err := s.RecordBundleSeen(context.Background(), "kev", BundleStream{FetchedAt: now.Add(-30 * time.Hour), Sequence: 96}); err != nil {
+		t.Fatal(err)
+	}
+	if st := repo.st.st; st.LastSyncStatus() != threatintel.SyncStateSuccess {
+		t.Fatalf("a 30 h copy under a 48 h limit failed KEV: %v", st.LastSyncStatus())
 	}
 }
 

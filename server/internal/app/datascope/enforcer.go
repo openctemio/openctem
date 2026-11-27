@@ -214,45 +214,77 @@ func (e *Enforcer) ResolveForStrict(ctx context.Context, tenantID shared.ID, c C
 	return e.ResolveFor(ctx, tenantID, c)
 }
 
+// Resolution is how a caller's data scope resolved. A nil scope alone does
+// not say whether the caller sees the whole tenant or whether nothing could
+// be decided; request paths that must fail closed read the kind.
+type Resolution uint8
+
+const (
+	// ResolutionNone: nothing was resolved (no enforcer, or neither a user
+	// nor an API key). Only internal work may read this as "whole tenant";
+	// a request caller is refused.
+	ResolutionNone Resolution = iota
+	// ResolutionScoped: the returned scope applies (scope rows, an empty
+	// scope for a user-less API key, or every asset but private program
+	// assets).
+	ResolutionScoped
+	// ResolutionUnrestricted: the caller sees the whole tenant by right (an
+	// owner, or an administrator or has_full_data_access role holder with no
+	// hidden program assets). The scope is nil.
+	ResolutionUnrestricted
+)
+
 // ResolveFor is Resolve for an explicit caller. Within a request that
 // carries the request memo (WithRequestMemo) the answer is computed once per
-// tenant and caller.
+// tenant and caller. A nil scope means unrestricted or unresolved; callers
+// that must tell the two apart use ResolveForKind.
 func (e *Enforcer) ResolveFor(ctx context.Context, tenantID shared.ID, c Caller) (*shared.DataScope, error) {
+	s, _, err := e.ResolveForKind(ctx, tenantID, c)
+	return s, err
+}
+
+// ResolveForKind is ResolveFor with the kind of the answer: a caller that
+// sees the whole tenant by right (ResolutionUnrestricted) is told apart from
+// one whose scope could not be resolved (ResolutionNone).
+func (e *Enforcer) ResolveForKind(ctx context.Context, tenantID shared.ID, c Caller) (*shared.DataScope, Resolution, error) {
 	if e == nil || e.repo == nil {
-		return nil, nil
+		return nil, ResolutionNone, nil
 	}
 	m := memoOf(ctx)
 	if m == nil {
 		return e.resolveFor(ctx, tenantID, c)
 	}
 	k := scopeKey{tenant: tenantID, caller: c}
-	if s, ok := m.scope(k); ok {
-		return s, nil
+	if s, kind, ok := m.scope(k); ok {
+		return s, kind, nil
 	}
-	s, err := e.resolveFor(ctx, tenantID, c)
+	s, kind, err := e.resolveFor(ctx, tenantID, c)
 	if err != nil {
-		return nil, err
+		return nil, ResolutionNone, err
 	}
-	m.putScope(k, s)
-	return s, nil
+	m.putScope(k, s, kind)
+	return s, kind, nil
 }
 
 // resolveFor decides the scope of an explicit caller (no memo).
-func (e *Enforcer) resolveFor(ctx context.Context, tenantID shared.ID, c Caller) (*shared.DataScope, error) {
+func (e *Enforcer) resolveFor(ctx context.Context, tenantID shared.ID, c Caller) (*shared.DataScope, Resolution, error) {
 	// An API key with no user (a legacy organization key) is not an internal
 	// call: it resolves to a scope with no rows, so it reads nothing scoped.
 	// Only a context with neither a user nor an API key is trusted as
 	// internal.
 	if c.APIKey && c.UserID == "" {
-		return &shared.DataScope{TenantID: tenantID}, nil
+		return &shared.DataScope{TenantID: tenantID}, ResolutionScoped, nil
 	}
-	if c.UserID == "" || c.IsOwner {
-		return nil, nil
+	if c.UserID == "" {
+		return nil, ResolutionNone, nil
+	}
+	if c.IsOwner {
+		return nil, ResolutionUnrestricted, nil
 	}
 	userID, err := shared.IDFromString(c.UserID)
 	if err != nil {
 		// An unparseable acting user cannot be matched to any scope row.
-		return nil, fmt.Errorf("%w: invalid acting user", shared.ErrNotFound)
+		return nil, ResolutionNone, fmt.Errorf("%w: invalid acting user", shared.ErrNotFound)
 	}
 	// An administrator, and a role with has_full_data_access (the Layer 2
 	// bypass, owner decision D3), see every asset of the tenant whatever
@@ -262,23 +294,23 @@ func (e *Enforcer) resolveFor(ctx context.Context, tenantID shared.ID, c Caller)
 	if !full && !c.APIKey {
 		f, ferr := e.repo.HasFullDataRole(ctx, tenantID, userID)
 		if ferr != nil {
-			return nil, fmt.Errorf("resolve full data access: %w", ferr)
+			return nil, ResolutionNone, fmt.Errorf("resolve full data access: %w", ferr)
 		}
 		full = f
 	}
 	if full {
 		hidden, herr := e.repo.HasHiddenAssets(ctx, tenantID, userID)
 		if herr != nil {
-			return nil, fmt.Errorf("resolve private program assets: %w", herr)
+			return nil, ResolutionNone, fmt.Errorf("resolve private program assets: %w", herr)
 		}
 		if hidden {
-			return &shared.DataScope{TenantID: tenantID, UserID: userID, Unrestricted: true}, nil
+			return &shared.DataScope{TenantID: tenantID, UserID: userID, Unrestricted: true}, ResolutionScoped, nil
 		}
-		return nil, nil
+		return nil, ResolutionUnrestricted, nil
 	}
 	// Every other member is restricted to their scope rows; no row means
 	// nothing (fail closed, in every organization).
-	return &shared.DataScope{TenantID: tenantID, UserID: userID}, nil
+	return &shared.DataScope{TenantID: tenantID, UserID: userID}, ResolutionScoped, nil
 }
 
 // FullData reports whether actingUserID holds a has_full_data_access role in

@@ -222,7 +222,8 @@ func (s *TenantService) deprovisionMember(ctx context.Context, membershipID stri
 			return serr
 		}
 	}
-	s.notifyAdmins(ctx, membership.TenantID(),
+	s.notifyAdminsMsg(ctx, membership.TenantID(),
+		notificationdom.Msg("member.deprovisioned_needs_offboarding", "owned", strings.Join(re.Missing, ", ")),
 		"A deprovisioned member needs an offboarding",
 		fmt.Sprintf("Your identity provider removed a member. Their access is cut (disabled), but they still own %s: open Members and offboard them to hand it to someone else.",
 			strings.Join(re.Missing, ", ")),
@@ -355,9 +356,15 @@ func (s *TenantService) hasOtherOrganization(ctx context.Context, tenantID, user
 // notifyAdmins tells every active owner and administrator, in-app. Best
 // effort: the action already happened and is audited.
 func (s *TenantService) notifyAdmins(ctx context.Context, tenantID shared.ID, title, body, severity string) {
-	s.notifyAdminsAbout(ctx, tenantID, adminNotice{
+	s.notifyAdminsMsg(ctx, tenantID, nil, title, body, severity)
+}
+
+// notifyAdminsMsg is notifyAdmins with the language-neutral message the web
+// renders from its catalogs.
+func (s *TenantService) notifyAdminsMsg(ctx context.Context, tenantID shared.ID, msg *notificationdom.Message, title, body, severity string) {
+	s.notifyAdminsAboutMsg(ctx, tenantID, adminNotice{
 		Type: notificationdom.TypeMemberLifecycle, ResourceType: "membership", URL: "/settings/members",
-	}, title, body, severity)
+	}, msg, title, body, severity)
 }
 
 // adminNotice says what kind of notice goes to the administrators and where
@@ -368,9 +375,10 @@ type adminNotice struct {
 	URL          string
 }
 
-// notifyAdminsAbout tells every active owner and administrator, in-app, with
-// the given notification type, resource type and link. Best effort.
-func (s *TenantService) notifyAdminsAbout(ctx context.Context, tenantID shared.ID, n adminNotice, title, body, severity string) {
+// notifyAdminsAboutMsg tells every active owner and administrator, in-app,
+// with the given notification type, resource type and link, and the message
+// code next to the English text. Best effort.
+func (s *TenantService) notifyAdminsAboutMsg(ctx context.Context, tenantID shared.ID, n adminNotice, msg *notificationdom.Message, title, body, severity string) {
 	if s.lifecycle == nil || s.lifecycleNotifier == nil {
 		return
 	}
@@ -388,6 +396,7 @@ func (s *TenantService) notifyAdminsAbout(ctx context.Context, tenantID shared.I
 			NotificationType: n.Type,
 			Title:            title,
 			Body:             body,
+			Message:          msg,
 			Severity:         severity,
 			ResourceType:     n.ResourceType,
 			URL:              n.URL,
@@ -478,7 +487,7 @@ func (s *TenantService) LeaveOrganization(ctx context.Context, tenantID, userID 
 		WithMetadata("user_id", userID.String()).
 		WithMetadata("revoked_keys", result.RevokedKeys).
 		WithMetadata("revoked_service_account_keys", result.RevokedServiceAccountKeys))
-	s.notifyAdmins(ctx, tenantID, "A member left the organization",
+	s.notifyAdminsMsg(ctx, tenantID, notificationdom.Msg("member.left", "member", actx.ActorEmail), "A member left the organization",
 		fmt.Sprintf("%s left the organization.", actx.ActorEmail), notificationdom.SeverityInfo)
 	return nil
 }
@@ -497,12 +506,14 @@ func (s *TenantService) SSODomainVerificationLost(ctx context.Context, tenantID 
 	enforced := t.TypedSettings().Security.SSOEnforced
 	s.logger.Warn("SSO domain failed re-verification",
 		"tenant_id", tenantID.String(), "domain", domain, "sso_enforced", enforced)
+	code := "sso.domain_verification_lost"
 	body := fmt.Sprintf("The DNS TXT record that proves %s belongs to the organization is gone, so the domain "+
 		"no longer admits new people through single sign-on. Restore the record, or remove the domain.", domain)
 	if enforced {
 		body += " Single sign-on stays required for members: it is not lifted when a domain check fails."
+		code = "sso.domain_verification_lost_enforced"
 	}
-	s.notifyAdminsAbout(ctx, tenantID, adminNotice{
+	s.notifyAdminsAboutMsg(ctx, tenantID, adminNotice{
 		Type: notificationdom.TypeSystemAlert, ResourceType: "verified_domain", URL: "/settings/domains",
-	}, "A verified domain failed its DNS check", body, notificationdom.SeverityHigh)
+	}, notificationdom.Msg(code, "domain", domain), "A verified domain failed its DNS check", body, notificationdom.SeverityHigh)
 }

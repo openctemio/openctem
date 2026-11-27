@@ -95,6 +95,10 @@ func TestRenamedRepositoryAlertsAdminsOnceWithTrustLink(t *testing.T) {
 	if a.AggregateID == nil || *a.AggregateID != cfgs[0].ID {
 		t.Fatal("a single matching configuration must be linked by id")
 	}
+	if m := a.Message; m == nil || m.Code != "ci.repository_renamed" || m.Params["old"] != "github.com/acme/old-name" ||
+		m.Params["new"] != "github.com/acme/new-name" || m.Params["provider"] != "github" || m.Params["trusts"] != `"acme repos"` {
+		t.Fatalf("message = %+v", a.Message)
+	}
 	// The pipeline retries on every job: no second alert for the same rename.
 	s.noteRenamedRepository(context.Background(), tenant, ghIssuer, renamedClaims("acme/new-name"), cfgs)
 	if len(al.got) != 1 {

@@ -11,6 +11,7 @@ import (
 	"github.com/openctemio/openctem/server/pkg/crypto"
 	"github.com/openctemio/openctem/server/pkg/domain/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/mfa"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	"github.com/openctemio/openctem/server/pkg/domain/session"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/tenant"
@@ -20,12 +21,16 @@ import (
 type adminNotice struct {
 	mu    sync.Mutex
 	calls []shared.ID
+	codes []string
 }
 
-func (n *adminNotice) NotifyAdmins(_ context.Context, tenantID shared.ID, _, _, _ string) {
+func (n *adminNotice) NotifyAdminsMsg(_ context.Context, tenantID shared.ID, msg *notificationdom.Message, _, _, _ string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.calls = append(n.calls, tenantID)
+	if msg != nil {
+		n.codes = append(n.codes, msg.Code)
+	}
 }
 
 type breakGlassHarness struct {
@@ -123,6 +128,9 @@ func TestBreakGlass_OwnerNeedsSecondFactor(t *testing.T) {
 				}
 				if len(h.notice.calls) != 1 || h.notice.calls[0] != tn.ID() {
 					t.Fatalf("other owners/admins were not told: %v", h.notice.calls)
+				}
+				if len(h.notice.codes) != 1 || h.notice.codes[0] != "sso.break_glass_used" {
+					t.Fatalf("message codes = %v", h.notice.codes)
 				}
 			})
 

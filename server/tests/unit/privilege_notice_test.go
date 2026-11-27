@@ -6,6 +6,7 @@ import (
 
 	"github.com/openctemio/openctem/server/internal/app/accesscontrol"
 	"github.com/openctemio/openctem/server/internal/app/audit"
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	"github.com/openctemio/openctem/server/pkg/domain/role"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
@@ -13,12 +14,13 @@ import (
 type recordedPrivilege struct {
 	tenant, user shared.ID
 	what         string
+	whatMsg      *notificationdom.Message
 }
 
 type fakePrivilegeNotifier struct{ got []recordedPrivilege }
 
-func (f *fakePrivilegeNotifier) NotifyPrivilegeIncrease(_ context.Context, tenantID, userID shared.ID, what string) {
-	f.got = append(f.got, recordedPrivilege{tenantID, userID, what})
+func (f *fakePrivilegeNotifier) NotifyPrivilegeIncreaseMsg(_ context.Context, tenantID, userID shared.ID, what string, whatMsg *notificationdom.Message) {
+	f.got = append(f.got, recordedPrivilege{tenantID, userID, what, whatMsg})
 }
 
 // wideRole registers a custom role with full data access: granting it lifts
@@ -47,6 +49,9 @@ func TestPrivilegeIncrease_Notified(t *testing.T) {
 		}
 		if len(n.got) != 1 || n.got[0].user.String() != f.member.String() || n.got[0].tenant.String() != f.tenant.String() {
 			t.Fatalf("notices = %+v, want one for the member", n.got)
+		}
+		if m := n.got[0].whatMsg; m == nil || m.Code != "member.privilege.role_granted" || m.Params["role_name"] != "Wide" {
+			t.Errorf("what message = %+v, want member.privilege.role_granted with role_name Wide", m)
 		}
 	})
 

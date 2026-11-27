@@ -63,7 +63,10 @@ if [ -n "$spec" ]; then
 fi
 # The gateway image exists for the layer4 module (sensor ALPN routing).
 if [ "$comp" = openctem-gateway ]; then
-  docker run --rm --entrypoint caddy "$img" list-modules | grep -qx 'tls.handshake_match.alpn' \
+  # Read the whole list first: under pipefail, `caddy list-modules | grep -q`
+  # fails when grep exits at the first match and caddy then gets SIGPIPE.
+  mods="$(docker run --rm --entrypoint caddy "$img" list-modules)"
+  grep -qx 'tls.handshake_match.alpn' <<<"$mods" \
     || { echo "smoke: $img lacks the layer4 ALPN matcher" >&2; exit 1; }
 fi
 echo "smoke: $comp $img arch=$got elf=${m:-n/a} exec-rc=$rc OK"

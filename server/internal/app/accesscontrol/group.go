@@ -669,6 +669,7 @@ func (s *GroupService) AddMember(ctx context.Context, input AddGroupMemberInput,
 			NotificationType: notification.TypeMemberInvited,
 			Title:            fmt.Sprintf("You've been added to team \"%s\"", g.Name()),
 			Body:             fmt.Sprintf("You have been added to the team \"%s\" as %s.", g.Name(), role),
+			Message:          notification.Msg("team.added", "team", g.Name(), "team_role", teamRoleMessage(role.String())),
 			Severity:         notification.SeverityInfo,
 			ResourceType:     "group",
 			ResourceID:       &groupID,
@@ -746,10 +747,12 @@ func (s *GroupService) UpdateMemberRole(ctx context.Context, input UpdateGroupMe
 			NotificationType: notification.TypeRoleChanged,
 			Title:            fmt.Sprintf("Your role in team \"%s\" has been updated", g.Name()),
 			Body:             fmt.Sprintf("Your role has been changed from %s to %s in team \"%s\".", oldRole, role, g.Name()),
-			Severity:         notification.SeverityInfo,
-			ResourceType:     "group",
-			ResourceID:       &groupID,
-			URL:              teamsSettingsURL,
+			Message: notification.Msg("team.role_changed", "team", g.Name(),
+				"old_role", teamRoleMessage(oldRole.String()), "new_role", teamRoleMessage(role.String())),
+			Severity:     notification.SeverityInfo,
+			ResourceType: "group",
+			ResourceID:   &groupID,
+			URL:          teamsSettingsURL,
 		}
 		if actorID, err := shared.IDFromString(actx.ActorID); err == nil {
 			notifParams.ActorID = &actorID
@@ -853,6 +856,7 @@ func (s *GroupService) RemoveMember(ctx context.Context, groupID string, userID 
 			NotificationType: notification.TypeMemberInvited,
 			Title:            fmt.Sprintf("You've been removed from team \"%s\"", g.Name()),
 			Body:             fmt.Sprintf("You have been removed from the team \"%s\".", g.Name()),
+			Message:          notification.Msg("team.removed", "team", g.Name()),
 			Severity:         notification.SeverityMedium,
 			ResourceType:     "group",
 			ResourceID:       &gid,
@@ -1277,4 +1281,15 @@ func (s *GroupService) BulkAssignAssets(ctx context.Context, input BulkAssignAss
 	s.logAudit(ctx, actx, event)
 
 	return result, nil
+}
+
+// teamRoleMessage is the nested message for a team role (owner, lead,
+// member); any other value becomes "other".
+func teamRoleMessage(role string) *notification.Message {
+	switch role {
+	case "owner", "lead", "member":
+	default:
+		role = "other"
+	}
+	return notification.Msg("team.role." + role)
 }
