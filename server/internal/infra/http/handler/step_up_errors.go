@@ -35,6 +35,12 @@ type OutsideMemberDetail struct {
 	Service bool   `json:"service,omitempty"`
 }
 
+// codeTeamSelfMember: a non-owner gave roles to a team they are a member of
+// (presets, or turning on a team that carries roles).
+const codeTeamSelfMember apierror.Code = "TEAM_SELF_MEMBER"
+
+const teamSelfMemberMessage = "You are a member of this team, so giving it roles would raise your own access. Ask the organization owner to do it."
+
 // writeTeamGrantErrorFor is writeTeamGrantError that, for a request whose
 // caller may read the team's members, names the outside members behind a
 // TEAM_EXTERNAL_FULL_DATA refusal (details.outside_members). Without the
@@ -49,6 +55,12 @@ func writeTeamGrantErrorFor(w http.ResponseWriter, r *http.Request, err error) b
 		code = apierror.CodeTeamExternalFullData
 	case errors.Is(err, accesscontrol.ErrSelfJoinRoleTeam):
 		code = apierror.CodeTeamSelfJoin
+	case errors.Is(err, accesscontrol.ErrSelfMemberRoleTeam):
+		// Not in the registry yet (its console words follow in a web
+		// change): sent with its own status and sentence, which the console
+		// shows for a code it has no words for.
+		apierror.New(http.StatusForbidden, codeTeamSelfMember, teamSelfMemberMessage).WriteJSON(w)
+		return true
 	default:
 		return false
 	}

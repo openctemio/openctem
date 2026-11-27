@@ -10,10 +10,12 @@ import (
 // seen. A finding first stored from a scan file carries the file's own time
 // (vulnerability.Finding.ObservedAt), not the import's. See
 // docs/architecture/finding-import.md, "What a Nessus import closes".
-const findingObservedColumnsSQL = `first_detected_at, last_seen_at`
+// first_detected_reported_at is the producer's own first-seen claim
+// (vulnerability.Finding.ReportedFirstSeen), NULL when none.
+const findingObservedColumnsSQL = `first_detected_at, last_seen_at, first_detected_reported_at`
 
 // findingObservedColumnCount is the number of columns in findingObservedColumnsSQL.
-const findingObservedColumnCount = 2
+const findingObservedColumnCount = 3
 
 func findingObservedArgs(f *vulnerability.Finding) []any {
 	now := time.Now().UTC()
@@ -24,7 +26,11 @@ func findingObservedArgs(f *vulnerability.Finding) []any {
 	if last.IsZero() {
 		last = now
 	}
-	return []any{first, last}
+	var reported any
+	if t := f.FirstDetectedReportedAt(); t != nil {
+		reported = *t
+	}
+	return []any{first, last, reported}
 }
 
 // findingObservedPlaceholders is ", $first, …" for the sighting time

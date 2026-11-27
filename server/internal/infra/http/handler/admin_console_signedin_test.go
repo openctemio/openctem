@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -20,7 +21,7 @@ func TestWriteSignedInReturnsCSRFToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
-	h.writeSignedIn(rec, "session-token", a)
+	h.writeSignedIn(rec, httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/", nil), "session-token", a)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d", rec.Code)
 	}

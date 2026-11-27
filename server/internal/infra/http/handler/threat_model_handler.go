@@ -131,7 +131,14 @@ type ThreatModelCoverageResponse struct {
 type GenerateThreatModelRequest struct {
 	ScopeType  string `json:"scope_type"`
 	ScopeRefID string `json:"scope_ref_id"`
+	// Name is not accepted: a model is named after its scope and renamed
+	// with it on every regeneration. Sending it answers 400
+	// THREAT_MODEL_NAME_FROM_SCOPE instead of being dropped silently.
+	Name *string `json:"name,omitempty" swaggerignore:"true"`
 }
+
+// codeThreatModelNameFromScope refuses a name in the generate request.
+const codeThreatModelNameFromScope = "THREAT_MODEL_NAME_FROM_SCOPE"
 
 // ---- handlers --------------------------------------------------------------
 
@@ -252,6 +259,11 @@ func (h *ThreatModelHandler) Generate(w http.ResponseWriter, r *http.Request) {
 	var req GenerateThreatModelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		apierror.BadRequest("invalid request body").WriteJSON(w)
+		return
+	}
+	if req.Name != nil {
+		apierror.New(http.StatusBadRequest, codeThreatModelNameFromScope,
+			"A threat model is named after its scope (the organization, a crown jewel, an asset group or a business unit). Leave out name.").WriteJSON(w)
 		return
 	}
 	scopeType := tmdom.ScopeType(req.ScopeType)

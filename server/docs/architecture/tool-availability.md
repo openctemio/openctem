@@ -145,8 +145,9 @@ saving a scan never refuses it for a missing tool or sensor.
   sensor that may run it is skipped with `NO_SENSOR_FOR_TOOL` and the
   message below as its reason, required or optional; the run goes on with
   the other steps and ends `partial`. Only when no step can run is the
-  trigger refused, as a blocked run with `NO_RUNNABLE_STEPS` (400) naming
-  each missing step and why.
+  trigger refused with `NO_RUNNABLE_STEPS` (400) naming each missing step
+  and why: a member's "Run now" creates nothing, an automatic trigger
+  (schedule, retry, automation) is recorded as a blocked run.
 - **Single scan.** Its scanner is the scan's one step: a trigger is refused
   with `NO_SENSOR_FOR_TOOL` (400) when the scanner has no online sensor that
   may run it, instead of queueing jobs that nobody claims and that sit

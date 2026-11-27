@@ -324,3 +324,60 @@ func TestDecodeStrictReport_InvalidKeepsCauseOutOfText(t *testing.T) {
 		t.Fatalf("error text %q carries more than the sentinel", err.Error())
 	}
 }
+
+// A segment the CTIS validator refuses names each problem: a pointer to the
+// member and a code, never the validator's text (it quotes the document).
+func TestValidateReportV2_CTISProblemsNamed(t *testing.T) {
+	doc := strings.Replace(v2ValidReport, `"tool": {"name": "semgrep", "version": "1.90.0"},`,
+		`"tool": {"name": "semgrep", "version": "1.90.0", "techniques": ["secret-q"]},`, 1)
+	doc = strings.Replace(doc, `"assets": [{"id": "a1", "type": "repository", "value": "github.com/acme/app"}]`,
+		`"assets": [{"id": "a1", "type": "repository", "value": "github.com/acme/app"}, {"id": "a2", "type": "identity", "value": "alice"}]`, 1)
+	_, err := ParseV2Report([]byte(doc), protov2.DefaultLimits())
+	var re *V2ReportError
+	if !errors.As(err, &re) || re.Problem != protov2.ProblemSchemaInvalid {
+		t.Fatalf("got %v", err)
+	}
+	want := map[string]string{
+		"/tool/techniques/0":                "invalid_value",
+		"/assets/1/technical/identity/kind": "required",
+	}
+	for _, e := range re.Errors {
+		if strings.Contains(e.Detail, "secret-q") || strings.Contains(e.Detail, "alice") {
+			t.Fatalf("the detail quotes the document: %+v", e)
+		}
+		if code, ok := want[e.Pointer]; ok && code == e.Code {
+			delete(want, e.Pointer)
+		}
+	}
+	if len(want) > 0 {
+		t.Fatalf("missing item errors %v in %+v", want, re.Errors)
+	}
+	if re.Cause == nil {
+		t.Fatal("the validator's message is not kept for the server log")
+	}
+}
+
+func TestCTISProblemPointer(t *testing.T) {
+	cases := map[string]string{
+		`assets[29]: identity needs technical.identity.kind`:            "/assets/29/technical/identity/kind",
+		`tool.techniques[0] "inventory" is invalid`:                     "/tool/techniques/0",
+		`assets[3]: value is required`:                                  "/assets/3/value",
+		`assets[3]: invalid criticality "x"`:                            "/assets/3/criticality",
+		`assets[3]: owners[1].ref is required`:                          "/assets/3/owners/1/ref",
+		`assets[3]: owners[1]: invalid kind "x"`:                        "/assets/3/owners/1/kind",
+		`findings[2]: asset_ref "b" names no asset in this report`:      "/findings/2/asset_ref",
+		`assets[1]: confidence 120 is outside 0-100`:                    "/assets/1/confidence",
+		`findings[2]: vex status not_affected needs a justification`:    "/findings/2",
+		`metadata.generated_at is required`:                             "/metadata/generated_at",
+		`extensions["Evil/ns"] must be an object`:                       "",
+		`assets[0]: state gone needs a state_reason (an authoritative)`: "/assets/0",
+	}
+	for in, want := range cases {
+		if got := ctisProblemPointer(in); got != want {
+			t.Errorf("%q: pointer %q, want %q", in, got, want)
+		}
+	}
+	if got := ctisProblemItems(errors.New("something else")); len(got) != 1 || got[0].Pointer != "" {
+		t.Fatalf("an unknown message: %+v", got)
+	}
+}

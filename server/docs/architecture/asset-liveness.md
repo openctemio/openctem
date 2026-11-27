@@ -137,7 +137,12 @@ severity and the owners are told. Closing is off by default: gone is a label unt
 
 `POST /api/v1/tenants/{tenant}/settings/asset-lifecycle/dry-run` (owner or admin) returns, beside the stale counts,
 `liveness`: assets per state after a pass, the findings it would close (and how many of the critical tier), would
-reopen, and the open findings on unreachable and unresolvable assets. It writes nothing.
+reopen, and the open findings on unreachable and unresolvable assets. It changes no asset or finding; it records
+on the tenant's settings that a dry run succeeded (`dry_run_completed_at`, written by the server only).
+
+Turning the lifecycle on (`PUT .../settings/asset-lifecycle` with `enabled: true`) the first time needs that stored
+record: the client sends the settings only, a `dry_run_completed_at` in the body is ignored, and without a dry run
+of this tenant the save is refused (400).
 
 ## Security
 

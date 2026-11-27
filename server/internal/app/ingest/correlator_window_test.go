@@ -89,3 +89,38 @@ func TestCorrelateHost_TenantWindowOverride(t *testing.T) {
 		t.Fatal("a 14-day tenant window should accept an asset seen 10 days ago")
 	}
 }
+
+// A named host is never matched to the ip_address asset of its address: the
+// two are separate assets (the host contains the address), and the merge
+// dropped the host's name. A host with the address still matches.
+func TestCorrelateHost_NeverFoldsHostIntoAddressAsset(t *testing.T) {
+	seen := time.Now().Add(-time.Hour)
+	addr := asset.Reconstitute(shared.NewID(), shared.NewID(), nil, "10.9.0.5",
+		asset.AssetTypeIPAddress, asset.CriticalityMedium, asset.StatusActive, asset.ScopeInternal,
+		asset.ExposureUnknown, 0, 0, "", nil, map[string]any{"ip_addresses": []any{"10.9.0.5"}},
+		"", "", "", "", nil, "", "", "", nil,
+		nil, "", false, false, nil, false, nil, "", "", "", "",
+		seen, seen, seen, seen)
+	c := NewAssetCorrelator(ipOnlyRepo{byIP: map[string][]*asset.Asset{"10.9.0.5": {addr}}},
+		logger.NewNop(), CorrelationConfig{})
+	res, err := c.CorrelateHost(context.Background(), shared.NewID(), "srv-web-00.corp.example.net",
+		map[string]any{"ip_addresses": []any{"10.9.0.5"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Matched != nil || len(res.Ambiguous) > 0 || res.ShouldRename {
+		t.Fatalf("a host matched the address asset of its IP: %+v", res)
+	}
+
+	host := hostSeenAgo(t, "old-name", time.Hour)
+	c = NewAssetCorrelator(ipOnlyRepo{byIP: map[string][]*asset.Asset{"10.9.0.5": {addr, host}}},
+		logger.NewNop(), CorrelationConfig{})
+	res, err = c.CorrelateHost(context.Background(), shared.NewID(), "srv-web-00.corp.example.net",
+		map[string]any{"ip_addresses": []any{"10.9.0.5"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Matched == nil || res.Matched.ID() != host.ID() {
+		t.Fatalf("the host with the address was not the only match: %+v", res)
+	}
+}

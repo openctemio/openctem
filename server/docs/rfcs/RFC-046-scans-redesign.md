@@ -205,7 +205,10 @@ Mapping onto today's tables (no big-bang rename; §8):
   `blocked`. A `blocked` run is a trigger refused before anything was
   dispatched (scope gate, freeze window, unavailable tool or sensor, no
   target, paused scan); it carries `refusal_code` and the message, is never
-  retried, and is how a refusal shows in the run list.
+  retried, and is how a refusal shows in the run list. Only an automatic
+  trigger (schedule, retry, automation) is recorded this way: a member's own
+  "Run now" is answered with the refusal (4xx), creates no run and is
+  audited.
   A terminal run never moves again (#820); a terminal step run never moves
   again (P1.1).
 - `partial` means "results kept, coverage incomplete". It is not retried as a
