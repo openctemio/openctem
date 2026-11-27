@@ -4,7 +4,7 @@
  * the page loads one stats response and one quick-views response.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { act, render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 globalThis.ResizeObserver ??= class {
@@ -309,6 +309,21 @@ describe('Findings list with quick views', () => {
       extra: { source_not: 'pentest' },
     })
     expect(statsCalls.some((f) => f?.asset_id === 'asset-1')).toBe(true)
+  })
+
+  // On a phone the toolbar's start goes into the Filters sheet: the queue's
+  // name and the way back used to sit there, so the phone showed only a
+  // Filters and a Refresh button. They are the view's title row now.
+  it('gives the queue a title row with the way back, outside the toolbar', () => {
+    openAt('?view=verify')
+    render(<FindingsPage />)
+    const row = screen.getByTestId('findings-verify-title-row')
+    expect(within(row).getByTestId('findings-view-title')).toHaveTextContent(
+      'Fixes awaiting verification'
+    )
+    fireEvent.click(within(row).getByRole('button', { name: 'All findings' }))
+    expect(params().get('view')).toBeNull()
+    expect(row.closest('[data-slot="list-toolbar"]')).toBeNull()
   })
 
   it('does not load the source catalog until the Source filter is opened', () => {

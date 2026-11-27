@@ -107,8 +107,10 @@ func actionAllowed(ctx context.Context, cands []lc.Candidate, f *vulnerability.F
 	actor vulnerability.TransitionActor, to vulnerability.FindingStatus, note string,
 ) error {
 	d, _ := lifecycleDecision(cands, f, facts, lifecycleActor(ctx, actor), lc.Target{Status: to})
-	_, err := lifecycleError(d, note, nil)
-	return err
+	if _, err := lifecycleError(d, note, nil); err != nil {
+		return &ActionRefusal{Code: refusalCodeOf(d, note, err), err: err}
+	}
+	return nil
 }
 
 // NewFindingActionsService creates a new FindingActionsService.
@@ -614,7 +616,7 @@ func (t *actionTarget) add(id shared.ID, old vulnerability.FindingStatus) {
 func (s *FindingActionsService) loadActionFinding(ctx context.Context, tid shared.ID, idStr string) (*vulnerability.Finding, error) {
 	fid, err := shared.IDFromString(idStr)
 	if err != nil {
-		return nil, errors.New("invalid id")
+		return nil, errInvalidActionID
 	}
 	f, err := s.findingRepo.GetByID(ctx, tid, fid)
 	if err == nil && s.dataScope.AssertAsset(ctx, tid, f.AssetID()) != nil {
@@ -646,7 +648,7 @@ func (s *FindingActionsService) applyFixDecision(ctx context.Context, tid, uid s
 	}
 	for _, id := range t.ids {
 		if !movedSet[id] {
-			result.fail(id.String(), "changed since it was read; reload and retry")
+			result.refuse(id.String(), RefusalChanged, "changed since it was read; reload and retry")
 		}
 	}
 	result.Updated += len(moved)
@@ -681,11 +683,11 @@ func (s *FindingActionsService) BulkVerify(
 	for _, idStr := range findingIDs {
 		f, err := s.loadActionFinding(ctx, tid, idStr)
 		if err != nil {
-			result.fail(idStr, err.Error())
+			result.refuse(idStr, refusalOfLoad(err), err.Error())
 			continue
 		}
 		if f.Status() != vulnerability.FindingStatusFixApplied {
-			result.fail(idStr, "not in fix_applied status")
+			result.refuse(idStr, RefusalNotFixApplied, "not in fix_applied status")
 			continue
 		}
 		// F4: FixApplied → Resolved goes through the checklist gate. A
@@ -694,7 +696,7 @@ func (s *FindingActionsService) BulkVerify(
 		// the rejection message.
 		checklist, err := s.loadVerificationChecklist(ctx, tid, f.ID())
 		if err != nil {
-			result.fail(idStr, err.Error())
+			result.refuse(idStr, RefusalUnavailable, err.Error())
 			continue
 		}
 		// The transition engine (the route requires findings:verify), with
@@ -702,19 +704,23 @@ func (s *FindingActionsService) BulkVerify(
 		facts := transitionFactsOf(f)
 		if s.db != nil {
 			if err := loadResolveEvidence(ctx, s.db, tid, f.ID(), &facts); err != nil {
-				result.fail(idStr, err.Error())
+				result.refuse(idStr, RefusalUnavailable, err.Error())
 				continue
 			}
 		}
 		if err := actionAllowed(ctx, cands, f, facts, personActor(uid, TransitionPermissions{Verify: true}),
 			vulnerability.FindingStatusResolved, resolution); err != nil {
-			result.fail(idStr, err.Error())
+			result.refuse(idStr, RefusalCodeOf(err), err.Error())
 			continue
 		}
 		// The domain checks the move and the checklist (in memory; the
 		// write below is the guarded batch statement).
 		if err := f.TransitionStatusWithChecklist(vulnerability.FindingStatusResolved, resolution, &uid, checklist); err != nil {
-			result.fail(idStr, err.Error())
+			code := RefusalNotAllowed
+			if f.NeedsVerificationChecklist(vulnerability.FindingStatusResolved) && (checklist == nil || !checklist.IsComplete()) {
+				code = RefusalChecklistRequired
+			}
+			result.refuse(idStr, code, err.Error())
 			continue
 		}
 		target.add(f.ID(), vulnerability.FindingStatusFixApplied)
@@ -757,22 +763,22 @@ func (s *FindingActionsService) BulkRejectFix(
 	for _, idStr := range findingIDs {
 		f, err := s.loadActionFinding(ctx, tid, idStr)
 		if err != nil {
-			result.fail(idStr, err.Error())
+			result.refuse(idStr, refusalOfLoad(err), err.Error())
 			continue
 		}
 		if f.Status() != vulnerability.FindingStatusFixApplied {
-			result.fail(idStr, fmt.Sprintf("not in fix_applied status (current: %s)", f.Status()))
+			result.refuse(idStr, RefusalNotFixApplied, fmt.Sprintf("not in fix_applied status (current: %s)", f.Status()))
 			continue
 		}
 		// The transition engine: a verifier may reject a fix (the route
 		// requires findings:verify).
 		if err := actionAllowed(ctx, cands, f, transitionFactsOf(f),
 			personActor(uid, TransitionPermissions{Verify: true}), vulnerability.FindingStatusInProgress, reason); err != nil {
-			result.fail(idStr, err.Error())
+			result.refuse(idStr, RefusalCodeOf(err), err.Error())
 			continue
 		}
 		if !f.CanTransitionTo(vulnerability.FindingStatusInProgress) {
-			result.fail(idStr, fmt.Sprintf("cannot transition from %s to %s", f.Status(), vulnerability.FindingStatusInProgress))
+			result.refuse(idStr, RefusalNotAllowed, fmt.Sprintf("cannot transition from %s to %s", f.Status(), vulnerability.FindingStatusInProgress))
 			continue
 		}
 		target.add(f.ID(), vulnerability.FindingStatusFixApplied)
@@ -794,24 +800,27 @@ type VerifyByFilterInput struct {
 }
 
 // BulkVerifyByFilter resolves all fix_applied findings matching a filter.
-// Used by Pending Review tab to approve entire groups at once.
+// Used by the verification queue to approve a whole CVE group at once. A
+// finding the transition engine refuses (for example a critical one with no
+// confirmed retest and no checklist completed by another person) is left
+// alone and reported with its refusal code, never dropped silently.
 func (s *FindingActionsService) BulkVerifyByFilter(
 	ctx context.Context, tenantID string, userID string, input VerifyByFilterInput,
-) (int64, error) {
+) (*BulkUpdateResult, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return 0, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 	uid, err := shared.IDFromString(userID)
 	if err != nil {
-		return 0, fmt.Errorf("%w: invalid user id", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: invalid user id", shared.ErrValidation)
 	}
 
 	// Force filter to only fix_applied findings + apply data scope
 	input.Filter.Statuses = []vulnerability.FindingStatus{vulnerability.FindingStatusFixApplied}
 	input.Filter, err = s.visibleTo(ctx, tid, input.Filter)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	resolution := "Verified by security review"
@@ -824,37 +833,40 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 	// it allows are resolved.
 	count, err := s.findingRepo.Count(ctx, input.Filter)
 	if err != nil {
-		return 0, fmt.Errorf("failed to count findings: %w", err)
+		return nil, fmt.Errorf("failed to count findings: %w", err)
 	}
 	if count > 1000 {
-		return 0, fmt.Errorf("%w: too many findings (%d), max 1000. Use a narrower filter", shared.ErrValidation, count)
+		return nil, fmt.Errorf("%w: too many findings (%d), max 1000. Use a narrower filter", shared.ErrValidation, count)
 	}
 	actor := personActor(uid, TransitionPermissions{Verify: true})
 	cands, err := s.lifecycleCandidates(ctx, tid)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
+	result := &BulkUpdateResult{}
 	allowed := make([]shared.ID, 0, int(count))
 	const batchSize = 100
 	for offset := int64(0); offset < count; offset += batchSize {
 		page, err := s.findingRepo.List(ctx, input.Filter, vulnerability.NewFindingListOptions(), pagination.New(int(offset/batchSize)+1, batchSize))
 		if err != nil {
-			return 0, fmt.Errorf("failed to list findings: %w", err)
+			return nil, fmt.Errorf("failed to list findings: %w", err)
 		}
 		for _, f := range page.Data {
 			facts := transitionFactsOf(f)
 			if s.db != nil {
 				if err := loadResolveEvidence(ctx, s.db, tid, f.ID(), &facts); err != nil {
-					return 0, err
+					return nil, err
 				}
 			}
-			if actionAllowed(ctx, cands, f, facts, actor, vulnerability.FindingStatusResolved, resolution) == nil {
-				allowed = append(allowed, f.ID())
+			if err := actionAllowed(ctx, cands, f, facts, actor, vulnerability.FindingStatusResolved, resolution); err != nil {
+				result.refuse(f.ID().String(), RefusalCodeOf(err), err.Error())
+				continue
 			}
+			allowed = append(allowed, f.ID())
 		}
 	}
 	if len(allowed) == 0 {
-		return 0, nil
+		return result, nil
 	}
 
 	// Each verified finding gets its timeline entry in the same transaction.
@@ -864,10 +876,38 @@ func (s *FindingActionsService) BulkVerifyByFilter(
 	moved, err := s.moveFixApplied(moveCtx, tid, allowed,
 		vulnerability.FindingStatusResolved, resolution, &uid, vulnerability.Fixed(verifyByFilterVerification))
 	if err != nil {
-		return 0, fmt.Errorf("failed to verify findings: %w", err)
+		return nil, fmt.Errorf("failed to verify findings: %w", err)
 	}
-	s.afterMoves(ctx, tid, uid.String(), movesOf(moved, fixApplied, vulnerability.FindingStatusResolved))
-	return int64(len(moved)), nil
+	result.refuseUnmoved(allowed, moved)
+	result.Updated = len(moved)
+	result.ValidationsQueued = s.afterMoves(ctx, tid, uid.String(), movesOf(moved, fixApplied, vulnerability.FindingStatusResolved))
+	return result, nil
+}
+
+// refuseUnmoved reports each finding a guarded write left alone because it
+// changed after it was read.
+func (r *BulkUpdateResult) refuseUnmoved(allowed, moved []shared.ID) {
+	movedSet := make(map[shared.ID]bool, len(moved))
+	for _, id := range moved {
+		movedSet[id] = true
+	}
+	for _, id := range allowed {
+		if !movedSet[id] {
+			r.refuse(id.String(), RefusalChanged, "changed since it was read; reload and retry")
+		}
+	}
+}
+
+// errInvalidActionID is a by-id action given a malformed finding id.
+var errInvalidActionID = errors.New("invalid id")
+
+// refusalOfLoad is the refusal code of a by-id finding that could not be
+// read: missing, out of scope and a malformed id all read as not found.
+func refusalOfLoad(err error) string {
+	if errors.Is(err, shared.ErrNotFound) || errors.Is(err, errInvalidActionID) {
+		return RefusalNotFound
+	}
+	return RefusalUnavailable
 }
 
 // moveFixApplied writes a verifier's decision on fix_applied findings, limited
@@ -895,21 +935,22 @@ type RejectByFilterInput struct {
 	Reason string
 }
 
-// BulkRejectByFilter reopens all fix_applied findings matching a filter.
+// BulkRejectByFilter reopens all fix_applied findings matching a filter; a
+// finding the lifecycle refuses is reported with its refusal code.
 func (s *FindingActionsService) BulkRejectByFilter(
 	ctx context.Context, tenantID string, userID string, input RejectByFilterInput,
-) (int64, error) {
+) (*BulkUpdateResult, error) {
 	tid, err := shared.IDFromString(tenantID)
 	if err != nil {
-		return 0, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: invalid tenant id", shared.ErrValidation)
 	}
 	uid, err := shared.IDFromString(userID)
 	if err != nil {
-		return 0, fmt.Errorf("%w: invalid user id", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: invalid user id", shared.ErrValidation)
 	}
 
 	if input.Reason == "" {
-		return 0, fmt.Errorf("%w: reason is required when rejecting fix", shared.ErrValidation)
+		return nil, fmt.Errorf("%w: reason is required when rejecting fix", shared.ErrValidation)
 	}
 
 	// The transition engine for the filtered set (all fix_applied): a
@@ -917,13 +958,13 @@ func (s *FindingActionsService) BulkRejectByFilter(
 	if err := transitionError(vulnerability.EvaluateTransition(
 		vulnerability.TransitionFacts{Status: vulnerability.FindingStatusFixApplied},
 		personActor(uid, TransitionPermissions{Verify: true}), vulnerability.FindingStatusInProgress), input.Reason); err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	input.Filter.Statuses = []vulnerability.FindingStatus{vulnerability.FindingStatusFixApplied}
 	input.Filter, err = s.visibleTo(ctx, tid, input.Filter)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	moveCtx := vulnerability.WithStatusTransition(ctx, vulnerability.StatusTransition{
@@ -934,20 +975,26 @@ func (s *FindingActionsService) BulkRejectByFilter(
 	// findings and the side effects run for exactly the ones it moved.
 	cands, err := s.lifecycleCandidates(ctx, tid)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
+	result := &BulkUpdateResult{}
 	allowed, err := s.allowedByFilter(ctx, cands, input.Filter, personActor(uid, TransitionPermissions{Verify: true}),
-		vulnerability.FindingStatusInProgress, input.Reason)
-	if err != nil || len(allowed) == 0 {
-		return 0, err
+		vulnerability.FindingStatusInProgress, input.Reason, result)
+	if err != nil {
+		return nil, err
+	}
+	if len(allowed) == 0 {
+		return result, nil
 	}
 	moved, err := s.moveFixApplied(moveCtx, tid, allowed,
 		vulnerability.FindingStatusInProgress, input.Reason, &uid, vulnerability.Closure{})
 	if err != nil {
-		return 0, fmt.Errorf("failed to reject findings: %w", err)
+		return nil, fmt.Errorf("failed to reject findings: %w", err)
 	}
-	s.afterMoves(ctx, tid, uid.String(), movesOf(moved, fixApplied, vulnerability.FindingStatusInProgress))
-	return int64(len(moved)), nil
+	result.refuseUnmoved(allowed, moved)
+	result.Updated = len(moved)
+	result.ValidationsQueued = s.afterMoves(ctx, tid, uid.String(), movesOf(moved, fixApplied, vulnerability.FindingStatusInProgress))
+	return result, nil
 }
 
 // --- Auto-Assign to Owners ---
@@ -1192,9 +1239,10 @@ func (s *FindingActionsService) QueueProofOfFix(ctx context.Context, tenantID sh
 }
 
 // allowedByFilter reads the findings a by-filter action selects (at most
-// 1000) and keeps those the lifecycle allows to move to target.
+// 1000) and keeps those the lifecycle allows to move to target; each refused
+// one is recorded in refused with its refusal code.
 func (s *FindingActionsService) allowedByFilter(ctx context.Context, cands []lc.Candidate, filter vulnerability.FindingFilter,
-	actor vulnerability.TransitionActor, target vulnerability.FindingStatus, note string,
+	actor vulnerability.TransitionActor, target vulnerability.FindingStatus, note string, refused *BulkUpdateResult,
 ) ([]shared.ID, error) {
 	count, err := s.findingRepo.Count(ctx, filter)
 	if err != nil {
@@ -1211,9 +1259,11 @@ func (s *FindingActionsService) allowedByFilter(ctx context.Context, cands []lc.
 			return nil, fmt.Errorf("failed to list findings: %w", err)
 		}
 		for _, f := range page.Data {
-			if actionAllowed(ctx, cands, f, transitionFactsOf(f), actor, target, note) == nil {
-				allowed = append(allowed, f.ID())
+			if err := actionAllowed(ctx, cands, f, transitionFactsOf(f), actor, target, note); err != nil {
+				refused.refuse(f.ID().String(), RefusalCodeOf(err), err.Error())
+				continue
 			}
+			allowed = append(allowed, f.ID())
 		}
 	}
 	return allowed, nil

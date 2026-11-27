@@ -597,14 +597,14 @@ func (h *FindingActionsHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		if len(req.Filter.AssetTags) > 0 {
 			filter = filter.WithAssetTags(req.Filter.AssetTags)
 		}
-		count, err := h.service.BulkVerifyByFilter(r.Context(), tenantID, userID.String(), finding.VerifyByFilterInput{
+		result, err := h.service.BulkVerifyByFilter(r.Context(), tenantID, userID.String(), finding.VerifyByFilterInput{
 			Filter: filter, Note: req.Note,
 		})
 		if err != nil {
 			h.handleError(w, err)
 			return
 		}
-		h.writeJSON(w, http.StatusOK, map[string]any{"updated": count})
+		h.writeJSON(w, http.StatusOK, newFixDecisionResponse(result))
 		return
 	}
 
@@ -619,7 +619,44 @@ func (h *FindingActionsHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		h.handleError(w, err)
 		return
 	}
-	h.writeJSON(w, http.StatusOK, result)
+	h.writeJSON(w, http.StatusOK, newFixDecisionResponse(result))
+}
+
+// FixDecisionResponse is the outcome of verifying or rejecting claimed fixes
+// (POST /findings/actions/verify and /reject-fix, by ids or by filter). The
+// call answers 200 when some or all findings were refused: updated says how
+// many moved, and every finding left alone is a row with a registered
+// refusal code (finding.RefusalCodes), never the error text.
+type FixDecisionResponse struct {
+	Updated int `json:"updated"`
+	Refused int `json:"refused"`
+	// Reasons counts the refused findings per refusal code.
+	Reasons map[string]int   `json:"reasons"`
+	Rows    []FixDecisionRow `json:"rows"`
+}
+
+// FixDecisionRow is one finding a verifier's decision left alone, and why.
+type FixDecisionRow struct {
+	FindingID string `json:"finding_id"`
+	Code      string `json:"code"`
+}
+
+func newFixDecisionResponse(res *finding.BulkUpdateResult) FixDecisionResponse {
+	out := FixDecisionResponse{Reasons: map[string]int{}, Rows: []FixDecisionRow{}}
+	if res == nil {
+		return out
+	}
+	out.Updated = res.Updated
+	for _, r := range res.Rows {
+		code := r.Code
+		if code == "" {
+			code = finding.RefusalNotAllowed
+		}
+		out.Refused++
+		out.Reasons[code]++
+		out.Rows = append(out.Rows, FixDecisionRow{FindingID: r.FindingID, Code: code})
+	}
+	return out
 }
 
 // --- Reject Fix (by IDs or by filter) ---
@@ -665,14 +702,14 @@ func (h *FindingActionsHandler) RejectFix(w http.ResponseWriter, r *http.Request
 		if len(req.Filter.AssetTags) > 0 {
 			filter = filter.WithAssetTags(req.Filter.AssetTags)
 		}
-		count, err := h.service.BulkRejectByFilter(r.Context(), tenantID, userID.String(), finding.RejectByFilterInput{
+		result, err := h.service.BulkRejectByFilter(r.Context(), tenantID, userID.String(), finding.RejectByFilterInput{
 			Filter: filter, Reason: req.Reason,
 		})
 		if err != nil {
 			h.handleError(w, err)
 			return
 		}
-		h.writeJSON(w, http.StatusOK, map[string]any{"updated": count})
+		h.writeJSON(w, http.StatusOK, newFixDecisionResponse(result))
 		return
 	}
 
@@ -687,7 +724,7 @@ func (h *FindingActionsHandler) RejectFix(w http.ResponseWriter, r *http.Request
 		h.handleError(w, err)
 		return
 	}
-	h.writeJSON(w, http.StatusOK, result)
+	h.writeJSON(w, http.StatusOK, newFixDecisionResponse(result))
 }
 
 // RequestValidation handles POST /api/v1/findings/{id}/validate
