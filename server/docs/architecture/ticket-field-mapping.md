@@ -18,6 +18,14 @@ Authoring (all routes under `/api/v1/integrations/ticket-mappings`, reads
 `integrations:read`, changes `integrations:manage`; publish, delete and dry run
 also need step-up):
 
+A create needs `integration_id` (a Jira integration of the organization),
+`object_kind` (`finding` or `task`), `project_key` and `issue_type_id` (the id
+from the integration's issue types; `project_id`, `issue_type` and `name` are
+optional). A wrong field answers 400 `TICKET_MAPPING_INVALID_FIELD` with
+`details.params.field` and a sentence saying why; an integration that is not a
+connected Jira site answers 409 `TICKET_MAPPING_TRACKER_NOT_CONNECTED` (test
+its connection first).
+
 ```mermaid
 stateDiagram-v2
   [*] --> Draft: POST (preset) creates draft v1

@@ -128,6 +128,15 @@ func (s *Service) sharedStore() (SharedSensorsStore, error) {
 // SharedSensorsReady reports whether the rollout gate is open.
 func SharedSensorsReady() bool { return sharedSensorsReady }
 
+// SharedSensorsMissing names what the rollout gate waits for, in words the
+// console shows when it refuses to turn the switch on (empty once ready).
+func SharedSensorsMissing() []string {
+	if sharedSensorsReady {
+		return nil
+	}
+	return []string{"shared job claiming", "per-job isolation on shared sensors"}
+}
+
 // SharedSensorsSetting returns the instance setting and its version (0:
 // nothing stored, the defaults apply).
 func (s *Service) SharedSensorsSetting(ctx context.Context) (SharedSensorsSetting, int, error) {
