@@ -439,6 +439,14 @@ reference.
      longest line, up to the column, never stretched around five short
      lines;
    - a proportional bar (a status or severity strip) is at most 40rem wide.
+   - blocks of one kind in a section (the ways to prove a fix: verification,
+     retest, retest check) sit side by side once each has 28rem (one column
+     up to 1440 px, two at 1920, three at 2560), so the panel's width holds
+     content and the rail stays near it (the layout matrix fails a rail more
+     than 400 px from its content);
+   - breakpoints for these rules are written in rem (`min-[120rem]:` for
+     1920 px): Tailwind orders a px breakpoint before the theme's rem ones,
+     so `xl:` would override a `min-[1920px]:` class.
 
 ## 2. Headline numbers
 

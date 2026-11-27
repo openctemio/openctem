@@ -20,10 +20,12 @@
  * 1920 px screen the panel is at most 90rem (1440 px) wide and the rail sits
  * right after it, so the rail stays next to the content it describes. A third
  * track takes what is left; the strip and a full-width panel span it, so a
- * wide table still uses the whole page.
+ * wide table still uses the whole page. The breakpoint is written in rem
+ * (120rem = 1920 px) like the theme's: Tailwind orders a px breakpoint before
+ * the rem ones, so `xl:` would win over a `min-[1920px]:` class.
  */
 export const DETAIL_GRID =
-  'grid min-w-0 xl:grid-cols-[minmax(0,1fr)_21rem] min-[1920px]:grid-cols-[minmax(0,90rem)_24rem_minmax(0,1fr)]'
+  'grid min-w-0 xl:grid-cols-[minmax(0,1fr)_21rem] min-[120rem]:grid-cols-[minmax(0,90rem)_24rem_minmax(0,1fr)]'
 export const DETAIL_RAIL =
   'min-w-0 max-xl:order-2 xl:sticky xl:top-4 xl:col-start-2 xl:row-start-2 xl:self-start'
 export const DETAIL_STRIP = 'min-w-0 max-xl:order-3 xl:col-span-full xl:row-start-1'
@@ -37,4 +39,4 @@ export const DETAIL_PANEL_FULL = 'xl:col-span-full'
  * after the main part from a 1920 px screen, and the main part stops at 90rem.
  */
 export const DETAIL_SPLIT =
-  'grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] min-[1920px]:grid-cols-[minmax(0,90rem)_24rem]'
+  'grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] min-[120rem]:grid-cols-[minmax(0,90rem)_24rem]'

@@ -68,7 +68,7 @@ export const OVERVIEW_CHARTS_GRID = 'grid grid-cols-1 gap-4 lg:grid-cols-2'
  * of four columns), so no chart card is stretched over half a wide page.
  */
 export const OVERVIEW_CHARTS_WITH_TREND_GRID =
-  'grid grid-cols-1 gap-4 lg:grid-cols-2 min-[2048px]:grid-cols-4'
+  'grid grid-cols-1 gap-4 lg:grid-cols-2 min-[128rem]:grid-cols-4'
 export const OVERVIEW_TREND_CELL = 'lg:col-span-2'
 
 /** `in_progress` → `In progress`. */
