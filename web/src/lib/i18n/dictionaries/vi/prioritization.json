@@ -224,6 +224,7 @@
   "prioritization.pathGraph.nodeTitle": "{name} ({type}) — xem phát hiện",
   "prioritization.pathGraph.openPaths": "Mở đường tấn công",
   "prioritization.pathGraph.score": "điểm {score}",
+  "prioritization.pathGraph.scoreLabel": "Mức khẩn cấp so với chuỗi đứng đầu",
   "prioritization.pathGraph.target": "Mục tiêu",
   "prioritization.rules.action.delete": "Xóa",
   "prioritization.rules.action.dryRun": "Chạy thử",

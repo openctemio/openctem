@@ -22,6 +22,7 @@ import {
   ViewFindingsButton,
 } from '@/features/exposures/components'
 import { MISCONFIG_SOURCES } from '@/features/exposures/lib/type-sources'
+import { categorySlices } from '@/features/exposures/lib/category-slices'
 import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { Settings2 } from 'lucide-react'
@@ -47,17 +48,17 @@ export default function MisconfigurationsPage() {
   } = useFindingTypeStats(tenantId, MISCONFIG_SOURCES)
   const isLoading = dashboardLoading || typeLoading
 
+  // One colour per slice (the long tail folds into Other), names from the
+  // asset type catalog in the reader's language.
   const assetTypeData = useMemo(
     () =>
-      Object.entries(stats.assets.byType || {})
-        .map(([type, count], index) => ({
-          name: humanize(type),
-          value: count,
-          color: CATEGORY_CHART_COLORS[index % CATEGORY_CHART_COLORS.length],
-        }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 8),
-    [stats.assets.byType]
+      categorySlices(
+        stats.assets.byType,
+        CATEGORY_CHART_COLORS,
+        (type) => t(`assets.typeLabel.${type}`, humanize(type)),
+        t('exposures.misconfigurations.otherTypes', 'Other')
+      ),
+    [stats.assets.byType, t]
   )
 
   return (
