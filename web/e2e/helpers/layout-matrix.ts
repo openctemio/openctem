@@ -111,7 +111,8 @@ import { submitSignIn } from './auth'
  *                    the page, not over an overlay): "All severities" wrapped
  *                    taller than the search beside it
  *   cellCrowd        in a table row or a ruled list row, a text line or a
- *                    chip closer than 4 px to the row's ruled top or bottom
+ *                    chip closer than 3 px (the kit pads 4, a glyph may
+ *                    overhang its line by 1) to the row's ruled top or bottom
  *                    edge, or across it ("Ransomware" crossing the row's
  *                    bottom border)
  */
@@ -1772,7 +1773,7 @@ export async function findMatrixBreaks(
     }
 
     // ---- cellCrowd: in a table row or a list row drawn between lines, a
-    // text line or a chip closer than 4 px to the row's ruled top or bottom
+    // text line or a chip closer than 3 px to the row's ruled top or bottom
     // edge, or across it (a "Ransomware" chip crossing the row's bottom
     // border, owner 2026-11-27). Only an edge with a line on it counts: the
     // row's own border, or its neighbour's border on that side.
@@ -1783,6 +1784,9 @@ export async function findMatrixBreaks(
       const s = getComputedStyle(el)
       return s[`border${side}Style`] === 'none' ? 0 : parseFloat(s[`border${side}Width`])
     }
+    // The kit pads a cell 4 px; a glyph's box may overhang its line box by
+    // up to 1 px, so content 3 px or more from a ruled edge is clear of it.
+    const CROWD = 3
     const crowdRange = document.createRange()
     for (const root of roots) {
       for (const row of Array.from(root.querySelectorAll('tr, [role=row], li'))) {
@@ -1846,13 +1850,13 @@ export async function findMatrixBreaks(
           if (b.bottom <= rr.top || b.top >= rr.bottom) continue
           const below = Math.round((inBottom - b.bottom) * 10) / 10
           const above = Math.round((b.top - inTop) * 10) / 10
-          if (ruleBottom && below < 4) {
+          if (ruleBottom && below < CROWD) {
             out.cellCrowd.push(
               `${b.what} ${below < 0 ? `${-below}px past` : `${below}px from`} its row's bottom edge (${Math.round(rr.height)}px row)`
             )
             break
           }
-          if (ruleTop && above < 4) {
+          if (ruleTop && above < CROWD) {
             out.cellCrowd.push(
               `${b.what} ${above < 0 ? `${-above}px past` : `${above}px from`} its row's top edge (${Math.round(rr.height)}px row)`
             )

@@ -1580,7 +1580,7 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   buttons, fields with fields: a phone field keeps 16 px text). The layout
   matrix's `sizeMismatch` runs the page-rhythm row probe at every width.
 - A row's content stays inside the row: in a table row or a ruled list row,
-  no text line or chip comes closer than 4 px to a ruled edge or crosses it
+  no text line or chip comes closer than 3 px to a ruled edge or crosses it
   (`cellCrowd`): a chip that would wrap past the row's line folds into "+N"
   or the row grows.
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a

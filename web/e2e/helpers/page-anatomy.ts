@@ -458,6 +458,10 @@ export async function probeRowMix(page: Page, opts: { fonts?: boolean } = {}): P
     const out: { row: string; controls: { name: string; height: number; centre: number }[] }[] = []
     for (const [c, els] of byContainer) {
       if (els.length < 2) continue
+      // The matrix's row check: a fact list (<dl>) lays its facts out by
+      // their own rules (a long value goes under its label); it is not a
+      // toolbar row.
+      if (fonts && c.matches('dl')) continue
       const boxes = els
         .map((el) => ({ el, r: el.getBoundingClientRect() }))
         .sort((a, b) => a.r.top - b.r.top)
