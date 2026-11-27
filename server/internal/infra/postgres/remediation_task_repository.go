@@ -272,7 +272,8 @@ func taskListWhere(tenantID shared.ID, f remediation.TaskFilter, visible string)
 	if f.Scope != nil || (visible != "" && visible != sqlTrue) {
 		// A task is visible through a member the caller may see: in their
 		// asset scope and passing the pentest member rule.
-		memberConds := []string{"sm.tenant_id = t.tenant_id", "sm.task_id = t.id", "sm.left_at IS NULL"}
+		memberConds := []string{"sm.tenant_id = t.tenant_id", "sm.task_id = t.id",
+			"(sm.left_at IS NULL OR (t.state = 'canceled' AND " + canceledHeldSQL("sm") + "))"}
 		if f.Scope != nil {
 			cond, scoped := taskViewScopeCond("sf.asset_id", "sf.id", f.Scope, args)
 			args = scoped
@@ -798,23 +799,37 @@ func (r *RemediationTaskRepository) UpdateTask(ctx context.Context, tenantID, ta
 	return r.GetTask(ctx, tenantID, taskID)
 }
 
+// canceledHeldSQL is "member row alias left its task when the task was
+// canceled": the findings a canceled task held. They are no longer members
+// (they may join another task), but a reader sees the canceled task through
+// them, as they saw it before the cancel.
+func canceledHeldSQL(alias string) string {
+	return alias + ".left_at IS NOT NULL AND " + alias + ".left_reason = '" + string(remediation.LeftReasonCanceled) + "'"
+}
+
 // memberCountsSQL aggregates the active members of tasks; $1 tenant,
 // $2 task ids, $3 closed statuses, $4 claimed-fixed statuses. scopeCond
-// limits the members counted (TRUE for all).
+// limits the members counted (TRUE for all). The last column counts, for a
+// canceled task, the findings it held when it was canceled (TaskCounts.Held);
+// every other column counts active members only.
 func memberCountsSQL(scopeCond string) string {
 	return `
 		SELECT tm.task_id,
-		       COUNT(*) FILTER (WHERE tm.role = 'primary'),
-		       COUNT(*) FILTER (WHERE tm.role = 'primary' AND f.status = 'in_progress'),
-		       COUNT(*) FILTER (WHERE tm.role = 'primary' AND f.status = ANY($4::text[])),
-		       COUNT(*) FILTER (WHERE tm.role = 'primary' AND f.status = ANY($3::text[])),
-		       COUNT(*) FILTER (WHERE tm.role = 'primary' AND ` + verifiedFixedSQL + `),
-		       COUNT(*) FILTER (WHERE tm.role = 'related'),
-		       COALESCE(SUM(` + FindingRiskPointsSQL + `) FILTER (WHERE tm.role = 'primary' AND f.status <> ALL($3::text[])), 0),
-		       MIN(f.sla_deadline) FILTER (WHERE tm.role = 'primary' AND f.status <> ALL($3::text[]))
+		       COUNT(*) FILTER (WHERE tm.left_at IS NULL AND tm.role = 'primary'),
+		       COUNT(*) FILTER (WHERE tm.left_at IS NULL AND tm.role = 'primary' AND f.status = 'in_progress'),
+		       COUNT(*) FILTER (WHERE tm.left_at IS NULL AND tm.role = 'primary' AND f.status = ANY($4::text[])),
+		       COUNT(*) FILTER (WHERE tm.left_at IS NULL AND tm.role = 'primary' AND f.status = ANY($3::text[])),
+		       COUNT(*) FILTER (WHERE tm.left_at IS NULL AND tm.role = 'primary' AND ` + verifiedFixedSQL + `),
+		       COUNT(*) FILTER (WHERE tm.left_at IS NULL AND tm.role = 'related'),
+		       COALESCE(SUM(` + FindingRiskPointsSQL + `) FILTER (WHERE tm.left_at IS NULL AND tm.role = 'primary' AND f.status <> ALL($3::text[])), 0),
+		       MIN(f.sla_deadline) FILTER (WHERE tm.left_at IS NULL AND tm.role = 'primary' AND f.status <> ALL($3::text[])),
+		       COUNT(*) FILTER (WHERE tm.left_at IS NOT NULL)
 		FROM remediation_task_members tm
 		JOIN findings f ON f.id = tm.finding_id AND f.tenant_id = tm.tenant_id
-		WHERE tm.tenant_id = $1 AND tm.task_id = ANY($2::uuid[]) AND tm.left_at IS NULL AND ` + scopeCond + `
+		WHERE tm.tenant_id = $1 AND tm.task_id = ANY($2::uuid[])
+		  AND (tm.left_at IS NULL OR (` + canceledHeldSQL("tm") + ` AND EXISTS (
+		       SELECT 1 FROM remediation_tasks ct WHERE ct.tenant_id = tm.tenant_id AND ct.id = tm.task_id AND ct.state = 'canceled')))
+		  AND ` + scopeCond + `
 		GROUP BY tm.task_id`
 }
 
@@ -840,7 +855,7 @@ func memberCounts(ctx context.Context, q rowsQuerier, tenantID shared.ID, taskID
 			c  remediation.TaskCounts
 			dl sql.NullTime
 		)
-		if err := rows.Scan(&id, &c.Total, &c.InProgress, &c.FixApplied, &c.Closed, &c.Verified, &c.Related, &c.RiskPoints, &dl); err != nil {
+		if err := rows.Scan(&id, &c.Total, &c.InProgress, &c.FixApplied, &c.Closed, &c.Verified, &c.Related, &c.RiskPoints, &dl, &c.Held); err != nil {
 			return nil, fmt.Errorf("count task members: %w", err)
 		}
 		c.Open = c.Total - c.InProgress - c.FixApplied - c.Closed
