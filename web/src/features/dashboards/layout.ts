@@ -117,3 +117,77 @@ export function editorSpanClass(columns: number | undefined): string {
       return 'md:[grid-column:var(--span)]'
   }
 }
+
+/**
+ * Wide screens (web/docs/ui-style-contract.md, "Dashboard widgets"): once the
+ * dashboard is 96rem wide (a 1920 px screen with the sidebar) the view lays
+ * widgets on a 12-column grid and packs every run of side-by-side widgets
+ * three to a row, and four to a row from 136rem (a 2560 px screen), so a wide
+ * screen shows more widgets instead of two stretched ones. A run is a series
+ * of neighbours with the same stored width that sit fewer to a row than that;
+ * a full-width widget ends a run and stays full width. A run is split into
+ * rows as evenly as it goes (four widgets three to a row are two rows of two,
+ * never three and a lone one), so no row leaves an empty cell. Order is never
+ * changed. The editor keeps the stored arrangement.
+ */
+export const WIDE_PACK_THREE_REM = 96
+export const WIDE_PACK_FOUR_REM = 136
+
+export interface WidePlacement {
+  /** The widget's `grid-column` on the 12-column grid. */
+  column: string
+  /** Packed into a row of its run: one row tall (its stored height no longer places it). */
+  packed: boolean
+}
+
+/** Where every widget sits on the 12-column grid, its runs packed `perRow` to a row. */
+export function widePackSpans(
+  widgets: ReadonlyArray<{ w: number }>,
+  columns: number | undefined,
+  perRow: number
+): WidePlacement[] {
+  const cols = normalizeColumns(columns)
+  const spans = widgets.map((w) => colSpanFor(w.w, cols))
+  const out: WidePlacement[] = spans.map((s) => ({
+    column: gridColumnOf12((s * BASE_GRID) / cols),
+    packed: false,
+  }))
+  if (cols === 1) return out
+  let i = 0
+  while (i < spans.length) {
+    const s = spans[i]
+    let j = i
+    while (j < spans.length && spans[j] === s) j++
+    const run = j - i
+    // Full-width widgets, and runs already at least `perRow` to a row, keep their place.
+    if (s < cols && cols / s < perRow && run > 1) {
+      const rows = Math.ceil(run / perRow)
+      const base = Math.floor(run / rows)
+      const extra = run % rows
+      let k = i
+      for (let r = 0; r < rows; r++) {
+        const inRow = base + (r < extra ? 1 : 0)
+        for (let c = 0; c < inRow; c++) {
+          out[k++] = { column: gridColumnOf12(BASE_GRID / inRow), packed: true }
+        }
+      }
+    }
+    i = j
+  }
+  return out
+}
+
+function gridColumnOf12(units: number): string {
+  const u = Math.max(1, Math.min(BASE_GRID, Math.round(units)))
+  return `span ${u} / span ${u}`
+}
+
+/** Grid classes of the wide 12-column layout (see `widePackSpans`). */
+export const WIDE_GRID_CLASS = '@[96rem]:grid-cols-12'
+/**
+ * Widget classes of the wide layout. The spans arrive in `--span-wide` /
+ * `--span-wider` and the row spans in `--row-span-wide` / `--row-span-wider`
+ * (`auto` for a packed widget).
+ */
+export const WIDE_WIDGET_CLASS =
+  '@[96rem]:[grid-column:var(--span-wide)] @[96rem]:[grid-row:var(--row-span-wide)] @[136rem]:[grid-column:var(--span-wider)] @[136rem]:[grid-row:var(--row-span-wider)]'

@@ -62,6 +62,14 @@ const LEGEND_PROPS = {
 /** Grid of four headline cards, then the chart sections. */
 export const OVERVIEW_STATS_GRID = 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4'
 export const OVERVIEW_CHARTS_GRID = 'grid grid-cols-1 gap-4 lg:grid-cols-2'
+/**
+ * Two chart cards and the trend: the trend takes its own row (two columns
+ * wide) up to a 2048 px screen, then all three share one row (the trend two
+ * of four columns), so no chart card is stretched over half a wide page.
+ */
+export const OVERVIEW_CHARTS_WITH_TREND_GRID =
+  'grid grid-cols-1 gap-4 lg:grid-cols-2 min-[128rem]:grid-cols-4'
+export const OVERVIEW_TREND_CELL = 'lg:col-span-2'
 
 /** `in_progress` → `In progress`. */
 export function humanize(value: string): string {
@@ -69,8 +77,18 @@ export function humanize(value: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-/** `stats={false}` for the pages that dropped the headline cards. */
-export function OverviewSkeleton({ stats = true }: { stats?: boolean }) {
+/**
+ * `stats={false}` for the pages that dropped the headline cards; `trend` for a
+ * page whose charts row ends with the trend (`OVERVIEW_CHARTS_WITH_TREND_GRID`),
+ * so the skeleton has the page's shape at every width.
+ */
+export function OverviewSkeleton({
+  stats = true,
+  trend = false,
+}: {
+  stats?: boolean
+  trend?: boolean
+}) {
   return (
     <div className="space-y-5">
       {stats && (
@@ -88,9 +106,9 @@ export function OverviewSkeleton({ stats = true }: { stats?: boolean }) {
           ))}
         </div>
       )}
-      <div className={OVERVIEW_CHARTS_GRID}>
-        {[1, 2].map((i) => (
-          <Card key={i}>
+      <div className={trend ? OVERVIEW_CHARTS_WITH_TREND_GRID : OVERVIEW_CHARTS_GRID}>
+        {(trend ? [1, 2, 3] : [1, 2]).map((i) => (
+          <Card key={i} className={i === 3 ? OVERVIEW_TREND_CELL : undefined}>
             <CardHeader>
               <Skeleton className="h-5 w-32" />
               <Skeleton className="h-4 w-48" />
@@ -148,13 +166,15 @@ export function ChartCard({
   title,
   description,
   children,
+  className,
 }: {
   title: string
   description?: ReactNode
   children: ReactNode
+  className?: string
 }) {
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         {description && <CardDescription>{description}</CardDescription>}
