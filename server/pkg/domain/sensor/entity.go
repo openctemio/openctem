@@ -479,13 +479,18 @@ func (a *Sensor) Activate() {
 func (a *Sensor) Disable(reason string) {
 	a.Status = SensorStatusDisabled
 	a.StatusMessage = reason
+	a.Health = SensorHealthOffline // it can no longer authenticate, so no heartbeat can arrive
 	a.UpdatedAt = time.Now()
 }
 
-// Revoke revokes the sensor access.
+// Revoke revokes the sensor access. Its health is offline from now on: a
+// revoked sensor cannot authenticate, so its last heartbeat no longer says
+// it is reachable (it used to keep reporting "online" until the health
+// controller next looked at it).
 func (a *Sensor) Revoke(reason string) {
 	a.Status = SensorStatusRevoked
 	a.StatusMessage = reason
+	a.Health = SensorHealthOffline
 	a.UpdatedAt = time.Now()
 }
 
