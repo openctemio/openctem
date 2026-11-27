@@ -1553,6 +1553,14 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   (`.recharts-responsive-container`), a zoomable canvas (`.react-flow`,
   `[data-layout-canvas]`) and the shared empty state
   (`[data-slot="empty-state"]`, which centres itself in the room it is given).
+- A notice takes its own room in the page and scrolls away with it. A notice
+  (`role=alert` or `status`, `[data-slot="alert"]`, a shell banner) that stays
+  while the page scrolls, outside the page scroller above it or pinned inside
+  it, fails the layout matrix's `underPinned` detector, and so does text under
+  a sticky or fixed layer that can never be scrolled out from under it (a bar
+  at the top over the page's first lines, a bar at the bottom over its last
+  lines: keep the bar's height as padding). A sticky toolbar or table header
+  over text the page has scrolled past passes.
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a
   fixed column count without breakpoints.
 - `e2e/specs/75a-layout-breaks-lists.spec.ts` (and 75b settings, 75c shell, 75d detail) check the lists and their overlays at
