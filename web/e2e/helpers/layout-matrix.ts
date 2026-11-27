@@ -78,6 +78,10 @@ import { submitSignIn } from './auth'
  *                    (probeRowMix of helpers/page-anatomy.ts with `fonts`, on
  *                    the page, not over an overlay): "All severities" wrapped
  *                    taller than the search beside it
+ *   cellCrowd        in a table row or a ruled list row, a text line or a
+ *                    chip closer than 4 px to the row's ruled top or bottom
+ *                    edge, or across it ("Ransomware" crossing the row's
+ *                    bottom border)
  */
 
 export type MatrixBreaks = {
@@ -95,6 +99,7 @@ export type MatrixBreaks = {
   tallControl: string[]
   pastEdge: string[]
   sizeMismatch: string[]
+  cellCrowd: string[]
 }
 
 export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
@@ -112,6 +117,7 @@ export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
   'tallControl',
   'pastEdge',
   'sizeMismatch',
+  'cellCrowd',
 ]
 
 /** Widths of the v2 matrix with the height of their device class. */
@@ -648,6 +654,7 @@ export async function findMatrixBreaks(
       pastEdge: [] as string[],
       // Filled by the matrix run (probeRowMix with fonts, helpers/page-anatomy.ts).
       sizeMismatch: [] as string[],
+      cellCrowd: [] as string[],
     }
     const roots = Array.from(document.querySelectorAll(scope))
     if (!roots.length) return out
@@ -1707,6 +1714,83 @@ export async function findMatrixBreaks(
           out.pastEdge.push(
             `control "${nameOf(c)}" ${past}px past the ${r.right > edgeR ? (edgeR === vw ? 'window' : 'page column') : 'start'} edge`
           )
+      }
+    }
+
+    // ---- cellCrowd: in a table row or a list row drawn between lines, a
+    // text line or a chip closer than 4 px to the row's ruled top or bottom
+    // edge, or across it (a "Ransomware" chip crossing the row's bottom
+    // border, owner 2026-11-27). Only an edge with a line on it counts: the
+    // row's own border, or its neighbour's border on that side.
+    const CHIP =
+      '[data-slot="badge"], [data-slot="signal-chip"], [data-slot="status-lozenge"], [data-slot="severity-badge"]'
+    const bw = (el: Element | null, side: 'Top' | 'Bottom') => {
+      if (!el) return 0
+      const s = getComputedStyle(el)
+      return s[`border${side}Style`] === 'none' ? 0 : parseFloat(s[`border${side}Width`])
+    }
+    const crowdRange = document.createRange()
+    for (const root of roots) {
+      for (const row of Array.from(root.querySelectorAll('tr, [role=row], li'))) {
+        if (!shown(row) || row.closest('.react-flow, [data-layout-canvas]')) continue
+        // A header row is laid out by its own rules; a row in a sideways
+        // scroller still has its own height.
+        if (row.closest('thead')) continue
+        const rr = row.getBoundingClientRect()
+        if (rr.height < 16) continue
+        // The row's box: a table row's cells may draw the line.
+        const cell = row.matches('tr') ? row.querySelector('td, th') : null
+        const ruleTop =
+          bw(row, 'Top') > 0 || bw(cell, 'Top') > 0 || bw(row.previousElementSibling, 'Bottom') > 0
+        const ruleBottom =
+          bw(row, 'Bottom') > 0 ||
+          bw(cell, 'Bottom') > 0 ||
+          bw(row.nextElementSibling, 'Top') > 0 ||
+          // A divide-y list rules every row but the last from above.
+          (!!row.nextElementSibling && bw(row.nextElementSibling, 'Top') > 0)
+        if (!ruleTop && !ruleBottom) continue
+        const boxes: { top: number; bottom: number; what: string }[] = []
+        for (const chip of Array.from(row.querySelectorAll(CHIP))) {
+          if (!shown(chip) || chip.closest('tr, [role=row], li') !== row) continue
+          const r = chip.getBoundingClientRect()
+          boxes.push({
+            top: r.top,
+            bottom: r.bottom,
+            what: `chip "${short(chip.textContent, 30)}"`,
+          })
+        }
+        const tw = document.createTreeWalker(row, NodeFilter.SHOW_TEXT)
+        for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+          const host = n.parentElement
+          if (!host || !(n.textContent ?? '').trim() || hidden(host)) continue
+          if (host.closest('tr, [role=row], li') !== row || host.closest(CHIP)) continue
+          crowdRange.selectNodeContents(n)
+          for (const b of Array.from(crowdRange.getClientRects())) {
+            if (b.width < 1 || b.height < 1) continue
+            boxes.push({ top: b.top, bottom: b.bottom, what: `text "${short(n.textContent, 30)}"` })
+          }
+        }
+        const inTop = rr.top + bw(row, 'Top')
+        const inBottom = rr.bottom - bw(row, 'Bottom')
+        for (const b of boxes) {
+          // Wholly outside the row (a popover anchored to it, a row cut by
+          // its scroller): not the row's own content.
+          if (b.bottom <= rr.top || b.top >= rr.bottom) continue
+          const below = Math.round((inBottom - b.bottom) * 10) / 10
+          const above = Math.round((b.top - inTop) * 10) / 10
+          if (ruleBottom && below < 4) {
+            out.cellCrowd.push(
+              `${b.what} ${below < 0 ? `${-below}px past` : `${below}px from`} its row's bottom edge (${Math.round(rr.height)}px row)`
+            )
+            break
+          }
+          if (ruleTop && above < 4) {
+            out.cellCrowd.push(
+              `${b.what} ${above < 0 ? `${-above}px past` : `${above}px from`} its row's top edge (${Math.round(rr.height)}px row)`
+            )
+            break
+          }
+        }
       }
     }
 
