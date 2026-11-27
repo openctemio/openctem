@@ -1907,8 +1907,7 @@ func (s *IntegrationService) DisableIntegration(ctx context.Context, id string, 
 		return nil, integrationdom.ErrIntegrationNotFound
 	}
 
-	intg.SetStatus(integrationdom.StatusDisabled)
-	intg.SetStatusMessage("Disabled by user at " + time.Now().Format(time.RFC3339))
+	intg.SetDisabledByUser(time.Now())
 
 	if err := s.repo.Update(ctx, intg); err != nil {
 		return nil, fmt.Errorf("update integration: %w", err)
