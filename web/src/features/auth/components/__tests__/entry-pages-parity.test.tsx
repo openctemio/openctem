@@ -167,7 +167,8 @@ describe('one h1 per entry page and state', () => {
       error: 'failed',
     } as Awaited<ReturnType<typeof startSessionMfaAction>>)
     render(<TwoFactorSetup />)
-    expect(h1s().map((h) => h.textContent)).toEqual(['Set up two-factor authentication'])
+    // Neutral until the API says whether it is setup or only a code.
+    expect(h1s().map((h) => h.textContent)).toEqual(['Two-factor authentication'])
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
     expect(h1s()).toHaveLength(1)
   })

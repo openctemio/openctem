@@ -22,6 +22,7 @@
   "org.acceptInvite.incomplete": "This invitation link is incomplete. Open the link from your invitation email again.",
   "org.acceptInvite.joinedMfaBody": "Set up two-factor authentication to open it.",
   "org.acceptInvite.joinedMfaTitle": "You have joined {org}",
+  "org.acceptInvite.joinedMfaVerifyBody": "Enter your two-factor code to open it.",
   "org.acceptInvite.joinedOrg": "You joined {org}.",
   "org.acceptInvite.linkProblemTitle": "This invitation link does not work",
   "org.acceptInvite.loadFailed": "The invitation could not be loaded. Try again.",
