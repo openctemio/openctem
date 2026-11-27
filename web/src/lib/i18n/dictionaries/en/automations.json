@@ -206,7 +206,7 @@
   "automations.runs.successRate": "({rate}% success)",
   "automations.save.actions": "Actions: {n}",
   "automations.save.conditions": "Conditions: {n}",
-  "automations.save.description": "Save your workflow design. The workflow will include {nodes} node(s) and {edges} connection(s).",
+  "automations.save.description": "Save your workflow design. The workflow will include {nodes, plural, one {# node} other {# nodes}} and {edges, plural, one {# connection} other {# connections}}.",
   "automations.save.notifications": "Notifications: {n}",
   "automations.save.submit": "Save workflow",
   "automations.save.summary": "Workflow summary",

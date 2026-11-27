@@ -426,7 +426,7 @@ export function RetirePipelineDialog({
           toast.success(
             t(
               'scans.ci.sheet.retiredToast',
-              'Pipeline retired; {count} finding(s) closed as source retired',
+              'Pipeline retired; {count, plural, one {# finding} other {# findings}} closed as source retired',
               { count: n }
             )
           )

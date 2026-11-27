@@ -370,9 +370,13 @@ export default function ApprovalsPage() {
       setActionInProgress(approval.id)
       try {
         const res = await remindApprovers(approval.id)
-        const reminded = t('findings.approvals.toast.reminded', 'Reminded {count} approver(s)', {
-          count: res?.reminded ?? 0,
-        })
+        const reminded = t(
+          'findings.approvals.toast.reminded',
+          'Reminded {count, plural, one {# approver} other {# approvers}}',
+          {
+            count: res?.reminded ?? 0,
+          }
+        )
         announce(reminded)
         toast.success(reminded)
       } catch (err) {

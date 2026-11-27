@@ -107,7 +107,7 @@ export function OffboardMemberDialog({
       toast.success(
         t(
           'org.lifecycle.offboarded',
-          '{name} offboarded: {keys} key(s) revoked, {serviceKeys} service account key(s) revoked, {groups} group(s) removed',
+          '{name} offboarded: {keys, plural, one {# key} other {# keys}} revoked, {serviceKeys, plural, one {# service account key} other {# service account keys}} revoked, {groups, plural, one {# group} other {# groups}} removed',
           {
             name,
             keys: res.revoked_keys,
