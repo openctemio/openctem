@@ -41,6 +41,12 @@ var ErrPrivilegedTeamOwnerOnly = fmt.Errorf("%w: only the owner changes a team t
 // ErrSelfJoinRoleTeam refuses adding oneself to a team that carries roles.
 var ErrSelfJoinRoleTeam = fmt.Errorf("%w: you cannot add yourself to a team that carries roles", ErrGrantForbidden)
 
+// ErrSelfMemberRoleTeam refuses a non-owner giving roles to a team they are a
+// member of (adding presets, or turning on a team that carries roles): it
+// would raise their own access. A team's creator joins it as its owner, so
+// the creator meets this rule on their own new team.
+var ErrSelfMemberRoleTeam = fmt.Errorf("%w: you are a member of this team, so giving it roles would raise your own access", ErrGrantForbidden)
+
 // WithRoleBindings enables team role bindings: the binding store and the role
 // service whose grant ceiling, step-up gate and cache invalidation they use.
 func WithRoleBindings(bindings groupdom.RoleBindingRepository, roles *RoleService) GroupServiceOption {
@@ -444,7 +450,7 @@ func (s *GroupService) authorizeActiveFlip(ctx context.Context, g *groupdom.Grou
 		if want && !a.system && !a.owner {
 			for _, m := range members {
 				if m.String() == a.id {
-					return nil, ErrSelfJoinRoleTeam
+					return nil, ErrSelfMemberRoleTeam
 				}
 			}
 		}
