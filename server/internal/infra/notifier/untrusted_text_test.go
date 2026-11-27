@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/openctemio/openctem/server/pkg/notifymsg"
 )
 
 // attackerText is finding/exposure content an attacker controls (a scanned
@@ -119,4 +121,39 @@ func TestEmail_UntrustedTextIsHTMLEscaped(t *testing.T) {
 	require.NotContains(t, html, `<a href="https://evil.example">`)
 	require.NotContains(t, html, `<script>alert(1)`)
 	require.Contains(t, html, `href="https://app.openctem.test/findings/123"`)
+}
+
+// Mail clients turn a bare URL or mailto: in either alternative into a link.
+// Untrusted text (a scanned title, an AI summary) has its URLs defanged in
+// the plain-text and the HTML body; the notification's own link and a card's
+// action stay clickable.
+func TestEmail_UntrustedURLsAreNotAutolinked(t *testing.T) {
+	c := &EmailClient{config: EmailConfig{}}
+	m := Message{
+		Title:  "AI summary: see https://evil.example/login",
+		Body:   "Reset at https://evil.example/reset or mailto:help@evil.example",
+		URL:    "https://app.openctem.test/findings/123",
+		Fields: map[string]string{"Next step": "open http://evil.example/x"},
+	}
+	m = defangEmailMessage(m)
+	text := c.buildTextEmail(m)
+	html, err := c.buildHTMLEmail(m)
+	require.NoError(t, err)
+	for _, body := range []string{text, html} {
+		require.NotContains(t, body, "https://evil.example")
+		require.NotContains(t, body, "http://evil.example")
+		require.NotContains(t, body, "mailto:help")
+		require.Contains(t, body, "https://app.openctem.test/findings/123")
+	}
+	require.Contains(t, text, "https[:]//evil.example/reset")
+
+	card := notifymsg.Card{
+		Headline: "AI triage: see https://evil.example/a",
+		What:     "Visit https://evil.example/b",
+		Action:   notifymsg.Action{Label: "Open finding", URL: "https://app.openctem.test/findings/9"},
+	}
+	cm := defangEmailMessage(Message{Card: &card})
+	text = c.buildTextEmail(cm)
+	require.NotContains(t, text, "https://evil.example")
+	require.Contains(t, text, card.Action.URL)
 }
