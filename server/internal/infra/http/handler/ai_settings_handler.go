@@ -327,7 +327,7 @@ func (h *AISettingsHandler) UpdateAutoTriage(w http.ResponseWriter, r *http.Requ
 	v, err := store.SaveAutoTriage(r.Context(), tenantID,
 		tenant.AutoTriagePolicy{Enabled: req.Enabled, Severities: req.Severities, DelaySeconds: req.DelaySeconds}, h.actx(r))
 	if err != nil {
-		if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
+		if middleware.WriteStepUpError(w, aiStepUpErr(err), authapp.StepUpWindow) {
 			return
 		}
 		h.fail(w, err)
