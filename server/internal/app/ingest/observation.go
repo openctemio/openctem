@@ -49,6 +49,36 @@ func findingObservedAt(f *ctis.Finding, fallback, now time.Time) time.Time {
 	return t
 }
 
+// reportedFirstSeen is when the producer says it first saw f (its
+// first_seen_at), bounded: a time after now counts as now (a producer clock
+// ahead of ours, or a claim that would keep the finding new), and a time
+// before earliestLastSeen (2000-01-01) is not a time but a parse accident
+// (an epoch, a zero value in another unit) and is ignored. ok is false when
+// there is no usable claim.
+func reportedFirstSeen(f *ctis.Finding, now time.Time) (time.Time, bool) {
+	if f == nil || f.FirstSeenAt == nil {
+		return time.Time{}, false
+	}
+	t := f.FirstSeenAt.UTC()
+	if t.Before(earliestLastSeen) {
+		return time.Time{}, false
+	}
+	if t.After(now) {
+		t = now
+	}
+	return t, true
+}
+
+// applyReportedFirstSeen records the producer's bounded first-seen time on
+// a finding built from the report: first detection moves earlier to it, and
+// the claim is kept as producer-supplied (the platform's own receipt stays
+// in created_at).
+func applyReportedFirstSeen(out *vulnerability.Finding, f *ctis.Finding, now time.Time) {
+	if t, ok := reportedFirstSeen(f, now); ok {
+		out.ReportedFirstSeen(t)
+	}
+}
+
 // groupByObservedAt splits fingerprints by the time each was observed, in
 // the order the times first appear (a reopen compares that time with when
 // the finding was closed).

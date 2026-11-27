@@ -591,6 +591,8 @@ func (p *FindingProcessor) processBatch(
 	unenrichedFingerprints := make([]string, 0)          // Fingerprints where buildFinding failed
 	existingSnippets := make(map[string]string)          // Track snippets for existing findings
 
+	// When the producer says it first saw each finding (observation.go).
+	now := time.Now().UTC()
 	// When the file saw each finding (an upload; observation.go).
 	observed := validFindingTimes(validFindings, func(fm findingMeta) (string, *ctis.Finding) {
 		return fm.fingerprint, &fm.finding
@@ -614,6 +616,7 @@ func (p *FindingProcessor) processBatch(
 			if err == nil {
 				applyIdentityToFinding(newData, fm.identity, &fm.finding)
 				newData.ObservedAt(observed[fm.fingerprint])
+				applyReportedFirstSeen(newData, &fm.finding, now)
 				existingNewData = append(existingNewData, newData)
 			} else {
 				// buildFinding failed — fall back to scan-id-only update for this fingerprint
@@ -624,6 +627,7 @@ func (p *FindingProcessor) processBatch(
 			if err == nil {
 				applyIdentityToFinding(f, fm.identity, &fm.finding)
 				f.ObservedAt(observed[fm.fingerprint])
+				applyReportedFirstSeen(f, &fm.finding, now)
 			}
 			if err != nil {
 				addError(output, fmt.Sprintf("finding %d: %v", fm.index, err))
