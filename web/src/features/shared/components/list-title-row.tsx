@@ -252,6 +252,8 @@ export function ListTitleRow({
   /**
    * The name is said to assistive technology only: for a list whose selected
    * tab already shows its name and count, so the row does not repeat them.
+   * A row that draws a count shows its name too: a count never stands alone
+   * on a line ("4" over the toolbar says nothing).
    */
   titleHidden?: boolean
   /** The row element (a page reads its width to fold its actions). */
@@ -267,6 +269,7 @@ export function ListTitleRow({
   // (`{!isPhone && <Refresh />}`) or a start that appears later (a Modified
   // mark) still keeps the row, so the toolbar never moves.
   const metaOnly = start == null && children == null
+  const nameHidden = titleHidden && !count
   // Nothing to draw (a hidden name, no count, nothing after it, no actions):
   // the heading stays for assistive technology and the row takes no room, so
   // the page never shows an empty line.
@@ -297,8 +300,8 @@ export function ListTitleRow({
         <h2
           data-testid={titleTestId}
           data-cut-tooltip=""
-          className={titleHidden ? 'sr-only' : 'min-w-0 truncate text-sm font-medium'}
-          title={!titleHidden && typeof title === 'string' ? title : undefined}
+          className={nameHidden ? 'sr-only' : 'min-w-0 truncate text-sm font-medium'}
+          title={!nameHidden && typeof title === 'string' ? title : undefined}
         >
           {title}
         </h2>
