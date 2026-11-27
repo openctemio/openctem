@@ -90,6 +90,8 @@ export const MATRIX_V2: { width: number; height: number }[] = [
   { width: 1280, height: 900 },
   { width: 1440, height: 900 },
   { width: 1920, height: 1080 },
+  // A 2560 x 1440 screen at 125 % (a 25 to 27 inch desktop).
+  { width: 2048, height: 1152 },
   { width: 2560, height: 1440 },
 ]
 
