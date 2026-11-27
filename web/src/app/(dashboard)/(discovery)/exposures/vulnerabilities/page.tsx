@@ -52,7 +52,7 @@ function OverviewTab() {
       />
     )
 
-  if (dashboardLoading || typeLoading) return <OverviewSkeleton />
+  if (dashboardLoading || typeLoading) return <OverviewSkeleton stats={false} trend />
 
   if (typeStats.total === 0)
     return (
@@ -105,20 +105,20 @@ function OverviewTab() {
         <ChartCard
           className={OVERVIEW_TREND_CELL}
           title={t('exposures.type.findingTrend', 'Finding trend')}
-        description={t(
-          'exposures.type.trendDescription',
-          'Severity over time across all findings (a per-type trend is not available yet)'
-        )}
-      >
-        <SeverityTrend
-          data={stats.findingTrend}
-          height={350}
-          emptyDescription={t(
-            'exposures.vulnerabilities.trendEmpty',
-            'Run scans to start tracking vulnerability trends.'
+          description={t(
+            'exposures.type.trendDescription',
+            'Severity over time across all findings (a per-type trend is not available yet)'
           )}
-        />
-      </ChartCard>
+        >
+          <SeverityTrend
+            data={stats.findingTrend}
+            height={350}
+            emptyDescription={t(
+              'exposures.vulnerabilities.trendEmpty',
+              'Run scans to start tracking vulnerability trends.'
+            )}
+          />
+        </ChartCard>
       </div>
     </PageStack>
   )

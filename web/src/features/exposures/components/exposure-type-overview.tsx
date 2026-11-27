@@ -77,8 +77,18 @@ export function humanize(value: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-/** `stats={false}` for the pages that dropped the headline cards. */
-export function OverviewSkeleton({ stats = true }: { stats?: boolean }) {
+/**
+ * `stats={false}` for the pages that dropped the headline cards; `trend` for a
+ * page whose charts row ends with the trend (`OVERVIEW_CHARTS_WITH_TREND_GRID`),
+ * so the skeleton has the page's shape at every width.
+ */
+export function OverviewSkeleton({
+  stats = true,
+  trend = false,
+}: {
+  stats?: boolean
+  trend?: boolean
+}) {
   return (
     <div className="space-y-5">
       {stats && (
@@ -96,9 +106,9 @@ export function OverviewSkeleton({ stats = true }: { stats?: boolean }) {
           ))}
         </div>
       )}
-      <div className={OVERVIEW_CHARTS_GRID}>
-        {[1, 2].map((i) => (
-          <Card key={i}>
+      <div className={trend ? OVERVIEW_CHARTS_WITH_TREND_GRID : OVERVIEW_CHARTS_GRID}>
+        {(trend ? [1, 2, 3] : [1, 2]).map((i) => (
+          <Card key={i} className={i === 3 ? OVERVIEW_TREND_CELL : undefined}>
             <CardHeader>
               <Skeleton className="h-5 w-32" />
               <Skeleton className="h-4 w-48" />

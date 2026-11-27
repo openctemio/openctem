@@ -433,48 +433,48 @@ export default function ExecutiveSummaryPage() {
           ) : processMetrics ? (
             <MetricRowList
               rows={[
-                    {
-                      key: 'approval',
-                      notMeasuredLabel,
-                      label: t('insights.executive.approvalAvg', 'Average approval time'),
-                      value:
-                        processMetrics.approval_count > 0
-                          ? formatHours(processMetrics.approval_avg_hours)
-                          : null,
-                      caption:
-                        processMetrics.approval_count > 0
-                          ? t('insights.executive.approvalsTracked', '{count} approvals tracked', {
-                              count: formatCount(processMetrics.approval_count, locale),
-                            })
-                          : t('dashboardMetrics.executive.noApprovals', 'No approvals decided yet'),
-                    },
-                    {
-                      key: 'stale',
-                      notMeasuredLabel,
-                      label: t('insights.executive.stale', 'Stale assets'),
-                      value: formatCount(processMetrics.stale_assets, locale),
-                      caption: t('insights.executive.ofInventory', '{pct} of inventory', {
-                        pct: formatPct(processMetrics.stale_assets_pct, { locale }),
-                      }),
-                    },
-                    {
-                      key: 'no-owner',
-                      notMeasuredLabel,
-                      label: t('insights.executive.noOwner', 'Findings without owner'),
-                      value: formatCount(processMetrics.findings_without_owner, locale),
-                      caption: t('insights.executive.needTriage', 'Need triage assignment'),
-                    },
-                    {
-                      key: 'assign',
-                      notMeasuredLabel,
-                      label: t('insights.executive.timeToAssign', 'Average time to assign'),
-                      value: formatHours(processMetrics.avg_time_to_assign_hours),
-                      caption: t(
-                        'insights.executive.timeToAssignHint',
-                        'From finding creation to owner assignment'
-                      ),
-                    },
-                  ]}
+                {
+                  key: 'approval',
+                  notMeasuredLabel,
+                  label: t('insights.executive.approvalAvg', 'Average approval time'),
+                  value:
+                    processMetrics.approval_count > 0
+                      ? formatHours(processMetrics.approval_avg_hours)
+                      : null,
+                  caption:
+                    processMetrics.approval_count > 0
+                      ? t('insights.executive.approvalsTracked', '{count} approvals tracked', {
+                          count: formatCount(processMetrics.approval_count, locale),
+                        })
+                      : t('dashboardMetrics.executive.noApprovals', 'No approvals decided yet'),
+                },
+                {
+                  key: 'stale',
+                  notMeasuredLabel,
+                  label: t('insights.executive.stale', 'Stale assets'),
+                  value: formatCount(processMetrics.stale_assets, locale),
+                  caption: t('insights.executive.ofInventory', '{pct} of inventory', {
+                    pct: formatPct(processMetrics.stale_assets_pct, { locale }),
+                  }),
+                },
+                {
+                  key: 'no-owner',
+                  notMeasuredLabel,
+                  label: t('insights.executive.noOwner', 'Findings without owner'),
+                  value: formatCount(processMetrics.findings_without_owner, locale),
+                  caption: t('insights.executive.needTriage', 'Need triage assignment'),
+                },
+                {
+                  key: 'assign',
+                  notMeasuredLabel,
+                  label: t('insights.executive.timeToAssign', 'Average time to assign'),
+                  value: formatHours(processMetrics.avg_time_to_assign_hours),
+                  caption: t(
+                    'insights.executive.timeToAssignHint',
+                    'From finding creation to owner assignment'
+                  ),
+                },
+              ]}
             />
           ) : (
             <EmptyState
