@@ -333,3 +333,19 @@ describe('MetricStrip over a list', () => {
     }
   })
 })
+
+describe('MetricStrip on a wide screen', () => {
+  it('stops each tile at 28rem from a 96rem strip, so two numbers do not stretch over 2,000 px', () => {
+    const { container } = render(
+      <MetricStrip
+        items={[
+          { key: 'a', label: 'A', value: 1 },
+          { key: 'b', label: 'B', value: 2 },
+        ]}
+      />
+    )
+    const strip = container.querySelector('[data-slot="metric-strip"]') as HTMLElement
+    expect(strip.className).toContain('@min-[96rem]:max-w-[calc(var(--metric-cols)*28rem)]')
+    expect(strip.style.getPropertyValue('--metric-cols')).toBe('2')
+  })
+})
