@@ -8,6 +8,191 @@ with images, checksums and upgrade commands, are on
 
 Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/README.md) and folded in here at release.
 
+## v0.25.1 (2026-11-27)
+
+### Security: the hourly re-authentication of bulk dismiss holds under parallel requests
+
+- Bulk dismiss asks for a recent sign-in after 25 findings an hour. Several requests at the same moment could each see the old count; the hour is now counted again when the dismissals are reserved.
+- Docs: none (the limit and its message are unchanged)
+
+### Security: the gateway and all-in-one images carry Caddy 2.11.9 and patched dependencies
+
+- The gateway (`openctem-gateway`) and the all-in-one image now build Caddy 2.11.9 (was 2.11.4) and, in the gateway, caddy-l4 0.1.3. This fixes the hop-by-hop header handling advisory GO-2026-6874 in Caddy itself.
+- The Caddy build also raises `golang.org/x/net` to 0.62.0, `github.com/klauspost/compress` to 1.20.2 and the OpenTelemetry modules to 1.47.0. That fixes the advisories the release image scan and govulncheck reported against the Caddy binary: CVE-2026-116587 (go-jose, through the newer Caddy release), CVE-2026-63209 and GO-2026-6865 (compress), CVE-2026-78661 (x/net), and GO-2026-6975, GO-2026-6974, GO-2026-6615, GO-2026-6508 and GO-2026-6505 (OpenTelemetry).
+- The Caddyfile is unchanged and adapts the same with the new release.
+- Docs: none (image build only, no configuration or behaviour change)
+
+### Security: integration URLs are checked by the same address guard as outgoing requests
+
+- An integration's base URL typed as an address (`https://100.64.0.1`, a NAT64 or 6to4 form of an internal address, the IETF protocol range) was checked against a shorter list than the guarded HTTP client uses, so it was accepted and only failed when called. It is now refused at once by the same guard, as a host name resolving there already was. Private ranges an operator opened stay open, as at dial time.
+- A host name that does not resolve is now reported as "URL host does not resolve" instead of "resolves to a blocked address".
+- Documentation ranges (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24, 2001:db8::/32) stay allowed everywhere, as the shared address scope defines them.
+- Docs: none (the egress policy documented in the security guide is unchanged; this applies it at validation time too)
+
+### Security: an AI assistant's write runs exactly what the person confirmed
+
+- A write tool of the AI assistant connection (MCP) now reads its arguments strictly: argument names must match the tool's names exactly and appear once. The confirmation, the summary the person approves and the action all use the same arguments, so a call cannot show one action and run another.
+- Docs: none (AI assistants that send the documented argument names are unaffected)
+
+### Security: the Paths tab shows only findings the viewer may read
+
+- The path tree of a web origin listed the open findings on each path to anyone who could read the asset. It now shows findings only to a viewer with permission to read findings, under the same member visibility rule as the findings list.
+- Docs: none (no setting changes; roles that read findings see the same tree)
+
+### Added: layout matrix flags notices that stay while the page scrolls
+
+- New detector kind `underPinned` in `web/e2e/helpers/layout-matrix.ts`: a notice (`role=alert|status`, `[data-slot=alert]`, a shell banner) that does not move while the page scroller does, and text covered by a sticky or fixed layer that can never be scrolled out from under it (at the top, at the end, or under a notice at any scroll). Self-tests in `web/e2e/specs/75-layout-matrix-under-pinned.spec.ts`.
+- Docs: web/docs/ui-style-contract.md
+
+### Changed: the layout matrix also checks a 2048 px wide screen
+
+- The viewport matrix gains 2048 x 1152, a 2560 x 1440 desktop (25 to 27 inch) at 125 % zoom, between 1920 and 2560. A route checked with all widths now runs it in light and dark, English and Vietnamese, like the other wide screens.
+- Docs: none (the acceptance standard in the maintainers' notes lists the widths).
+
+### Fixed: approval requests list shows its count with its name, no focus frame at rest, and a cut justification ends in an ellipsis
+
+- A list title row that draws a count now always draws the view's name beside it, so a lone number never sits on its own line above the toolbar (Approval requests under a status other than Pending).
+- A tab panel that holds controls (a list's toolbar and table) is no keyboard stop and draws no focus ring around the whole panel; its controls keep their own rings.
+- Approval requests: a long justification in a table row ends in an ellipsis with the full text on hover and focus, instead of being cut mid-word.
+- Docs: none (presentation of an existing page; no behaviour, request or wording of the API changes)
+
+### Fixed: the asset lifecycle can be turned on right after a dry run
+
+- `PUT /tenants/{tenant}/settings/asset-lifecycle` with `enabled: true` was refused ("cannot be enabled without a successful dry-run first") unless the client copied `dry_run_completed_at` back into the body: the handler checked the body before the server merged its own dry-run record. The body is now checked for its values only, and the dry-run rule reads the tenant's stored record, so enabling works after `POST .../asset-lifecycle/dry-run`. A timestamp in the body is still ignored, and a tenant without a dry run of its own is still refused.
+- Docs: server/docs/architecture/asset-liveness.md
+
+### Fixed: the business services list no longer fails for administrators in organizations with private programs
+
+- `GET /business-services` answered 500 (and editing a service or listing its assets answered 404) for an administrator or full-data role from whom private program assets are hidden: the visibility query was sent the arguments of the asset count it did not contain. Each query now gets only the arguments it uses. Who sees which service is unchanged: a restricted reader still sees only services linked to an asset in their scope, and another organization's service still answers 404.
+- Docs: none (a query fix; the documented visibility rules are unchanged)
+
+### Fixed: the console sign-in says when the temporary password must be changed
+
+- `POST /admin/auth/mfa` and the security key and recovery code sign-in steps always answered `password_change_required: false`, while every console route then refused the session with `PASSWORD_CHANGE_REQUIRED`. They now read the new session the way the console gate does and answer `password_change_required`, `factor_enrollment_required` and `auth_method` truthfully, so the console goes straight to the change-password step.
+- Docs: none (the field was already documented on `GET /admin/auth/validate`; this makes the sign-in answer match it)
+
+### Fixed: leaked credentials without an asset can be opened and triaged by every caller who lists them
+
+- An administrator (or a full-data role holder) from whom a private bug-bounty program asset is hidden saw leaked credentials that have no asset in `GET /api/v1/credentials`, but `GET /api/v1/credentials/{id}` and `POST /api/v1/credentials/{id}/resolve`, `/accept`, `/false-positive` answered 404 for them. The by-id reads and actions now apply the list's rule: a row with no asset is visible to every caller whose data scope is not restricted, and stays hidden from a restricted member. The same fix applies to `GET /api/v1/exposures/{id}` and its actions, which share the rule.
+- Another tenant's credential, one on an asset outside the caller's scope and one on a hidden program asset still answer 404.
+- `GET /api/v1/credentials/{id}` for an unknown id says "Credential not found" instead of "credential not found not found".
+- Docs: none (by-id access now matches the documented data-scope rule in server/docs/architecture/authorization-matrix.md; no new behaviour)
+
+### Fixed: a sensor report the CTIS validator refuses names each problem
+
+- `PUT /api/v2/sensor/results/{id}` answered every CTIS validation failure with one item error, an empty
+  pointer and "the value is not allowed here"; the reason was only in the server log. The 422 now lists one
+  item error per problem, with the JSON pointer of the member (for example `/assets/29/technical/identity/kind`,
+  `/tool/techniques/0`) and a code (`required`, `too_many`, `invalid_value`) with its fixed detail. Details
+  still never quote the document.
+- Docs: server/docs/architecture/sensors.md
+
+### Fixed: a scanned host linked to a known address keeps its own asset and name
+
+- A host a report names (for example `srv-web-00.corp.example.net`) with a `has_address` relationship to an
+  address the organization already records as an IP address asset was merged into that address asset: the
+  host's name was lost and the scanner's findings landed on the address. IP matching now matches a host only
+  to a host and an address only to an address, so the host is its own asset that contains the address, and its
+  findings stay on it. Hosts already merged this way are not split; the next scan of the host creates it.
+- Docs: server/docs/architecture/asset-identity-resolution.md
+
+### Fixed: a finding is first detected when its scanner first saw it
+
+- Ingest ignored a finding's CTIS `first_seen_at`, so every finding of a first import looked detected today. A
+  finding is now first detected at the producer's first-seen time, bounded: a time in the future counts as now, a
+  time before 2000-01-01 is ignored. First detection only moves earlier, also on a re-sighting of an existing
+  finding, never later. The SLA clock starts at the first detection, as before.
+- The producer's claim is kept as producer-supplied (new column `findings.first_detected_reported_at`, migration
+  `20261127112618_findings_first_detected_reported_at`, nullable, no rewrite); the platform's own receipt time
+  stays in `created_at`.
+- Docs: server/docs/architecture/ctis-receiver.md
+
+### Fixed: e-mail channel errors on create, and a slow relay no longer ends in 504
+
+- `POST /integrations/notifications` (and the update) with e-mail credentials that are not the JSON object of the relay settings, for example a bare address, answered 500. It now answers 400 `BAD_REQUEST` naming the expected fields (`smtp_host`, `smtp_port`, `from_email`, `to_emails`).
+- The connection test that runs on create and update (and on `POST /integrations/{id}/test-notification`) is bounded to 15 seconds. A relay or webhook that never answers made the request end in 504 `TIMEOUT` while the channel was saved; the channel is now saved with status `error` and code `INTEGRATION_UNREACHABLE`, and the request answers 201 with that state, as for every other failed test.
+- Docs: server/docs/architecture/notification-system.md
+
+### Fixed: a notification sent as part of a grouped message is no longer logged as a dead letter
+
+- With grouping on (the default for channels since v0.24.0), every event handed to the channel's group message was logged as an ERROR "notification channel dead-lettered after exhausting retries" (attempts 0, no error) and counted in the dead-letter metric behind the notification alert. The group message itself was sent; only the log line and the metric were wrong. A grouped delivery now counts as delivered.
+- Docs: none (no setting or behaviour a user sees changes; the alert stops firing for grouped events)
+
+### Fixed: a release whose changelog alone passes GitHub's size limit is still published
+
+- The release workflow stopped at "Create the release" when this release's changelog was longer than the room GitHub leaves for a release text (v0.25.0, the long redesign train). The changelog is now cut before the first entry that does not fit, the generated pull request list is left out, and the text links the full list in `server/changelog.d` at the tag and the full comparison with the previous release.
+- Docs: none (internal release tooling; nothing a user configures)
+
+### Fixed: a canceled remediation task stays in the task list and opens by id
+
+- Canceling a task releases its findings (they may join another task). The task's visibility check counted active members only, so a canceled task disappeared from `GET /api/v1/remediation/tasks` and `GET /api/v1/remediation/tasks/{id}` answered 404 for every caller with a data scope: a restricted member, and an administrator from whom a private bug-bounty program asset is hidden. A canceled task is now seen through the findings it held when it was canceled, so it stays listed with state `canceled`, `?state=canceled` finds it, and its page and timeline open.
+- Who may see it does not change: a caller who could not see any of its findings before the cancel, and every other tenant, still get 404. The task's stored counters are unchanged (a canceled task holds no findings).
+- Docs: server/docs/rfcs/RFC-098-remediation-tasks.md (the `canceled` state row)
+
+### Fixed: repository finding tab count, provider label and last scan time for repositories made by CI
+
+- The Findings tab on a repository page counts all findings of the list (as the section title does), not the 20 loaded on the first page.
+- A repository with no stored provider no longer shows as GitHub: the provider is read from the repository's host (GitHub, GitLab, Bitbucket, Azure DevOps), and a repository on any other host shows a neutral "Git" label and icon.
+- A CI run's report now sets the repository's "Last scan" with the findings commit (inside the run's own organization), so a repository scanned only by CI no longer shows "Last scan: Never".
+- Docs: none (corrects existing pages and an existing timestamp; no new route, field or setting)
+
+### Fixed: creating a scan no longer fails with an internal error when the organization's scan zones cover none of its targets
+
+- `POST /scans` (and the scan dry run) answered 500 for an organization with scan zones when a target was public and no zone covered it: the zone sensor readiness check read the zone of an unzoned target. Such targets are now routed as before zones (to the organization's sensors), and the readiness check applies only to targets inside a zone.
+- Docs: none (a crash fix; the documented routing of unzoned targets is unchanged)
+
+### Fixed: archived pentest campaigns stay read-only, threat model generation says why it takes no name, revoked sensors are not shown online
+
+- Editing an archived pentest campaign (`PUT /pentest/campaigns/{id}`), its name included, is refused with 409 until the campaign is reopened; nothing is stored. Completed campaigns stay editable.
+- `POST /threat-models/generate` with a `name` answers 400 `THREAT_MODEL_NAME_FROM_SCOPE` instead of dropping it: a threat model is named after its scope and renamed with it on every regeneration.
+- Revoking or disabling a sensor sets its health to offline at once; a revoked sensor that had just sent a heartbeat used to keep reporting "online".
+- Docs: none (API answers now match the documented behaviour of these resources)
+
+### Fixed: giving roles to a team you belong to says why it is refused
+
+- `PUT /groups/{id}/access` (presets) and turning on a team that carries roles, by a non-owner who is a member of the team (a team's creator joins it as its owner), now answer 403 `TEAM_SELF_MEMBER` ("You are a member of this team, so giving it roles would raise your own access. Ask the organization owner to do it.") instead of `TEAM_SELF_JOIN`, which said the caller had added themselves to the team. The rule itself is unchanged.
+- Docs: server/docs/architecture/authorization-matrix.md
+
+### Fixed: ticket mapping and shared sensor refusals say what is wrong
+
+- `POST /integrations/ticket-mappings` answered 400 "Invalid request" for every refusal. A wrong field now answers 400 `TICKET_MAPPING_INVALID_FIELD` with `details.params.field` (`object_kind`, `project_key`, `issue_type_id`, `name`, `preset`, `integration_id`, ...) and a sentence saying why, for example "issue_type_id is not valid: it is required (the id of the issue type in the project ...)". An integration that is not a connected Jira site answers 409 `TICKET_MAPPING_TRACKER_NOT_CONNECTED`.
+- `PUT /admin/settings/shared-sensors` turning shared sensors on before they are available now names what is missing: 409 `SHARED_SENSORS_NOT_READY` with `details.params.missing` ("shared job claiming, per-job isolation on shared sensors").
+- Docs: server/docs/architecture/ticket-field-mapping.md, server/docs/architecture/sensors.md
+
+### Fixed: CI/CD refused jobs are grouped, and a CI run's findings are a compact list in a wider sheet
+
+- Connection sheet, Health: identical refused jobs (same repository, ref, event, pipeline file and rule) are one row with how many jobs it holds ("12 jobs") and when the last one came, with one fix per row. The first five rows show and "Show 5 more" adds the next ones, so a pipeline refused on every push no longer fills the sheet with copies. The Pipelines tab's "Recent refused pipelines" and the "see why" sheet use the same grouped list.
+- CI run sheet: the findings that block a run, the comment-only ones and the notes are grouped by type (Secret, Known exploited, Severity...) with a count, and each finding is one row: severity, title (its explanation in the tooltip), file:line and Open. Each type shows ten rows, then "Show 10 more".
+- The CI run sheet widens with the window (about 42rem, 56rem from 1280 px, 72rem from 1536 px) instead of a fixed 36rem column. Detail drawers of the `xl` and `2xl` widths also grow on wide screens (from 1536 px and 1920 px); form-sized drawers keep their width.
+- Docs: none (layout of existing views, no behaviour change)
+
+### Fixed: shared web components found in the component acceptance pass
+
+- Detail sheets: a chip list (a member's access groups, roles, schedules, a sensor's tools) shows the first 12 chips and a "Show N more" button instead of growing without bound, and a chip's detail ("owner", a version, a date) is muted beside the name, so "Empty Team owner" no longer reads as one name.
+- Metric strips on wide screens: from a 1,536 px strip each tile stops at 28rem and the strip ends after its last tile, so two numbers are no longer stretched across 2,000 px.
+- Lists: the "Couldn't load" block of a table is as tall as its message; a fixed height left an empty band under it inside the list frame.
+- Docs: none (layout fix)
+
+### Fixed: Findings list rows keep one height, and the title has room
+
+- Signals and EPSS: a finding in KEV and used by ransomware stacked its EPSS bar, KEV chip and Ransomware chip on three lines, so its row was two or three times taller than the others. The cell is now one line: the EPSS bar, the KEV chip, then "+1" for Ransomware (its words in the tooltip and the accessible name).
+- Columns: the Title column takes the spare width instead of Location (Location 144, up to 176; Title from 248), so a CVE id with a short name reads whole at 1024 px with the sidebar open.
+- List toolbar: the Group select no longer shows the keyboard focus ring after a mouse choice; Tab and the arrow keys still show it.
+- Notices: the text of a full-width notice (the vulnerability data warning, every Alert) was held to a reading width of about 700 px, three short lines beside an empty half box on a wide screen; it now uses the notice's width. Body text elsewhere keeps the reading width.
+- Layout matrix seed: one finding with a long title, EPSS, KEV and ransomware use, so the matrix sees the busiest row.
+- Docs: none (layout fix, no behaviour change)
+
+### Fixed: detail pages, card grids and the dashboard use wide screens
+
+- Detail pages (finding, asset, remediation task): from a 1920 px screen the panel is at most 1440 px wide and the properties rail (24rem there) sits right after it, instead of a 1024 px column with an 850 px gap before the rail at 2560 px. A wide table tab still uses the whole page. A finding's ways to prove a fix (verification, retest, retest check) sit side by side: two at 1920 px, three at 2560 px.
+- Section title rows on detail pages are at most 40rem wide, so Checklist, Retest now, Add check and Remediation plan sit near their titles; a code snippet is as wide as its longest line; status and severity strips are at most 40rem wide.
+- A vulnerability's page: from a 1920 px screen the summary, the status of its findings and "Who found it" (a 24rem column) stand side by side, so a source and its count are no longer 600 px apart and no card holds one sentence across the page.
+- Label and figure rows (Executive summary process health and time to fix, Program health) flow into two to four columns as the list widens, instead of a label and its figure 1,700 px apart.
+- Executive summary Top risks: a title is as wide as its column and cut by the column's width, with the full title on hover, instead of a fixed 448 px.
+- The dashboard packs runs of side-by-side widgets three to a row once it is 96rem wide and four to a row from 136rem, keeping their order and leaving no empty cell; bar charts keep bars at most 48 px wide.
+- Card lists (dashboard templates, SCM connections, capabilities, pentest templates, asset categories) add columns on wide screens (at least 22rem each) instead of three stretched cards; the Vulnerabilities overview puts its two charts and the trend on one row from a 2048 px screen.
+- Docs: web/docs/ui-style-contract.md
+
 ## v0.24.2 (2026-11-26)
 
 ### Upgrade notes
