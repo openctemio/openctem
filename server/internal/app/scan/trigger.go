@@ -147,10 +147,16 @@ func (s *Service) triggerAndRecord(ctx context.Context, sc *scan.Scan, input Tri
 	run, err := s.triggerLoadedScan(ctx, sc, input)
 	if err != nil {
 		err = s.explainMissingReference(sc, err)
-		// A refusal becomes a blocked run with its reason; either way the
-		// scan's summary is recomputed from its runs (a run that failed
-		// while starting is one of them).
-		if !input.NoBlockedRun {
+		// A refusal of an automatic trigger (schedule, retry, automation)
+		// becomes a blocked run with its reason: nobody reads its answer, so
+		// the run list is where it shows. A member's own "Run now" gets the
+		// refusal as its answer (4xx) and creates nothing: the refusal is
+		// audited instead. Either way the scan's summary is recomputed from
+		// its runs (a run that failed while starting is one of them).
+		switch {
+		case input.Interactive:
+			s.auditInteractiveRefusal(ctx, sc, input, err)
+		case !input.NoBlockedRun:
 			s.recordBlockedRun(ctx, sc, input, input.TriggerType, err)
 		}
 		s.refreshRunSummary(ctx, sc)
