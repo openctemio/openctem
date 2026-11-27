@@ -13,7 +13,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { ScanConfirmDialog } from '@/features/assets/components/scan-confirm-dialog'
 import { deleteAssetSafely } from '@/features/assets/lib/safe-delete'
 import { AssetDeleteDialogShared } from '@/features/assets/components/asset-delete-dialog-shared'
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { csrfFetch, get } from '@/lib/api/client'
 import { useFindingsApi } from '@/features/findings/api/use-findings-api'
 import type { ApiFinding } from '@/features/findings/api/finding-api.types'
@@ -108,6 +108,7 @@ import {
   SLA_STATUS_LABELS,
   SCANNER_TYPE_LABELS,
 } from '@/features/repositories'
+import { resolveScmProvider } from '@/features/repositories/lib/scm-provider'
 import { type FindingStatus } from '@/features/findings/types/finding.types'
 import { FindingStatusBadge } from '@/features/findings/components/finding-status-badge'
 
@@ -506,7 +507,12 @@ function transformToRepositoryView(asset: ApiAssetResponse): RepositoryView {
     updatedAt: asset.updated_at,
     metadata: asset.metadata || {},
     // UI-friendly snake_case fields
-    scm_provider: (repo?.scm_provider || 'github') as SCMProvider,
+    // Never guess a provider: a repository made by CI ingest carries none, so
+    // it is read from the repository's host, else shown as a neutral "Git".
+    scm_provider: resolveScmProvider({
+      scmProvider: repo?.scm_provider,
+      hosts: [repo?.web_url, repo?.clone_url, repo?.full_name, asset.name],
+    }),
     scm_organization: repo?.scm_organization,
     default_branch: repo?.default_branch || 'main',
     visibility: (repo?.visibility || 'private') as 'public' | 'private' | 'internal',
@@ -572,7 +578,18 @@ import { formatDate } from '@/lib/app-locale'
 // Helper Components
 // ============================================
 
-function ProviderIcon({ provider, className }: { provider: SCMProvider; className?: string }) {
+/** The provider's name, or a neutral "Git" when the host is not known. */
+function scmProviderLabel(provider: SCMProvider | null): string {
+  return provider ? SCM_PROVIDER_LABELS[provider] : 'Git'
+}
+
+function ProviderIcon({
+  provider,
+  className,
+}: {
+  provider: SCMProvider | null
+  className?: string
+}) {
   switch (provider) {
     case 'github':
       return <Github className={cn('h-4 w-4', className)} />
@@ -1477,10 +1494,13 @@ function FindingsTab({
   repositoryId,
   branches,
   branchFromUrl,
+  onTotalChange,
 }: {
   repositoryId: string
   branches: BranchDetail[]
   branchFromUrl?: string
+  /** Reports the list's total, so the tab count always equals this header. */
+  onTotalChange?: (total: number | null) => void
 }) {
   const { t } = useTranslation()
   const router = useRouter()
@@ -1574,6 +1594,11 @@ function FindingsTab({
 
   const total = findingsData?.total ?? 0
   const totalPages = findingsData?.total_pages ?? 0
+
+  useEffect(() => {
+    onTotalChange?.(findingsData ? total : null)
+    return () => onTotalChange?.(null)
+  }, [onTotalChange, findingsData, total])
 
   // Findings are already filtered server-side (including by branch_id), so the
   // table renders them directly — no client-side branch filter that would only
@@ -2344,6 +2369,12 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
     return findingsData.data.map(mapApiFindingToDetail)
   }, [findingsData])
 
+  // The findings tab count is the list's total (not the loaded page): the
+  // open Findings tab reports its own total (filters and branch included);
+  // otherwise this page's unfiltered total is used.
+  const [tabFindingsTotal, setTabFindingsTotal] = useState<number | null>(null)
+  const findingsTabCount = tabFindingsTotal ?? findingsData?.total ?? 0
+
   // Map API branches to local BranchDetail shape
   const branches: BranchDetail[] = useMemo(() => {
     if (!branchesData || !Array.isArray(branchesData)) return []
@@ -2486,7 +2517,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
               <div className="min-w-0">
                 <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
                   <h1 className="min-w-0 text-page break-words">{repository.name}</h1>
-                  <Tag variant="plain" label={SCM_PROVIDER_LABELS[repository.scm_provider]} />
+                  <Tag variant="plain" label={scmProviderLabel(repository.scm_provider)} />
                   <Badge variant={repository.status === 'active' ? 'outline' : 'secondary'}>
                     {STATUS_LABELS[repository.status]}
                   </Badge>
@@ -2540,7 +2571,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
               >
                 <ExternalLink className="me-2 h-4 w-4" />
                 {t('assets.repository.header.openIn', 'Open in {provider}', {
-                  provider: SCM_PROVIDER_LABELS[repository.scm_provider],
+                  provider: scmProviderLabel(repository.scm_provider),
                 })}
               </Button>
               <Button variant="outline" size="sm" onClick={handleSync} disabled={isSyncing}>
@@ -2653,7 +2684,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
             <TabsTrigger value="findings" className="gap-2">
               <Shield className="h-4 w-4" />
               {t('assets.repository.findings.title', 'Findings')}
-              <TabsCount value={findings.length} />
+              <TabsCount value={findingsTabCount} />
             </TabsTrigger>
             <TabsTrigger value="settings" className="gap-2">
               <Settings className="h-4 w-4" />
@@ -2694,6 +2725,7 @@ export function RepositoryWorkspace({ repositoryId }: { repositoryId: string }) 
               repositoryId={repositoryId}
               branches={branches}
               branchFromUrl={urlBranch || undefined}
+              onTotalChange={setTabFindingsTotal}
             />
           </TabsContent>
 

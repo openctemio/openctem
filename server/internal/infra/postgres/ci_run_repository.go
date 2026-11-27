@@ -718,6 +718,15 @@ func (r *CIRunRepository) RecordRunReport(ctx context.Context, tenantID, runID s
 		tenantID.String(), runID.String(), added, overCap); err != nil {
 		return err
 	}
+	// The run's repository was scanned now: its "last scan" moves with the
+	// findings commit. Tenant-scoped through the run and its asset; a
+	// repository without an extension row is left alone.
+	if _, err := tx.ExecContext(ctx, `UPDATE asset_repositories ar SET last_scanned_at = NOW()
+		FROM ci_runs cr JOIN assets a ON a.id = cr.repository_asset_id AND a.tenant_id = cr.tenant_id
+		WHERE cr.tenant_id = $1 AND cr.id = $2 AND ar.asset_id = a.id`,
+		tenantID.String(), runID.String()); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
