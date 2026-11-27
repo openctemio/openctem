@@ -18,6 +18,7 @@ import { Main } from '@/components/layout'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import {
+  CARD_GRID,
   DataTable,
   ErrorState,
   PageHeader,
@@ -385,7 +386,7 @@ function DashboardsList({ onEdit }: { onEdit: (id: string) => void }) {
             <h2 id="dashboards-templates" className="text-section">
               {t('dashboards.manage.templates', 'Start from a template')}
             </h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className={`${CARD_GRID} gap-4`}>
               {DASHBOARD_TEMPLATES.map((tpl) => (
                 <Card key={tpl.key} className="flex flex-col">
                   <CardHeader className="pb-2">

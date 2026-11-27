@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Skeleton } from '@/components/ui/skeleton'
-import { EmptyState } from '@/features/shared'
+import { CARD_GRID, EmptyState } from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 
 import { AddConnectionDialog } from './add-connection-dialog'
@@ -117,7 +117,7 @@ export function SCMConnectionsSection({
 
         <CollapsibleContent>
           {isLoading ? (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className={`${CARD_GRID} gap-3`}>
               {[...Array(3)].map((_, i) => (
                 <div key={i} className="rounded-lg border p-4">
                   <div className="flex items-center gap-3 mb-3">
@@ -135,7 +135,7 @@ export function SCMConnectionsSection({
               ))}
             </div>
           ) : connections && connections.length > 0 ? (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className={`${CARD_GRID} gap-3`}>
               {connections.map((connection) => (
                 <SCMConnectionCard
                   key={connection.id}

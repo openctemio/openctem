@@ -85,7 +85,9 @@ export function UntrustedTextBlock({
   return (
     <div className={cn('min-w-0', className)} data-slot="untrusted-text">
       {caption && <p className="mb-1 text-xs font-medium text-muted-foreground">{caption}</p>}
-      <div className="relative">
+      {/* As wide as its longest line, up to the column: a five-line snippet
+          is not stretched across a wide page. */}
+      <div className="relative w-fit max-w-full min-w-[min(100%,20rem)]">
         <pre
           aria-label={label}
           data-testid="untrusted-text-block"
