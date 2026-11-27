@@ -775,7 +775,9 @@ the platform admin console (RFC-022); on the tenant plane they do not exist:
   `internal/app/scanpolicy/shared_sensors.go`, RFC-100 §11). While it is
   closed, every organization is refused with "shared sensors are not
   available yet", and the console refuses to turn the switch on (409
-  `SHARED_SENSORS_NOT_READY`) before it spends the code.
+  `SHARED_SENSORS_NOT_READY`, `details.params.missing` naming what this
+  version lacks: shared job claiming and per-job isolation on shared
+  sensors) before it spends the code.
 - **Lookups.** `GetByTenantAndID`, the list filter, the dispatch finders
   (`FindAvailable*`, `HasSensorFor*`), tool and capability availability, grant
   summaries and manifests all add `scope = 'organization'` (besides
