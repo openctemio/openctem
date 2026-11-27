@@ -52,6 +52,37 @@ import { submitSignIn } from './auth'
  *                    canvas, the shared empty state (it centres itself in the
  *                    room it is given). A line reads `card ends <gap>px below
  *                    its last content (<height>px tall) at <selector>`.
+ *   underPinned      a notice that stays while the page scrolls, or text under
+ *                    a pinned (sticky or fixed) layer (owner report v0.25.0,
+ *                    wide desktop: the "vulnerability data not loaded" banner
+ *                    sat above the scrolling page and its content slid out
+ *                    under it). A notice takes its own room in the flow and
+ *                    scrolls away with the page. Run in `main` only (not in an
+ *                    overlay), after the other checks: the page scroller (the
+ *                    shell's `#content` when it scrolls, else the document) is
+ *                    moved to its top, 60% of the window down and its end, and
+ *                    put back where it was. Reported:
+ *                    (1) text under a pinned layer: a visible text (its box cut
+ *                    to every clipping ancestor and the window) that a sticky
+ *                    or fixed element not holding it covers, where
+ *                    `elementFromPoint` at the middle of the overlap hits that
+ *                    element: by a layer at the top edge with the scroller at
+ *                    its top, by one at the bottom edge with it at its end
+ *                    (that text can never be scrolled out from under it), and
+ *                    by a notice layer at any scroll. A bar that is not a
+ *                    notice may cover text the page has scrolled past (a
+ *                    sticky toolbar or table header: the text comes back by
+ *                    scrolling). Exempt: a pinned part of a table over cells
+ *                    of the same table (sticky header, frozen column), and
+ *                    toasts (a passing layer, not layout). A line reads
+ *                    `"<text>" under <selector> (<position>, <scroll>)`.
+ *                    (2) a pinned notice: a notice (`role=alert|status`,
+ *                    `[data-slot=alert]`, a child of `[data-slot=shell-banners]`)
+ *                    that did not move while the scroller moved, either outside
+ *                    the scroller, at least half its width and directly above
+ *                    it (it eats the page's height), or pinned itself inside
+ *                    it. A line reads `notice "<text>" stays while the page
+ *                    scrolls at <selector>`.
  */
 
 export type MatrixBreaks = {
@@ -64,6 +95,7 @@ export type MatrixBreaks = {
   emptyTail: string[]
   cutMeaning: string[]
   hollowCard: string[]
+  underPinned: string[]
 }
 
 export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
@@ -76,6 +108,7 @@ export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
   'emptyTail',
   'cutMeaning',
   'hollowCard',
+  'underPinned',
 ]
 
 /** Widths of the v2 matrix with the height of their device class. */
@@ -595,7 +628,7 @@ export async function findMatrixBreaks(
   page: Page,
   { scope = 'main' }: { scope?: string } = {}
 ): Promise<MatrixBreaks> {
-  return page.evaluate((scope) => {
+  return page.evaluate(async (scope) => {
     const out = {
       pastPanel: [] as string[],
       cutText: [] as string[],
@@ -606,6 +639,7 @@ export async function findMatrixBreaks(
       emptyTail: [] as string[],
       cutMeaning: [] as string[],
       hollowCard: [] as string[],
+      underPinned: [] as string[],
     }
     const roots = Array.from(document.querySelectorAll(scope))
     if (!roots.length) return out
@@ -1451,6 +1485,175 @@ export async function findMatrixBreaks(
       out.hollowCard.push(
         `card ends ${h.m.gap}px below its last content (${h.m.height}px tall, limit ${h.m.limit}px) at ${sel}${n > 1 ? ` (${n} cards)` : ''} "${short(h.el.textContent, 40)}"`
       )
+
+    // ---- underPinned: a notice that stays while the page scrolls, or text
+    // under a sticky or fixed layer. Last, since it scrolls the page (and puts
+    // it back), and in `main` only: an overlay is measured where it opened.
+    if (scope === 'main') {
+      const NOTICE =
+        '[role=alert],[role=status],[data-slot="alert"],[data-slot="shell-banners"] > *'
+      // A toast passes over the page: it is not layout.
+      const TOASTS = '[data-sonner-toaster],[data-sonner-toast]'
+      const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+      const scrolls = (e: Element | null): e is Element =>
+        !!e &&
+        e.scrollHeight - e.clientHeight > 1 &&
+        /auto|scroll/.test(getComputedStyle(e).overflowY)
+      const content = document.querySelector('#content')
+      const doc = document.scrollingElement ?? document.documentElement
+      const scroller = scrolls(content) ? content : doc
+      const inPage = scroller === doc
+      const start = scroller.scrollTop
+      const end = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+      const go = async (top: number) => {
+        if (Math.abs(scroller.scrollTop - top) < 1) return
+        scroller.scrollTo({ top, behavior: 'instant' as ScrollBehavior })
+        await wait(300)
+      }
+      type Box = { left: number; top: number; right: number; bottom: number }
+      const cut = (a: Box, b: Box): Box | null => {
+        const r = {
+          left: Math.max(a.left, b.left),
+          top: Math.max(a.top, b.top),
+          right: Math.min(a.right, b.right),
+          bottom: Math.min(a.bottom, b.bottom),
+        }
+        return r.right - r.left >= 2 && r.bottom - r.top >= 2 ? r : null
+      }
+      // The pinned layers (the outermost of nested ones): an inner layer is
+      // drawn with the outer one.
+      const pins: { el: Element; pos: string; notice: boolean }[] = []
+      for (const el of Array.from(document.body.querySelectorAll('*'))) {
+        const pos = getComputedStyle(el).position
+        if (pos !== 'sticky' && pos !== 'fixed') continue
+        if (el.closest(TOASTS) || pins.some((p) => p.el.contains(el)) || !shown(el)) continue
+        const h = el.getBoundingClientRect().height
+        // A notice layer: a notice, inside one, or a wrapper of one (no more
+        // than 16 px taller than the notice it holds).
+        const notice =
+          !!el.closest(NOTICE) ||
+          Array.from(el.querySelectorAll(NOTICE)).some(
+            (n) => shown(n) && n.getBoundingClientRect().height >= h - 16
+          )
+        pins.push({ el, pos, notice })
+      }
+      const view = scroller.getBoundingClientRect()
+      const port: Box = inPage
+        ? { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight }
+        : view
+      // The edge a layer sits at, from where it is drawn in the scroller's
+      // window.
+      const edgeOf = (r: DOMRect) =>
+        r.top + r.height / 2 < (port.top + port.bottom) / 2 ? 'top' : 'bottom'
+      const pinRange = document.createRange()
+      // The part of a text drawn on screen: cut to every ancestor that clips
+      // (overflow other than visible) and to the window.
+      const visibleBox = (n: Text, r: DOMRect): Box | null => {
+        let b: Box | null = cut(r, {
+          left: 0,
+          top: 0,
+          right: window.innerWidth,
+          bottom: window.innerHeight,
+        })
+        for (
+          let a = n.parentElement;
+          a && b && a !== document.documentElement;
+          a = a.parentElement
+        ) {
+          const s = getComputedStyle(a)
+          if (s.overflowX === 'visible' && s.overflowY === 'visible') continue
+          b = cut(b, a.getBoundingClientRect())
+        }
+        return b
+      }
+      const TABLE = 'table,[role=table],[role=grid]'
+      const under = new Map<string, { text: string; n: number }>()
+      const covered = (where: string, active: (notice: boolean, r: DOMRect) => boolean) => {
+        const layers = pins
+          .map((p) => ({ ...p, r: p.el.getBoundingClientRect() }))
+          .filter((p) => active(p.notice, p.r))
+        if (!layers.length) return
+        for (const root of roots) {
+          const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+          for (let n = tw.nextNode() as Text | null; n; n = tw.nextNode() as Text | null) {
+            const text = short(n.textContent)
+            const host = n.parentElement
+            if (!text || !host) continue
+            pinRange.selectNodeContents(n)
+            const r = pinRange.getBoundingClientRect()
+            if (r.width < 1 || r.height < 1) continue
+            const hits = layers.filter((p) => !p.el.contains(host) && cut(r, p.r))
+            if (!hits.length || hidden(host)) continue
+            const vis = visibleBox(n, r)
+            if (!vis) continue
+            for (const p of hits) {
+              const o = cut(vis, p.r)
+              if (!o) continue
+              const table = p.el.closest(TABLE) ?? (p.el.matches('thead,tr,th,td') ? p.el : null)
+              if (table && table.contains(host)) continue
+              const at = document.elementFromPoint((o.left + o.right) / 2, (o.top + o.bottom) / 2)
+              if (!at || !(at === p.el || p.el.contains(at))) continue
+              const key = `under ${selectorOf(p.el)} (${p.pos}, ${where})`
+              const g = under.get(key)
+              if (g) g.n++
+              else under.set(key, { text, n: 1 })
+            }
+          }
+        }
+      }
+      const notices = () =>
+        Array.from(document.querySelectorAll(NOTICE)).filter(
+          (n) => !n.closest(TOASTS) && !n.closest('header,nav,[data-slot="sidebar"]') && shown(n)
+        )
+      await go(0)
+      const moved = end >= 20
+      // At the top, text under a layer at the top edge stays there; on a page
+      // that does not scroll, under any layer.
+      covered('at the top', (_, r) => !moved || edgeOf(r) === 'top')
+      const before = new Map(notices().map((n) => [n, n.getBoundingClientRect()]))
+      if (moved) {
+        const by = Math.min(end, Math.round(window.innerHeight * 0.6))
+        await go(by)
+        covered('scrolled', (notice) => notice)
+        if (scroller.scrollTop >= 20) {
+          const view2 = scroller.getBoundingClientRect()
+          const stays: Element[] = []
+          for (const [n, r0] of before) {
+            if (!n.isConnected || !shown(n)) continue
+            const r = n.getBoundingClientRect()
+            // Moved far less than the page did (a sticky notice moves until
+            // it sticks).
+            if (Math.abs(r.top - r0.top) >= scroller.scrollTop / 2) continue
+            if (!inPage && !scroller.contains(n)) {
+              // Outside the scroller: directly above it, in its column.
+              const across = Math.min(r.right, view2.right) - Math.max(r.left, view2.left)
+              if (r.bottom > view2.top + 2 || r.width < view2.width / 2 || across < r.width / 2)
+                continue
+            } else {
+              // Inside it: only a notice pinned itself stays put.
+              let pin: Element | null = null
+              for (let a: Element | null = n; a && !pin; a = a.parentElement) {
+                const pos = getComputedStyle(a).position
+                if (pos === 'sticky' || pos === 'fixed') pin = a
+              }
+              if (!pin || pin.getBoundingClientRect().height > r.height + 16) continue
+            }
+            stays.push(n)
+          }
+          for (const n of stays)
+            if (!stays.some((o) => o !== n && o.contains(n)))
+              out.underPinned.push(
+                `notice "${short(n.textContent)}" stays while the page scrolls at ${selectorOf(n)}`
+              )
+        }
+        await go(end)
+        covered('at the end', (_, r) => edgeOf(r) === 'bottom')
+      }
+      for (const [key, { text, n }] of under)
+        out.underPinned.push(`"${text}" ${key}${n > 1 ? ` (${n} texts)` : ''}`)
+      scroller.scrollTo({ top: start, behavior: 'instant' as ScrollBehavior })
+      await wait(100)
+    }
 
     for (const k of Object.keys(out) as (keyof typeof out)[]) out[k] = [...new Set(out[k])]
     return out
