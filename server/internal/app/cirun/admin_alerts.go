@@ -28,9 +28,12 @@ type InAppNotifier interface {
 // see: in-app for each active owner and administrator, and on the tenant's
 // notification channels that subscribe to EventType.
 type AdminAlert struct {
-	EventType   string
-	Title       string
-	Body        string
+	EventType string
+	Title     string
+	Body      string
+	// Message is the language-neutral form of Title and Body for the in-app
+	// notice (nil leaves the English text only).
+	Message     *notificationdom.Message
 	Severity    string
 	URL         string
 	Aggregate   string
@@ -110,7 +113,7 @@ func (n *AdminAlerts) AlertAdmins(ctx context.Context, tenantID shared.ID, a Adm
 			uid := id
 			if err := n.inApp.Notify(ctx, notificationdom.NotificationParams{
 				TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-				NotificationType: notificationdom.TypeCISecurity, Title: a.Title, Body: a.Body,
+				NotificationType: notificationdom.TypeCISecurity, Title: a.Title, Body: a.Body, Message: a.Message,
 				Severity: a.Severity, ResourceType: a.Aggregate, ResourceID: a.AggregateID, URL: a.URL,
 			}); err != nil {
 				n.log.Warn("ci admin alert: in-app notification", "error", logger.SanitizeError(err))
@@ -165,4 +168,13 @@ func (n *AdminAlerts) emailAdmins(ctx context.Context, tenantID shared.ID, a Adm
 			}
 		}
 	}()
+}
+
+// adminActorParam is how a notice names the person who acted: their e-mail, or the
+// message for "an administrator" when there is none.
+func adminActorParam(email string) any {
+	if email == "" {
+		return notificationdom.Msg("ci.someone.administrator")
+	}
+	return email
 }

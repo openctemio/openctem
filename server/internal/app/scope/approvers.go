@@ -183,7 +183,8 @@ func (s *Service) SelfApproveTarget(ctx context.Context, targetID, tenantID stri
 	title := "Scope entry approved by its own requester (no other approver)"
 	body := fmt.Sprintf("%s %s (%s, max tier %s) was approved by the owner who requested it, because no other approver exists. Reason: %s",
 		t.TargetType(), t.Pattern(), describeExpiry(t), t.MaxTier(), strings.TrimSpace(reason))
-	s.NotifyAdmins(ctx, t.TenantID(), title, body)
+	s.NotifyAdminsMsg(ctx, t.TenantID(), title, body,
+		entryMessage("scope.self_approved", t, "reason", strings.TrimSpace(reason)))
 	s.enqueueChannel(ctx, t, string(integration.EventTypeSecurityAlert), title, body, notificationdom.SeverityHigh)
 	s.scheduleJoin(t.TenantID())
 	s.logger.Warn("scope target self-approved", "id", logSafe(targetID))
@@ -230,8 +231,14 @@ func (s *Service) RemindApprovers(ctx context.Context, targetID, tenantID string
 // approver, an email to each eligible approver, and the approval_requested
 // event on the organization's channels.
 func (s *Service) notifyRequested(ctx context.Context, t *scopedom.Target) {
-	s.NotifyAdmins(ctx, t.TenantID(), "Scope entry awaiting approval", requestBody(t))
+	s.NotifyAdminsMsg(ctx, t.TenantID(), "Scope entry awaiting approval", requestBody(t), requestMessage("scope.awaiting_approval", t))
 	s.notifyApprovers(ctx, t, "Scope entry awaiting your approval", false)
+}
+
+// requestMessage is requestBody as a message code: the entry's values, the
+// approvals still needed and the requester's reason.
+func requestMessage(code string, t *scopedom.Target) *notificationdom.Message {
+	return entryMessage(code, t, "remaining", t.RemainingApprovals(), "reason", t.Reason())
 }
 
 func requestBody(t *scopedom.Target) string {
@@ -264,6 +271,11 @@ func (s *Service) notifyApprovers(ctx context.Context, t *scopedom.Target, title
 			}
 		}
 	}
+	code := "scope.awaiting_your_approval"
+	if reminder {
+		code = "scope.approval_reminder"
+	}
+	msg := requestMessage(code, t)
 	emails := make([]string, 0, len(eligible))
 	for _, a := range eligible {
 		if a.Email != "" {
@@ -278,7 +290,7 @@ func (s *Service) notifyApprovers(ctx context.Context, t *scopedom.Target, title
 		}
 		if err := s.inApp.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: t.TenantID(), Audience: notificationdom.AudienceUser, AudienceID: &uid,
-			NotificationType: notificationdom.TypeScopeChange, Title: title, Body: body, Severity: "high",
+			NotificationType: notificationdom.TypeScopeChange, Title: title, Body: body, Message: msg, Severity: "high",
 			ResourceType: "scope", URL: "/scope",
 		}); err != nil {
 			s.logger.Warn("scope approvers: in-app notification", "error", logger.SanitizeError(err))

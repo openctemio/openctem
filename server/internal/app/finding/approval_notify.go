@@ -129,6 +129,7 @@ func (s *VulnerabilityService) notifyApprovers(ctx context.Context, a *vulnerabi
 		title = "Reminder: " + title
 	}
 	body := approvalSummary(a, findingTitle)
+	msg := approvalRequestedMessage(a, findingTitle, reminder)
 	emails := make([]string, 0, len(eligible))
 	for _, ap := range eligible {
 		if ap.Email != "" {
@@ -144,7 +145,7 @@ func (s *VulnerabilityService) notifyApprovers(ctx context.Context, a *vulnerabi
 		fid := a.FindingID
 		if err := s.approvalInApp.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: a.TenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-			NotificationType: notificationdom.TypeFindingApproval, Title: title, Body: body,
+			NotificationType: notificationdom.TypeFindingApproval, Title: title, Body: body, Message: msg,
 			Severity: notificationdom.SeverityMedium, ResourceType: "finding", ResourceID: &fid, URL: approvalInboxURL,
 		}); err != nil {
 			s.logger.Warn("finding approvers: in-app notification", "error", logger.SanitizeError(err))
@@ -266,6 +267,74 @@ func approvalSummary(a *vulnerability.Approval, findingTitle string) string {
 	return b.String()
 }
 
+// approvalRequestedMessage is the language-neutral form of the notice
+// notifyApprovers sends: finding.approval.requested, or
+// finding.approval.reminder for a reminder. The optional parts of the body
+// (finding prefix, expiry, deadline) are nested messages: a
+// finding.approval.part.* message when they apply, an empty value when not.
+func approvalRequestedMessage(a *vulnerability.Approval, findingTitle string, reminder bool) *notificationdom.Message {
+	code := "finding.approval.requested"
+	if reminder {
+		code = "finding.approval.reminder"
+	}
+	var prefix, expiry, deadline any = "", "", ""
+	if t := oneLineTitle(findingTitle); t != "" {
+		prefix = notificationdom.Msg("finding.approval.part.finding", "finding", t)
+	}
+	if a.ExpiresAt != nil {
+		expiry = notificationdom.Msg("finding.approval.part.expiry", "expires_at", a.ExpiresAt.UTC().Format(time.RFC3339))
+	}
+	if a.DecideBy != nil {
+		deadline = notificationdom.Msg("finding.approval.part.deadline", "decide_by", a.DecideBy.UTC().Format(time.RFC3339))
+	}
+	return notificationdom.Msg(code, "status", approvalSubject(statusLabel(a.RequestedStatus)),
+		"finding_prefix", prefix, "expiry", expiry, "deadline", deadline)
+}
+
+// approvalSubject is the nested message naming what a request is about: a
+// status label (statusLabel) or "severity change".
+func approvalSubject(label string) *notificationdom.Message {
+	switch label {
+	case "false positive":
+		return notificationdom.Msg("finding.approval.subject.false_positive")
+	case "accepted risk":
+		return notificationdom.Msg("finding.approval.subject.accepted_risk")
+	case "severity change":
+		return notificationdom.Msg("finding.approval.subject.severity_change")
+	}
+	return notificationdom.Msg("finding.approval.subject.other")
+}
+
+// vexFindingsPart is the optional list of finding titles in a VEX notice
+// (an empty value when there is none).
+func vexFindingsPart(names []string, visible int) any {
+	if len(names) == 0 {
+		return ""
+	}
+	var more any = ""
+	if visible > len(names) {
+		more = notificationdom.Msg("finding.approval.part.more", "count", visible-len(names))
+	}
+	return notificationdom.Msg("finding.approval.part.vex_findings", "findings", strings.Join(names, "; "), "more", more)
+}
+
+// codeOther is the code segment of a value that is not one.
+const codeOther = "other"
+
+// codeSegment makes a value safe as a message code segment (lower-case a-z,
+// 0-9 and underscore; anything else is "other").
+func codeSegment(v string) string {
+	if v == "" {
+		return codeOther
+	}
+	for _, r := range v {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '_' {
+			return codeOther
+		}
+	}
+	return v
+}
+
 // approvalMailBody is the email of a request. Every value from the
 // organization is escaped; the link only opens the inbox (sign-in, the
 // approve permission and the data scope authorize).
@@ -297,7 +366,11 @@ func oneLineTitle(s string) string {
 // NotifyApprovalSettingsChanged tells the organization's approvers (owners,
 // administrators and holders of findings:approve), except the actor, that the
 // approval settings changed. Best effort.
-func (s *VulnerabilityService) NotifyApprovalSettingsChanged(ctx context.Context, tenantID, actorID, title, body string) {
+func (s *VulnerabilityService) NotifyApprovalSettingsChanged(ctx context.Context, tenantID, actorID, title, body string, msg ...*notificationdom.Message) {
+	var message *notificationdom.Message
+	if len(msg) > 0 {
+		message = msg[0]
+	}
 	if s.approverDir == nil || s.approvalInApp == nil {
 		return
 	}
@@ -320,7 +393,7 @@ func (s *VulnerabilityService) NotifyApprovalSettingsChanged(ctx context.Context
 		}
 		if err := s.approvalInApp.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: tid, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-			NotificationType: notificationdom.TypeFindingApproval, Title: title, Body: body,
+			NotificationType: notificationdom.TypeFindingApproval, Title: title, Body: body, Message: message,
 			Severity: notificationdom.SeverityHigh, ResourceType: "settings", URL: "/settings/finding-approvals",
 		}); err != nil {
 			s.logger.Warn("approval settings notice: in-app", "error", logger.SanitizeError(err))
@@ -392,6 +465,8 @@ func (s *VulnerabilityService) NotifyVEXRequests(ctx context.Context, tenantID s
 			if err := s.approvalInApp.Notify(ctx, notificationdom.NotificationParams{
 				TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
 				NotificationType: notificationdom.TypeFindingApproval, Title: title, Body: body,
+				Message: notificationdom.Msg("finding.approval.vex_requests", "count", len(visible),
+					"findings_part", vexFindingsPart(names, len(visible))),
 				Severity: notificationdom.SeverityMedium, ResourceType: "finding", URL: approvalInboxURL,
 			}); err != nil {
 				s.logger.Warn("vex notice: in-app", "error", logger.SanitizeError(err))
@@ -482,6 +557,17 @@ const (
 	decisionRejected decisionOutcome = "rejected"
 )
 
+// decisionOutcomeMsg is the nested message naming how a request ended.
+func decisionOutcomeMsg(o decisionOutcome) *notificationdom.Message {
+	switch o {
+	case decisionApproved:
+		return notificationdom.Msg("finding.approval.outcome.approved")
+	case decisionRejected:
+		return notificationdom.Msg("finding.approval.outcome.rejected")
+	}
+	return notificationdom.Msg("finding.approval.outcome.other")
+}
+
 // requesterMayHear reports whether the requester is still an active member
 // who can read the finding: their notice names the finding, so it is sent
 // under the same rules as the finding itself (data scope, or the pentest
@@ -521,15 +607,17 @@ func (s *VulnerabilityService) notifyRequesterDecided(ctx context.Context, tenan
 	if err != nil || !s.requesterMayHear(ctx, tenantID, f, requester) {
 		return
 	}
+	finding := vulnerability.FindingDisplayTitleMax(f, s.findingAssetName(ctx, f), noticeTitleRunes)
 	s.sendDecisionNotice(ctx, tenantID, findingID, requester,
-		fmt.Sprintf("Your %s request was %s", subject, outcome), vulnerability.FindingDisplayTitleMax(f, s.findingAssetName(ctx, f), noticeTitleRunes), "/findings/"+findingID.String())
+		fmt.Sprintf("Your %s request was %s", subject, outcome), finding, "/findings/"+findingID.String(),
+		notificationdom.Msg("finding.approval.decided", "subject", approvalSubject(subject), "outcome", decisionOutcomeMsg(outcome), "finding", finding))
 }
 
-func (s *VulnerabilityService) sendDecisionNotice(ctx context.Context, tenantID shared.ID, findingID, requester shared.ID, title, body, url string) {
+func (s *VulnerabilityService) sendDecisionNotice(ctx context.Context, tenantID shared.ID, findingID, requester shared.ID, title, body, url string, msg *notificationdom.Message) {
 	uid, fid := requester, findingID
 	if err := s.approvalInApp.Notify(ctx, notificationdom.NotificationParams{
 		TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
-		NotificationType: notificationdom.TypeFindingApproval, Title: title, Body: body,
+		NotificationType: notificationdom.TypeFindingApproval, Title: title, Body: body, Message: msg,
 		Severity: notificationdom.SeverityMedium, ResourceType: "finding", ResourceID: &fid, URL: url,
 	}); err != nil {
 		s.logger.Warn("requester notice: in-app notification", "error", logger.SanitizeError(err))
@@ -554,5 +642,7 @@ func (s *VulnerabilityService) notifyBatchRequesterDecided(ctx context.Context, 
 		n = "1 finding"
 	}
 	s.sendDecisionNotice(ctx, tenantID, members[0].FindingID, b.RequestedBy,
-		fmt.Sprintf("Your %s group request was %s", statusLabel(string(b.RequestedStatus)), outcome), n, "/findings/approvals")
+		fmt.Sprintf("Your %s group request was %s", statusLabel(string(b.RequestedStatus)), outcome), n, "/findings/approvals",
+		notificationdom.Msg("finding.approval.batch_decided", "subject", approvalSubject(statusLabel(string(b.RequestedStatus))),
+			"outcome", decisionOutcomeMsg(outcome), "count", len(members)))
 }

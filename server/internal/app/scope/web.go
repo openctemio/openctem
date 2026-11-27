@@ -13,6 +13,7 @@ import (
 
 	"github.com/openctemio/ctis/v2/weburl"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
 	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
@@ -52,7 +53,7 @@ func (s *Service) notifyTestingChange(ctx context.Context, tenantID shared.ID, e
 	if web.TestingUntil != nil {
 		body += " until " + web.TestingUntil.UTC().Format(time.RFC3339)
 	}
-	s.NotifyAdmins(ctx, tenantID, "Scope exclusion testing changed", body)
+	s.NotifyAdminsMsg(ctx, tenantID, "Scope exclusion testing changed", body, testingChangeMessage(e.HostPattern(), web))
 }
 
 // ExclusionTestingRepository records a path exclusion's testing mode
@@ -344,4 +345,16 @@ func (w *WebRules) Blocking(origin, method, path string) *scopedom.Exclusion {
 		}
 	}
 	return nil
+}
+
+// testingChangeMessage is the testing-changed notice as a message code; with
+// an end time it has its own code.
+func testingChangeMessage(host string, web *scopedom.WebRule) *notificationdom.Message {
+	kv := []any{"path_prefix", web.PathPrefix, "host", host,
+		"testing", notificationdom.Msg("scope.testing." + scopeCodeSegment(string(web.Testing)))}
+	if web.TestingUntil != nil {
+		kv = append(kv, "until_at", web.TestingUntil.UTC().Format(time.RFC3339))
+		return notificationdom.Msg("scope.exclusion_testing_changed_until", kv...)
+	}
+	return notificationdom.Msg("scope.exclusion_testing_changed", kv...)
 }

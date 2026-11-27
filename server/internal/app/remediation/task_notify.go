@@ -22,7 +22,7 @@ func (s *TaskService) SetNotifier(n QueryTaskNotifier) { s.notifier = n }
 
 // notifyOwners sends one notice to the owner user and one to the owner team
 // of t, none to the actor themself. Best effort: a failure is logged.
-func (s *TaskService) notifyOwners(ctx context.Context, tenantID shared.ID, taskID shared.ID, user, group, actor *shared.ID, title, body string) {
+func (s *TaskService) notifyOwners(ctx context.Context, tenantID shared.ID, taskID shared.ID, user, group, actor *shared.ID, title, body string, msg *notificationdom.Message) {
 	if s.notifier == nil {
 		return
 	}
@@ -30,7 +30,7 @@ func (s *TaskService) notifyOwners(ctx context.Context, tenantID shared.ID, task
 		tid, aid := taskID, id
 		if err := s.notifier.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: tenantID, Audience: audience, AudienceID: &aid,
-			NotificationType: notificationdom.TypeRemediationTask, Title: title, Body: body,
+			NotificationType: notificationdom.TypeRemediationTask, Title: title, Body: body, Message: msg,
 			Severity: "info", ResourceType: string(auditdom.ResourceTypeRemediationTask), ResourceID: &tid,
 			URL: "/remediation/tasks/" + taskID.String(), ActorID: actor,
 		}); err != nil {
@@ -48,7 +48,8 @@ func (s *TaskService) notifyOwners(ctx context.Context, tenantID shared.ID, task
 // notifyNewOwner tells the person (or the team) a task was given to.
 func (s *TaskService) notifyNewOwner(ctx context.Context, t *remediationdom.Task, user, group, actor *shared.ID) {
 	s.notifyOwners(ctx, t.TenantID, t.ID, user, group, actor,
-		"A remediation task was assigned to you", t.Title)
+		"A remediation task was assigned to you", t.Title,
+		notificationdom.Msg("remediation.task_assigned", "task", t.Title))
 }
 
 // notifyMoveOwners tells the owners of the task findings left and of the task
@@ -63,17 +64,20 @@ func (s *TaskService) notifyMoveOwners(ctx context.Context, ev remediationdom.Ta
 	}
 	if src, err := s.repo.GetTask(ctx, ev.TenantID, ev.FromTaskID); err == nil {
 		body := fmt.Sprintf("%s taken out of task %q.", n, src.Title)
+		leftMsg := notificationdom.Msg("remediation.findings_taken_out", "count", ev.Findings, "task", src.Title)
 		if ev.ToTaskID != nil {
 			body = fmt.Sprintf("%s moved from task %q to %q.", n, src.Title, ev.ToTitle)
+			leftMsg = notificationdom.Msg("remediation.findings_moved", "count", ev.Findings, "task", src.Title, "to_task", ev.ToTitle)
 		}
 		s.notifyOwners(ctx, ev.TenantID, src.ID, src.AssigneeUserID, src.AssigneeGroupID, ev.ActorID,
-			"Findings left your remediation task", body)
+			"Findings left your remediation task", body, leftMsg)
 	}
 	if ev.ToTaskID == nil {
 		return
 	}
 	if dst, err := s.repo.GetTask(ctx, ev.TenantID, *ev.ToTaskID); err == nil {
 		s.notifyOwners(ctx, ev.TenantID, dst.ID, dst.AssigneeUserID, dst.AssigneeGroupID, ev.ActorID,
-			"Findings joined your remediation task", fmt.Sprintf("%s joined task %q from %q.", n, dst.Title, ev.FromTitle))
+			"Findings joined your remediation task", fmt.Sprintf("%s joined task %q from %q.", n, dst.Title, ev.FromTitle),
+			notificationdom.Msg("remediation.findings_joined", "count", ev.Findings, "task", dst.Title, "from_task", ev.FromTitle))
 	}
 }

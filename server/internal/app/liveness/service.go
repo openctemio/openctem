@@ -360,6 +360,10 @@ func (s *Service) notify(ctx context.Context, tenantID shared.ID, res Result) {
 		body += fmt.Sprintf(" %d more asset(s) met the gone rule but wait for tomorrow: the daily limit was reached. "+
 			"Check the sensors' DNS if this is unexpected.", res.GoneHeld)
 	}
+	msg := notificationdom.Msg("liveness.closed", "count", len(res.Closed), "critical", res.ClosedCritical, "held", res.GoneHeld)
+	if len(res.Closed) == 0 {
+		msg = notificationdom.Msg("liveness.held", "held", res.GoneHeld)
+	}
 	ids, err := s.admins.ActiveAdminIDs(ctx, tenantID)
 	if err != nil {
 		s.logger.Warn("liveness: list admins", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
@@ -370,7 +374,7 @@ func (s *Service) notify(ctx context.Context, tenantID shared.ID, res Result) {
 		if err := s.inApp.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: tenantID, Audience: notificationdom.AudienceUser, AudienceID: &uid,
 			NotificationType: notificationdom.TypeSystemAlert, Severity: notificationdom.SeverityHigh,
-			Title: title, Body: body, ResourceType: "asset", URL: "/findings?closure_reason=obsolete_asset",
+			Title: title, Body: body, Message: msg, ResourceType: "asset", URL: "/findings?closure_reason=obsolete_asset",
 		}); err != nil {
 			s.logger.Warn("liveness: notify admin", "tenant_id", tenantID.String(), "error", logger.SanitizeError(err))
 		}

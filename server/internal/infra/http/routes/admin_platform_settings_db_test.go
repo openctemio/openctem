@@ -8,6 +8,7 @@ import (
 
 	"github.com/openctemio/openctem/server/internal/app/adminconsole"
 	"github.com/openctemio/openctem/server/internal/app/consolesetting"
+	"github.com/openctemio/openctem/server/internal/app/feedlimits"
 	"github.com/openctemio/openctem/server/internal/app/platformai"
 	"github.com/openctemio/openctem/server/internal/app/platformcaptcha"
 	"github.com/openctemio/openctem/server/internal/app/platformsociallogin"
@@ -27,7 +28,8 @@ const (
 
 func platformSettingsHarness(t *testing.T, envCaptcha bool) *chainHarness {
 	t.Helper()
-	keys := []string{platformcaptcha.SettingKey, platformai.SettingKey, storagequota.SettingKey, platformsociallogin.SettingKey}
+	keys := []string{platformcaptcha.SettingKey, platformai.SettingKey, storagequota.SettingKey, platformsociallogin.SettingKey,
+		feedlimits.SettingKey}
 	h := newChainHarness(t, func(hs *Handlers, db *postgres.DB, _ *adminconsole.Service) {
 		cipher, err := crypto.NewCipher([]byte("0123456789abcdef0123456789abcdef"))
 		if err != nil {
@@ -43,6 +45,7 @@ func platformSettingsHarness(t *testing.T, envCaptcha bool) *chainHarness {
 		ps.Captcha = platformcaptcha.NewService(repo, cipher, rec, envSite, envSecret, nil)
 		ps.AI = platformai.NewService(repo, cipher, rec, false, "", "", nil)
 		ps.StorageQuota = storagequota.NewService(repo, nil, rec, 20480)
+		ps.FeedLimits = feedlimits.NewService(repo, rec, nil)
 		env := config.OAuthConfig{Enabled: true, FrontendCallbackURL: "https://ctem.example.com/auth/callback"}
 		if envCaptcha {
 			env.GitHub = config.OAuthProviderConfig{Enabled: true, ClientID: "env-github-id", ClientSecret: "env-github-secret"}
@@ -153,6 +156,44 @@ func TestAdminAIAndQuotaSettings_Routes_DB(t *testing.T) {
 	reader.autoStepUp = true
 	if code, _ := reader.do(http.MethodPut, "/api/v1/admin/settings/storage-quota", map[string]any{"default_mb": 0, "version": 1}, true); code != http.StatusForbidden {
 		t.Fatalf("a read-only administrator changed the quota: %d", code)
+	}
+}
+
+// The vulnerability data age limit: any administrator reads it; a super
+// admin with the step-up raises it within its bounds (stored, audited); a
+// read-only administrator cannot change it.
+func TestAdminFeedFreshnessLimits_Routes_DB(t *testing.T) {
+	h := platformSettingsHarness(t, false)
+	const path = "/api/v1/admin/settings/feed-freshness"
+	reader := h.newAdmin(admin.AdminRoleReadonly)
+	reader.verify()
+	reader.autoStepUp = true
+	if code, resp := reader.do(http.MethodGet, path, nil, false); code != http.StatusOK ||
+		!strings.Contains(resp, `"bundle_hours":12`) || !strings.Contains(resp, `"source":"default"`) {
+		t.Fatalf("read: %d %s", code, resp)
+	}
+	if code, _ := reader.do(http.MethodPut, path, map[string]any{"bundle_hours": 48, "version": 0, "reason": "offline site"}, true); code != http.StatusForbidden {
+		t.Fatalf("a read-only administrator changed the limit: %d", code)
+	}
+	super := h.newAdmin(admin.AdminRoleSuperAdmin)
+	super.verify()
+	super.autoStepUp = true
+	if code, _ := super.do(http.MethodPut, path, map[string]any{"bundle_hours": 500, "version": 0, "reason": "offline site"}, true); code != http.StatusBadRequest {
+		t.Fatalf("out of bounds accepted: %d", code)
+	}
+	if code, _ := super.do(http.MethodPut, path, map[string]any{"bundle_hours": 48, "version": 0}, true); code != http.StatusBadRequest {
+		t.Fatalf("a change without a reason was accepted: %d", code)
+	}
+	code, resp := super.do(http.MethodPut, path, map[string]any{"bundle_hours": 48, "version": 0, "reason": "offline site, daily copy"}, true)
+	if code != http.StatusOK || !strings.Contains(resp, `"bundle_hours":48`) || !strings.Contains(resp, `"epss_hours":72`) ||
+		!strings.Contains(resp, `"source":"console"`) {
+		t.Fatalf("update: %d %s", code, resp)
+	}
+	var audited int
+	_ = h.db.QueryRowContext(context.Background(), `SELECT count(*) FROM admin_audit_logs WHERE admin_id = $1 AND action = $2
+		AND severity = 'critical'`, super.a.ID().String(), feedlimits.ActionChanged).Scan(&audited)
+	if audited != 1 {
+		t.Fatalf("audit rows: %d", audited)
 	}
 }
 

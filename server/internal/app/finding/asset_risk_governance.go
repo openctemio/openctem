@@ -369,11 +369,21 @@ func (g *AssetRiskGovernance) notifyApprovers(ctx context.Context, a *asset.Asse
 		if err := g.v.approvalInApp.Notify(ctx, notificationdom.NotificationParams{
 			TenantID: req.TenantID, Audience: notificationdom.AudienceUser, AudienceID: &user,
 			NotificationType: notificationdom.TypeFindingApproval, Title: title, Body: body,
+			Message:  notificationdom.Msg("asset.risk_request.requested", "asset", oneLineTitle(a.Name()), "fields", riskFieldMessages(req.Lowered)),
 			Severity: notificationdom.SeverityMedium, ResourceType: "asset", ResourceID: &aid, URL: url,
 		}); err != nil {
 			g.logger.Warn("asset risk request: in-app notification", "error", logger.SanitizeError(err))
 		}
 	}
+}
+
+// riskFieldMessages names the lowered risk inputs as a list of messages.
+func riskFieldMessages(fields []string) []*notificationdom.Message {
+	out := make([]*notificationdom.Message, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, notificationdom.Msg("asset.risk_field."+codeSegment(f)))
+	}
+	return out
 }
 
 // PendingRequest returns the asset's pending request, or nil. The caller has

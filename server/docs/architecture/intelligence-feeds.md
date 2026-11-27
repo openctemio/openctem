@@ -94,11 +94,24 @@ platform's vulnerability data whatever the delivery mode (direct or relay):
 
 | Condition | When | Banner |
 |---|---|---|
-| `data_stale:<feed>` | the data a feed holds is older than its limit: bundle 12 hours (the applied bundle's creation time), KEV 6 hours and EPSS 36 hours (the last successful check); or a feed never loaded data 2 hours after the watch first ran | yes |
+| `data_stale:<feed>` | the data a feed holds is older than its limit (below): the bundle by the applied bundle's creation time, KEV by the date the release carries (when the collector read it), EPSS by its last successful check; or a feed never loaded data 2 hours after the watch first ran | yes |
 | `import_refused:<feed>` | the last import was refused (expired, bad signature, rollback, guard): at once, even while the data is still current | no |
 | `import_failing:<feed>` | imports have failed for two runs (at least 30 minutes); at once for a server setting refused at start-up (`config_invalid`, or `blocked_address` with the setting named), which no later run can fix | no |
-| `newest_record_old` | the newest published CVE in the corpus is older than 12 hours (about 280 CVEs are published a day) | yes |
+| `newest_record_old` | the newest published CVE in the corpus is older than 12 hours, or than the bundle limit when that is higher (about 280 CVEs are published a day) | yes |
 | `volume_low` | the CVEs published in the last 24 hours are under 30% of the daily average of the 30 days before (only on a corpus averaging 50 a day or more) | no |
+
+**Limits.** KEV and EPSS arrive only inside the signed vulnerability release, published every 2 to 6 hours, so
+their limits follow the bundle's (a fixed 6-hour KEV limit made the banner come and go between two releases; the default
+KEV limit moved from 6 to 12 hours): the bundle and KEV 12 hours by default, EPSS the bundle limit plus a day, at least
+36 hours (scores are dated by day) and at most the 7 days a release is valid. A platform super admin may set the bundle
+limit from 6 to 168 hours in the console (System > Threat intelligence, "How old the data may be"; platform setting
+`feed_freshness.limits`, `GET`/`PUT /api/v1/admin/settings/feed-freshness`, fresh step-up and a reason, a critical
+audit entry `platform.feed_freshness_limits_changed`, every administrator told), for a site that copies releases to
+`VULNFEED_BUNDLE_DIR` by hand. The same limits decide whether a release's KEV and EPSS side data is current
+(`source_stale`), so raising them loosens that acceptance too, not only the banner. The bounds keep it honest: under 6
+hours the banner would flap between releases, and a release older than 7 days is refused as expired whatever the limit.
+A setting that cannot be read gives the strictest limit (6 hours), never looser than what was stored. KEV and EPSS cards show the bundle import's
+next run and cycle (20 minutes), not a schedule of their own. `internal/app/feedlimits`, `feedstatus.Limits`.
 
 The two corpus checks run only once a bundle was applied, and catch an import that "succeeds" on old data. A feed an
 administrator switched off is not checked. The open conditions are stored in the platform setting `feed_freshness.state`
@@ -131,7 +144,7 @@ the watch's. Shipped.
 | `waiting_for_publisher` | the key set or pointer answered 404 and no bundle was ever applied; turns `stale` after 12 hours |
 | `refused` | a signature, key set, sequence, expiry or size guard refused what was offered |
 | `failing` | the last attempt failed and the data is not yet stale |
-| `stale` | data older than the threshold: bundle 12 hours, KEV 6 hours, EPSS 36 hours |
+| `stale` | data older than the limit in force: bundle and KEV 12 hours, EPSS 36 hours by default (see Limits) |
 | `up_to_date` | none of the above |
 
 ### Error codes

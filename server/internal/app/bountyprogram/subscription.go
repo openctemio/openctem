@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"strings"
 
+	notificationdom "github.com/openctemio/openctem/server/pkg/domain/notification"
+
 	bp "github.com/openctemio/openctem/server/pkg/domain/bountyprogram"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
@@ -148,7 +150,7 @@ func (s *Service) ApplyFeedChange(ctx context.Context, ref bp.ProgramRef) (strin
 		// A closed, paused or archived program stops monitoring.
 		if p.Status == bp.StatusActive {
 			p.PublicSyncedSHA256 = pub.TermsSHA256
-			if err := s.suspend(ctx, p, shared.ID{}, "the program is closed, paused or no longer published"); err != nil {
+			if err := s.suspend(ctx, p, shared.ID{}, "the program is closed, paused or no longer published", "closed"); err != nil {
 				return "", err
 			}
 			return "suspended", nil
@@ -250,10 +252,12 @@ func (s *Service) replaceAwaitingAcceptance(ctx context.Context, p *bp.Program, 
 	s.assign(ctx, p)
 	if s.notifier != nil {
 		body := fmt.Sprintf("%s changed its scope or terms; a member must accept the new terms before its targets are scanned actively", p.Name)
+		msg := notificationdom.Msg("program.terms_changed", "program", p.Name)
 		if added > 0 {
 			body = fmt.Sprintf("%s lists %d new in-scope targets; a member must accept the new terms before they are scanned actively", p.Name, added)
+			msg = notificationdom.Msg("program.terms_new_targets", "program", p.Name, "count", added)
 		}
-		s.notifier.NotifyAdmins(ctx, p.TenantID, "Program scope changed: accept the terms again", body)
+		s.notifier.NotifyAdminsMsg(ctx, p.TenantID, "Program scope changed: accept the terms again", body, msg)
 	}
 	return nil
 }
