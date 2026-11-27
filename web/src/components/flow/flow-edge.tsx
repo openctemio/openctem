@@ -31,6 +31,12 @@ export type FlowEdgeData = {
   state?: FlowEdgeState
   /** The label in the danger colour (a known exploited step). */
   danger?: boolean
+  /**
+   * Points the edge passes through (flow coordinates), for an edge that
+   * skips a column: the layout reserves an empty slot there so the line
+   * never crosses a node, and the label sits on the middle point.
+   */
+  via?: { x: number; y: number }[]
 }
 
 export type FlowEdgeType = Edge<FlowEdgeData, 'flow'>
@@ -72,6 +78,28 @@ export function FlowMarkers() {
   )
 }
 
+/**
+ * A left-to-right path through waypoints: one horizontal-tangent bezier per
+ * leg, so it reads like the plain edges, with the label on the middle
+ * waypoint. Returns [path, labelX, labelY].
+ */
+export function viaPath(
+  from: { x: number; y: number },
+  via: readonly { x: number; y: number }[],
+  to: { x: number; y: number }
+): [string, number, number] {
+  const pts = [from, ...via, to]
+  let d = `M${from.x},${from.y}`
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1]
+    const b = pts[i]
+    const mx = (a.x + b.x) / 2
+    d += ` C${mx},${a.y} ${mx},${b.y} ${b.x},${b.y}`
+  }
+  const mid = via[Math.floor((via.length - 1) / 2)]
+  return [d, mid.x, mid.y]
+}
+
 export function FlowEdge({
   id,
   sourceX,
@@ -85,14 +113,18 @@ export function FlowEdge({
   const state = data?.state ?? 'flow'
   // Stop just short of the target handle so the arrow head shows.
   const fromTop = targetPosition === Position.Top
-  const [path, labelX, labelY] = getBezierPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX: fromTop ? targetX : targetX - 4,
-    targetY: fromTop ? targetY - 4 : targetY,
-    targetPosition,
-  })
+  const end = { x: fromTop ? targetX : targetX - 4, y: fromTop ? targetY - 4 : targetY }
+  const [path, labelX, labelY] =
+    data?.via && data.via.length > 0 && !fromTop
+      ? viaPath({ x: sourceX, y: sourceY }, data.via, end)
+      : getBezierPath({
+          sourceX,
+          sourceY,
+          sourcePosition,
+          targetX: end.x,
+          targetY: end.y,
+          targetPosition,
+        })
   const hot = state === 'hot'
   return (
     <>

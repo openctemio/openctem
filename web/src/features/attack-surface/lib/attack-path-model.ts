@@ -31,6 +31,13 @@ export interface LayoutEdge {
   from: string
   to: string
   paths: number[]
+  /**
+   * Waypoints (flow coordinates, node centres) of an edge that skips a
+   * column: it runs through an empty slot reserved in every column it
+   * crosses, never through the nodes standing there, and its label sits
+   * on that slot.
+   */
+  via?: { x: number; y: number }[]
 }
 
 export interface PathLayout {
@@ -42,6 +49,9 @@ export interface PathLayout {
 
 const COLUMN_W = 340
 const ROW_H = 140
+/** The drawn size of a step card, for the centre of a reserved slot. */
+const NODE_W = 180
+const NODE_H = 104
 /** The internet label sits left of the entry column, leaving room for the first edge label. */
 const INTERNET_X = -220
 
@@ -97,16 +107,34 @@ export function layoutPaths(detail: AttackPathDetail, shown: number[]): PathLayo
     const c = col.get(k) ?? depth(k)
     columns.set(c, [...(columns.get(c) ?? []), k])
   }
+  // An edge that skips columns (the internet straight to a target that is
+  // also reached through an entry point) gets a slot of its own in every
+  // column it crosses, below the nodes there: the line bends through that
+  // slot instead of running across a node and its text.
+  const colOf = (k: string) => col.get(k) ?? depth(k)
+  const slot = (edgeId: string, c: number) => `\u0000via:${edgeId}:${c}`
+  for (const e of edges) {
+    for (let c = colOf(e.from) + 1; c < colOf(e.to); c++) {
+      columns.set(c, [...(columns.get(c) ?? []), slot(e.id, c)])
+    }
+  }
   const nodes: LayoutNode[] = []
+  const slots = new Map<string, { x: number; y: number }>()
   for (const [c, keys] of columns) {
     keys.forEach((key, row) => {
-      nodes.push({
-        key,
-        column: c,
-        x: (c - 1) * COLUMN_W,
-        y: (row - (keys.length - 1) / 2) * ROW_H,
-      })
+      const x = (c - 1) * COLUMN_W
+      const y = (row - (keys.length - 1) / 2) * ROW_H
+      if (key.startsWith('\u0000via:')) slots.set(key, { x: x + NODE_W / 2, y: y + NODE_H / 2 })
+      else nodes.push({ key, column: c, x, y })
     })
+  }
+  for (const e of edges) {
+    const via: { x: number; y: number }[] = []
+    for (let c = colOf(e.from) + 1; c < colOf(e.to); c++) {
+      const p = slots.get(slot(e.id, c))
+      if (p) via.push(p)
+    }
+    if (via.length > 0) e.via = via
   }
   if (nodes.length > 0) nodes.push({ key: INTERNET, column: 0, x: INTERNET_X, y: 0 })
   return { nodes, edges, pathsByNode }

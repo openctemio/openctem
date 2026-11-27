@@ -1167,6 +1167,13 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
 - Series colours come from the `--viz-*` tokens by meaning: severity,
   priority, the eight categories, new against fixed, the sequential ramp.
   Teal (the action colour) never encodes data.
+- A categorical ring or bar never gives two series one colour: past the
+  palette the tail folds into one neutral "Other" that keeps the total
+  (`features/exposures/lib/category-slices.ts`). Legend text is the muted ink;
+  the swatch carries the colour.
+- Flow canvases: an edge that skips a column runs through a slot the layout
+  reserves in each column it crosses (`FlowEdge` `via` waypoints), never across
+  a node, and its label sits on that slot.
 - Colour never carries the meaning alone: a series has its name in the legend
   or beside its mark, a state has an icon or a word, a not-prioritised part is
   hatched.
