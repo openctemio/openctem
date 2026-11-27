@@ -28,16 +28,27 @@ function SelectGroup({ ...props }: React.ComponentProps<typeof SelectPrimitive.G
 }
 
 /**
- * The plain text parts of an option label, each in its own box. In the field
- * that box wraps when the value is longer than the field, and the field grows
- * from its height (`SELECT_TRIGGER_CLASS`): a cut value ("Mọi mức rủi…") hides
- * what is chosen. Text that sits directly in the value's flex box would be cut
- * with no mark, so every string part of a label, a placeholder or a custom
- * value goes through here.
+ * The plain text parts of an option label, each in its own box. A select
+ * field is one line, as high as the controls beside it: a value longer than
+ * the field ends in an ellipsis inside that box, and the box carries the
+ * whole text as its `title` (the layout matrix's cutMeaning check accepts a
+ * cut only while the full text is reachable). Text that sits directly in the
+ * value's flex box would be cut with no mark, so every string part of a
+ * label, a placeholder or a custom value goes through here. A field never
+ * grows a second line: a wrapped value made a toolbar select three rows tall
+ * beside 32 px buttons (owner report 2026-11-27).
  */
+function textBox(text: string, key?: string) {
+  return (
+    <span key={key} data-slot="select-text" data-cut-tooltip="" title={text}>
+      {text}
+    </span>
+  )
+}
+
 function textParts(node: React.ReactNode): React.ReactNode {
   if (typeof node === 'string' || typeof node === 'number') {
-    return <span data-slot="select-text">{node}</span>
+    return textBox(String(node))
   }
   if (Array.isArray(node)) {
     // Adjacent text parts ("Name", " (", 3, ")") form one box, so the label
@@ -45,12 +56,7 @@ function textParts(node: React.ReactNode): React.ReactNode {
     const out: React.ReactNode[] = []
     let text = ''
     const flush = () => {
-      if (text)
-        out.push(
-          <span key={`t${out.length}`} data-slot="select-text">
-            {text}
-          </span>
-        )
+      if (text) out.push(textBox(text, `t${out.length}`))
       text = ''
     }
     React.Children.forEach(node, (child) => {
@@ -101,7 +107,7 @@ const SELECT_ICON_ONLY_BELOW = {
  * select has 16px text below 768px, like `Input` (one field look per form).
  */
 export const SELECT_TRIGGER_CLASS =
-  "border-input data-[placeholder]:text-muted-foreground [&_svg:not([class*='text-'])]:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 dark:hover:bg-input/50 flex w-fit items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-1 text-start text-body shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 data-[size=default]:min-h-control-field data-[size=sm]:min-h-control-dense max-md:data-[size=default]:min-h-control-touch max-md:data-[size=default]:text-base max-md:data-[size=sm]:min-h-control-touch-dense *:data-[slot=select-value]:flex *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:overflow-hidden **:data-[slot=select-text]:min-w-0 **:data-[slot=select-text]:break-words *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4" // design-ok: text-base (16px) on phone fields keeps phones from zooming, as Input
+  "border-input data-[placeholder]:text-muted-foreground [&_svg:not([class*='text-'])]:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 dark:hover:bg-input/50 flex w-fit items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-1 text-start text-body shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 data-[size=default]:min-h-control-field data-[size=sm]:min-h-control-dense max-md:data-[size=default]:min-h-control-touch max-md:data-[size=default]:text-base max-md:data-[size=sm]:min-h-control-touch-dense *:data-[slot=select-value]:flex *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:overflow-hidden whitespace-nowrap **:data-[slot=select-text]:min-w-0 **:data-[slot=select-text]:truncate *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4" // design-ok: text-base (16px) on phone fields keeps phones from zooming, as Input
 
 /**
  * Whether the last input was the keyboard. Radix Select gives the focus back

@@ -1,15 +1,13 @@
 /**
- * A chosen value longer than its select field wraps: it is never cut, with an
- * ellipsis or without (owner 2026-11-25: "Mọi mức rủi…" hid what the filter
- * holds; the layout matrix's cutMeaning check fails such a cut). Before that,
- * a chosen value ended in an ellipsis, never cut with no mark. Regression (settings review 2026-11-20): scope "One-off
- * entries" in Vietnamese at 390 px showed the value cut mid-word, because the
- * value box was a flex box with `line-clamp-1` (a line clamp only works on a
- * `-webkit-box`, and text sitting directly in a flex box cannot end in an
- * ellipsis). The browser draws the ellipsis; the e2e layout sweep (spec 75)
- * measures it. This pins the structure every select gets from the kit: each
- * plain text part of the value in its own box, and that box wraps; the field
- * keeps its height as a minimum, so a one-line value is drawn as before.
+ * A select field is one line, as high as the controls beside it (owner
+ * report 2026-11-27: a channel picker wrapped "Product Security channel" onto
+ * three lines beside 32 px buttons). A chosen value longer than its field
+ * ends in an ellipsis inside its own text box, and that box carries the full
+ * text as its title, so nothing chosen is hidden (owner 2026-11-25: "Mọi mức
+ * rủi…" with no way to read the rest; the layout matrix's cutMeaning check
+ * accepts a cut only with the full text reachable). Text sitting directly in
+ * the flex value box cannot end in an ellipsis (a line clamp only works on a
+ * `-webkit-box`), so every plain text part of the value gets its own box.
  */
 import { describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
@@ -44,13 +42,12 @@ function field(props: { value?: string; placeholder?: string; custom?: string })
 const valueBox = (c: HTMLElement) => c.querySelector('[data-slot="select-value"]') as HTMLElement
 
 describe('Select value ellipsis', () => {
-  it('the trigger wraps the value text and lets the value box shrink', () => {
+  it('the trigger keeps the value on one line and cuts it with an ellipsis', () => {
     const { container } = field({ value: 'long' })
     const cls = container.querySelector('[data-slot="select-trigger"]')!.className
-    expect(cls).toContain('**:data-[slot=select-text]:break-words')
-    expect(cls).not.toContain('truncate')
-    expect(cls).not.toContain('whitespace-nowrap')
-    // The height is a floor, not a box the second line would spill out of.
+    expect(cls).toContain('whitespace-nowrap')
+    expect(cls).toContain('**:data-[slot=select-text]:truncate')
+    expect(cls).not.toContain('break-words')
     expect(cls).toContain('data-[size=default]:min-h-control-field')
     expect(cls).not.toMatch(/(^|\s)data-\[size=default\]:h-/)
     expect(cls).toContain('*:data-[slot=select-value]:min-w-0')
@@ -58,13 +55,15 @@ describe('Select value ellipsis', () => {
     expect(cls).not.toContain('line-clamp')
   })
 
-  it('a chosen text label sits in its own box inside the value', () => {
+  it('a chosen text label sits in its own box inside the value, its full text the title', () => {
     const { container } = field({ value: 'long' })
     const text = valueBox(container).querySelector('[data-slot="select-text"]')
     expect(text).toHaveTextContent(LONG)
+    expect(text).toHaveAttribute('title', LONG)
+    expect(text).toHaveAttribute('data-cut-tooltip')
   })
 
-  it('an icon stays beside the text box, the text alone wraps', () => {
+  it('an icon stays beside the text box, the text alone is cut', () => {
     const { container } = field({ value: 'icon' })
     const box = valueBox(container)
     expect(box.querySelector('[data-testid="icon"]')).not.toBeNull()

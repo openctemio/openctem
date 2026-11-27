@@ -1632,7 +1632,7 @@ function FindingsTab({
                   value={severityFilter}
                   onValueChange={(v) => handleFilterChange(setSeverityFilter, 'severity', v)}
                 >
-                  <SelectTrigger className="w-[110px] text-xs">
+                  <SelectTrigger>
                     <SelectValue
                       placeholder={t('assets.repository.findings.severity', 'Severity')}
                     />
@@ -1652,7 +1652,7 @@ function FindingsTab({
                   value={statusFilter}
                   onValueChange={(v) => handleFilterChange(setStatusFilter, 'status', v)}
                 >
-                  <SelectTrigger className="w-[110px] text-xs">
+                  <SelectTrigger>
                     <SelectValue placeholder={t('assets.repository.findings.status', 'Status')} />
                   </SelectTrigger>
                   <SelectContent>
@@ -1686,7 +1686,7 @@ function FindingsTab({
                   value={scannerFilter}
                   onValueChange={(v) => handleFilterChange(setScannerFilter, 'scanner', v)}
                 >
-                  <SelectTrigger className="w-[120px] text-xs">
+                  <SelectTrigger>
                     <SelectValue placeholder={t('assets.repository.findings.scanner', 'Scanner')} />
                   </SelectTrigger>
                   <SelectContent>
@@ -1712,7 +1712,7 @@ function FindingsTab({
                     value={branchFilter}
                     onValueChange={(v) => handleFilterChange(setBranchFilter, 'branch', v)}
                   >
-                    <SelectTrigger className="w-[160px] text-xs">
+                    <SelectTrigger>
                       <SelectValue placeholder={t('assets.repository.findings.branch', 'Branch')} />
                     </SelectTrigger>
                     <SelectContent>
@@ -1737,7 +1737,7 @@ function FindingsTab({
                       handleFilterChange(setBranchStatusFilter, 'branch_status', v)
                     }
                   >
-                    <SelectTrigger className="w-[130px] text-xs">
+                    <SelectTrigger>
                       <SelectValue
                         placeholder={t('assets.repository.findings.onBranch', 'On branch')}
                       />

@@ -32,12 +32,13 @@ describe('ToolbarSlot', () => {
 })
 
 describe('FilterSelect width', () => {
-  it('is sized by every possible value, so a value or a late option never widens it', () => {
+  it('with holdWidth is sized by every possible value, so a value or a late option never widens it', () => {
     render(
       <FilterSelect
         label="Practice"
         value="vulnerabilities"
         clearable={false}
+        holdWidth
         options={[{ value: 'vulnerabilities', label: 'Vulnerabilities' }]}
         sizeLabels={['Vulnerabilities', 'Compliance', 'Pentest and bug bounty']}
         onChange={() => {}}
@@ -52,7 +53,7 @@ describe('FilterSelect width', () => {
     ])
   })
 
-  it('defaults to its options and All when it can be cleared', () => {
+  it('without holdWidth hugs the value shown: no box reserved for the others', () => {
     render(
       <FilterSelect
         label="Status"
@@ -65,13 +66,13 @@ describe('FilterSelect width', () => {
       />
     )
     const trigger = screen.getByRole('button', { name: 'Status: All' })
-    const hidden = trigger.querySelectorAll('[data-slot="toolbar-slot"] > [aria-hidden="true"]')
-    expect([...hidden].map((h) => h.getAttribute('data-label'))).toEqual(['All', 'Open', 'Closed'])
+    expect(trigger.querySelector('[data-slot="toolbar-slot"]')).toBeNull()
+    expect(trigger.querySelector('[data-slot="filter-select-value"]')).toHaveTextContent('All')
   })
 })
 
 describe('FilterSelect long value', () => {
-  it('caps what the other values reserve, and lets the value shown size the token whole', () => {
+  it('shows a long value whole up to 15rem, then cuts it with its full text as the title', () => {
     render(
       <FilterSelect
         label="Status"
@@ -84,14 +85,10 @@ describe('FilterSelect long value', () => {
       />
     )
     const trigger = screen.getByRole('button', { name: 'Status: Awaiting approval' })
-    const slot = trigger.querySelector('[data-slot="toolbar-slot"]') as HTMLElement
-    // The slot may grow to 15rem; the hidden options reserve at most 7rem.
-    expect(slot).toHaveClass('max-w-60')
-    for (const h of slot.querySelectorAll('[aria-hidden="true"]')) expect(h).toHaveClass('max-w-28')
-    const value = slot.lastElementChild as HTMLElement
-    expect(value).not.toHaveClass('w-0')
-    expect(value).toHaveClass('truncate')
+    const value = trigger.querySelector('[data-slot="filter-select-value"]') as HTMLElement
+    expect(value).toHaveClass('max-w-60', 'truncate', 'min-w-0')
     expect(value).toHaveAttribute('title', 'Awaiting approval')
+    expect(value).toHaveAttribute('data-cut-tooltip')
   })
 
   it('holdWidth keeps one width: the value never sizes the token and is cut instead', () => {

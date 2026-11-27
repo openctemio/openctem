@@ -192,7 +192,7 @@
   "src/features/query/components/query-input.tsx": 1,
   "src/features/remediation-hub/components/task-exception.tsx": 1,
   "src/features/reports/components/report-schedules-section.tsx": 1,
-  "src/features/repositories/components/repository-workspace.tsx": 12,
+  "src/features/repositories/components/repository-workspace.tsx": 7,
   "src/features/scan-profiles/components/add-preset-dialog.tsx": 1,
   "src/features/scan-windows/components/schedule-editor.tsx": 1,
   "src/features/scan-workflows/components/node-inspector.tsx": 6,

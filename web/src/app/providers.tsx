@@ -11,6 +11,7 @@ import { AppToaster } from '@/components/app-toaster'
 import { config as zodConfig } from 'zod/v4/core'
 import { installClientErrorListeners } from '@/lib/client-errors'
 import { installDeploymentSkewGuard } from '@/lib/deployment-skew'
+import { installInputModality } from '@/lib/input-modality'
 
 // The CSP has no 'unsafe-eval' (src/lib/middleware/csp.ts). Zod probes for
 // `new Function` on its first parse to pick its JIT path; the probe is caught,
@@ -45,6 +46,10 @@ export function Providers({
   // A tab left open across a deploy calls server actions that no longer exist:
   // reload once with a notice (src/lib/deployment-skew.ts).
   useEffect(() => installDeploymentSkewGuard(), [])
+
+  // Focus rings follow the keyboard only: `data-input` on <html> gates the
+  // `focus-visible:` variant (src/lib/input-modality.ts, globals.css).
+  useEffect(() => installInputModality(), [])
 
   // Initialize Web Vitals reporting (lazy load to avoid bundling optional dependencies)
   useEffect(() => {

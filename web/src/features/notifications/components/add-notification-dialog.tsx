@@ -413,7 +413,7 @@ export function AddNotificationDialog({
                     className={cn(
                       'flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
                       'hover:border-primary hover:bg-primary/5',
-                      'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2'
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2'
                     )}
                     onClick={() => handleProviderSelect(provider)}
                   >

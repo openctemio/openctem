@@ -31,10 +31,11 @@ export interface StartLink {
 
 /**
  * The decision list: one row per queue that has something in it, each with
- * the one action that empties it. The first row's action is the primary
- * one; the rest are outline buttons, so the page never has two competing
- * primary actions. With nothing waiting, the block says so and offers the
- * places where validation work starts.
+ * the one action that empties it. The rows are peers, so every action is an
+ * outline button: which queue happens to have work is no reason to make its
+ * action the page's main one, and a dark button in a list reads as the one
+ * thing to do. With nothing waiting, the block says so and offers the places
+ * where validation work starts.
  */
 export function WaitingForYou({ items, starts }: { items: WaitingItem[]; starts: StartLink[] }) {
   const { t } = useTranslation()
@@ -45,13 +46,14 @@ export function WaitingForYou({ items, starts }: { items: WaitingItem[]; starts:
   if (waiting.length > 0) {
     body = (
       <ul className="divide-y" data-testid="validation-waiting">
-        {waiting.map((item, idx) => (
-          // The text column stops at 32rem and the tracks do not stretch
-          // (justify-start), so on a wide screen the action stays beside
-          // what it acts on instead of at the far edge.
+        {waiting.map((item) => (
+          // One list item: the count, the text (takes the free width) and the
+          // action at the row's end, as every list row of the console. On a
+          // phone the action goes under the text.
           <li
             key={item.key}
-            className="grid grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-4 py-3 sm:grid-cols-[3.5rem_minmax(0,32rem)_auto] sm:justify-start"
+            data-slot="waiting-row"
+            className="grid grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-4 py-3 sm:grid-cols-[3.5rem_minmax(0,1fr)_auto]"
           >
             <span className="text-xl font-semibold tabular-nums">{item.count}</span>
             <span className="min-w-0">
@@ -61,8 +63,8 @@ export function WaitingForYou({ items, starts }: { items: WaitingItem[]; starts:
             <Button
               asChild
               size="sm"
-              variant={idx === 0 ? 'default' : 'outline'}
-              className="col-start-2 justify-self-start sm:col-start-auto"
+              variant="outline"
+              className="col-start-2 justify-self-start sm:col-start-auto sm:justify-self-end"
             >
               <Link href={item.href}>{item.action}</Link>
             </Button>

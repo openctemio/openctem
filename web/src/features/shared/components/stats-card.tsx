@@ -61,7 +61,7 @@ export function StatsCard({
     <Card
       className={cn(
         href &&
-          'relative transition-shadow focus-within:ring-2 focus-within:ring-ring hover:shadow-md',
+          'relative transition-shadow has-focus-visible:ring-2 has-focus-visible:ring-ring hover:shadow-md',
         className
       )}
     >
