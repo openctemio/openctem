@@ -147,7 +147,7 @@ export function RiskSummarySection({
       )}
       {hasFindings ? (
         <>
-          <SeverityStrip counts={counts} className="mt-4" />
+          <SeverityStrip counts={counts} className="mt-4 max-w-[40rem]" />
           {unclassified > 0 && (
             <p className="mt-2 text-xs text-muted-foreground">
               {t(

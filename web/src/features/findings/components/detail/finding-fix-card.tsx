@@ -418,7 +418,7 @@ export function FindingFixCard({
       data-kind={g.kind}
       className={cn(!flat && 'rounded-lg border bg-card p-4', className)}
     >
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <div className="mb-2 flex max-w-[40rem] items-center justify-between gap-2">
         {flat ? (
           <h2 className="text-section">{t('findings.fixCard.fix', 'Fix')}</h2>
         ) : (

@@ -132,10 +132,11 @@ export function DetailSection({
       {/* The row wraps: in a narrow column the actions drop to their own line
           (end-aligned) instead of squeezing the title to nothing or running
           past the section. The title keeps its natural width and truncates
-          only when it alone is wider than the row. */}
+          only when it alone is wider than the row. The row stops at 40rem, so
+          on a wide page the actions stay near the title they belong to. */}
       <div
         data-slot="detail-section-head"
-        className="flex min-h-7 flex-wrap items-center justify-between gap-x-2 gap-y-1"
+        className="flex min-h-7 max-w-[40rem] flex-wrap items-center justify-between gap-x-2 gap-y-1"
       >
         <h3
           id={headingId}
