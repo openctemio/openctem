@@ -150,6 +150,17 @@ test.describe('layout matrix detector: control taller than its row', { tag: ['@s
     expect(found.tallControl.join('\n')).toMatch(/is \d+px tall beside 32px controls/)
   })
 
+  test('does not measure a control against text links drawn as buttons', async ({ page }) => {
+    const found = await at(
+      page,
+      1440,
+      `<main style="width:900px"><div style="display:flex;gap:8px;align-items:center">
+        <a data-slot="button" data-variant="link" href="/a" style="height:16px">Open</a>
+        <button data-slot="button" style="height:32px">Logs</button></div></main>`
+    )
+    expect(found.tallControl).toEqual([])
+  })
+
   test('is quiet for a one-line value with an ellipsis', async ({ page }) => {
     const found = await at(
       page,
@@ -241,6 +252,18 @@ test.describe('layout matrix detector: sizes in one row', { tag: ['@shell'] }, (
     expect(await size(page)).toEqual([])
   })
 
+  test('reads the text size of what a control shows, not its outer box', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.setContent(
+      doc(`<main style="width:900px"><div data-slot="list-toolbar" style="display:flex;gap:8px">
+        <div role="button" style="height:32px;font-size:16px"><span style="font-size:14px">Basic</span></div>
+        <button data-slot="button" style="height:32px;font-size:14px">Add filter</button>
+        <h2 style="margin:0;font-size:18px"><button style="height:32px;font-size:18px;border:1px solid">Queue</button></h2>
+        </div></main>`)
+    )
+    expect(await size(page)).toEqual([])
+  })
+
   test('compares a field apart from buttons (16 px field text on a phone)', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.setContent(
@@ -275,6 +298,19 @@ test.describe('layout matrix detector: content crowding its row edge', { tag: ['
     expect(found.cellCrowd.join('\n')).toMatch(
       /chip "Ransomware" [\d.]+px past its row's bottom edge/
     )
+  })
+
+  test('is quiet for lines a line clamp hides', async ({ page }) => {
+    const found = await at(
+      page,
+      1440,
+      `<main style="width:900px"><table style="border-collapse:collapse"><tbody>
+        <tr style="border-bottom:1px solid #ccc"><td style="height:40px;padding:4px 8px;width:120px">
+          <div style="display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;line-height:20px">
+            A long description that wraps onto several lines in a narrow cell</div></td></tr>
+        <tr><td style="padding:8px">Next</td></tr></tbody></table></main>`
+    )
+    expect(found.cellCrowd).toEqual([])
   })
 
   test('is quiet for chips on one line, centred in the row', async ({ page }) => {

@@ -475,19 +475,31 @@ export async function probeRowMix(page: Page, opts: { fonts?: boolean } = {}): P
         const hs = rw.map((b) => b.r.height)
         const cs = rw.map((b) => b.r.top + b.r.height / 2)
         const spread = (xs: number[]) => Math.max(...xs) - Math.min(...xs)
+        // The size of the text the control shows: its field's, or its first
+        // visible text's (a segmented group or a button wraps its label in
+        // boxes of their own; the outer box's size says nothing).
         const fontOf = (el: Element) => {
-          const inner =
-            el.matches('[data-slot=list-search]') || !el.matches('input,select,textarea')
-              ? (el.querySelector('input') ?? el)
-              : el
-          return parseFloat(getComputedStyle(inner).fontSize)
+          if (el.matches('input,select,textarea')) return parseFloat(getComputedStyle(el).fontSize)
+          const input = el.querySelector('input')
+          if (input) return parseFloat(getComputedStyle(input).fontSize)
+          const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+          for (let n = w.nextNode(); n; n = w.nextNode()) {
+            const host = n.parentElement
+            if (!host || !(n.textContent ?? '').trim() || !shown(host)) continue
+            return parseFloat(getComputedStyle(host).fontSize)
+          }
+          return parseFloat(getComputedStyle(el).fontSize)
         }
         const isField = (el: Element) =>
           el.matches('input,select,textarea,[data-slot=list-search],[data-slot=select-trigger]') ||
           !!el.querySelector('input')
         // Text size only where there is text: an icon-only button has none.
+        // A heading that opens a menu (a queue's name) is set as a heading,
+        // not as a control.
         const texted = rw.filter(
-          (b) => isField(b.el) || ((b.el as HTMLElement).innerText ?? '').trim() !== ''
+          (b) =>
+            !b.el.closest('h1,h2,h3,h4') &&
+            (isField(b.el) || ((b.el as HTMLElement).innerText ?? '').trim() !== '')
         )
         const fontsDiffer =
           fonts &&
@@ -502,7 +514,7 @@ export async function probeRowMix(page: Page, opts: { fonts?: boolean } = {}): P
             name: label(b.el),
             height: Math.round(b.r.height * 10) / 10,
             centre: Math.round((b.r.top + b.r.height / 2) * 10) / 10,
-            ...(fonts ? { font: parseFloat(getComputedStyle(b.el).fontSize) } : {}),
+            ...(fonts ? { font: fontOf(b.el) } : {}),
           })),
         })
       }
