@@ -478,17 +478,21 @@ export async function probeRowMix(page: Page, opts: { fonts?: boolean } = {}): P
         // The size of the text the control shows: its field's, or its first
         // visible text's (a segmented group or a button wraps its label in
         // boxes of their own; the outer box's size says nothing).
+        // The first text the control shows (not a label read to assistive
+        // technology only: an icon button's sr-only name).
+        const textHost = (el: Element): Element | null => {
+          const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+          for (let n = w.nextNode(); n; n = w.nextNode()) {
+            const host = n.parentElement
+            if (host && (n.textContent ?? '').trim() && shown(host)) return host
+          }
+          return null
+        }
         const fontOf = (el: Element) => {
           if (el.matches('input,select,textarea')) return parseFloat(getComputedStyle(el).fontSize)
           const input = el.querySelector('input')
           if (input) return parseFloat(getComputedStyle(input).fontSize)
-          const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-          for (let n = w.nextNode(); n; n = w.nextNode()) {
-            const host = n.parentElement
-            if (!host || !(n.textContent ?? '').trim() || !shown(host)) continue
-            return parseFloat(getComputedStyle(host).fontSize)
-          }
-          return parseFloat(getComputedStyle(el).fontSize)
+          return parseFloat(getComputedStyle(textHost(el) ?? el).fontSize)
         }
         const isField = (el: Element) =>
           el.matches('input,select,textarea,[data-slot=list-search],[data-slot=select-trigger]') ||
@@ -497,9 +501,7 @@ export async function probeRowMix(page: Page, opts: { fonts?: boolean } = {}): P
         // A heading that opens a menu (a queue's name) is set as a heading,
         // not as a control.
         const texted = rw.filter(
-          (b) =>
-            !b.el.closest('h1,h2,h3,h4') &&
-            (isField(b.el) || ((b.el as HTMLElement).innerText ?? '').trim() !== '')
+          (b) => !b.el.closest('h1,h2,h3,h4') && (isField(b.el) || textHost(b.el) !== null)
         )
         const fontsDiffer =
           fonts &&
