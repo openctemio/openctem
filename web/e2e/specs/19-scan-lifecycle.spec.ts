@@ -153,9 +153,16 @@ async function runAndOpen(page: Page, scanId: string) {
     await confirm.getByRole('button').last().click()
   }
   const res = await triggered
-  // Started, or refused and recorded as a blocked run (no sensor in reach):
-  // either way the run is in the history.
+  // Started, or refused (no sensor in reach): a member's own refused Run
+  // answers 400 and creates no run; the page shows the reason instead.
   expect([200, 201, 400, 409], await res.text()).toContain(res.status())
+  if (res.status() === 400) {
+    await expect(page.locator('[data-sonner-toast][data-type="error"]').first()).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.getByRole('table').getByRole('row')).toHaveCount(1)
+    return
+  }
   const runsTable = page.getByRole('table')
   const firstRun = runsTable.getByRole('row').nth(1)
   await expect(firstRun).toBeVisible({ timeout: 30_000 })

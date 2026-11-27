@@ -8,6 +8,7 @@ import (
 
 	scansvc "github.com/openctemio/openctem/server/internal/app/scan"
 	"github.com/openctemio/openctem/server/internal/infra/postgres"
+	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
@@ -97,8 +98,9 @@ func TestTriggerWorkflow_SystemTemplateWithPlannedOptionalSteps(t *testing.T) {
 
 // Another organization's private workflow is never run through a scan that
 // names it (a scan row edited in the database, or saved by an old bug):
-// PIPELINE_NOT_FOUND, recorded as a blocked run, nothing dispatched, and the
-// refusal names no step or tool of that workflow.
+// PIPELINE_NOT_FOUND, recorded as a blocked run (an automatic trigger: a
+// member's "Run now" gets the refusal as its answer instead), nothing
+// dispatched, and the refusal names no step or tool of that workflow.
 func TestTriggerWorkflow_OtherTenantsPrivateWorkflowRefused(t *testing.T) {
 	db := openLifecycleDB(t)
 	ctx := context.Background()
@@ -122,7 +124,7 @@ func TestTriggerWorkflow_OtherTenantsPrivateWorkflowRefused(t *testing.T) {
 		TenantID:    tenantID.String(),
 		ScanID:      scanID.String(),
 		TriggeredBy: shared.NewID().String(),
-		Interactive: true,
+		TriggerType: scanworkflow.TriggerTypeAutomation,
 	})
 	var de *shared.DomainError
 	if !errors.As(err, &de) || de.Code != scansvc.CodePipelineNotFound {
