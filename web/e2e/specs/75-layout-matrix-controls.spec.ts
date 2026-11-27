@@ -48,13 +48,52 @@ test.describe('layout matrix detector: dead space in a control', { tag: ['@shell
     const found = await at(
       page,
       1440,
-      token('width:240px;justify-content:space-between', `<span>Target: All</span>${chevron}`)
+      token(
+        'width:240px;justify-content:space-between',
+        `<span>Target: All</span>${chevron}`
+      ).replace('role="combobox" ', 'aria-haspopup="menu" ')
     )
     expect(found.deadSpace.join('\n')).toMatch(/px of empty room before the trailing icon/)
   })
 
+  test('flags a token group whose empty clear-button room follows the chevron', async ({
+    page,
+  }) => {
+    const found = await at(
+      page,
+      1440,
+      `<main style="width:900px"><div style="display:flex;gap:8px">
+        <div data-slot="filter-select" style="display:inline-flex;align-items:center;border:1px solid #ccc;height:32px">
+          <button style="display:inline-flex;align-items:center;gap:6px;padding:0 8px 0 12px;border:0;background:none">
+            <span>Target: All</span>${chevron}</button>
+          <span aria-hidden="true" style="width:32px;height:32px;margin-right:4px"></span>
+        </div></div></main>`
+    )
+    expect(found.deadSpace.join('\n')).toMatch(/trailing icon \d+px from the end of "Target: All"/)
+  })
+
+  test('is quiet for a button whose icon leads its text', async ({ page }) => {
+    const found = await at(
+      page,
+      1440,
+      `<main style="width:900px"><div style="display:flex">
+        <button style="display:inline-flex;gap:6px;align-items:center;padding:0 12px">${chevron}<span>Display</span></button>
+        </div></main>`
+    )
+    expect(found.deadSpace).toEqual([])
+  })
+
   test('is quiet for a token that hugs its content', async ({ page }) => {
     const found = await at(page, 1440, token('', `<span>Target: All</span>${chevron}`))
+    expect(found.deadSpace).toEqual([])
+  })
+
+  test('is quiet for a select field given a width, its chevron at its end', async ({ page }) => {
+    const found = await at(
+      page,
+      1440,
+      token('width:240px;justify-content:space-between', `<span>Open</span>${chevron}`)
+    )
     expect(found.deadSpace).toEqual([])
   })
 
@@ -188,6 +227,17 @@ test.describe('layout matrix detector: sizes in one row', { tag: ['@shell'] }, (
   test('is quiet for one height and one text size', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.setContent(doc(row(doc32, doc32)))
+    expect(await size(page)).toEqual([])
+  })
+
+  test('does not compare the text size of an icon-only button', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    await page.setContent(
+      doc(`<main style="width:900px"><header style="display:flex;gap:8px">
+        <button data-slot="button" style="height:32px;font-size:13px">Search the console</button>
+        <button data-slot="button" aria-label="Full screen" style="height:32px;width:32px;font-size:14px"><svg width="16" height="16"></svg></button>
+        </header></main>`)
+    )
     expect(await size(page)).toEqual([])
   })
 
