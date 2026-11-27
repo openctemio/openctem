@@ -20,20 +20,40 @@ else
   # GitHub refuses a release body over 125,000 characters, which the notes it
   # generates from a long train's pull requests can exceed. Build the body
   # here and cut the generated part at a line, linking the full comparison.
+  # The changelog in <notes-file> alone can pass the limit (a long train): it
+  # is then cut before the first "### " entry that does not fit, and the
+  # generated list is left out.
   body="$(mktemp)"
+  max=120000
+  prev="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
   generated="$(bash "$retry" api "repos/${repo}/releases/generate-notes" -f tag_name="$tag" --jq .body || true)"
-  limit=$((120000 - $(wc -c <"$notes")))
+  size="$(wc -c <"$notes")"
   {
-    cat "$notes"
-    echo
-    if [ "${#generated}" -le "$limit" ]; then
-      printf '%s\n' "$generated"
+    if [ "$size" -gt "$max" ]; then
+      awk -v max="$max" '
+        function flush() {
+          if (!cut && size + length(sec) <= max) { printf "%s", sec; size += length(sec); kept += has }
+          else if (has) cut = 1
+          sec = ""; has = 0
+        }
+        /^### / { flush(); n++; has = 1 }
+        { sec = sec $0 "\n" }
+        END { flush(); printf "\n_The list is cut here (%d of %d entries): GitHub limits a release to 125,000 characters._\n", kept, n }
+      ' "$notes"
+      echo "Full list: https://github.com/${repo}/tree/${tag}/server/changelog.d"
+      [ -n "$prev" ] && echo "Full comparison: https://github.com/${repo}/compare/${prev}...${tag}"
     else
-      printf '%s\n' "${generated:0:$limit}" | sed '$d'
+      limit=$((max - size))
+      cat "$notes"
       echo
-      echo "_The list is cut here: GitHub limits a release to 125,000 characters._"
-      prev="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
-      [ -n "$prev" ] && echo "Full list: https://github.com/${repo}/compare/${prev}...${tag}"
+      if [ "${#generated}" -le "$limit" ]; then
+        printf '%s\n' "$generated"
+      else
+        printf '%s\n' "${generated:0:$limit}" | sed '$d'
+        echo
+        echo "_The list is cut here: GitHub limits a release to 125,000 characters._"
+        [ -n "$prev" ] && echo "Full list: https://github.com/${repo}/compare/${prev}...${tag}"
+      fi
     fi
   } >"$body"
   # Only the newest release line is GitHub's "Latest" release (install
