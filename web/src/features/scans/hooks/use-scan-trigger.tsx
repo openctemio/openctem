@@ -106,9 +106,9 @@ export interface UseScanTriggerOptions {
   /** Called after a run was started. */
   onTriggered?: (scan: TriggerableScan) => void
   /**
-   * Called after every answer of the trigger, started or refused: the API
-   * records a refused trigger (no sensor online, targets out of scope...) as
-   * a blocked run, so a run history must refresh either way.
+   * Called after every answer of the trigger, started or refused, so a run
+   * history refreshes either way. A refused manual trigger (no sensor online,
+   * targets out of scope...) creates no run; it is shown as the refusal.
    */
   onSettled?: (scan: TriggerableScan) => void
   /** Offered in the "already running" dialog to open the active run. */
@@ -144,7 +144,7 @@ export function useScanTrigger({ onTriggered, onSettled, onViewRun }: UseScanTri
         onSettled?.(scan)
         await invalidateScanConfigsCache()
       } catch (error) {
-        // The refusal is on record as a blocked run: show it in the lists.
+        // A refused manual run creates no run: refresh the lists anyway.
         onSettled?.(scan)
         void invalidateScanConfigsCache()
         const refused = refusedFromError(error)

@@ -15,7 +15,8 @@ import (
 )
 
 // The trigger-time tool availability gate (NO_SENSOR_FOR_TOOL) runs on every
-// trigger path and its refusal is recorded as a blocked run with that code
+// trigger path and its refusal (of an automatic trigger) is recorded as a
+// blocked run with that code
 // and the message naming the tool and the sensor counts; the error itself
 // reaches the caller unchanged (code and details for the browser).
 
@@ -25,7 +26,7 @@ func (noSensorAvailability) ToolAvailabilityFor(_ context.Context, _ shared.ID, 
 	return &sensordom.ToolAvailability{Name: name, Enabled: true, Status: sensordom.ToolOfflineOnly, SensorsTotal: 2}, nil
 }
 
-func assertNoSensorBlocked(t *testing.T, deps *testScanServiceDeps, scanID shared.ID, err error) {
+func assertNoSensorRefused(t *testing.T, err error) {
 	t.Helper()
 	var tu *scanservice.ToolUnavailableError
 	if !errors.As(err, &tu) || tu.Tool != "nuclei" || tu.SensorsTotal != 2 {
@@ -34,6 +35,11 @@ func assertNoSensorBlocked(t *testing.T, deps *testScanServiceDeps, scanID share
 	if wildcardCode(err) != scanservice.CodeNoSensorForTool {
 		t.Fatalf("error code = %q, want %s", wildcardCode(err), scanservice.CodeNoSensorForTool)
 	}
+}
+
+func assertNoSensorBlocked(t *testing.T, deps *testScanServiceDeps, scanID shared.ID, err error) {
+	t.Helper()
+	assertNoSensorRefused(t, err)
 	b := blockedRuns(deps, scanID)
 	if len(b) != 1 {
 		t.Fatalf("blocked runs = %d, want 1", len(b))
@@ -56,7 +62,12 @@ func TestNoSensorForTool_BlockedOnEveryTriggerPath(t *testing.T) {
 		_, err := svc.TriggerScan(context.Background(), scanservice.TriggerScanExecInput{
 			TenantID: tenantID.String(), ScanID: sc.ID.String(), Interactive: true,
 		})
-		assertNoSensorBlocked(t, deps, sc.ID, err)
+		// A member's "Run now" gets the refusal as its answer and creates
+		// nothing.
+		assertNoSensorRefused(t, err)
+		if n := len(deps.runRepo.runs); n != 0 {
+			t.Fatalf("runs = %d after a refused Run now, want 0", n)
+		}
 	})
 
 	t.Run("scheduled", func(t *testing.T) {

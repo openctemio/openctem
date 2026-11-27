@@ -465,9 +465,10 @@ reason in words (`skip_reason`); it is never queued and dispatches nothing.
 `DEPENDENCY_SKIPPED` follows `depends_on` transitively, except in a workflow
 with `continue_on_failed_dependency`, whose dependents run on the scan's
 targets. The run starts with every other step. When every step it would
-start is skipped the trigger is refused as a blocked run with
-`NO_RUNNABLE_STEPS` (400), whose message names each missing step and why
-(at most five, then "N more").
+start is skipped the trigger is refused with `NO_RUNNABLE_STEPS` (400),
+whose message names each missing step and why (at most five, then "N
+more"). A member's "Run now" creates nothing (the refusal is its answer and
+is audited); an automatic trigger is recorded as a blocked run.
 
 **During the run** a step whose capability no tool implements when its turn
 comes (a tool was turned off meanwhile) is skipped with `NO_MATCHING_TOOL`
