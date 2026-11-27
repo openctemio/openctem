@@ -202,3 +202,33 @@ test.describe('layout matrix detector: sizes in one row', { tag: ['@shell'] }, (
     expect(await size(page)).toEqual([])
   })
 })
+
+const ruled = (
+  chipStyle: string
+) => `<main style="width:900px"><table style="border-collapse:collapse">
+  <tbody><tr style="border-bottom:1px solid #ccc;height:36px">
+    <td style="padding:0 8px;height:36px;overflow:visible">
+      <div style="height:20px;display:flex;flex-wrap:wrap;gap:4px">
+        <span data-slot="badge" style="display:inline-block;height:20px;${chipStyle}">KEV</span>
+        <span data-slot="badge" style="display:inline-block;height:20px;${chipStyle}">Ransomware</span>
+      </div></td></tr>
+  <tr style="height:36px"><td>Next</td></tr></tbody></table></main>`
+
+test.describe('layout matrix detector: content crowding its row edge', { tag: ['@shell'] }, () => {
+  test('flags a chip that wraps across the row bottom border', async ({ page }) => {
+    // 80 px wide: the second chip wraps below the first, past the row.
+    const found = await at(
+      page,
+      1440,
+      ruled('width:70px').replace('display:flex;', 'display:flex;width:80px;')
+    )
+    expect(found.cellCrowd.join('\n')).toMatch(
+      /chip "Ransomware" [\d.]+px past its row's bottom edge/
+    )
+  })
+
+  test('is quiet for chips on one line, centred in the row', async ({ page }) => {
+    const found = await at(page, 1440, ruled('width:70px'))
+    expect(found.cellCrowd).toEqual([])
+  })
+})
