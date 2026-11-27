@@ -963,6 +963,19 @@ tenant. Tests: `internal/app/outbox/group_test.go`,
 burst, urgent budget, folding, KEV, tenant isolation, the link, a 5,000-event
 burst), `internal/infra/notifier/group_render_test.go` (provider limits).
 
+### Connection test on create and update
+
+Creating or updating a channel tests it at once and saves the result on the
+channel (`status`, `status_code`, `status_message`); the request answers 201
+or 200 with that state whether the test passed or not. One test is bounded to
+15 seconds (`notificationTestTimeout` in `internal/app/integration/service.go`,
+below the request timeout), so a relay or webhook that never answers is saved
+as `error` with `INTEGRATION_UNREACHABLE` instead of the request ending in 504
+with the channel saved and its state unknown. E-mail credentials must be the
+JSON object of the relay settings (`smtp_host`, `smtp_port`, `from_email`,
+`to_emails`, and `username`/`password` for an authenticated relay); anything
+else is 400 `BAD_REQUEST` naming those fields.
+
 ### Rate Limiting
 
 Test notifications (`POST /integrations/{id}/test-notification`) are limited
