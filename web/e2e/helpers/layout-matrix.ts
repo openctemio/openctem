@@ -87,10 +87,11 @@ import { submitSignIn } from './auth'
  *                    button, a button ending in an svg) whose icon stands more
  *                    than 12 px from its inner end, or more than 16 px after
  *                    its text ("Target: All" sized for "Known exploited", its
- *                    chevron mid-way, owner 2026-11-27). The second is not
- *                    asked of a control holding one width by design
- *                    (`data-hold-width`, a ToolbarSlot) or of a field filling
- *                    its column
+ *                    chevron mid-way, owner 2026-11-27). The second is asked
+ *                    of filter tokens, menu buttons and buttons only (a
+ *                    select field may be given a width, its chevron pinned to
+ *                    its end), and not of one holding one width by design
+ *                    (`data-hold-width`, a ToolbarSlot) or filling its column
  *   floatingAction   a list row's (li, listitem, 480 px and wider) kit button
  *                    with nothing of the row after it, yet more than 64 px
  *                    from both the row's start and its end ("Validate" mid-way
@@ -1591,21 +1592,33 @@ export async function findMatrixBreaks(
     // `ToolbarSlot` sized by every value it can show) and a field that fills
     // its column (a form's full-width select: its chevron is at its end).
     const TRAILING =
-      '[role=combobox]:not(input), button[aria-haspopup], [role=button][aria-haspopup], [data-slot="select-trigger"], [data-slot="button"], button'
+      '[role=combobox]:not(input), button[aria-haspopup], [role=button][aria-haspopup], [data-slot="select-trigger"], [data-slot="filter-select"], [data-slot="button"], button'
     for (const root of roots) {
       for (const c of Array.from(root.querySelectorAll(TRAILING))) {
         if (!shown(c) || c.closest('.react-flow, [data-layout-canvas]')) continue
         const r = c.getBoundingClientRect()
         if (r.width < 48 || r.height > 64) continue
-        // The trailing icon: the last element child, if it is an svg.
-        const kids = Array.from(c.children).filter(
-          (k) => painted(k) && k.getBoundingClientRect().width >= 1
-        )
-        const last = kids[kids.length - 1]
-        if (!last || last.tagName !== 'svg' || kids.length < 2) continue
-        const icon = last.getBoundingClientRect()
-        if (icon.width > 24) continue
         const rtl = rtlOf(c)
+        // The trailing icon: the icon-sized svg drawn furthest towards the
+        // end, with text before it and nothing after it. Found by position,
+        // not by markup, so a group (a filter token: its trigger, then an
+        // empty room kept for its clear button) is measured as one control.
+        const svgs = Array.from(c.querySelectorAll('svg')).filter((g) => {
+          if (!painted(g) || hidden(g)) return false
+          const gr = g.getBoundingClientRect()
+          return gr.width >= 8 && gr.width <= 24
+        })
+        if (!svgs.length) continue
+        const last = svgs.reduce((x, y) => {
+          const xr = x.getBoundingClientRect()
+          const yr = y.getBoundingClientRect()
+          return (rtl ? yr.left < xr.left : yr.right > xr.right) ? y : x
+        })
+        const icon = last.getBoundingClientRect()
+        const others = contentSpans(c, last).filter((sp) => sp.right - sp.left >= 1)
+        if (!others.length) continue
+        if (others.some((sp) => (rtl ? sp.left < icon.left - 1 : sp.right > icon.right + 1)))
+          continue
         const inner = innerBox(c)
         const tail = Math.round(rtl ? icon.left - inner.left : inner.right - icon.right)
         const name = nameOf(c)
@@ -1615,6 +1628,10 @@ export async function findMatrixBreaks(
           )
           continue
         }
+        // A select field may be given a width (a form column, a set toolbar
+        // width) with its chevron pinned to its end; a filter token, a menu
+        // button or a button hugs what it shows.
+        if (c.matches('[data-slot="select-trigger"], [role=combobox]')) continue
         if (c.closest('[data-hold-width]') || c.querySelector('[data-slot="toolbar-slot"]'))
           continue
         const p = c.parentElement
