@@ -43,6 +43,8 @@ describe('DataTable load error block', () => {
     expect(cell).not.toBeNull()
     expect(cell!.className).toContain('text-start')
     expect(cell!.className).not.toContain('text-center')
+    // As tall as the alert: no fixed height leaving an empty band under it.
+    expect(cell!.className).not.toMatch(/(^|\s)h-\d/)
     expect(cell!.querySelector('[role="alert"]')).not.toBeNull()
   })
 
