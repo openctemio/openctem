@@ -8,6 +8,3140 @@ with images, checksums and upgrade commands, are on
 
 Unreleased changes are kept one file per change in [`changelog.d/`](changelog.d/README.md) and folded in here at release.
 
+## v0.25.0 (2026-11-27)
+
+### Upgrade notes
+
+#### Before you upgrade
+
+- **Security: the web console passes on the client address only from a trusted proxy**: none for the shipped Compose stack, the all-in-one image and the binary install, which set `TRUST_PROXY_HEADERS=true` behind the gateway. A setup that publishes the web console without a proxy in front of it should leave `TRUST_PROXY_HEADERS` off and not list the console in `SERVER_TRUSTED_PROXIES`.
+- **Added: the vulnerability feed address is managed in the console**: `VULNFEED_BASE_URL` and `VULNFEED_MIRRORS` keep working and now pin the address: while either is set the console shows it locked. Remove them from the environment to manage the address in the console.
+
+#### Behaviour changes, removals and deprecations
+
+- Behaviour change: New scan never refuses a scan for a missing tool or sensor (redesign branch) (`ui-v2-new-scan-missing-tools.md`)
+
+### Security: analysis jobs end only by a signed request under the lease epoch
+
+- `complete` and `fail` of an `analyze` command are accepted only from a request signed with the AI worker's own key that states its lease epoch; a bearer key, an unsigned request or a missing epoch is answered `command-not-found`. AI workers paired with a key (the default) are unaffected.
+- Docs: server/docs/architecture/ai-analysis.md
+
+### Security: findings list rows mask secrets and e-mail addresses
+
+- A findings row, a phone card and a group header no longer show an e-mail address, a URL credential or a
+  secret in clear when a scanner, an importer or a person put one into a title, a location, a rule id or a
+  group label. The address keeps its domain (`***@example.com`), a secret keeps at most its first and last
+  4 characters (`AKIA••••••••MPLE`); tooltips and accessible names are masked the same way. Nothing is
+  discarded, and "Show" stays on the finding page.
+- Display only: the list response is unchanged, and no request, permission or data path is added.
+- Docs: web/docs/findings-list.md ("Sensitive values in rows")
+
+### Security: the web console passes on the client address only from a trusted proxy
+
+- The web console's sign-in, password, second-factor, SSO and session calls to the
+  API now follow `TRUST_PROXY_HEADERS` like its API proxy already did: with the
+  setting off they send no client address, and the API sees the console's own.
+- With the setting on, the console (and the platform console) sends the API one
+  address: the right-most `X-Forwarded-For` entry, written by the proxy in front of
+  it (`X-Real-IP` only when `X-Forwarded-For` is absent). Entries to its left and
+  malformed values are not passed on.
+- **Upgrade note:** none for the shipped Compose stack, the all-in-one image and the
+  binary install, which set `TRUST_PROXY_HEADERS=true` behind the gateway. A setup
+  that publishes the web console without a proxy in front of it should leave
+  `TRUST_PROXY_HEADERS` off and not list the console in `SERVER_TRUSTED_PROXIES`.
+- Docs: server/docs/configuration/environment-variables.md (`TRUST_PROXY_HEADERS`), web/docs/ops/ENVIRONMENT_VARIABLES.md
+
+### Security: the web console encodes request parameters, quotes completed search values and forwards fewer WebSocket headers
+
+- An integration id taken from the address is encoded as a single path segment in the integration, ticket policy, Jira metadata and repository requests, and the notification history page uses it only when it is a UUID.
+- A value completed in the search box is quoted unless it is a plain word, so operator characters, parentheses, commas and reserved words such as `or` cannot change the query.
+- The WebSocket forwarder passes only the headers the API needs (cookie, origin, user agent, language and the upgrade headers) and drops `Forwarded`, `True-Client-IP`, `X-Client-IP` and the rest.
+- The API proxy answers a failed connection to the API with a fixed message; the detail stays in the server log.
+- Docs: web/docs/security-architecture.md
+
+### Behaviour change: New scan never refuses a scan for a missing tool or sensor (redesign branch)
+
+- A workflow step that no tool or sensor here runs is read as skipped, required or optional, as a run treats it: the
+  Review step warns "N steps are skipped; the other steps run" instead of refusing Create, and the workflow preview
+  shows the step as skipped. When no step can run, the scan is still saved and the notice says its start is refused
+  until a tool or sensor for its steps is available.
+- A workflow whose readiness is blocked is offered under "Runs in part" with the steps it skips; a CI-only workflow
+  stays off (it runs in a CI pipeline).
+- A scanner that no sensor can run now is offered with the reason; once chosen, the field says the scan is saved and
+  its start is refused until such a sensor is online.
+- No request changes; the server already saves such scans and skips such steps at run time.
+- Docs: none (the console says what is skipped; scan stages are described in server/docs/architecture/scan-stages.md)
+
+### Added: AI worker results are applied
+
+- When an AI worker completes an analysis job, the platform applies its result as the AI agent, through the same checks, unmasking and governance as a built-in run. Every row the AI agent writes names the run, the worker, the model and model family, the result digest and the evidence it cited; each result is audited (`ai_agent.analysis_result_applied` / `ai_agent.analysis_result_refused`).
+- The result is taken once, for the run named in the platform's own job, within the run's deadline; a replay, another job's result, another organization or a late result applies nothing. A change anyone made to the finding after the job was sent turns the AI agent's changes into comments.
+- Lowering risk stays a request a person decides. Worker text is stored as plain text (markdown and HTML escaped), and a suggestion whose text matches a prompt-injection pattern is only a comment.
+- The result contract gains an optional `usage.model_family`. Runs record `outcome`, `action_log`, `model_family` and `subject_row_version` (migration `20261125075517_ai_worker_results`, schema only).
+- Docs: server/docs/architecture/ai-analysis.md
+
+### Added: a pause switch and limits for changes AI agents make without a person
+
+- `GET/PUT /api/v1/organization/settings/ai/autonomy`: pause every change an AI agent makes without a person at once, and limit them per hour and per day (defaults 100 and 500; `null` is unlimited). Pausing and lowering are one click; resuming, raising or removing a limit needs a recent sign-in, is audited critical and owners and administrators are told. Applies to the built-in executor and to AI worker results.
+- Docs: server/docs/architecture/ai-autonomy.md
+
+### Added: layout matrix on GitHub-hosted runners
+
+- `.github/workflows/layout-matrix.yml` (on demand) runs the MVP v2 layout matrix for the given routes, tenant app or platform console, in parallel shards against the e2e stack of `web/e2e/ci`, and merges the per-route detector totals into the run summary and one artifact. New in `web/e2e/ci`: `layout-matrix.sh` (one shard), `seed-matrix.sh` (API keys, SLA policies and notification channels, fixture data only) and `console.compose.yml` (the console listener).
+- Docs: server/docs/development/ci-cd.md
+
+### Added: pending MCP write confirmations carry a message code and typed values
+
+- A pending write-action confirmation now also stores a stable message code and typed values beside the English summary, so the web can show it in the reader's language and show the AI-written comment text and the client visibility as separate fields (a comment that imitates a "Visible to the campaign's client" line can no longer pass for the real one). For `add_finding_comment`: code `mcp.add_finding_comment`, values `finding`, `severity`, `content` and, on a pentest finding only, `client_visible`.
+- `GET /api/v1/mcp-access/confirmations/{id}` adds `summary_code` and `summary_params` (omitted when empty, for confirmations created earlier). The English `summary` is unchanged.
+- An invalid code or oversized values are not stored; the request still succeeds with the English summary.
+- Migration `mcp_confirmation_summary_code` (two nullable columns, checks added not valid then validated; no backfill).
+- Docs: server/docs/architecture/mcp-authorization.md
+
+### Added: in-app notifications carry a message code for the reader's language
+
+- Every in-app notification now stores a stable message code and typed values next to its English
+  title and body (`message_code`, `message_params` in `GET /api/v1/notifications` and in the live
+  push). The web console words the notice from its catalogs in the reader's language, so a
+  Vietnamese console no longer shows English sentences or raw capability keys such as
+  `capture.screenshot`. E-mail, chat and webhook deliveries keep the English text.
+- Older notifications keep their stored text; nothing is rewritten.
+- Migration `20261126054042_notification_message_code` adds two nullable columns (no table rewrite).
+- Docs: server/docs/architecture/notification-system.md#message-codes
+
+### Added: a page title can carry one control on its own line
+
+- The shared page header takes a `titleAction`: one control drawn right after the title text, outside the heading, on the same line at every width (for example a chevron that makes a dashboard's name its switcher). Pages without it are unchanged.
+- Docs: web/docs/ui-style-contract.md (page anatomy, PageHeader)
+
+### Added: an optional feed relay sensor for the compose install
+
+- `deploy/docker-compose.relay-sensor.yml` runs a separate container whose only job is to relay the signed feeds
+  (relay mode, the platform makes no outbound feed request). It uses the sensor's `-relay` profile image (no tools;
+  it reports `feed.relay@1` only, so no scan is ever placed on it), enrolls with its own single-use token
+  (`SENSOR_RELAY_ENROLLMENT_TOKEN`, written by `setup.sh`; an older `.env` needs the line from `.env.example`) and
+  runs with 256 MiB and half a CPU. Add it to `COMPOSE_FILE`, alone or next to the bundled scanning sensor; designate
+  the second one under Console > System > Feed delivery for redundancy. Needs a sensor release that publishes the
+  `-relay` image (sensor v0.42.0 or later); its tag follows `sensor.latest` like the bundled sensor's.
+- `install.sh` verifies a sensor profile image (`<version>-relay` and the like) against the sensor release
+  workflow at its release tag.
+- The bundled sensor's default (`sensor.latest`) moves to v0.42.0, the first sensor release that publishes the
+  `-relay` image. It scans each target host under a per-host budget, at the Standard pacing level by default; its
+  seccomp profile is unchanged from v0.41.1.
+- Docs: server/docs/deployment/docker.md, server/docs/architecture/feed-transfer.md, https://github.com/openctemio/sensor/blob/main/docs/PROFILES.md
+
+### Added: ticket field mapping issues and import preview warnings carry typed values
+
+- Ticket field mapping validation issues, drift checks and preview notes now include `params` and,
+  where one `code` covers several sentences, a `message_code` naming the exact sentence. Every
+  existing `code` value and the English `message` are unchanged, so existing clients keep working.
+- Import mapping preview warnings include `params` (counts).
+- The web console uses them to show these texts in the reader's language.
+- Docs: none (additive API fields used by the web console; the mapping guides are unchanged)
+
+### Added: one actions menu that becomes a bottom sheet on phones (redesign branch)
+
+- `ActionMenu` renders the same items as an anchored menu from 768 px up and as a bottom sheet below: the
+  object's name as the title with a close button, 48 px rows without icons, the destructive group last, the reason
+  of an unavailable action as visible text, submenus opened in place with a Back row. It closes on the close button,
+  Escape, a tap outside, a swipe down or a chosen action, and gives the focus back to its button. The sheet's code
+  loads only when a phone first opens one.
+- The Findings page-header More uses it; its "Create" heading over a single item is gone.
+- The layout checks of the visual gate now also report an open popup nearer a screen edge than the gutter and an
+  action-sheet row shorter than 44 px.
+- Docs: web/docs/ui-style-contract.md ("Action menus: ActionMenu")
+
+### Added: the asset page has its actions, findings, technologies, key facts and risk (redesign branch)
+
+- The asset page header has one main action chosen by the asset's state: Scan now when scans may reach the
+  asset now, otherwise Edit. More holds Edit, the lifecycle snooze (presets, a custom number of days, clear),
+  Mark out of scope and Archive (with Undo), then the links. Each opens the dialog the inventory and its drawer
+  already use, behind the same permission; the snooze now needs assets:write in the menu, as the API does.
+- New tabs: Findings (the asset's open findings, with their count) and Technologies (when probes found any).
+  Overview starts with the key facts and the risk summary (score, open findings by severity, why this score).
+- Owner roles ("Primary", "Stakeholder", …) and their hints, and the type of each related asset, are now
+  translated.
+
+Docs: none (behaviour described in the pull request; no settings or API change)
+
+### Added: shared parts of a record's page (redesign branch)
+
+- New shared components for detail pages: the page header (type and identifier chips, place in the list with
+  previous and next, title, one main action, secondary actions and a More menu; on a phone the way back to the
+  list leads the header), the properties list (label and value rows in groups, one or two columns by the space
+  it has, 44 px rows on a phone with the long tail folded), titled section blocks with a count and end controls,
+  and a closed-by-default fold line. No page uses them yet; the finding page moves to them next.
+- Docs: web/docs/ui-style-contract.md ("Detail pages"), web/docs/ui/shared-kit.md
+
+### Added: Paths on a web origin's page
+
+- A web origin's page has a Paths tab: its endpoints as a tree of path segments. From 1024 px the tree sits beside
+  the endpoints of the selected path; on a phone each level is a list with a breadcrumb back up. Each path shows how
+  many endpoints and open findings lie under it, with a mark for a critical or high finding and one for paths under
+  a scope exclusion, which stay listed.
+- Filters hide static files (on by default), 4xx answers and gone endpoints, keep paths with findings, in or out of
+  scope, or one method; the search covers paths. What the filters hide is counted, with Show all.
+- The endpoint sheet lists the open findings at the endpoint's path (matched by path: findings record no method).
+- A site never crawled says so, with Crawl this site for people who may scan it. The Web tab keeps the headers,
+  parameters and changes; its endpoint list moved to Paths (search, the sheet and Export CSV included).
+- On the Paths tab, and on the other tabs that hold a wide table (Findings, Relationships, Ports, Technologies, Web),
+  the panel takes the page's full width from 1280 px and the properties list steps aside; below 1280 px it stays above
+  the tab strip as before. The endpoints table hides its least important columns by its own width (parameters,
+  content type, last seen, last status) so no column is cut at its edge.
+- Docs: server/docs/architecture/web-surface.md
+
+### Added: the vulnerability feed address is managed in the console
+
+- System > Threat intelligence has a new card, Vulnerability feed address, next to Feed delivery: the release address and up to 5 mirrors the signed vulnerability feed is downloaded from. A change applies at the next import or relay round without a restart; in relay mode the relay sensors download from the release address (the mirrors stay direct mode only), and the job signer's and sensor's origin allowlists still decide what a relay may fetch.
+- Only https addresses without a user name, password, query or fragment that do not point to an internal network are accepted. A change needs the new platform owner permission `platform.settings.feed_sources` (migration `20261125035231_platform_settings_feed_sources_permission`), a fresh authenticator code and a reason; it is a critical admin audit row with the old and new addresses, and every administrator is told.
+- "Test fetch" downloads the key set and the newest signed release index from each address and checks them against the pinned root; it imports nothing and is off in relay mode and with a local bundle folder.
+- The signing root (`VULNFEED_ROOT_KEY_ID`) and the local bundle folder (`VULNFEED_BUNDLE_DIR`) stay server settings: the card shows "Official root" or "Custom root (set on the server)" with the key fingerprint, and whether a folder is set (never its path).
+- **Upgrade note:** `VULNFEED_BASE_URL` and `VULNFEED_MIRRORS` keep working and now pin the address: while either is set the console shows it locked. Remove them from the environment to manage the address in the console.
+- Docs: server/docs/architecture/feed-transfer.md#feed-sources-in-the-console, server/docs/configuration/environment-variables.md
+
+### Added: Approvers decide many requests at once, and the waiting card says why it waits
+
+- Findings > Approvals has row selection for requests and groups: "Approve selected" (at most 100, one sign-in check for the whole call) and "Reject selected" (one reason for all). The result lists how many were approved, rejected or skipped, and why each skipped one was skipped, in plain words ("Your own request: someone else decides it", "Already decided").
+- A group's detail has "Leave out" for each waiting finding (with a reason; the rest of the group keeps waiting), hidden for the person who asked. When nobody else can approve a group and you are the organization's only member and owner, "Approve myself" approves it with a code from your authenticator app and a reason, the same dialog as for one request. After a Dismiss that sent findings to approval, the result toast offers the same "Approve myself" next to Undo.
+- The card of a finding that waits for approval shows the reason ("Reason: Scanner was wrong") and the note separately, says why it waits (for example "Your organization asks a second person to check every false positive" or "You own this asset, so someone else must check it"), links owners and administrators to Settings > Approvals ("Change who approves"), and offers "Approve myself" when allowed.
+- The request dialog asks for a note only when it is needed: it is optional when you decide alone on a finding that is not serious, required whenever a second person approves or the finding is serious. The same rule drives bulk Dismiss. The reason you picked last is preselected.
+- The audit log names the new events in plain words: several findings dismissed at once, that dismissal undone, a finding left out of a group request, and a group request self-approved by its owner.
+- Needs `POST /api/v1/approvals/bulk/approve`, `/bulk/reject`, `/approvals/batches/{id}/self-approve` and `/approvals/batches/{id}/items/{finding_id}/reject`, and the card fields `policy_reasons`, `eligible_approver_count`, `self_approval_available`.
+
+Docs: none (the redesigned console's user guide follows it; server/docs/architecture/finding-status-lifecycle.md "Approvals" describes the API)
+
+### Added: change a filter's operator and values from its chip on Findings
+
+- The text of a filter chip on Findings is a button: it opens the editor Add filter shows for that field, on the chip's own operator and values, anchored to the chip (a bottom sheet on a phone). Apply rewrites the filter in the address in its place; Escape or a click outside changes nothing, and focus returns to the chip.
+- Changing between two operators of one kind ("is" and "is not", "≥" and "≤") keeps the values that were entered, in Add filter too.
+- Chips of the open saved view stay locked, and unknown filters stay as they are.
+- Docs: web/docs/findings-list.md
+
+### Added: Dismiss many findings at once from the findings list
+
+- The findings list's bulk bar has "Dismiss" (vi "Không cần sửa") for the checked rows or for every finding the filter selects (up to 500). One dialog: false positive (default) or accept the risk until a date, one reason (the last one is preselected), and one note, required or optional as the server's preview says (optional only when you decide every finding alone and none is serious).
+- Before anything changes, a live server preview says in plain words what will happen ("38 will be dismissed now. 4 need a second person: they go to approval (one request). 2 skipped: already waiting for approval."), each line expandable to its findings; it says when you will be asked to sign in again, and suggests a suppression rule when most findings come from one rule. Above 500 the dialog shows the count and offers a suppression rule instead.
+- The result toast has Undo: it reopens the findings this Dismiss decided that have not changed since, and withdraws its approval request. Nothing is deleted.
+- Keyboard: `D` opens Dismiss for the selection, `1`-`7` pick a reason, Ctrl/Cmd+Enter dismisses; `X` (and Shift+X for a range) is now listed in Help. The false-positive reasons are listed most common first ("Scanner was wrong", then test or example code).
+- Needs the bulk dismiss API (`POST /api/v1/findings/bulk-dismissals`, `/preview`, `/{id}/reopen`).
+
+Docs: none (the redesigned console's user guide follows it; server/docs/architecture/findings-bulk-by-filter.md "Bulk dismiss" describes the API)
+
+### Added: shared list pieces for the Add filter key, row name links, folded filter keys, no-match words and risk columns
+
+- `useAddFilterShortcut` is the one handler of the `f` key of "Add filter": it does nothing in a field, a menu or a dialog, with a modifier key, while a modal is open or in Query mode. The Findings list uses it.
+- `RowNameLink` is the name of a row as a real link to its detail page: a plain click opens the detail overlay, a modified or middle click follows the link. The Findings title uses it.
+- A clearable `FilterSelect` with `foldLabel` reads its key ("State") instead of "All" once the key folds away on a narrow toolbar, so two selects on one list never both read "All"; its accessible name is unchanged.
+- `DataTable` `emptyState.noMatch` also takes `{ title, hint }`: the table keeps its icon, layout and Clear filters action and shows the words of the page.
+- A `risk` column kind: start-aligned, 148 px wide, highest first.
+- Docs: web/docs/ui/shared-kit.md, web/docs/ui-style-contract.md, web/docs/findings-list.md
+
+### Added: quick view for remediation tasks and campaigns
+
+- Clicking a row on Fix plan > Tasks or Fix plan > Campaigns opens a details sheet over the list instead of leaving it: a side sheet on a tablet or desktop, a bottom sheet on a phone. "Open full page" goes to the task or campaign page for deep work, and ctrl/cmd-click on a name still opens the page in a new tab.
+- The open sheet is in the address (`?task=<id>`, `?campaign=<id>`): the link can be shared, Back closes the sheet and a reload reopens it. The arrow keys or j and k move to the previous or next row; Esc closes the sheet and focus returns to the row.
+- The task sheet shows the state, owner, deadline (with the overdue mark), progress, risk points and the first findings with links, and offers the same actions as the task page under the same permissions (Mark fixed, Put on hold or Resume, Cancel task). Its timeline and query load only when expanded. The campaign sheet shows the status, owner, due date, findings fixed and the first tasks, and the one status change the campaign allows (Start, Complete or Reopen; Cancel in the menu).
+- A shared progress cell puts the count above a thin bar, centred in the row, on both lists; risk points use the plain figures of the other number columns.
+
+Docs: none (console interaction only; the task and campaign pages and their permissions are unchanged)
+
+### Changed: the layout acceptance matrix also checks the platform console
+
+- The viewport matrix and layout checks used to accept the tenant app's pages now run on platform console pages too (`web/console/e2e/specs/layout-matrix.spec.ts`, under the console's own Playwright config), signed in as the console suite's administrator, with the console's list data.
+- Docs: none (test tooling only; no product behaviour, request or API change)
+
+### Changed: Console E2E runs on pushes to next, Web E2E reports every shard on a push
+
+- Console E2E now also runs on a push to `next` (same paths as its pull request trigger), so a console regression there is reported without waiting for the nightly run.
+- Web E2E keeps `fail-fast` for pull requests and the queue, but on a push or the nightly run every shard finishes, so one run reports the whole suite.
+
+Docs: server/docs/development/ci-cd.md
+
+### Changed: web image size budget 345 MB
+
+- The image guard's budget for `openctem-web` is 345 MB (was 330 MB). The en and vi message catalogs added to the web console grew the image to 331 MB, so the image guard failed the All-in-one build.
+
+Docs: none (internal CI size budget; nothing a user configures)
+
+### Changed: a cleaner, faster search and command palette
+
+- The search and command palette (⌘K / Ctrl+K) is one surface: the search field on its top edge, a compact list (36 px rows, 44 px on a phone) with a clearly marked selected row and an icon per entry, and a footer with the keys to move, open and close. It is wider, sits near the top of the screen and dims the page more; on a phone it fills the screen from the top. The corner close button is gone on a computer (Esc or the "Esc" key cap close it); a phone keeps a Close button beside the search field.
+- With nothing typed it shows Recent (pages you opened in this browser), Go to (the main sections) and Create; typing searches pages, settings, views, findings, assets and tasks, and `>` lists the commands. Page names follow the interface language. Pages and commands you cannot open are never offered.
+- The platform console's palette and the "Move to task" picker use the same surface.
+- Docs: web/docs/ui-style-contract.md (section 8, Overlays: Command palette)
+
+### Changed: platform console CAPTCHA, Two-factor, Alerts and Leaked credentials settings
+
+- The four pages use the settings page layout of the organization settings: one reading column of sections, the save bar pinned to the bottom (a full-width bar on a phone), and the same loading, load-failed and view-only states.
+- A view-only administrator sees one "View only" notice at the top instead of a line at the end of each form.
+- Secret fields (CAPTCHA secret key, alert webhook address and signing secret) use the shared secret field: masked, with Show value for what you just typed. A stored secret is still never sent back by the server.
+- "Check the secret key" and "Send a test alert" are rows of their own, with a line saying what they check.
+- The two-factor grace days say which members they apply to, and an invalid number is shown under its field.
+- The console page checks run the layout-break detectors on the four pages with stored and fresh-install values, long names, on a phone, a tablet and a desktop, light and dark, English and Vietnamese.
+
+- Docs: none (console page layout, no behaviour change in the API)
+
+### Changed: platform console navigation, settings pages and detail headers
+
+- The console sidebar footer is two rows: Help, and the signed-in administrator, whose menu holds My security keys, Language and Sign out. The navigation above it no longer gets covered on a laptop screen.
+- Every console settings page (Admin sign-in, AI provider, E-mail, Legal, Limits, Scan approval, Scan identification, Sign-up, Social login) uses the same frame as CAPTCHA, Alerts and Two-factor: sections divided by hairlines, switches as rows with the switch at the end, no boxed switches or cards inside cards.
+- "Changed by ..." and "Set in this console" lines sit under the section description instead of floating beside it.
+- Organization and user details: the breadcrumb names the record and is the way back; the separate back link row and the description repeating the slug are gone.
+- Docs: none (layout only; the console pages and their settings are unchanged)
+
+### Changed: the default dashboard opens on the CTEM stages
+
+- The CTEM dashboard (the one a new person starts with) now opens with the key figures, then the five CTEM stages, then Fix next at half width beside the new-versus-fixed chart. The large exposure flow chart is no longer in the template, and the age-band heatmap was left out to keep the rows full.
+- Dashboards you already have are not changed. A copy of the earlier default shows the "new layout" offer, where you can add the stage row, switch to a new copy (yours is kept) or dismiss it.
+
+- Docs: server/docs/architecture/dashboards.md (template layout rules)
+
+### Changed: the dashboard home on a phone, and widgets you cannot read
+
+- On a phone the dashboard shows its first five widgets; the others wait behind one "More widgets on this dashboard (n)" button, so the home is one short column. From 640px every widget shows as before.
+- A widget whose figures your role may not read is no longer shown as a lock card: it is left out, like a widget of a module that is off. The editor still lists it, so a person who may edit the dashboard can remove it. When nothing on a dashboard is available to you, the page says so.
+- Exposure flow: a long stage name ("Xác định phạm vi" in Vietnamese at 1024px) no longer runs over the next stage; names wrap between words.
+- The layout-break checks now open the dashboard home with long English, Vietnamese and host-name titles and five-digit figures in its widgets, at phone, tablet and desktop widths.
+
+- Docs: none (web layout of the dashboard home; the user guide describes widgets and the editor, which are unchanged)
+
+### Changed: the layout sweep lists the task cards as known debt
+
+- The sweep's lopsided check found the phone task cards of /remediation/tasks stopping at about half their width once the seed has tasks; the route joins the debt list that only shrinks.
+- Docs: none (test-only change)
+
+### Changed: the Filters button shows its count inside the button
+
+- The number of applied filters is drawn inside the Filters button, beside its icon ("9+" above nine; the exact count stays in the button's accessible name), instead of a badge on its corner that read as clipped where the button joins the search field on a phone. The button keeps its size.
+- Docs: none (no user documentation describes the badge; the component comment states the rule)
+
+### Changed: the findings state "Dispositioned" is called "Dismissed"
+
+- The state filter on the findings list, the vulnerability list state label and the findings lens descriptions now say "Dismissed" (Vietnamese "Không cần sửa") for false positives, accepted risks and duplicates that are closed without a fix and never counted as fixed. The Closed description reads "Fixed and dismissed together".
+- Only the words shown to people change. The `state=dispositioned` URL parameter and API value are unchanged, so links and saved views keep working.
+- Docs: web/docs/findings-list.md ("Practice and State chips")
+
+### Changed: console privileged actions ask for the reason and the authenticator code in their own dialog (redesign branch)
+
+- Console > Administrators: Make {role}, Mark / Unmark break-glass, Confirm last sign-in was a test, Remove identity
+  provider binding, Reset two-step verification and Deactivate / Reactivate open the console's confirmation with a
+  reason and a fresh authenticator code, instead of a plain OK. The code goes with the request (no second prompt over
+  the dialog); the reason goes in the request body. The routes, permissions, step-up and second-approval rules are
+  unchanged.
+- Console > Content catalog: Import a bundle, Publish a package and Revoke ask for the reason and the code in the
+  dialog (the API already required both and opened a second prompt for the code); Revoke also asks to type the
+  version. The file chooser is in the console's language.
+- Console > Sensors: Enroll a sensor asks for the name, lifetime, reason and code in one dialog instead of two.
+- Every reason field shows an example for its own action instead of one generic example.
+- Docs: https://docs.openctem.io/console/scanning/ (catalog and enrollment already say "a reason and a fresh code");
+  the roster sentence of https://docs.openctem.io/console/security/ ("Each action asks for confirmation") is updated
+  when the redesign ships
+
+### Changed: heavy web unit tests finish well inside their time limit
+
+- Test-only. Dialog and form tests no longer pay a timer hop per user action (`userEvent.setup({ delay: null })`) or one key event per character of a long value (`enter()` in `web/src/test/user-input.ts` pastes it); the toast library's stylesheet is not added to the test document; the quick-scan preview test waits for the request that carries the scanner (the preview follows the targets by 400 ms, so on a slow machine it asks once before the scanner is chosen); the dashboard accessibility test is split so no test carries two axe runs, and the gallery run covers the dialog alone.
+- Docs: none (test-only)
+
+### Changed: Add-tool dialog uses translated text
+
+- The add and edit custom tool dialog reads its labels, placeholders, hints and messages from the English and Vietnamese catalogs instead of having them written into the component.
+- English text is unchanged.
+- Docs: none (text moved to catalogs, no behaviour change)
+
+### Changed: capability dialogs and repository page text moved to translation catalogs
+- The create and edit capability dialogs and the repository detail page (overview, branches, findings and settings tabs) now take every label, placeholder, toast and message from the English and Vietnamese catalogs.
+- No visual change in English; a few labels now use sentence case.
+- Docs: none (text moved to catalogs, no behaviour change)
+
+### Changed: access control, pentest and pipeline page text moved to the language catalogs
+
+- Team assets, bulk assign, scope rules, membership end date and the team error panel in access control now read their text from the English and Vietnamese catalogs.
+- Pentest finding detail, finding editor sections, campaign hours presets and the reports list read their text from the catalogs; counts use plural forms.
+- The mobilization and validation error pages, the priority rules value placeholder and the campaign list member filter hints are translated.
+- Some labels now use sentence case (for example "Assign asset" instead of "Assign Asset").
+- Docs: none (text moved to catalogs, no behaviour change)
+
+### Changed: scope, secret store and source control connection text moved to the language catalogs
+
+- The source control connection dialogs (add, edit, sync repositories), the connection card and the connections section now read their labels, hints, toasts and counts from the English and Vietnamese catalogs (new `scmConnections` catalog).
+- The scope exclusion dialogs, testing mode dialog, change preview, attestations, exclusions table and scope settings form take their text from the catalogs; the helper sentences for path rules (testing impact, path prefix problems, review consequences) are translated too.
+- The secret store credential dialogs translate the token placeholder; format samples such as private key headers stay as written.
+- No change to how these screens look or behave in English.
+- Docs: none (text moved to catalogs, no behaviour change)
+
+### Changed: lists with a few fixed filters share one Add filter panel
+
+- The shared kit has `AddFilterPanel`: the Add filter button opening a list's fixed facets in one popover (a sheet on a phone), with the `f` shortcut. Scans uses it in place of its own copy; nothing changes on screen.
+- Docs: web/docs/ui/shared-kit.md (Add filter)
+
+### Changed: a lone destructive action stays behind the "⋯" trigger (redesign branch)
+
+- A menu with one non-destructive item that has an icon still renders as that button. A lone destructive item
+  (Delete, Remove, Revoke, Disable) no longer does: it stays behind the "⋯" trigger, so a row never shows a bare
+  destructive button that can be mis-tapped, and the development-time one-item error does not fire for it.
+- Compensating controls: Link assets and Test join Delete in the row's one "⋯" menu. The typed-name confirmation is unchanged.
+- Docs: web/docs/findings-list.md ("More menu")
+
+### Changed: layout matrix opens a pentest campaign's Checklist tab with recorded results
+
+- The matrix seed (`web/e2e/ci/seed-matrix.sh`) adds the built-in OWASP Top 10 checklist to its pentest campaign and records passed, failed (with a note) and not applicable results on part of it, the rest untested.
+- New route state `/pentest/campaigns/[id]@checklist` opens that tab (`?view=checklist`).
+- Docs: none (test harness only; no product behaviour changes)
+
+### Changed: layout matrix opens more detail pages and link pages
+
+- The matrix finds an id for the detail pages of components, CTEM cycles, emerging threats, programs, own scan workflows, pentest findings (edit), import mappings, ticket mappings and own pentest templates, and in the console for platform users and organizations.
+- Entry states can be opened by another seeded account: the organization picker and new-organization page as an account of two organizations, an invitation link as the invited account, and an AI-application confirmation when the stack's seed prints its id.
+- Docs: none (test harness only; no product behaviour change)
+
+### Changed: layout matrix counts facts as content and covers every id route
+
+- Layout matrix (test harness, `web/e2e`): a wasted row no longer counts facts. A MetaLine of label and value, a `<dl>` fact grid, a bordered fact card (not a panel with fields) and an entry page's header line are content; a lone label, notice or button row is still reported. The nodes of a zoomable canvas (React Flow) are not page layout for the clipped, mixedRows and pastPanel checks. A field under a sticky or fixed action bar is no longer reported as joined to the bar's buttons. The untranslated check treats text inside an element whose `lang` differs from the page's as content, so a document published in English on a Vietnamese page needs only `lang="en"`.
+- Hosted layout matrix: `web/e2e/ci/seed-matrix.sh` now adds the rows behind every id route (SBOM components, a CTEM cycle, an asset group, a pentest campaign with a finding, an own pentest template and scan workflow, an import mapping, a bug bounty program, an emerging-threat alert, a ticket mapping draft), a pending AI-application confirmation and the legal pages turned on, so it covers the same routes as a local matrix run. Fixture data only (example.com, RFC 5737).
+- Docs: server/docs/development/ci-cd.md
+
+### Changed: remediation tasks and campaigns accepted on every screen width
+
+- The Fix plan opens a task's quick view (`?task=`) from a row, as the Tasks list does, and shows progress with the shared progress cell.
+- A campaign's tasks are a table (task, owner, state, progress, deadline, a row menu to remove a task) with the shared paging, instead of a grid of cards. The campaign facts above it read "Owner: ...", "Due: ...".
+- A task page keeps its Fix card at its own height beside Progress and People, aligns the rail with the findings rail, shows the campaign link in the row of facts under the title, and folds a long timeline behind "Show all events".
+- The Tasks toolbar shows the chosen view without its label so the filters stay on one row on a tablet in Vietnamese.
+
+- Docs: none (layout of existing pages)
+
+### Changed: the layout matrix checks the sign-in and link pages in their real states
+
+- The viewport matrix opens /reset-password with a token (the new-password form) and after a refused token (expired link), /login after wrong credentials, /forgot-password after the request, /register from an invitation link, and /oauth/device with an unknown code, beside the bare pages.
+- /oauth/device runs signed in, as it needs a session; before, the matrix opened it signed out and checked the sign-in page instead.
+- The signed-out checks (the matrix and spec 75c) now open a context with no session: a new context took the signed-in session of the test project, so /login and the link pages showed the dashboard and were never checked.
+- Docs: none (test harness only; no page, request or wording changes)
+
+### Changed: the exceptions list shows when each rule was created
+
+- The Exceptions table has a Created column (hidden on narrow frames).
+- Docs: none (list column, no behaviour change)
+
+### Changed: My work uses its space: one toolbar row, one caption line
+
+- The page sentence and the tab sentence rows are gone: each tab's sentence is behind an info mark at the start of its toolbar.
+- "Triage" no longer appears twice: the queue's "Triage these" is the one entry; triaging everything new is under the queue's More menu.
+- "Top N of M", "Updated ..." and Refresh are one caption line under the list instead of rows above it.
+- Docs: none (presentation of an existing page; no behaviour, request or wording of the API changes)
+
+### Changed: lighter first download for sign-in and list pages
+
+- Pages now download only the shared parts they use. Before, a page that used one part of a shared component group (one badge, the page header) also downloaded every other part, such as the data table, the filter kit and the detail sheets. The web's `package.json` now declares which modules must run just by being imported (style sheets, the finding-layout registration, the instrumentation and extension entry points), so the bundler can leave out the unused parts. Median first-load script per page: 485 KB down to about 418 KB (gzip).
+- Pages without the app shell (sign-in, sign-up, password and e-mail links, two-factor, invitations) load the footer's language menu after the page shows. Until then the same Language button stands in its place. Route-link tabs (legal pages, section tabs) no longer download the tabs component.
+- The first-load budget (`web/scripts/route-js-budget.json`) is back to a 480 KB median.
+- Docs: none (no behaviour change; the bundle rules are in web/src/lib/__tests__/bundle-boundaries.test.ts)
+
+### Changed: query field suggestions lead with the fields people filter by, each explained
+
+- In Query mode of the findings, assets and scans lists, the field suggestions now start with the
+  fields people filter by (findings: severity, state, status, priority, kev, epss, cve, assignee…),
+  then relation fields (asset.…), then the other fields, with record identifiers (`id`, `asset_id`,
+  `branch_id`…) last. With nothing typed the list shows them under headings (Common, Asset, More
+  fields, Identifiers); with a prefix typed, fields whose name starts with it come first.
+- Short names are suggested (`kev`, `epss`, `cve`, `assignee`, `domain`, `ip`…) and typing one offers
+  its operators and values as the full path does.
+- Each row says what the field means in plain words (English and Vietnamese), with an example where
+  it helps (`epss>=0.5`) and the kind of value it takes; operators say what they do.
+- An empty field with no recent queries offers the fields to start from.
+- `GET /api/v1/query/schema` lists the fields in that order and adds `aliases` (short names, shortest
+  first) and `group` (`common`, a relation such as `asset`, `more`, `identifier`) to each field.
+  Additive: existing fields of the response are unchanged.
+- Docs: server/docs/architecture/query-language.md
+
+### Changed: the search mode is part of a list's link
+
+- The findings, assets and scans lists keep the search field's mode in the URL (`mode=query`), so a shared link or
+  a reload opens in Query mode with the query text in the field; without the parameter the list opens in Basic mode
+  as before. A Query-mode link whose text is refused opens in Query mode with the problem shown.
+- Saved views of the findings and assets lists store the mode in `page_params` (`mode`: `basic` or `query`), sent
+  beside the filter on `POST`/`PUT /api/v1/views`, and open in it. Any other value is refused (400).
+- Docs: server/docs/architecture/query-language.md ("Web")
+
+### Changed: Ready to close shows its count and Refresh under the list
+
+- The row above the list that held only the count and Refresh is gone, on both Ready to close and Recently auto-closed: the count and Refresh are one caption line under the table.
+- Docs: none (presentation of an existing page; no behaviour, request or wording of the API changes)
+
+### Changed: a remediation task's page has tabs and a details rail
+
+- The task page uses the same layout as a finding's page: the header holds the state, the campaign and the actions (Mark fixed, Request exception, More); tabs Findings, Fix steps and Timeline hold the work, and a Details rail beside them shows the deadline, risk left, progress, owner and watchers. On a phone the tabs are one swipeable row and the details sit under the header.
+- The timeline and the query that created the task load when their tab opens. Every action and permission is unchanged.
+- "Manage watchers" stays inside its column on narrow rails (task page and every other page with a deferred watchers row).
+- Docs: none (layout of an existing page; no behaviour or permission changes)
+
+### Changed: Settings > Approvals is a short list of approval types, each edited on demand (redesign branch)
+
+- `/settings/approvals` shows one row per approval type (false positives, accepted risks, suppression rules,
+  scans) and per shared rule (approvers, deadline and high risk, backup contact), each saying in plain words what
+  is set, for example "A second person approves every one. Critical: Two approvers". The row's Change button
+  opens its editor in a dialog (a bottom sheet on a phone); a person without `settings:write` gets View, the same
+  editor with nothing to save. On a 390 px phone the page drops from about 4,600 px to the rows alone.
+- Each editor saves its own fields with one request to the same endpoint (the changed level fields, and the whole
+  policy when it changed). A refused save keeps the editor open with the draft and the server's reason.
+- Lowered protections that wait their 24 hours are listed together above the rows, with one "Cancel the waiting
+  changes" (the API always dropped every waiting lowering at once). "What the tiers mean" stays folded.
+- The scans row says the scan approval mode in force and opens its own page, still for whoever may open it.
+- Unchanged: `settings:read` to open, an owner or administrator with `settings:write` and a recent sign-in to save,
+  lowering a level or relaxing the policy owner only and 24 hours later, raising at once, the audit entry and the
+  notice to approvers. Settings search anchors now point at the rows (`#false-positives`, `#accepted-risks`,
+  `#suppression-rules`, `#security-pool`, `#approval-limits`).
+- Docs: https://docs.openctem.io/user-guide/10-settings-and-integrations/ (the Approvals text of docs PR #316 says "one page with one
+  save bar" and "Approval policy section": to be updated to the rows and editors)
+
+### Changed: one empty table cell for every list (redesign branch)
+
+- The muted dash of a table cell with nothing to show is a shared component, so the tenant app and the platform
+  console draw empty cells the same way instead of writing their own dash.
+- The shared cells that wrote their own dash use it now: a missing time, a missing EPSS score, an action with
+  nobody recorded and a queue item that waits for no decision. Each empty cell says why on hover.
+- Technologies: the Exploit column shows the muted dash with "No known exploit" on hover.
+- No API change.
+- Docs: none (the look of an empty cell is unchanged apart from the muted colour and the hover text).
+
+### Changed: lists come first on a phone
+
+- On Scans, Runs, Vulnerabilities, Exposures, Components, Emerging threats and the attack surface Technologies, Certificates and Exposures lists, the counts strip now follows the list on a phone, so the first row is visible without scrolling (Scans: first card at 41% of the screen instead of 59%).
+- Recent runs on Scans no longer shows a "-" placeholder when fewer than three runs count towards the success rate; the run marks are shown alone.
+
+Docs: web/docs/ui-style-contract.md
+
+### Changed: settings rail groups follow the task (redesign branch)
+
+- "Access & security" is split into "People and access" (members, teams, roles, service accounts, API keys, AI
+  assistants, directory sync) and "Sign-in and oversight" (sign-in, security overview, audit log, support access).
+- Approvals is a group of its own; Scan approval stays in Scanning. The tool, sensor and detection-content pages
+  move from Scanning to a "Tools and sensors" group.
+- Group and page names say "and", not "&". The rail starts with "Back to app" and "All settings".
+- SIEM is called "Event forwarding" in the rail, on its page and in the integrations overview.
+- URLs do not change; no redirects are needed. No API change.
+
+Docs: web/CLAUDE.md (the Settings navigation section lists the new groups); no public guide names the old groups
+
+### Changed: phone action menus choose a small menu or a bottom sheet by fit (redesign branch)
+
+- On a phone, `ActionMenu` now stays a small menu under its button, with 44 px rows and the 16 px gutter, when it has
+  at most six items, no submenu, labels within two lines and room beside the button; a longer menu, one with a
+  submenu, or one that would not fit opens as the bottom sheet. It measures this each time it opens; pages do not
+  choose. The Findings page-header More (two items) is now a small menu on a phone.
+- The bottom sheet keeps at least 16 px (or the safe area) under its last row and sits on the bottom of the visible
+  screen, above a browser toolbar.
+- The reason of an unavailable action shows as text under its label on a phone, in the menu as in the sheet.
+- Docs: web/docs/ui-style-contract.md ("Action menus: ActionMenu")
+
+### Changed: the approval requests page follows the list pattern, with a shared queue add-on (redesign branch)
+
+- Approval requests (`/findings/approvals`): a title row names the view ("Pending requests", "All requests") and
+  shows its count once, with Refresh; the Status lens is the toolbar's filter token; the table freezes the finding
+  at the start and the decision at the end, keeps every row on one line and gains the Display menu (density,
+  columns). The page header no longer repeats the pending count.
+- Decide by is a date and reads "Overdue" with the date once it has passed. Acceptance end is a date.
+- Your own request shows "Your request" in place of Approve and Reject, with the reason on hover and focus, and
+  written out on a phone.
+- Empty states: no request yet, nothing waiting (with "Show all requests"), and no request with the chosen status.
+  A refused read says there is no access; a failed read keeps the tabs and the toolbar and offers Retry.
+- Phone cards show the finding, status, requested status, approval tier and progress, requester, decide by,
+  acceptance end, the justification (with its AI mark) and the decision controls.
+- Group exceptions use the same table pattern (name first, one-line rows, decide-by date, loading and error in
+  the table).
+- Every outcome (approved, rejected, refused, reminded, canceled) is also written to a status region for screen
+  readers. Approve and Reject are named after the finding for assistive technology.
+- The reject dialog shows the AI mark of a request an AI proposed.
+- No behaviour, permission, confirmation or limit changed: Approve and Reject need `findings:approve`, Remind and
+  Cancel need `findings:write` and the request being yours, a reminder is refused within an hour of the last one,
+  the sole member's own approval is offered only when the API allows it.
+- Docs: none (internal redesign branch)
+
+### Changed: the asset Activity list follows the list pattern (redesign branch)
+
+- The Activity list under Assets has a title row (the kind on screen, its one count for the period, Refresh),
+  Kind and Period as the toolbar selects, a Display menu, one-line rows with the asset name as a link and its
+  type after it, and the shared pager (25, 50 or 100 rows).
+- "Internet-facing only" is a toolbar button at the height of the selects beside it, pressed while on, and keeps
+  its place for every kind: for Newly exposed it is pressed and locked, with the reason, so choosing a kind moves
+  nothing in the toolbar. On a phone it reads "Internet-facing" so its label stays inside the toolbar strip.
+- A long asset name ends in an ellipsis inside its column; it no longer widens the table past its frame.
+- A user without access sees the shared no-access state.
+- Docs: none (internal redesign branch)
+
+### Changed: Needs attention asset queues follow the list pattern (redesign branch)
+
+- The five asset queues (Validate primary assets, Decide monitoring, No owner, Criticality not set, Not scanned in
+  30 days) keep their page, page size and sort in the address, so a queue position can be linked to and survives a
+  reload; riskiest first stays the order at rest.
+- The first read draws skeleton rows under the queue's header and no count; a later read keeps the rows on screen
+  with the refresh bar. A failed read says what failed in the table with Retry; a refused read shows the access
+  message instead of the queue.
+- On a phone, "Select" is in the queue's own More beside "Open in the inventory", not in a one-item menu of the
+  table.
+- Docs: none (internal redesign branch)
+
+### Changed: the asset page follows the redesigned detail layout (redesign branch)
+
+- Header: the asset type and its scope, exposure and criticality as chips above the name, and a More menu (Copy
+  link, Copy ID, Open the list of this type). On a phone the way back to Assets leads the header, the chips wrap
+  onto lines and More sits at the end of the name's line. The criticality chip in a header (page and drawer) shows
+  its level by bars and word without a solid fill.
+- Tabs sit right under the header: Overview (next steps, scan window), Relationships with
+  its count (when the relationships module is on), How we found this (ownership and scope, lineage, where values
+  come from, freshness, coverage, identifiers), Ports and services (domains and subdomains), Web (web origins, or
+  any asset a sensor kept web evidence for), Owners and access, and Activity (the timeline; its "Why" opens How
+  we found this). The active tab is in the URL (`?tab=`).
+- Owners and access, and Relationships, were only in the asset drawer; the page now shows them with the same
+  components, permissions and module switch, loaded when their tab opens.
+- Properties (risk score, open findings, status and liveness, type, ID, description, tags) are a plain list
+  beside the panel from 1280 px, under the header below that, and a card of rows on a phone with the ID,
+  description and tags folded.
+- A tab's reads start when the tab opens; the page loads the related-assets count with the asset. No permission
+  or API change. A repository still opens its workspace.
+
+Docs: web/docs/asset-detail.md
+
+### Changed: the Possible duplicates queue follows the list pattern (redesign branch)
+
+- A review is one line: the identity with its type, the reason, the evidence, the asset that stays and the assets
+  that merge into it, with their counts. The two decisions (Merge, Keep separate) are buttons at the end of the row
+  (the shared queue controls), shown to a user who may delete assets; the merge confirmation is unchanged. On a
+  phone each review is a queue card with both decisions on its own row.
+- The outcome of a decision is said to assistive technology as well as in the toast.
+- Loading, a failed read (with Retry) and the empty queue are states of the table, so its toolbar stays; a user
+  without access sees the shared no-access state.
+- Every Needs attention queue says its count as the one list count beside its name.
+- Docs: none (internal redesign branch)
+
+### Changed: the Asset groups list follows the list pattern (redesign branch)
+
+- The Asset groups list has a title row (the list name, its one count, Refresh and Export; on a phone one More
+  menu), "Add filter" as its one filter entry from 768 px (the Filters sheet on a phone), one row of filter chips
+  with Clear filters, one-line rows with the group name as a link to the group page, the shared selection bar
+  (Criticality, Environment, and Delete under More) and separate first-run and no-match states.
+- The list opens sorted by name. The docked filter panel is gone; every filter is still reachable.
+- The checkbox column and each bulk action show only to a user who holds the permission the action needs.
+- Docs: none (internal redesign branch)
+
+### Changed: the relationship suggestions queue follows the list pattern (redesign branch)
+
+- A suggestion is one line: the source asset with its type, the relationship in the same words as the asset page,
+  the target asset with its type, the reason and the confidence. Approve and Dismiss are buttons at the end of the
+  row (the shared queue controls); changing the relationship type moved from a click on the type to the row's
+  More. A reader without assets:write sees the queue without them, as before.
+- The first read draws skeleton rows under the search; a failed read says what failed with Retry; a refused read
+  shows the shared no-access state. Search, page and page size (25, 50 or 100) are kept in the address.
+- Selection and the bulk Approve come from the shared table (no checkbox column without assets:write); on a phone
+  "Select" and Scan are in one More beside Approve all, and each suggestion is a queue card.
+- Every text is translated (English and Vietnamese), toasts included, and every outcome is also said to assistive
+  technology. "Approve all" no longer repeats the count shown beside the queue's name; its confirmation names it.
+- Docs: none (internal redesign branch)
+
+### Changed: Assets shows waiting scoping decisions as a count on the Needs attention tab (redesign branch)
+
+- The Inventory tab no longer draws the "Decide monitoring" card between the tabs and the list: the list starts
+  right under the tabs. The Needs attention tab shows how many assets wait for a monitoring decision (the kit's tab
+  count, hidden at zero; screen readers hear "Needs attention 462 assets waiting", the visible text first). The landing still lists Decide
+  monitoring with its explanation and count.
+- No new request: the count is the same one-row request the landing's row sends; Groups and Activity show it only
+  when that answer is already loaded. Inventory sends one request fewer than before.
+- Docs: server/docs/architecture/exposure-taxonomy.md ("Scoping decisions")
+
+### Changed: Assets opens sorted by risk, and filters open from Add filter only (redesign branch)
+
+- The Assets inventory is sorted by risk, highest first (assets of one score by name), unless the address names
+  another order: the Risk column shows the sort arrow, so the order on screen is explained by a column. The
+  default order is not written into the address. Before, the list came newest first, an order no column showed.
+- The docked filter panel is gone from the Assets inventory: from 768 px "Add filter" opens its picker; on a
+  phone the Filters button joined to the search field opens every facet in a sheet, as before.
+- The columns, filters and chips of a type list (for example "ASN organization", "Provider") show their Vietnamese
+  names in Vietnamese: the label was always read in English.
+- The severity breakdown in the asset drawer uses the 12 px caption size (its labels were 11 px).
+- Docs: none (internal redesign branch)
+
+### Changed: the Assets inventory follows the list pattern of Findings (redesign branch)
+
+- Rows are one line at the density heights (40, or 52 comfortable): the type follows the name on the same line,
+  and a certificate's asset name follows its subject name. Columns have fixed widths by kind, so headers keep
+  their whole word in English and Vietnamese; the name stays in view while the table scrolls sideways and the
+  row menu is the last column.
+- Selecting assets: the shared checkbox column (Shift-click and `x` ranges) and the shared bulk bar with two
+  direct actions (Assign owner, Set criticality), More and Clear. Every other bulk action is under More, in the
+  order the bar had them: Add to scope, Mark out of scope, Archive, Add tag, Remove tags, Add to unit, Add to
+  service, a repository's own actions, then Delete. "Remove tags" is dimmed with the reason when the selection
+  has no tag. Someone who may change nothing gets no checkbox column (the bar's read-only note is gone).
+- The row menu is the shared action menu (a bottom sheet on a phone), the same on the table row and the phone
+  card: Open details page, the asset's own actions, Edit, then Delete. "Sync from source" is dimmed with the
+  reason on a repository added by hand.
+- Phone: "Add asset" is a square in the title row beside the view switch (no row of its own); Refresh and Export
+  are in the list's More with Select; the search field has a short placeholder; a list that shows every asset
+  has no footer. Cards have fixed slots: the name, the type and its group or description as separate items,
+  criticality in plain words ("High criticality"), and the risk slot on every card (a dash while there is no
+  score); they have the row menu, and a checkbox once "Select" is chosen.
+- The view name is the open saved view's name; "Modified" and Reset show beside it while the filter differs
+  from the view.
+- The list's More (after Refresh and Export) holds Select (phone), "Save filter as group", "Add all matching
+  to group" and "Copy link". The two group actions no longer appear in and disappear from the toolbar with the
+  filter: they are always listed, dimmed with the reason while there is no filter a group rule can hold.
+- Rows per page are 25, 50 and 100; the pager says "assets". Views comes before Group in the toolbar.
+- Without `assets:read` the inventory and the Needs attention queues show the shared no-access notice.
+- The type-specific empty hints are translated.
+- Docs: none (internal redesign branch)
+
+### Changed: a phone card shows the list's key figures first
+
+- The automatic phone card of a list has room for two fields. Columns that hold the list's key figures (a count, a risk score, a severity, a priority, a due date) now take those places before descriptive columns, so the asset groups card shows Assets and Findings (also "Findings 0") instead of Criticality and Assets, and the Criticality chip moves to the title line beside the name (the title line takes a status column the table keeps at every width before one it drops on narrow screens, here Environment), so nothing it showed is lost. The fields are still shown in column order (every list without its own phone card).
+- Docs: web/docs/ui-style-contract.md (automatic phone card)
+
+### Changed: a column kind for a queue's decision buttons (redesign branch)
+
+- Tables have a `decisions` column kind for a queue's Approve, Reject and More buttons: end-aligned, as wide as the page sets it, so every queue's last column lines up the same.
+- The check that every table column declares a kind counts only table columns: a CSV export field list in the same file no longer counts as columns without a kind.
+- Docs: web/docs/ui-style-contract.md (column kinds)
+
+### Changed: the Components list follows the shared list pattern (redesign branch)
+
+- Rows are one line: the package name (a link to its page, kept in view while the table scrolls sideways) with its
+  ecosystem and package URL, versions in use, assets, open findings by severity with the KEV count, risk, fix,
+  licenses. Fix and License step aside on a narrow table and stay under Display > Columns; Last seen is under it too.
+- A title row names the view ("All packages"), states the count once and shows Modified and Reset when a filter,
+  the search or the order is changed. Refresh, Export SBOM and More (Import VEX) are in the same row; on a narrow
+  row and on a phone Export SBOM and Reset fold into More. Import SBOM is the page's primary action in the page
+  title (an icon on a phone).
+- The docked filter panel is gone: the same facets open from Add filter (key `f`), and on a phone from the Filters
+  button joined to the search field. Every filter shows as a removable chip in one row under the toolbar, with
+  Clear filters.
+- Phones show the list first (the tiles follow it) with one card per package in fixed slots. Empty, no match,
+  loading, error and no access each have their own state.
+- No API change: the same reads, filters, sorts, presets, dialogs and permissions.
+- Docs: none (layout of an existing list; filters, actions and permissions are unchanged;
+  `server/docs/architecture/software-components.md` describes the new layout)
+
+### Changed: the console Admin activity list follows the shared list pattern (redesign branch)
+
+- Console > Admin activity: a title row with the view name ("Changes" or "All events") and the count once, with
+  "Export this page (CSV)" at its end as the list's own action (it was in the page header). The kind view and
+  Result stay in the table's toolbar; action, administrator and the two dates move into "Add filter" and show as
+  chips under the toolbar (one row at 1440 px); a phone opens every filter from the Filters button. Rows are on one line (the action in words,
+  then its code) and the action stays in view while the table scrolls sideways. IP address steps aside on a narrow
+  table.
+- The shared activity table (also on the console overview and an organization's activity tab) gets column kinds and
+  widths, a table name, and its states: a failed read shows in the table with Retry while the filters stay; an empty
+  list says whether nothing happened yet or nothing matches, with Clear filters (the kind view is kept).
+- No API change: the same reads, filters, 50 a page, export and detail sheet.
+- Docs: none (layout of an existing console list; what it reads and who may read it are unchanged)
+
+### Changed: the console Administrators and Roles lists follow the shared list pattern (redesign branch)
+
+- Console > Administrators: a title row with the count once; the table search, then Display at the toolbar's end;
+  rows on one line (name, then the address) and the administrator stays in view while the table scrolls sideways.
+  "Last tested" and "Sign-in" step aside on a narrow table and stay under Display > Columns. Every row menu is named
+  after its administrator; each item opens the same confirmation as before, and your own row has no menu.
+- Console > Roles: the roles and their holders are two titled lists, each with its count. Roles show their description
+  on the same line. "Give a role" moved from a button in the row to the row's menu; it opens the same dialog (role and
+  reason). Taking a role is still the cross on its badge, never on your own row.
+- Empty lists say so, a failed read shows in the table with Retry. No API change; the same reads, permissions,
+  confirmations, reasons and step-up.
+- Docs: none (layout of two existing console lists; what they read, who may act and how are unchanged)
+
+### Changed: the console Content catalog list follows the shared list pattern (redesign branch)
+
+- Console > Content catalog: "Publish a package" and "Import a bundle" are the page's own actions in its header (the
+  same conditions: shown to a super admin, Import disabled without trust roots, and disabled until the trust state
+  is read).
+- The package list comes first on every width, from the first frame; the trust notice and the read-only Trust card
+  follow it. While the catalog is out of date the list's title row carries an "Out of date" link down to them.
+  Nothing moves on first load (the list dropped 148 px when the trust state arrived above it; on a phone it started
+  below the first screen).
+- The package list has a title row with the type view and the count once; the search and the type select are the
+  table's own toolbar; rows are on one line (the title, then the package id) and the package stays in view while the
+  table scrolls sideways; Source steps aside on a narrow table. A failed read shows in the table with Retry while the
+  toolbar stays; an empty list says whether the catalog is empty or nothing matches, with Clear filters.
+- On a phone a package is a card with fixed slots instead of a label/value grid: its title, its package id, the
+  type chip and the source, then the latest version and the version count on one line; a tap opens its versions.
+- No API change: the same reads, 25 a page, the versions sheet and its Revoke dialog.
+- Docs: none (layout of an existing console list; what it reads and who may change it are unchanged)
+
+### Changed: the console Organizations and Sessions lists follow the shared list pattern (redesign branch)
+
+- Console > Organizations: a title row with the count once; search, Status and Owner in the table's own toolbar, with
+  Display at its end; rows on one line (the name is a link to the organization, its slug beside it) and the name stays
+  in view while the table scrolls sideways. Limits, Single sign-on and Created step aside on a narrow table and stay
+  under Display > Columns. The list shows 25 organizations a page (was 20). An empty list says whether there are no
+  organizations yet or none match, with Clear filters; a failed read shows in the table with Retry.
+- Console > Sessions: a title row with the count once; rows on one line. "End session" moved from a button in the row
+  to the row's menu; it opens the same confirmation, which still asks for a reason and a fresh code. The current
+  session's row has no menu, as before.
+- Nothing else changes: the same reads and permissions, the same filters, the same Create organization dialog. No API
+  change.
+- Docs: none (layout of two existing console lists; what they read, who may read them and how a session is ended are
+  unchanged)
+
+### Changed: the console Platform sensors fleet and the Platform scanning job and exception tables follow the shared table pattern (redesign branch)
+
+- Console > Platform sensors, Fleet: column kinds and widths, rows on one line (the sensor's name, then its region;
+  its tools as one line of text), the sensor kept in view while the table scrolls sideways, Version and Tools
+  stepping aside on a narrow table. Pause or Resume and Retire moved from buttons in the row into the row's menu
+  ("Actions for the sensor {name}"); they open the same confirmations (reason, code, the typed name for Retire).
+- Console > Platform scanning, Queue: the Jobs table gets the same treatment, its status filter is the table's own
+  select, and "Targets and logs" is in the row's menu (the same reason dialog, still only with the jobs permission).
+  Blocked names: the Exceptions table gets column kinds and widths, one-line rows, and Extend and Revoke in the
+  row's menu (the same dialogs).
+- Console > Platform sensors: the fleet is the page's list and comes first, under a title row with its count.
+  Enrolling a sensor is an action in the page's title row ("Enroll a sensor"): it opens a form dialog with the same
+  fields (name, validity 5 to 60 minutes), the same reason and code confirmation and the same one-time token,
+  shown once in its own dialog. The note on shared scanning in this release sits behind an info mark in the fleet's
+  title row; the line on what pausing and retiring do follows the table.
+- On a phone a fleet sensor is a card with fixed slots instead of a label/value grid: name and region; its state
+  and health on one line that wraps (never cut); version, current jobs and last seen on one line; the tools only
+  when it has some. A value the sensor lacks is left out, not shown as a dash.
+- Platform scanning, Blocked names: the exceptions are the tab's list and come first (title row with the count and
+  Grant exception, the table, then one line on what an exception lifts); the policy card follows it. The warning
+  shown while the government and military rule is off stays above both. On a phone an exception is a fixed-slot
+  card (organization and state, the domain, expiry and who granted it, the reason).
+- While the release keeps shared sensors closed the page has no tabs; a link to Blocked names (`?tab=blocked`) now
+  opens on the blocked names (exceptions first) above the not-available notice and the domain-proof policy, instead
+  of under them.
+- A failed read shows in the table with Retry; each table has a name and its own empty state.
+- Nothing moves on first load: on Platform sensors nothing above the fleet waits for a read; on Platform scanning one
+  placeholder stands until the shared sensors setting is read (the tabs no longer flash before the closed layout,
+  so the two queue reads they made are gone), and the blocked names come once the domain-proof card above is read
+  (the Exceptions table moved 449 px).
+- No API change: the same reads, page size and dialogs.
+- Docs: none (layout of existing console tables; what they read and who may act are unchanged)
+
+### Changed: the console Support access and Sign-ups pages follow the shared list pattern (redesign branch)
+
+- Console > Support access: a title row "Granted to you" with the count once above the grant cards (shown with the
+  support permission only, as the cards are); a grant's expiry and case reference are two items instead of one line
+  joined by a middle dot.
+- Console > Sign-ups: the event feed is the shared table: a title row with the kind view and the count once, the
+  kind as the table's own select, column kinds and widths with rows on one line, Network stepping aside on a narrow
+  table, the load error and both empty states in the table, and the shared pager instead of Previous / Next.
+- Sign-ups: the list comes first on every width; the 30-day counts follow it as one strip (today's count with the 7-
+  and 30-day totals per kind, each tile filtering the list by that kind, the same request as the Event select).
+  Before, three tall count cards put the list below the first screen of a phone. The strip keeps its labels while
+  the counts load, so nothing moves when they arrive.
+- Sign-ups on a phone: an event is a card with fixed slots instead of a label/value grid: the event and its
+  organization link, then when and how, then the email domain and the network; a value the event lacks is left
+  out instead of a dash.
+- No API change: the same reads, 50 events a page, the same Open support session dialog and alert thresholds form.
+- Docs: none (layout of existing console pages; what they read and who may act are unchanged)
+
+### Changed: the console Target mappings list follows the shared list pattern (redesign branch)
+
+- Console > Target mappings: a title row with the view ("All custom mappings", "Active mappings" or "Inactive
+  mappings", set by the metric strip) and the count once; Target type and Asset type are the table's own filter
+  selects (Clear filters is in each select and in the empty state). Rows are on one line (the target type, then what
+  it means); the target type stays in view while the table scrolls sideways; Description and Updated step aside on a
+  narrow table.
+- A failed read shows in the table with Retry while the filters stay; "No custom mappings" (with New mapping) is the
+  empty list's own state, "No mapping matches these filters" the filtered one. The row menu is named after its pair.
+- No API change: the same reads, page sizes (20, 50, 100; 50 by default), and the same New mapping, Edit,
+  Activate / Deactivate and Delete dialogs with their reason.
+- Docs: none (layout of an existing console list; what it reads and who may change it are unchanged)
+
+### Changed: the console Users list follows the shared list pattern (redesign branch)
+
+- Console > Users: a title row with the view name ("All accounts", or the chosen state) and the count once; search and
+  the State select in the table's own toolbar, with Display at its end; rows on one line. The account is a link to its
+  page and stays in view while the table scrolls sideways; "Signs in with" and "Created" step aside on a narrow table
+  and stay under Display > Columns.
+- An empty list says whether there are no accounts yet or none match, with Clear filters; a failed read shows in the
+  table with Retry and the toolbar stays. The three-character search hint sits in the row under the toolbar.
+- Nothing else changes: the same read (`platform.users.read`, audited by the server), the same search, states,
+  columns and page size, and no action on the list. No API change.
+- Docs: none (layout of an existing console list; what it reads and who may read it are unchanged)
+
+### Changed: the Credential leaks list follows the shared list pattern (redesign branch)
+
+- Rows are one line: the identifier with its credential type (kept in view while the table scrolls sideways),
+  source, username, leak date with a "Recent" mark, discovery date, status and severity. Username, Discovered and
+  Source step aside on a narrow table and stay under Display > Columns.
+- A title row names the view ("All credential leaks"), states the count once (leaks, or identities when grouped)
+  and shows Modified and Reset when a filter, the search, the order or the grouping is changed. Refresh and Export
+  are in the same row; on a narrow row and on a phone Export and Reset fold into More. Export moved there from the
+  page title and keeps its confirmation.
+- Status, severity and source are in Add filter (key `f`), each with several values, and on a phone in the
+  Filters sheet joined to the search field together with the grouping. Every filter shows as a removable chip.
+  Grouped by identity, only the search and the status apply (the identities endpoint takes no other filter).
+- Phones show the list first (the tiles follow it) with one card per leak in fixed slots; the secret is never on a
+  row or a card. Empty, no match, loading, error and no access each have their own state. The identity grouping's
+  texts are translated.
+- No API change: the same reads, sorts, tiles, sheet, export and permissions; the filters send the lists the API
+  already takes.
+- Docs: server/docs/architecture/credential-leaks.md (the Credentials list)
+
+### Changed: criticality has one look in lists and on record pages (redesign branch)
+
+- The criticality badge no longer has a solid dark fill for Critical (and a tint for High) in the assets list,
+  the asset groups pages and the other lists that show it: everywhere it is the level bars and the word on the
+  neutral pill, as on the asset page header. The bars and Critical's bold word still tell the levels apart.
+
+Docs: web/docs/ui-style-contract.md
+
+### Changed: the CVE catalog tab follows the shared list pattern (redesign branch)
+
+- Rows are one line: the CVE ID (a link to the vulnerability page, kept in view while the table scrolls sideways),
+  the title (whole in its tooltip), severity, CVSS, EPSS, KEV, exploit maturity in words, published date. KEV,
+  Exploit and Published step aside on a narrow table and stay under Display > Columns. A click on a row still opens
+  the CVE's detail sheet.
+- A title row names the view ("All CVEs"), states the count once ("N of M on this page" while the search narrows the
+  loaded page) and shows Modified and Reset when a filter or the search is on, beside Refresh.
+- The docked filter panel and its remembered open state are gone: the same filters (severity, minimum CVSS, minimum
+  EPSS, KEV only, exploit available) open from Add filter (key `f`), and on a phone from the Filters button joined
+  to the search field. Every filter shows as a removable chip in one row under the toolbar, with Clear filters.
+- Phones show the list first (the page description is read out but not drawn on this tab) with one card per CVE in
+  fixed slots. Empty catalog, no match, loading, error and no access each have their own state.
+- No API change: the same request, filters, page sizes, `cat_` URL parameters and permission.
+- Docs: none (layout of an existing tab; filters, actions and permissions are unchanged)
+
+### Changed: web console type, spacing and control-size tokens (redesign branch)
+
+- The web console's theme gains the redesign's type roles (`text-cap` through `text-wall`, each with its size,
+  line height and weight), the control scale (32 default, 28 dense, 26, 24, 36 entry, 44 phone), row density
+  (40, 32, 52) and the spacing names. The older type names stay as aliases; ids and hashes in mono are 12 px.
+- Pages have 24 px between their blocks (was 20 px); bold text (weight 700) is now 600; organization initials in
+  the sidebar chip are 12 px; page titles and figures are one step smaller below 768 px.
+- Docs: web/docs/ui-style-contract.md
+
+### Changed: The pentest campaign page and the vulnerability page use the shared record header and page tabs
+
+- A pentest campaign opens with the shared record header: its state, targets, environment, sharing level, links and client as chips, the next phase step as the main action, one other step beside it and the rest (more steps, export, import) under More. On a phone "‹ All campaigns" leads back, the buttons take their own row, and every tab keeps its words in one row that swipes sideways.
+- A vulnerability opens with the same header ("Create remediation task" as the main action, "Open n findings" beside it, accept risk, retest and export under More), then the answer to "are we affected" and its numbers, then tabs: Summary, Where, Remediation, Threat intelligence and Timeline (`?tab=`). Nothing was removed: every block of the page is in one of the tabs.
+- Permissions are unchanged: each action keeps the gate it had.
+- Docs: none (layout only; the user guide describes these pages by their content, which is unchanged)
+
+### Changed: an empty list shows its empty state without column headers
+
+- A list with no rows (nothing yet, nothing matches, or a load error) kept its column headers and, on lists with bulk actions, an unchecked "select all" box above nothing. The empty state or error now stands alone in the list's frame; the headers come back with the rows, and stay while a list loads (every list).
+- Docs: web/docs/ui-style-contract.md (empty list without headers)
+
+### Changed: a page or list that fails to load says "Couldn't load" and keeps one alignment
+
+- The shared error block reads "Couldn't load {what}" instead of "Failed to load {what}", and a server failure says "The server did not answer. Nothing was changed." with Retry and Report the problem (Vietnamese: "Máy chủ không phản hồi. Không có gì bị thay đổi.").
+- Inside a list's frame the block was centred while its icon and buttons stayed at the start; it is start-aligned now, like every alert (every list).
+- Docs: web/docs/ui-style-contract.md (error block)
+
+### Changed: the Exposures list follows the shared list pattern (redesign branch)
+
+- Rows are one line: the exposure (its type icon and title, kept in view while the table scrolls sideways), the
+  summary sentence in a column of its own, the threat signals in a column of their own, severity (a "Changed" mark
+  with the reason in its tooltip when an analyst changed it), state, source and first seen. Source, Signals and
+  Summary step aside on a narrow table and stay under Display > Columns.
+- The title row names the lifecycle view (Needs attention, Closed, All states) and states the count once; search text
+  or a filter shows Modified and Reset. Refresh and Export are in the same row; on a narrow row and on a phone they
+  fold into More, which starts with Select.
+- Toolbar: search, Add filter (key `f`) for Severity and Category, then State as a select of a fixed width (on a phone it is in the Filters sheet). Filters
+  show as removable chips in one row under the toolbar, with Clear filters. On a phone the Filters button joined to
+  the search field opens every filter in a sheet.
+- Selection uses the table's own checkbox column and bulk bar: Resolve and Accept risk, then False positive under
+  More, with the same confirmations and the same approval gate (disabled with the reason without `findings:approve`).
+- Rows per page are 25, 50 or 100 (a link with another size keeps it).
+- An empty list says whether there is nothing yet or nothing matches (with Clear filters); a failed read with rows on
+  screen keeps the rows and says how old they are; without the read permissions the list shows the no-access notice.
+- No API change: the same reads, filters and state changes.
+- Docs: none (layout of an existing list; filters, actions and permissions are unchanged)
+
+### Changed: an on/off filter keeps its size when it is turned on (redesign branch)
+
+- Lists have one on/off filter token (`FilterToggle`): the toolbar's height, filled while on, the same box in both states, an optional short label on a phone and a reason when it cannot be changed. Attack surface > Exposures uses it for "Primary assets", which no longer narrows by 2 px when turned on and moves nothing beside it.
+- On a phone, Exposures shows Export as a named icon with a tooltip, so its end actions keep to about 40% of the toolbar's second line and the filter tokens keep their room.
+- Docs: web/docs/ui-style-contract.md (list state), web/docs/ui/shared-kit.md
+
+### Changed: finding page follow-ups (redesign branch)
+
+- A resolved, accepted or false-positive finding shows no main action in its header. "Add to task" is in the
+  More menu whenever it is not the main action (same permission and remediation module as before).
+- The approval band says when a request was made in the console language ("3 giờ trước" in Vietnamese).
+- A tab panel shows the focus ring when the keyboard reaches it, as every other focus stop does.
+
+Docs: web/docs/finding-detail.md
+
+### Changed: the finding page follows the redesigned detail layout (redesign branch)
+
+- Header: type and identifier chips, the place in the list with previous and next ("2 of 27" links back to the
+  list), the title, one main action chosen by the finding's state (Open the original for a duplicate, Retest now
+  once a fix is applied, Mark fix applied while in progress, Add to task otherwise; each with the permission it
+  has elsewhere on the page), Re-verify and AI triage beside it, and a More menu (Copy link, Copy finding ID,
+  Create ticket, Mark as duplicate). On a phone the way back to the list leads the header.
+- Tabs sit right under the header: Overview (why it matters, the fix, scanner output, proof of fix), Evidence,
+  Validation (results and the reachability check, when there is one), Remediation, Data flow, Pentest details,
+  Related and Details (description, scores, identifiers, sources, discovery, import history). Existing `?tab=`
+  links keep working. The Evidence count no longer includes validation results, which have their own count.
+- Properties are a plain list beside the panel from 1280 px, under the header in two columns below that, and a
+  card of 44 px rows on a phone with "Asset, dates and more" folded. Approval, overdue and task bands sit above
+  the panel on every tab.
+- The watchers row keeps to one line: the Watch toggle is an icon button named by its action and pressed while
+  you watch; both controls use the standard sizes (32 px, 36 px on a phone).
+- No permission, status move or API change.
+
+Docs: web/docs/finding-detail.md
+
+### Changed: the Pending approval view opens the approvals inbox
+
+- Under Findings in the sidebar, in pinned views and in the command palette, "Pending approval" now links to the
+  approvals inbox (`/findings/approvals`), where a request is approved, rejected, reminded or cancelled. It used to
+  open the findings list filtered to findings that have a request, which has none of those actions.
+- The count beside it is unchanged. A link that already carries `pending_approval=true` still filters the list.
+
+Docs: web/docs/findings-list.md
+
+### Changed: form dialogs can show a result view with one action (redesign branch)
+
+- `FormDialog` takes `cancelLabel={null}` to leave Cancel out, for a result view inside the same dialog whose one
+  action (Done) closes it; X and Escape still close it.
+- Docs: web/docs/ui-style-contract.md ("Form dialog")
+
+### Changed: forms, wizards and create or edit dialogs share one frame (redesign branch)
+
+- New shared pieces in `web/src/features/shared/components/forms/`: `WizardFrame` (step strip, one footer row with the
+  summary line, Back, Next and the primary action, one height for every step), `FormStack` / `FormSection` /
+  `FormRow` / `FormField` (label above the field, "Optional" mark, help, the error under its field and tied to it),
+  `useDiscardPrompt` and `LeaveGuard` (asking before unsaved changes are dropped), and `FormDialog` (title, scrolling
+  body, footer with Cancel and one primary action).
+- New scan and Edit scan use the shared wizard: a 56rem dialog, the steps as one strip at every width (it scrolls
+  sideways on a phone), and the summary as one line in the footer that opens the whole summary. The permanent summary
+  column is gone. Steps, fields, defaults, validation, permissions, the draft and every request are unchanged.
+- The form kit (`FormItem`, `FormLabel`, `FormDescription`, `FormMessage`) uses the same label, help and error type.
+- Docs: web/docs/ui-style-contract.md ("Forms, wizards and form dialogs")
+
+### Changed: graph pages share one frame (Attack paths, Exposure chains, Exploration)
+
+- Attack paths: the target and path filters sit in one toolbar under the title row, with the legend and "How paths are
+  scored" as popovers at its end. The graph fills the rest of the window. Choke points and the path score sit under the
+  graph at every width; no panel stands beside it.
+- Attack paths: a click or Enter on a step opens its detail over the page (role, asset type, exposure, criticality,
+  step likelihood and its basis, the likeliest finding, open and known-exploited findings, paths through it). "View
+  findings" is its first action and has focus, so Enter on a step and Enter again opens the step's findings. The list view opens the same detail from a step's name. Before, a step opened its
+  findings list directly.
+- Exposure chains: the ranked chains take the full width. A search by asset name and a Target filter (known exploited,
+  crown jewel) narrow the chains in the browser; the legend and "How chains are built" open from the toolbar.
+- Exploration: its filters are a named toolbar.
+- No API change, no new dependency.
+- Docs: web/docs/ui-style-contract.md ("Graph pages")
+
+### Changed: the Imports and Exceptions lists follow the shared list pattern (redesign branch)
+
+- Imports (/findings/imports, formerly "Import and run receipts"): columns in the order Source, Status, Started,
+  Received, New, Resolved, Not stored, then Still detected, Reopened and Suppressed, which step aside on a narrow
+  table. A Source filter (upload, scan run, scan task, CI run, connector sync, sensor report, platform match) is
+  read by the server; the origin, tool and period a dashboard figure opens the list with show as removable chips
+  under the toolbar. "Import results" opens the import form from the toolbar for people allowed to import.
+  Clicking a receipt opens it in a side sheet with what the run did and where the other findings went (no extra
+  read). On a phone each receipt is one card: the tool with its status, the source and time, then received, new
+  and resolved.
+- Exceptions: the strip counts rules pending approval (with the age of the oldest), ending in 7 and in 30 days,
+  approved and expired; each opens the list filtered. Type and State filters, the search, Refresh and
+  "New exception" sit in one toolbar. Columns: Name, Type, State, Expires, Approved by, Requested by; people are
+  shown by name instead of a shortened id. On a phone each rule is one card.
+- Both lists show the shared states: a first-use empty state, "No ... match these filters" with Clear filters,
+  a loading table and a retryable error.
+- Permissions are unchanged: importing needs findings write, assets write and assets import; approving,
+  editing and deleting a rule keep their own permissions, and the API checks every action again.
+- Docs: none (the redesigned console is documented when it ships)
+
+### Changed: list menus are as wide as their content
+
+- The saved views menu, the table's Display menu and the filter value menus (Status, Practice, State and the like)
+  no longer pad to a fixed width: a short list opens as a short menu, a long one stops at the menu ceiling.
+- Those menus, the "+N more" filters popover and the Findings Group and Export menus open under their trigger by
+  the shared placement rule (start-aligned when it fits, end-aligned otherwise) instead of a side fixed per menu.
+- The saved views menu's "Unsaved changes" sentence wraps at a reading measure and never widens the menu.
+
+Docs: none (the rule is already in web/docs/ui-style-contract.md, "Floating surfaces"; this removes the last exceptions)
+
+### Changed: the Basic | Query switch is its own control before the search field (redesign branch)
+
+- Findings, Assets and Scans: the Basic | Query switch moves out of the search field and becomes the first
+  control of the toolbar row (a two-segment switch, 32 tall, fixed width per language on a toolbar of 64rem and
+  more; a code icon toggle below that, 32 px, 36 on a phone, before the Filters button). The field's end keeps only its own controls (clear; help,
+  expand and run in Query mode).
+- The search field holds its width when the mode switches, so switching modes no longer moves or resizes it (it
+  grew from 373 to 576 px on Findings at 1440 px). On a 375 px phone the query text keeps 60 % of
+  the field (53 % before).
+- Docs: web/docs/findings-list.md and the query language architecture page.
+
+### Changed: one overflow menu per list page, never one of a single item (redesign branch)
+
+- The shared action menu never opens a menu of one item: when only one action is left (after permission and width
+  folding) and it has an icon, the "More" button becomes that action in the same place and size; outside production a
+  console error names any one-item menu so a page does not ship one.
+- Findings: wide, the view's title row ends with Refresh, Export and Task from filters (no More); Copy link moves to
+  the page header's More under "This view", after Import results and Approvals. Narrow (and on a phone), Export and
+  Task fold into the title row's More with Copy link, and the header's More does not repeat it; a header with a single
+  item at that width merges into the title row's More.
+- Docs: web/docs/findings-list.md (More menu).
+
+### Changed: list headers that hold still (redesign branch)
+
+- Practice, State, Group and Views keep one width per language whatever their value: a value, or a saved view's
+  own name, is cut to that width with the full text in the tooltip and the accessible name. The Views trigger keeps
+  the room of its unsaved-changes dot. The search field beside them therefore keeps one width per toolbar width.
+- The chips row is exactly one line of one height: chips that do not fit fold into "+N more", the locked chip
+  takes at most half the row (it no longer stacks above the chips), and Reset to view or Clear filters is pinned
+  at the row's end after the count.
+- Findings: Export and Task from filters stay in the title row (and in More) while the list is grouped.
+- A stability check (e2e) holds Findings, Assets and Scans to 0 px of movement of every toolbar and title-row
+  control through filters, grouping, views, the mode switch and typing, at 1440, 1024, 768 and 390 px, en and vi.
+- A list says its count once, beside the view name in its title row (`ListCount`: the results with the filters and
+  search applied, "1,000+" when counted only that far, announced once by screen readers). The chips row no longer
+  repeats it ("0 assets" under the Assets toolbar is gone). Assets, Scans, Vulnerabilities, Emerging threats and
+  the attack-surface Certificates, Technologies and Exposures lists show it in a title row of their own.
+- Assets follows the list layout: the title row holds the view name, its count, Refresh and Export; the page header
+  keeps Add asset and the list or category switch. An empty list shows its message in the table's own frame (a page
+  empty state drawn as a card no longer adds a second frame inside the table, on every list).
+- Query mode keeps Add filter, Practice and State in their place, dimmed and inactive (the query text owns the
+  filter; `f` does not open the picker), and the toolbar keeps one alignment in both modes: on a
+  toolbar that takes two lines (1024 and 768 px with the sidebar) switching modes no longer moves Views, Group and
+  Display. The search field of a list with Query mode asks for 11rem before it grows, so the switch, the field and
+  the tokens keep one line at 1024 px.
+- Findings: the Location column grows from 160 up to 280 px into spare frame width before the title (floor 280)
+  takes the rest; it no longer truncates a location beside an empty title column. The rule lives in the table's
+  column fitting (`maxWidth` above `width` lets a column grow), so any list can use it.
+- Sidebar quick views: on a hovered or focused row the pin takes the count's place; the count is never drawn under
+  the pin (1 to 4 digits).
+- Docs: web/docs/findings-list.md, web/docs/ui/shared-kit.md.
+
+### Changed: My Work follows the list pattern on a phone and on a desktop (redesign branch)
+
+- One main action per screen: the open queue's Triage these is the filled button; the page's Triage (with how
+  many findings wait) is an outline control on the title's line.
+- The selected tab shows the queue's name and its count, once. The list's title row names the queue for screen
+  readers only and shows what the list holds (one line from tablet width up, behind an info button on a
+  phone), when it was updated and Refresh.
+- Finding queues (Assigned to me, My team, Acceptances expiring): the "SLA due in 72 hours" toggle starts the
+  toolbar and Triage these and View all end it, on one line at 390 px; "Top N of M" sits under it from tablet
+  width up. No chip repeats the selected tab; the approval tabs keep "Pending".
+- While the counts load, the tabs show a loading count and Triage and the queue's menu are drawn disabled, so
+  the header, the tabs and the toolbar do not move when the counts arrive.
+- On a phone each finding is a card: the title on the full width (two lines at most), priority and severity on
+  one line, where the finding is, then the deadline and the status on one line; no mark wraps inside itself.
+- No behaviour, permission, count or key changes: the tab counts still equal the list totals, the review keys
+  (j, k, Enter, a, r), Approve with its sign-in step, Remind and Withdraw are unchanged.
+- Docs: none (internal redesign branch; no user guide covers this layout).
+
+### Changed: the New scan and Edit scan steps use the shared form layout (redesign branch)
+
+- Every field of the What, Targets, Options, Schedule and Review steps has its label above it, its help under it and
+  its error tied to it (`FormField`); required fields no longer carry an asterisk, fields are required unless they
+  say otherwise. Intensity is one row of three choices with the chosen one explained under it. What to run, Where it
+  runs and When to run are radio cards without decorative icons; the fields of "Schedule for later" sit under the
+  three cards. The Targets step shows "Selected targets" as a named section under the field.
+- `ChoiceGroup` (the segmented choice) has the kit's 32 px track with 26 px segments from 640 px up.
+- Fields, defaults, validation, permissions and requests are unchanged.
+- Docs: none (layout only; the form rules are in web/docs/ui-style-contract.md "Forms, wizards and form dialogs")
+
+### Changed: an empty list's action is an outline button beside the page's main action
+
+- A list with no rows showed two filled buttons: the page's main action in the header and the empty state's own (for example "New group" twice on Asset groups, "New workflow" and "Create workflow" on Automations). The empty state's action is now filled only when no other filled button is on the screen, and an outline button otherwise; a page whose header has no main action in that state keeps it filled (every list and empty state).
+- Docs: web/docs/ui-style-contract.md (empty state)
+
+### Changed: web console page menus use the shared action menu (redesign branch)
+
+- The "⋯" menus of the list pages (scans, workflows, automations, exceptions, controls, dashboards, approvals,
+  notification outbox, members, asset group) and the detail drawer's More are the shared action menu: an anchored
+  menu, or a bottom sheet titled with the object on a phone without room. Destructive items come last, every
+  unavailable item says why, and the trigger is named in English and Vietnamese.
+- Members: the actions an administrator may not take on another administrator are dimmed with the reason; a
+  pending ownership transfer explains why a second one cannot start.
+- Below 768 px the page reserves no scrollbar gutter, so sheets and menus in a narrow desktop window reach the right
+  edge of the window instead of stopping 10 px short.
+- A test fails on a new hand-built "⋯" menu.
+- Docs: web/docs/ui-style-contract.md ("Action menus")
+
+### Changed: a list without its own phone card shows a compact card
+
+- A list without its own phone card drew a tall grid of up to four label-over-value fields under the title, whether they held a value or not: labels over an empty value or a dash, a field repeating the title, and a later field (such as Last seen) left out. The card now has short rows: the title (the row's name column, up to two lines) with the status chip and the row menu, one muted subtitle line (the asset, owner, id or text column the page marked), and at most two fields that have a value; empty and dash-only values and a repeat of the title are left out, "0" is a value and stays. Nothing wraps under the title any more: a status too wide for the title line gets its own line, and labelled action buttons one trailing line. A chip value in a field is never cut: one that does not fit half the line takes the whole line.
+- A field that is only a switch (Enabled on Workflows) reads "On" or "Off" beside it.
+- Docs: web/docs/ui-style-contract.md (automatic phone card, a switch on a phone card)
+
+### Changed: the queue add-on moves into the shared web layer (redesign branch)
+
+- The decision controls, reason dialog, decide-by date, status region, queue card and queue empty states move
+  from `web/src/features/queue` to `web/src/features/shared/components/queue` and are exported from
+  `@/features/shared`, the layer the tenant app and the platform console both import. The console's queues use
+  the same parts; nothing is copied.
+- No behaviour, text, permission or confirmation changes.
+- The decision buttons are announced by their own visible label and the item ("Merge {name}", "Dismiss {name}"),
+  no longer always as "Approve {name}" / "Reject {name}"; a page can pass a whole accessible name where label +
+  item does not read well. The approval requests page is unchanged ("Approve {name}", "Reject {name}").
+- Docs: web/docs/ui-style-contract.md
+
+### Changed: one set of decision buttons for finding status requests (redesign branch)
+
+- My Work's review tab and the request band on a finding page decide with the same buttons as the approvals
+  inbox: outline Approve and Reject named with their item ("Approve {finding}"), the lock and the sign-in
+  sentence on Approve, and the same dialogs. The page no longer has a filled decision button.
+- Approval requests says its count once: under Pending the tab shows it, so the title row names the view for
+  screen readers only; another status lens still shows its own count there.
+- Docs: none (no user guide describes these buttons; the queue section of `web/docs/ui-style-contract.md` is updated for contributors).
+
+### Changed: Ready to close follows the queue list pattern (redesign branch)
+
+- Each tab has a title row with the number of findings and Refresh; the table keeps that row while it loads,
+  fails (Retry) or is empty, and a refused read says so instead of offering Retry.
+- The finding, its severity, the critical-close mark, the asset, how the close is proven (method and Held
+  mark, tool, when it was scanned, the scan) are columns of their own; on a phone each finding is a card with
+  the same facts and its decision.
+- Confirm close and Keep open are named with their finding for screen readers; rows are selected with the
+  shared table selection (ranges, the x key, Select on a phone) for one decision on many.
+- Every decision and its result is also said in a status region; Recently auto-closed does the same for
+  Reopen: not fixed. The tab count shows "…" while it loads.
+- Docs: none (no guide describes this layout).
+
+### Changed: the remediation Tasks and Campaigns lists follow the shared list pattern (redesign branch)
+
+- Tasks: columns in the order Task, Owner, State, Progress, Risk points, Deadline. Owner, Risk points and
+  Progress step aside on a narrow table; the task name and its state stay. Several owners read
+  "Network team, Sam Rivera". The Show filter, the search, the sort, the Table or Board switch and "From query"
+  sit in one toolbar in both layouts; on a phone the Show filter moves into the Filters sheet beside the search.
+- Campaigns: columns in the order Campaign, Status, Owner, Tasks, Findings closed, Due. "New campaign" moved from
+  the page title to the end of the toolbar, as on every list.
+- Both lists show the shared states: a first-use empty state with its next step, "No tasks match these filters"
+  (or campaigns) with Clear filters, a loading table and a retryable error that keeps the rows already loaded.
+- On a phone each task or campaign is one card: the name with its state on the first line, the owner, then the
+  progress and the deadline.
+- Permissions are unchanged: creating a task from a query still needs remediation write and findings read, and
+  "New campaign" needs remediation write.
+- A task's page loads less at first: the watchers, the query it was created from, the timeline and the
+  other tasks of the same fix are read when the person opens or reaches them, and an owner's name is looked
+  up by id instead of loading the member list.
+- Docs: none (the redesigned console is documented when it ships)
+
+### Changed: row menus and the bulk bar's More use the shared action menu (redesign branch)
+
+- Every table row menu, the finding row and card menu and the bulk bar's More now use `ActionMenu`: on a phone a
+  short menu stays a small menu under its button and a long one (the finding menu) opens as a bottom sheet titled
+  with the row's name; from 768 px up they are menus inside the 16 px gutter.
+- Row menu items gated by a permission or an API route are hidden from users who may not use them, as before; an
+  unavailable item always says why (a general reason where the page gives none), as visible text on a phone.
+- Row menu buttons are named after their row ("Actions for {name}") instead of "Open row actions".
+- A click in a row menu or its sheet no longer reaches the clickable row or card around it.
+- The menu's code loads right after the page shows instead of with it; a tap made before it is in still opens the
+  menu. Pages' first-load JavaScript is unchanged (median 458 KB).
+- Docs: web/docs/ui-style-contract.md ("Action menus: ActionMenu")
+
+### Changed: Scan approvals follow the queue list pattern (redesign branch)
+
+- A title row with the number of requests and Refresh, a Status filter with every status (awaiting approval
+  by default, or all requests), and a table with the scan, its status, the run marks (emergency, intensity),
+  who asked, the rule, the approvals left, the decide-by date (overdue in red) and when it was asked.
+- Pages of 25, 50 or 100 replace Load more; the count is the whole queue.
+- Approve and Reject stay on the row; Details (targets, what runs, what changed since the last approval),
+  Approve my own scan, Remind and Withdraw are in its More menu. Withdraw now asks first.
+- Every decision is also said in a status region; a refused read says so instead of offering Retry.
+- Docs: none (no guide describes this layout).
+
+### Changed: Clone scan, Quick scan and Scan assets use the shared form dialog (redesign branch)
+
+- Clone scan, Quick scan and Scan assets are `FormDialog`s: label above each field, help and errors tied to the
+  field, Cancel and one primary action, Enter submits, and the reason a disabled primary action is off is read with
+  it. Fields, defaults, checks and requests are unchanged.
+- Clone scan lists what is copied as label and value rows. Quick scan is 672 px wide; once a scan has started, its
+  one action is Done, and Enter in the "Save as scan" name saves it.
+- The line editor of a pasted target that is not valid is no longer a form inside the dialog's form: saving the line
+  no longer starts the scan.
+- New scan and Edit scan: a missing name, scanner or workflow is marked at its field once the What step shows its
+  problems, so "Go to What" puts focus on the field to fix. The scanner, workflow and Tenable.sc connector pickers are
+  as wide as their field.
+- When the primary action is off, its reason sits right beside it (under it on a phone), not beside Cancel. Quick
+  scan and its Start scan action are in sentence case; Clone scan says once that the copy starts paused.
+- Docs: none (the console dialogs keep their fields, checks and requests; user guides describe them by field)
+
+### Changed: the scan runs list follows the shared list pattern (redesign branch)
+
+- Rows are one line: the scan (a link to the scan page; a click on the row still opens the run), the status with
+  what the targets held back and the run's message cut to the column (whole in the hover text and in the run's
+  sheet), the intensity in a column of its own, the tasks, findings, duration, start and who started it. The scan
+  stays in view while the table scrolls sideways; Intensity and Triggered by step aside on a narrow table and stay
+  under Display > Columns.
+- Title row: the view's name (runs started by people, by the system, or all runs), the count once, Refresh and
+  Export CSV. On a phone the two actions are in one More.
+- Toolbar: Add filter (key `f`), then Origin and Status as two selects of a fixed width, the Status values with
+  their counts. Kind is set from Add filter and shows as a removable chip under the toolbar; the scan a "View all
+  runs" link named is a chip too. The list has no search field: the run list API takes field filters only.
+- The list still refreshes itself while runs are live. Rows under the pointer keep their places through a refresh;
+  another page, filter or sort keeps the current rows on screen until the new ones arrive.
+- The line that sums up the platform's own runs moved under the list, so the header never moves when a filter hides it.
+- An empty list says whether no run has started yet or no run matches, with Clear filters. A refused read shows
+  the no-access notice.
+- Phone: the Scans header keeps its title and the two create actions (Quick scan, New scan) as named icon buttons in
+  one row, on Scans and Runs; the section description shows from 768 px. On Runs the list comes first and the
+  status tiles follow it; the same counts are beside each Status value in the filter sheet, which holds every filter.
+- No API change: the same reads, filters, sorts and export.
+- Docs: none (layout of an existing list; filters, actions and permissions are unchanged)
+
+### Changed: the scan workflows list follows the shared list pattern (redesign branch)
+
+- Title row: the view's name (all workflows, my workflows, system templates), the count once and Refresh.
+- Toolbar: search by name, Add filter (key `f`), then Owner as a select of a fixed width. "Show retired" is set from
+  Add filter and shows as a removable chip under the toolbar. On a phone the Filters button joined to the search
+  field opens both filters in a sheet.
+- Rows are one line: the name with its System and readiness marks, the status, the steps, the version, the Enabled
+  switch and the row menu. The description moved to the name's hover text and stays in the detail sheet. The name
+  stays in view while the table scrolls sideways.
+- The list opens by name, A to Z, and the sorted column says so. Search text, sort, page and page size are in the
+  address, so a view can be shared; the list is still read whole and narrowed on the page.
+- States: skeleton rows under a toolbar that stays, "No workflows yet" with Create workflow, no match with Clear
+  filters, the load error with Retry, the no-access notice on a refused read.
+- Each Enabled switch names its workflow. On a phone, New workflow is a named icon button in the title row.
+- No API change: the same read, the same row actions, dialogs and permission checks.
+- Docs: none (layout of an existing list; filters, actions and permissions are unchanged)
+
+### Changed: the Scans list follows the shared list pattern (redesign branch)
+
+- Rows are one line: the scan name (a link to the scan page; a plain click still opens the detail sheet), what it
+  runs, its intensity in a column of its own, the latest run with its time, the recent runs, the run count and the
+  schedule with its switch. The description moved to the name's hover text and stays in the detail sheet. The name
+  stays in view while the table scrolls sideways; Intensity and Recent runs step aside on a narrow table and stay
+  under Display > Columns.
+- Toolbar: search (Basic | Query), Add filter, then State and Origin as two selects of a fixed width. Scan type,
+  Schedule, Tag and "Show one-off scans" are set from Add filter (key `f`) and show as removable chips in one row under
+  the toolbar, with Clear filters. The docked filter panel is gone; on a phone the Filters button joined to the search
+  field opens every filter in a sheet.
+- The title row has Refresh. An empty list says whether there are no scans yet or no scan matches, with Clear filters.
+  A refused read shows the no-access notice.
+- Selection uses the table's own checkbox column and bulk bar: Activate and Pause, then Disable and Delete under More,
+  with the same confirmations. A user who can neither change nor delete scans gets no checkboxes. On a phone, Select
+  in the list's More turns the checkboxes on.
+- No API change: the same reads, filters, sorts and bulk endpoints.
+- Docs: none (layout of an existing list; filters, actions and permissions are unchanged)
+
+### Changed: the sensors list follows the shared list pattern (redesign branch)
+
+- Rows are one line: the sensor's name with its marks, the host and address in a Host column of their own, the
+  state with the reason beside it (the heartbeat age when there is nothing to say), the version with its tags, the
+  jobs and the tools. The name stays in view while the table scrolls sideways; Host and Tools step aside on a
+  narrow table and stay under Display > Columns.
+- Title row: the list's name, the count once, the live mark, then Refresh content, Refresh and Export. On a phone
+  Refresh, Export and the way to the approve page are in one More, after Select.
+- Toolbar: search, Add filter (key `f`) with every facet, Group and Display. A facet in use shows as a removable
+  chip in one row under the toolbar, with Clear filters. The docked filter panel is gone; on a phone the Filters
+  button joined to the search field opens the same facets in a sheet.
+- Selection uses the table's own checkbox column and bulk bar: Disable, then Delete under More, with the same
+  confirmations (the count and the names, the typed confirmation for Delete). A user who can neither change nor
+  delete sensors gets no checkboxes. On a phone, Select in the list's More turns the checkboxes on.
+- Every action keeps its dialog as it was: Edit, Rotate key, Enable, Disable (confirm), Revoke (typed name), Delete
+  (typed name). The row menu has the same items in the same order, on the table row and on the phone card.
+- States: skeleton rows under a toolbar that stays, the load error with Retry in the rows' place, the no-access
+  notice on a refused read, no match with Clear filters. The first-run block (how to add a sensor) is unchanged.
+- The list still refreshes itself every 15 s; rows under the pointer keep their places through a refresh.
+- Phone: the list comes first; the pipelines line, shared scanning, the cleanup hint and the fleet health follow it.
+  Add sensor is a named icon button in the title row; cards have the row menu.
+- No API change: the same reads and the same writes, each with its permission check and audit on the server.
+- Docs: none (layout of an existing list; filters, actions and permissions are unchanged)
+
+### Changed: API keys in the settings page frame
+
+- Settings, API keys: Generate API key is the page's one main action; the maximum key lifetime (owners and administrators) and the keys list are two sections of one page. The list is paged, searched and now sorted by the server (name, last used, expiry), with columns Name, Key, Scopes, Status, Last used and Expires, and phone cards.
+- A failed read keeps the page and shows the error with Retry in the list, instead of replacing the page.
+- Docs: none (the page keeps its route, its actions and its permissions)
+
+### Changed: Settings > Approvals replaces Finding approvals, with one save bar (redesign branch)
+
+- `/settings/approvals` shows the approval levels (false positive, risk acceptance, second look, backup contact) and
+  the approval policy (who approves, security pool and exclusions, limits and deadlines, material changes) as
+  sections of one page. `/settings/finding-approvals` redirects permanently to it; the settings rail entry is
+  "Approvals" in Findings & assets.
+- One save bar saves both parts in one request to the same endpoint: the body is the union of the fields each part
+  sent before (the changed level fields, and the whole policy when it changed). A refused save keeps the changes.
+- Scan approval keeps its own page and permission; the Approvals page links to it for whoever may open it.
+- Permissions (`settings:read` to open, an owner or administrator with `settings:write` and a recent sign-in to
+  save), the owner-only lowering rule, the 24-hour wait and the cancel of a waiting lowering are unchanged.
+- Docs: none (the page keeps its functions; the stored notification link reaches it through the redirect)
+
+### Changed: audit log in the settings page frame
+
+- Settings, Audit log: the filters move into Add filter (Result, Severity, Period of 24 hours, 7 days or 30 days, and Hide system events), shown as chips; on a phone they open in a sheet. The address keeps them (`?result=`, `?severity=`, `?period=`, `?hide_system=true`); old `?result=all` links are ignored.
+- The toolbar shows the event count, with Export and Refresh. The summary strip above the list is gone; the period is fixed until Refresh, so the count and the pages agree.
+- Rows use the shared severity badge, and phone cards show who did what and when. The export confirmation names how many events it holds, the period and whether system events are hidden. Resource and Request ID labels are translated.
+- Docs: none (the page keeps its route, its actions and its permissions)
+
+### Changed: the settings rail lists Detection content under Scanning (redesign branch)
+
+- Content catalog, Scanner templates, Detection rules and Wordlists sit under their own sub-heading "Detection content"
+  in the Scanning group; Content freshness, Source credentials and Tool source keys stay under "Scanner content".
+- No page moved: every URL, permission and module gate is unchanged.
+- Docs: none (navigation sub-heading only; the settings navigation rules are in web/CLAUDE.md, "Settings navigation")
+
+### Changed: Settings > General is one page of sections with one save bar (redesign branch)
+
+- `/settings/general` shows Organization information, File storage, Dashboard data and the owner's Danger zone as
+  sections of one page instead of three tabs. Links with `?tab=storage` or `?tab=dashboard-data` land on that section.
+- One save bar saves the organization form and the file storage form together, lists what changed and keeps the
+  changes of a part whose save failed. The storage keys are masked fields that never show a stored value.
+- The Dashboard data section reads its state when it comes into view (or a link lands on it), so the page loads
+  with no more requests than before.
+- Permissions, validation, the typed confirmation for deleting the organization and every API call are unchanged.
+- Docs: none (the page keeps its functions; the look is described in web/docs/ui-style-contract.md, "Settings pages")
+
+### Changed: settings pages share one frame, section, field, save bar and danger zone
+
+- Settings pages on the redesigned console are built from shared parts: a page frame with one column of
+  sections, sections divided by hairlines, labelled fields with their hints and errors tied to the control,
+  a masked field for secrets, and a danger zone drawn as the last section.
+- The save bar counts the changed settings, lists them under "What changes", says a failed save in the bar and
+  spans the bottom of the screen on a phone. Ctrl/Cmd+S, Discard and the question before leaving are unchanged.
+- Docs: web/docs/ui-style-contract.md ("Settings pages")
+
+### Changed: Settings > Members shows its three lists as tabs on the settings frame (redesign branch)
+
+- `/settings/members` has three tabs with counts: Current members, Pending invitations and Requests to join; the
+  tab is in the URL (`?tab=`). The counts of active, disabled and offboarded members are on the Status filter.
+- A member is one table line: the name opens the detail, then the membership marks and the email. Status is a
+  state mark; the two-factor column is named "Two-factor". The Display menu can hide columns.
+- Row actions, dialogs, confirmations, permissions and requests are unchanged.
+- Docs: none (the page keeps its functions; the look is described in web/docs/ui-style-contract.md, "Settings pages")
+
+### Changed: Settings > Modules follows the settings page pattern (redesign branch)
+
+- `/settings/modules` is drawn with the shared settings parts: the title with Reset to defaults, the view-only note,
+  search and the On / Off / Unavailable filter, then one section per group with its "N of M on" count and the
+  modules as rows divided by hairlines. Who changed the modules last sits beside the first section's title.
+- Loading and a failed load look as on every settings page (the failed load offers Retry and never shows an empty
+  list).
+- Turning modules on or off, the dependency preview, the confirmation of dependents, Reset to defaults, the lock of
+  each module with the reason its server state maps to, permissions and every API call are unchanged.
+- Docs: none (the page keeps its functions; the look is described in web/docs/ui-style-contract.md, "Settings pages")
+
+### Changed: the Settings overview follows the settings page pattern (redesign branch)
+
+- `/settings` shows search, then "Needs attention" (the security overview in brief, for whoever may open it: the
+  score, the counts and the first three things to fix with a link to each setting), then every settings page the
+  user may open, one section per group with its page count. On a phone only the first group starts open.
+- Same reads and the same access rules as before; no page was moved, renamed or removed.
+- Docs: none (the page keeps its functions; the look is described in web/docs/ui-style-contract.md, "Settings pages")
+
+### Changed: Risk scoring in the settings page frame
+
+- Settings, Risk scoring: one page of sections (Presets, Score composition, Component weights, Exposure scores and multipliers, Criticality and risk levels, Finding and CTEM impact, How scoring works, Recalculate) on the shared settings frame. Changes are saved from one bar that lists what changed; Save still opens "Review the impact" first and applies only from there.
+- Putting a value back to the saved one removes the unsaved state and keeps the saved preset. Number fields settle (clamp and round) when you leave them, so typing a multi-digit value no longer jumps. Hints are written out under each setting instead of behind info icons, and nothing scrolls sideways on a phone.
+- Docs: none (the page keeps its route, its permissions and every setting)
+
+### Changed: the roles list in the settings page frame
+
+- Settings, Roles: one list with search, Add filter (role type, risk; each shown as a chip and kept in the address) and Display. Columns Role, Risk, Data access, Level and Permissions (and Members once the server sends member counts); the role name is a link that opens its detail (the address names the role). Phone cards show the risk, the data access and the counts. On a 1024 px screen the Level and Permissions columns step aside so the board never scrolls sideways.
+- A list narrowed to custom roles with none says the four system roles always exist. Deleting a role says its members lose its permissions at once. A reader who cannot create roles is told the page is view only. A failed read shows the error with Retry instead of an empty list.
+- Phone cards that open on a tap but offer nothing to change (a system role, or a reader) end in a chevron, so a row never stops short of its end (the shared person card, also used by members).
+- A role's summary names every permission area in plain words (AI knowledge, Automations, Detection content, Shared dashboards, Service accounts), in English and Vietnamese.
+- Docs: none (the page keeps its route, its actions and its permissions)
+
+### Changed: Scan approval follows the settings page pattern (redesign branch)
+
+- `/settings/scanning/scan-approval` is drawn with the shared settings parts: Mode and Approval rules sections.
+- The mode is saved through the page's save bar instead of a Save button in the section; the reason dialog and the
+  re-authentication the API asks for are unchanged. Presets, Add rule, Try the rules, reorder, turn off and remove
+  still apply one change at a time, each after a reason.
+- Loading and a failed load look as on every settings page; view only for members who are neither owner nor
+  administrator, as before. Permissions and every API call are unchanged.
+- Docs: none (the page keeps its functions; the look is described in web/docs/ui-style-contract.md, "Settings pages")
+
+### Changed: Scan identification and Sensor job safety follow the settings page pattern (redesign branch)
+
+- `/settings/scanning/identification` is drawn with the shared settings parts: Requirement (the "Require
+  identification on every request" switch and the missing-marker fix), What your scans send (User-Agent, request
+  headers, the platform's headers, the advanced rotation list and query parameter) and What a target receives (the
+  preview). Who changed it last sits beside the first section's title.
+- `/settings/scanning/sensor-safety` shows two sections: Scan jobs (saved together through the save bar, loosening
+  still asks first) and Sensor keys and shared sensors (each switch still applies at once and confirms when it
+  loosens).
+- The save bar names what changed and says when a save failed (the changes stay). Loading and a failed load look as
+  on every settings page. Permissions, confirmations and every API call are unchanged.
+- Docs: none (the pages keep their functions; the look is described in web/docs/ui-style-contract.md, "Settings pages")
+
+### Changed: Tool defaults and Scanner content follow the settings page pattern (redesign branch)
+
+- `/settings/scanning/tool-defaults` and `/settings/scanning/content` are drawn with the shared settings parts:
+  title, the note on where values come from, the view-only note, loading and failed-load states.
+- Scanner content saves through the save bar (shown only while something changed, with what changed, Discard,
+  Ctrl/Cmd+S and a prompt before leaving) instead of a Save button in the page header. "Apply to sensors now" is a
+  switch in the Refresh schedule section. Field errors are tied to their fields.
+- Tool defaults keep their per-tool save. Permissions and every API call are unchanged.
+- Docs: none (the pages keep their functions; the look is described in web/docs/ui-style-contract.md, "Settings pages")
+
+### Changed: security overview and scope policy use the settings page frame (redesign branch)
+
+- Security overview: the score, the counts and when it was checked, then one section per group with the checks
+  that need a look (each with a Review link that names the check); the passed checks are folded at the end and
+  shown on demand. Loading and a failed load look like every other settings page.
+- Scope policy: the values in effect, then the policy with the rarely changed options (unclassified assets,
+  automatic coverage, info checks, the review gate, proof for CI scopes) folded under Advanced, and one save bar
+  instead of a Save button. The owner-only intrusive (T2) limit shows its two values and changes in a dialog that
+  asks for the reason. A reader without scope:approve sees the view-only notice.
+- Same reads, writes, gates, confirmations and step-up as before. No API change.
+- Docs: none (layout of two settings pages; no user guide describes their layout)
+
+### Changed: service accounts in the settings page frame
+
+- Settings, Service accounts: New service account is the page's one main action, with a view-only notice for readers. The list has a search, columns Name, Accountable person and API keys, and phone cards; the account name is a link that opens its API keys (the address names the account), and the row menu holds API keys and Delete service account.
+- Deleting an account says how many API keys go with it. A name left empty in the new-account dialog is marked under the field instead of a toast.
+- A failed read keeps the page and shows the error with Retry in the list.
+- Docs: none (the page keeps its route, its actions and its permissions)
+
+### Changed: Settings > Sign-in replaces Authentication, Domains, Trusted organizations and SSO approvals (redesign branch)
+
+- `/settings/sign-in` is one page with two tabs. Sign-in: two-factor, re-verification, email verification, the IP
+  allowlist. Joining: who may join (invitations, allowed email domains, end of access, approval of new SSO members),
+  personal accounts and SSO exceptions, verified domains, trusted organizations and the SSO changes an owner decides.
+- Each tab has its own save bar and saves only its own settings, in the same request as before (the other tab's
+  saved values go with it); unsaved changes on the other tab are kept, marked on its tab and guarded when leaving.
+- `/settings/authentication`, `/settings/domains`, `/settings/trusted-organizations` and `/settings/sso-approvals`
+  redirect permanently to the new page (the last three to their section on the Joining tab); a link to a setting
+  (`#ip-allowlist`, `#allowed-domains`, ...) opens the tab that holds it. The settings rail shows one entry.
+- Permissions (`team:update` to open, owner to save), validation, the confirmation of weaker settings, the IP lockout
+  check and every API call are unchanged.
+- Docs: server/docs/architecture/security-overview.md (the check links reach the new page through the redirects)
+
+### Changed: SLA policies in the settings page frame
+
+- Settings, SLA policies: New policy is the page's one main action, shown only to people who may create policies; readers see a view-only notice. The list has a search, translated deadline columns and phone cards, and the row menu holds Edit, Make default and Delete.
+- Make default is disabled with its reason on the policy that is already the default, and its confirmation names the way back. Deleting an asset override says the asset falls back to the default policy. `?policy=<id>` opens a policy for editing.
+- Docs: none (the page keeps its route, its actions and its permissions)
+
+### Changed: teams and assignment rules in the settings page frame
+
+- Settings, Teams: one page frame (title, description, Create action, view-only notice) with the Teams and Assignment rules tabs. A tab change starts the other list without the first tab's filters.
+- Teams: search, Add filter by kind (a chip, kept in the address) and Display; columns Team, Kind, Members, Assets; the team name is a link that opens its detail (the address names the team); phone cards. Deleting a team names how many members and assets it affects.
+- Assignment rules: columns Priority, Rule, Target team, Conditions, Status; Add filter by status; the rule name is a link to its detail; phone cards. The page now says what the rules do: they route new findings to teams. The condition choices of a new rule are toggle buttons that a keyboard can reach.
+- Both lists show a failed read with Retry instead of an empty list.
+- Docs: none (the page keeps its route, its actions and its permissions)
+
+### Changed: web console popups place themselves by where their trigger is (redesign branch)
+
+- Menus, popovers and select lists line up with the start or end edge of their trigger by the half of the screen
+  the trigger is in, so a menu whose button moves to the left of a wrapped phone row opens rightwards from it
+  instead of being pushed against the gutter.
+- They keep at least the safe area from the screen edges, keep 16 px above a fixed bottom row that registers
+  itself, are never taller than the room on their side (they scroll inside, with a shade at the edge where there
+  is more), never wider than the screen less both gutters and never narrower than their trigger.
+- Select lists open under their trigger instead of over it; a menu heading over a single item is hidden; shortcut
+  hints are hidden on touch screens; tooltips open after 400 ms; popups do not animate under reduced motion.
+- Docs: web/docs/ui-style-contract.md ("Floating surfaces")
+
+### Changed: the legal pages and Open-source licenses share one reading frame (redesign branch)
+
+- The legal pages (/terms, /acceptable-use, /privacy, /dpa, /subprocessors) open in one frame: the brand and a
+  Sign in button on top, the five documents as tabs, a table of contents of the open document beside the text
+  (above it on a phone) with "Print or save as PDF", and the text in one reading column. Printing leaves out
+  everything but the document. The frame's own words follow the chosen language; the documents stay in English.
+  The pages still answer 404 until the built-in legal pages are turned on in the admin console.
+- A wide subprocessor table scrolls inside the page on a phone instead of pushing the page sideways.
+- About > Open-source licenses opens with the number of components per part, names its columns, and offers
+  Reload beside a list that could not be loaded.
+- Docs: web/docs/ui-style-contract.md ("Static reading pages")
+
+### Changed: Triage mode lays out the finding and its decision as its own page (redesign branch)
+
+- The page header holds the title, Undo last (with how many decisions can be undone), All keys and Exit;
+  Confirm is the page's only filled button. A status line under it shows the queue, the position, this
+  session's counts at every width and the progress.
+- The queue, the finding and the decision panel are cards side by side on a wide screen; the finding and its
+  decision side by side on a narrower one, the queue under them; on a phone the finding, then the
+  decision panel, then the queue, with Confirm and this session's counts in a bar fixed to the bottom of the
+  screen, always reachable without scrolling. Full page and Evidence are on the finding; Previous and Next close the
+  decision panel.
+- Every decision, refusal and undo is also said in one status region for screen readers.
+- An empty queue shows no empty queue list; a queue that cannot be read shows its error and Retry only.
+  Decision buttons stay disabled until a finding is on screen.
+- Every key, permission check, lifecycle check, conditional write and dialog is unchanged.
+- Docs: none (no guide describes this layout).
+
+### Changed: the Vulnerabilities list follows the shared list pattern (redesign branch)
+
+- Rows are one line: the CVE id (a link to the vulnerability page, kept in view while the table scrolls sideways),
+  the title with its first aliases, the exploitation signals (Known exploited and an emerging threat always show first;
+  further ones show while they fit and are counted otherwise, with their words in the tooltip), priority, severity with the CVSS score, EPSS with its 30-day line, the asset count with the
+  internet-facing count, the fix and the remediation state. Last seen, Remediation and Fix step aside on a narrow table
+  and stay under Display > Columns.
+- The title row names the view (the open saved view, else "All vulnerabilities") and states the count once. A changed
+  view shows Modified, Save view and Reset. Refresh and Export CSV are in the same row; on a narrow row and on a phone
+  they fold into More, which starts with Select.
+- Toolbar: search, Add filter (key `f`), then Findings and Sort as two selects of a fixed width (under 1024 px Sort
+  moves into Add filter, so the toolbar keeps one row). Every other filter is
+  set from Add filter and shows as a removable chip in one row under the toolbar, with Clear filters. The docked filter
+  panel is gone; on a phone the Filters button joined to the search field opens every filter in a sheet.
+- Selection uses the table's own checkbox column and bulk bar: the first two actions the user may take are buttons,
+  the others are under More (Create task, Accept risk, Retest, Export, in that order, with the same confirmations). A
+  user with none of them gets no checkboxes.
+- An empty list says whether there is nothing yet or nothing matches (with Clear filters); a failed read with rows on
+  screen keeps the rows and says how old they are; a refused read shows the no-access notice.
+- No API change: the same reads, filters, sorts, saved views and bulk endpoints.
+- Docs: none (layout of an existing list; filters, actions and permissions are unchanged; `server/docs/architecture/vulnerability-page.md` describes the new layout)
+
+### Changed: CI/CD connects a CI provider in four plain steps, shows why jobs are refused, and splits its setup into Connections, Gate and Pull request feedback
+
+- "Connect a CI provider" (CI/CD page) asks for the provider and, for a self-managed GitLab, its address, shown exactly as its tokens carry it (https, no trailing slash); a private address gets a warning that the platform must reach it.
+- Which projects: every project in several groups at once, projects directly in groups, or a list; which branches: only protected branches and tags by default on GitLab, with a warning when a whole group is opened to every branch.
+- The last step waits for the first run (runs and refused jobs are read every 10 seconds while the step is open) and shows a refused job with its reason.
+- Each trust configuration shows its last accepted job and its refused jobs of the last 7 days; a refusal offers a one-click fix ("Allow branch", "Allow project", "Add this pipeline file" with the token's exact value) that opens the configuration with the change filled in, saved only by Save.
+- Pipeline definitions, events, environments, audience, fork pull requests and scope are folded under "More rules"; pipeline definitions are built from project, file and branch, with the three places a top-level configuration file can live explained.
+- "Check a sample token" names the cause of a failed check (private address not allowed, provider unreachable, address differs with a "Use" button, audience, expired, signature).
+- The Settings tab becomes three tabs: Connections (a status line "2 connections working, last accepted job 5 min ago, 3 jobs refused: see why", then one line per configuration that opens a sheet with Health, Rules, Scope and the pipeline snippet; "Require OIDC for CI results" folded under "Organization rules"), Gate and Pull request feedback. Break-glass moves to the Runs tab, next to the run it unblocks, with past overrides folded.
+- "Add trust" is gone: "Connect a CI provider" is the one way in, and its first step offers "Fill in every rule yourself" for the full form.
+- Gate policies and break-glass overrides name a repository by its name and pick it by name, never by its internal id.
+- Old links (`?tab=setup` and its `?section=trust|refused|gate|feedback|break-glass`) open the new tab and the address is rewritten.
+- A private CI address now says that a platform administrator can allow it.
+
+Docs: none (UI copy and in-app help only; the public CI guide is updated in the docs site)
+
+### Changed: the account pages read as one settings page on a phone and on a desktop
+
+- Header: on a phone one row holds the brand, the way back to the open organization and a menu with theme and sign out, then the tab row; from 1024px everything stays on one row.
+- Profile: the page title is the only heading over the form; a small picture or initials sits beside your name with your e-mail as text and its Verified mark; the phone example is neutral and translated; "photo" is no longer promised (there is no picture upload).
+- Profile and Preferences save through the shared save bar, shown only while there are unsaved changes, with Discard; Preferences gains the language choice the account already stores, and saving a new language reopens the page in it.
+- Security and Organizations: flat sections divided by hairlines instead of cards inside the page, with each section's action on its heading row; deleting the account sits in the danger zone.
+- The page-anatomy check now walks the account pages and no longer lets /account or /account/preferences show a save button at rest.
+- Docs: none (presentation of the existing account pages; no request or API wording changes)
+
+### Changed: a pentest campaign's Checklist tab is a calm, dense work list
+
+- Items are rows of one grouped table (a section per group) instead of a card per item: the ID, the test and its result on one line, the assignee from tablet width. A section header shows how many of its items were tested in a thin bar coloured by result, and how many failed.
+- Progress reads "12 of 38 tested" with the counts of passed, failed, N/A and untested items; N/A no longer counts as tested, so a checklist marked all N/A is no longer shown as 100%.
+- The result is a compact control in the row (icon and word, no second status icon); a row opens the item's details (guidance, assignee, findings, evidence, notes, Create finding on a failed item) in a drawer.
+- Selecting rows (or a whole section, or every row from the header checkbox) shows the bulk bar with Set result and Assign; the separate "Select all shown items" row is gone.
+- Remove checklist and Review changes moved into the checklist's "..." menu; a campaign with several checklists switches between them with a Checklist filter instead of a row of buttons.
+- Docs: https://docs.openctem.io/pentest/checklists/ (the "Checklist tab" text needs an update for tested-of-all progress, the Checklist filter and Remove in the "..." menu; the page has no screenshots)
+
+### Changed: empty lists and pages show a short, useful empty state
+
+- The shared empty state is sized to its content (small icon, title, one line, at most one action) instead of a tall mostly blank box, and inside a card, table or list frame it no longer draws a second frame. Queues and the default table empty body use it too, so every empty list looks the same.
+- A list filtered to nothing says "No results" with Clear filters instead of the first-use text.
+- An empty state no longer repeats the page header's main button (automations, control tests, programs, asset groups, scan workflows, service accounts, ticketing, SIEM, source code connections, scanner templates, scan profiles, credentials, capabilities, pentest templates and more). Empty states that pointed elsewhere in words now link there (business impact, code, misconfiguration and secret exposures, program maturity, detections, tool settings). Reported sensor products sit inside the empty state as one-click suggestions.
+- Status labels such as Active, In effect and Pass are outline badges instead of filled dark pills, so the page's main button stays the one filled control; Scan now in the asset sheet and New pool on proxy settings are outline buttons beside the main action.
+- Docs: web/docs/ui-style-contract.md ("Empty")
+
+### Changed: settings forms save through the save bar, with no idle Save button
+- Settings pages in the web app and the platform console no longer show a greyed Save button at rest: AI source, asset sources, closing findings, pentest methodology, my notifications, ticket field mappings, console admin sign-in and feed delivery save through the shared save bar, shown only when something changed (Ctrl/Cmd+S saves). The console AI provider page no longer shows the save bar on a fresh load.
+- Buttons that could not act yet are shown only when they can, or stay enabled and say what is missing: console sign-in, test buttons (e-mail, AI key, social sign-in, private destination), Import on software updates, Add capability, wordlist preview, tool source keys ("Set key" instead of a greyed switch), proxies switch.
+- Stored console secrets read as "Stored, never shown" with Replace and Remove instead of an empty input with a placeholder; read-only values (organization name, website, address and time zone for readers, social sign-in redirect addresses) are shown as text.
+- File choosers are one translated picker ("Choose a file", the chosen name) instead of the browser's English control; first card titles that repeated the page header are gone; wrapped labels no longer touch.
+- Docs: none (layout and wording of existing pages; no new setting or behaviour to document)
+
+### Changed: one page header rule, one title per tabbed section
+
+- Page headers keep the title and the actions on one row on a phone: an action with an icon shows as a square icon button there (its label returns from 640 px), so a create button looks the same on every page and never takes a row of its own.
+- The page description is shown on every page at every width; no page hides it on a phone only.
+- Tabbed sections (Remediation, Exposures, Assets, Attack surface, Business context, Pentest methodology) keep one section title on every tab; the active tab names the sub-page, so the tab row no longer moves when you switch tabs. Breadcrumbs follow the same names and skip folders with no page ("Tenant").
+- Detail headers of remediation tasks and campaigns, CTEM cycles and pentest campaigns no longer repeat the owner, environment or TLP shown in the cards below; "Due" is used everywhere.
+- Docs: none (layout only; no feature or setting changes)
+
+### Changed: the integrations settings pages share one list pattern
+
+- Integrations, Source control, Notification channels, Event forwarding, Ticketing and the import and ticket field mapping lists read alike: the same status strip (Connected, Needs attention, Pending) at full width and hidden while the list is empty, the name opens the record, and further actions sit in the row menu.
+- A page's create button is shown once, in the header; the empty state only explains.
+- Notification channels, Events and Queue are one section with tabs: the title stays and the tabs replace the "Back to channels" link row; the queue table is always shown with its filter and refresh in the toolbar.
+- On the Integrations page the list comes first once something is connected; the categories follow under "Connect another tool".
+- Docs: none (layout only; the integration pages and their settings are unchanged)
+
+### Changed: your membership pages, approvals and the console's private networks use the settings layout
+- Settings > Your membership (Membership, Notifications, Activity, Connected applications) now uses the shared settings frame: the reading column, flat sections divided by hairlines, one row per setting and a save bar only while something changed. Notifications drops its four icon cards; Activity is a flat list with a one-line pager and a link to account security; Connected applications drops the card around the list.
+- Connected applications (yours and the organization's) put "Limit to own data" and "Disconnect" in one row menu, and show 20 at a time with "Show more".
+- Settings > Approvals: a closed tier select names the tier alone ("Default" goes in the line under it), so long tier names no longer cut; "What the tiers mean" is folded; the Scans section is a line with a link instead of a lone button.
+- Platform console > Private networks uses the shared settings frame: "Opened here" first with "Add range" on its heading, "Set on the server" says "None." in its line instead of a row of its own, and the destination test is a section, not a card.
+- The Vietnamese name of the Membership page no longer equals the Members page.
+- Docs: none (layout and wording of existing pages; no setting, permission or behaviour changes)
+
+### Changed: settings pages use the shared settings rows
+
+- Emerging threats, Vulnerability matching, Asset lifecycle, Leaked credentials and the finding closing mode draw every on/off setting as the shared settings row (label and hint, switch at the end) instead of a bordered box, inside sections divided by hairlines at the settings reading width.
+- Asset lifecycle: the "Enabled" switch beside the section title is now a labelled row ("Flag assets that are no longer seen"), and the liveness settings have their own section.
+- Leaked credentials: the choices are plain radio rows, as on the other settings pages.
+- Risk scoring: "Custom" is shown as a radio choice of the presets, not a check mark.
+- SCIM: the endpoint is a settings section (the URL gets the full width), and "Generate token" is always the header action.
+- Support access: "Grant access" is the page's header action instead of sitting at the end of the explainer.
+- Docs: none (layout only; the settings and their behaviour are unchanged)
+
+### Changed: plain, consistent wording in the web console and the platform console
+
+- One Vietnamese word per concept (công việc for a remediation task, lượt quét for a scan, tác vụ for sensor work, phiếu for a ticket, and so on) and no English words left in the Vietnamese text, following a new word list in `web/.claude/i18n.md`.
+- English labels in sentence case; acronyms and internal terms in insights, settings and threat intelligence replaced with plain words.
+- Raw keys, ids, enum values, scope tokens and server variable names no longer shown as labels.
+- Docs: none (console wording only; the glossary lives in server/docs/glossary.md and web/.claude/i18n.md)
+
+### Changed: the assignee picker opens as a sheet on a phone
+
+- On a phone the assignee picker (the bulk bar's "Assign to…" on Findings, the finding drawer and page, triage, the pentest finding editor) opens as a bottom sheet titled "Select a person": the search field is pinned under the title, rows are 44 px, the keyboard stays down until the field is tapped and the sheet then sits on the keyboard.
+- From 768 px up it is the same anchored popover as before, with its search field focused.
+- Docs: web/docs/findings-list.md, web/docs/ui-style-contract.md
+
+### Changed: one set of chart defaults
+
+- Axis labels, guide lines, hover cursors, marker lines and the tooltip box of
+  every chart come from one module (`web/src/components/charts/chart-defaults.ts`),
+  all from theme tokens, so charts read the same in light and dark. The
+  dashboard trend charts and the program health chart use it; nothing looks
+  different.
+- Docs: web/docs/ui-style-contract.md ("Charts").
+
+### Changed: the dashboard's scope and freshness sit under its name
+
+- On the dashboard, the line that says whose figures these are, when they
+  were updated and when the next refresh runs is part of the page header,
+  right under the dashboard name. The widgets start one step higher.
+- "Being built for the first time" and "older than their schedule" are one
+  status line under the header, so the header keeps one height and its
+  controls stay beside the name in every state.
+- Docs: none (a layout move of two lines; no user guide describes the dashboard header)
+
+### Changed: the dashboard's name is its switcher
+
+- On the dashboard (`/`) the switcher is a chevron right after the
+  dashboard's name instead of a field in the toolbar; it opens the same menu
+  (Organization, Mine, search, New dashboard, Manage dashboards).
+- The toolbar at the end of the title row is Customize (from 640px), an
+  icon-only Refresh now and More, at every width. The refresh schedule moved
+  from a toolbar picker into More as a submenu, also on a desktop.
+- Below 640px the freshness line under the name never wraps, so the header
+  keeps its height as the minutes tick: it leaves out the next refresh and
+  "Refreshed on request only" (a screen reader still reads them), and a long
+  scope label is shortened before the time is.
+- A person with no dashboard sees the shared empty state with a New dashboard
+  button. Widgets sit 16px apart at every width.
+- Docs: server/docs/architecture/dashboards.md ("Switcher", "Toolbar");
+  web/docs/ui-style-contract.md (action menus).
+
+### Changed: each dashboard widget has one menu
+
+- A dashboard widget's header has one menu: Open list (the list the figure
+  counts, with the same filter), Show table or Show chart, and How this is
+  counted. The separate info button and the table switch inside the widget
+  are gone; on a phone the menu opens as a sheet when it does not fit.
+- How a figure is counted opens as a note inside the widget and stays until
+  closed.
+- A widget that could not be loaded says that the other widgets are not
+  affected.
+- Docs: web/docs/ui-style-contract.md ("Dashboard widgets")
+
+### Changed: the dashboards list is one table
+
+- `/dashboards` lists your dashboards in the shared table: the name (with a
+  star on your default) opens the dashboard, as does a click on the row;
+  widgets, columns and the last change are columns; the row menu holds
+  Customize, Edit details, Set as my default and Delete (confirmed). On a
+  phone each row is a card.
+- New dashboard (blank) is the page's main button; the templates follow the
+  list. A failed read of the list shows the error state with Retry instead of
+  "No dashboards yet".
+- Docs: server/docs/architecture/dashboards.md (templates and `/dashboards`).
+
+### Changed: sign-in page in the new entry frame
+
+- Pages without the app shell (sign-in first; sign-up, password links, verification, two-factor, organization choice, onboarding, application consent follow) share one frame: the brand, one card of a fixed width, one primary action, the legal links and a language menu in the footer. On a phone the card is the screen.
+- Sign-in: the title is the page's heading, provider buttons show their name, "Forgot password?" sits beside the password label, notices from a callback read as a banner in the card, and the two-factor step carries its own title.
+- Sign-in failures (wrong password, locked or suspended account, security check, a provider that could not start, an expired two-factor challenge) and the reason a session ended now stay in the card above the form as an alert the form refers to, instead of a toast that fades. The texts are the same.
+- Requests, redirects, cookies, error texts, what a message reveals about an account, code auto-submit and autofill attributes are unchanged.
+- Docs: web/docs/ui-style-contract.md ("Entry pages")
+
+### Changed: invitation pages in the entry frame
+
+- The invitation page (`/invitations`) and the ownership invitations page (`/ownership-invitations`) sit in the entry frame: the brand, one card, the legal links and the language menu. Each state of an invitation (loading, link not usable, declined, joined with two-factor still to set up, expired or already accepted, open) has one title, the organization as one row with the expiry chip when three days or fewer are left, and one teal primary action. A refused accept or open reads as one banner in the card, with the same texts.
+- Ownership invitations use the wide entry column; My account keeps its card.
+- The account space hub (`/welcome`) keeps its header and sign-out; its sections (verify, invitations, your company, create an organization, your account) are entry cards with their own headings.
+- The GitHub App setup page has one page title and announces the outcome (an alert when GitHub or the API refused). The sensor activation page uses the type scale.
+- The typed code field (sensor pairing code, recovery codes) has the height of the other fields.
+- Requests, redirects, cookies, tokens, error texts and confirmations are unchanged.
+- Docs: web/docs/ui-style-contract.md ("Entry pages")
+
+### Changed: sign-up, password, verification, organization and connection pages on the entry parts
+
+- The other sign-in pages (sign-up, forgot, reset and set password, email verification, two-factor setup, organization selection and creation, request access, not set up, application consent, terminal code, MCP confirmation) use the entry card: one title, one teal main action, banners in the card.
+- The password rules, the rule a new password breaks and the reset-link lifetime now read in Vietnamese too (they were English only).
+- The form that creates an organization says "Organization name", "Organization URL" and "Create organization" (it said "team").
+- Dead-end states of the consent and MCP confirmation pages offer "Go to the dashboard".
+- Requests, redirects, cookies, tokens and confirmations are unchanged.
+- Docs: web/docs/ui-style-contract.md ("Entry pages")
+
+### Changed: every feature "..." menu uses the shared action menu
+
+- The last 16 hand-built overflow menus (role members, comments, asset owners, inventory rows, related assets, the dashboard header and widget editor, the finding header and sub-statuses, pentest campaigns and steps, remediation campaigns and tasks, repositories, SCM connections, the vulnerability page) open as the shared action menu: anchored on a desktop, a bottom sheet on a phone, with the object's name as its title.
+- An item that does not apply is shown with its reason (a first widget cannot move earlier, a full step list cannot add a step, a busy connection is being tested) instead of a bare disabled row; the repository and SCM connection menus gain a named trigger and translated labels.
+- A menu left with one action shows that action as the button; the finding header's Copy link and the dashboard's Duplicate to mine are such cases.
+- Docs: web/docs/ui-style-contract.md
+
+### Changed: the findings list says which state it is in and what to do next
+
+- First run shows "No findings yet" alone, with no toolbar, chips or count: Run a scan, Import results and Connect a tool, each shown only to someone who may use it.
+- A refused read says the viewer cannot read findings here, hides Add finding and Triage, and offers one action, Go to the dashboard.
+- A no-match offers Clear filters and "Search all states" (was "Search all statuses").
+- When a refresh fails, the rows stay and the footer says how old they are with a refresh button; the same note appears once the rows are older than 5 minutes.
+- A list whose total is not known says "Could not count" with Retry beside the view name, the pager shows the rows on screen without a total, and Last page is disabled with its reason (also for a capped total, where the button was missing).
+- A failed load shows no count beside the view name.
+- An empty table disables the header's select-all checkbox.
+- Docs: web/docs/findings-list.md, web/docs/ui/shared-kit.md
+
+### Changed: findings row menu says why an action does not apply, and the drawer shows the place in the list
+
+- A row menu item that does not apply to a finding stays in its place, disabled, with the reason: Create ticket when a ticket is already linked; mark as false positive on a finding that already is one or is closed; assign, status and false positive on a finding people reported. Items without the permission stay hidden. Desktop and phone show the same items in the same order.
+- The finding drawer opened from a list row shows its place in the list ("3 of 418") with previous and next buttons; `j` and `k` make the same moves. A finding opened from a shared link shows no position.
+- Docs: web/docs/findings-list.md
+
+### Changed: the Findings list names its view and shows when it is changed
+
+- The title row never reads "Custom view" or "Saved view": it shows the open saved view's own name, the quick view the address is, or the view the list was derived from (otherwise "All findings").
+- A changed view shows "Modified" right after the count, then Save view and Reset. Save view opens the save dialog of the Views menu (on a view you own: Save changes or Save as new view); Reset returns to exactly that view. On a narrow row and on a phone the two are in the row's More menu.
+- The chips row ends with Clear filters only; "Reset to view" moved to the title row.
+- The list count on every list is a pill with the tooltip "Counted in your data scope".
+- Docs: web/docs/findings-list.md, web/docs/ui/shared-kit.md
+
+### Changed: the fix plan is a ranked table that scales to many tasks
+
+- Remediation > Fix plan shows the open tasks as one ranked table on the shared list kit instead of a card per fix: rank and task on one line (the full title on hover), findings, risk removed, the running total of risk the top tasks remove, state, owner, deadline with the "N d overdue" mark, and progress with its count. Columns fold away as the table narrows instead of wrapping.
+- Search, a State and a Campaign filter, sort by risk removed (the default) or by deadline, and pages of 25, 50 or 100 with "Showing N of M". On a phone the filters, Mine, Overdue and the order are in the Filters sheet and each fix is a card with its rank, title, risk removed, state and deadline.
+- The tiles (Open tasks, Overdue, My tasks) filter the table instead of opening another page.
+- The running total is a share of the list's risk ("62%") only when every task of the list is on the page; otherwise it is the running total in risk points, never an estimate. Suggestions to review are no longer mixed into the plan: they have their own tab with its count.
+
+- Docs: server/docs/architecture/remediation-tasks.md
+
+### Changed: a browser check fails on broken layouts in lists
+
+- A new browser check (`web/e2e/specs/75a-layout-breaks-lists.spec.ts`, with 75b settings, 75c shell and 75d detail pages) opens the lists and their row menu, filters, detail sheet and main dialog at 390, 1024 and 1440 px, in English and Vietnamese, with long names and empty and present optional fields, and fails on text drawn over text or a control, a word broken inside, text cut without an ellipsis, controls of different heights in one row, English left on a Vietnamese page and labels without a value.
+- A dashboard's description is marked as stored text, so the check does not count it as English left on a Vietnamese page.
+
+Docs: web/docs/ui-style-contract.md (Responsiveness)
+
+### Changed: notifications in the redesigned console show in the reader's language
+
+- The notification list and bell word each notice from its message code and values in English or
+  Vietnamese, with capability keys, severities, counts and times in plain words. A notice
+  without a code, or with a code this console does not know, shows its stored English text, and
+  title and body always come from the same source.
+- Older coverage notices whose stored text has one of the fixed sentence shapes are shown in the
+  reader's language too; any other older notice shows as stored.
+- Docs: server/docs/architecture/notification-system.md#message-codes
+
+### Changed: one tab level on Attack surface and Assets
+
+- Attack surface: the second row of tabs under the section tabs is gone. Technologies, Certificates, Web surface, Exposures, Lookalikes, Changes, Page changes, Discovery and Review are tabs of the one row (on a phone it swipes, with a fade at the edge). Posture is no longer a tab: the Overview's posture section links to it ("View posture details"), and the command palette still opens it. Every address keeps working.
+- Attack surface Overview: the figures come first, then the posture. "What to fix to raise the grade" no longer shows as an empty heading: it lists the first fixes of the plan when there is something to fix, and is left out at the top grade.
+- Assets, External surface view: the asset type (Domains, Subdomains, IP addresses...) is a "Type" filter token at the start of the list toolbar instead of a row of tabs under the Assets tabs.
+
+Docs: web/docs/page-catalog.md, server/docs/architecture/list-query-contract.md
+
+### Changed: phone lists grow with "Show 25 more", and a finding card shows its id and time left
+
+- Below 768px every list drawn as cards ends with one full-width "Show 25 more" button and a line such as "50 of 418" instead of the numbered pager. The cards on screen stay in place, the new ones come under them and the address keeps `per_page`, so a reload shows the same number.
+- The button names what is left when that is less than 25 and goes when everything is shown. At 100 rows, the largest page the API returns, a line says to narrow the filters to see the rest.
+- A finding card reads priority and row menu, title on up to two lines, asset and place, id (the CVE, else the rule id) and time left, then severity, status and one exploit mark. The checkbox in select mode and the row menu are touch targets of their own.
+- A link with `per_page=75` is accepted by every list.
+- Docs: web/docs/findings-list.md, web/docs/ui-style-contract.md, web/docs/ui/shared-kit.md
+
+### Changed: queue cards on a phone are balanced, with the decision at the end
+
+- On a phone the cards of the queues (approval requests, scan approvals, ready to close, recently closed, My Work findings, duplicate assets, relationship suggestions) put the item's state at the end of the title line and the decision at the end of one line of key facts: Approve with More, whose first item is Reject. A card with nothing to decide ends with a chevron to the item. The reason stays at two lines.
+- The approval requests page no longer shows Refresh alone on a line above the list: it sits at the end of the list's toolbar, and an empty title row takes no room.
+- The layout-break browser check (spec 75) now fails a phone card whose content stops short of its end and a title row line whose start is empty.
+- Docs: web/docs/ui-style-contract.md (Queues). No user guide change: the guides do not describe the phone cards.
+
+### Changed: on a phone a list's toolbar lines start with their content
+
+- On a phone the filter tokens of a list ("Status: Pending", the due-soon toggle of My Work) start their line instead of sitting at its end with the start empty: on a list without a search they start the first line, with the end actions at its end; with a search they start the second line and the filter chips follow them.
+- The first chip still moves no token and no action.
+- Docs: web/docs/ui-style-contract.md (Lists and tables, phone toolbar).
+
+### Changed: a saved view in Query mode shows its filter as text and can be edited and saved there
+
+- Opening a findings view in Query mode puts the view's own conditions in the field as query text. Until the text is changed the view stays open as saved.
+- Applying another text makes that text the whole filter: the list no longer sends the view with it, so the view's conditions are not applied twice. The title keeps the view's name with Modified; Save changes (the view's owner) stores the new text in the view, Save as new view and Reset work as before.
+- A findings view saved from a filter that chips cannot show (an OR across fields, a group) is stored as its checked filter and no longer fails to save.
+- In Basic mode, conditions of a view that chips cannot show are one "Advanced filter" chip that opens Query mode with the text.
+- Docs: web/docs/findings-list.md
+
+### Changed: the scan page uses the shared detail layout
+
+- Scan page: the header shows the scan's state, type and intensity as chips, Run now as the main action, Edit and the schedule switch beside it, and Clone, Copy link, Copy scan ID and Delete scan in More (each still needs the same permission as before).
+- Scan page: a facts strip shows the last run (it opens the run), the next run with its schedule and time zone, the run count with links to the successful, partly done and failed runs, and the success rate.
+- Scan page: a run in progress shows above the tabs with Open run and Cancel run; the run history no longer repeats a Cancel button on its row.
+- Scan page: Configuration and Details use the property list; the scan type and status are translated in Vietnamese.
+- Scan page: the run history is requested once on load.
+- Docs: none (layout of an existing page; same requests, permissions and API)
+- The scan page's links to the findings and all runs sit under the runs table, and the scanner field in the scan dialog shows only the scanner name, so the sensor note no longer runs past the dialog on a phone. The e2e seed has a scan that never ran, which the request budget loads (a run in progress polls its list every 10 seconds).
+
+### Changed: the Scope page follows its design board
+
+- The Scope summary counts known targets: In scope, Excluded, Pending proof (domains waiting for their DNS record) and Found but unknown (opens the assets no entry covers). Excluded and Found but unknown come from `GET /scope/stats` (`inventory_excluded`, `inventory_not_covered`); until the server sends them they read "Not measured".
+- "Check target" beside the summary asks the scope gate (`POST /scope/check`, a dry run: nothing is sent to the targets) whether up to 50 targets are in scope, why, and offers the fixes the caller may take.
+- The entries list shows "Authorized by" (ownership, a CI trust, a bug bounty program, a letter, a member's attestation, and who added it) in place of Reason and Added by; the reason is in the row's tooltip and Edit. The exclusions list shows the reason under Why.
+- Kind and Status moved into one Filters popover (a sheet on a phone), so the toolbar keeps the list switcher and never scrolls sideways; phone rows are cards with plain facts instead of label/value fields.
+- The Add to scope Duration is a segmented control; the approvals panel is translated.
+- Shared: the "last used / last seen" column fits the longest Vietnamese relative time (168 px, longer text ends in an ellipsis with the exact time in the tooltip). API keys: a revoked key reads "Revoked" under Expires. Delete organization: a "Who and what is affected" box with the member, asset and finding counts. Security overview: four summary tiles and "Review N" with the count.
+- Shared list toolbar: on a phone, a list with its own filter control keeps its other toolbar tokens drawn (the Scope list switch was hidden there with nothing to reach it).
+- Audit log: every resource type the server writes has an English and a Vietnamese label (a Vietnamese log no longer shows "Verified domain").
+- Roles, members and the role detail: the built-in roles' names and descriptions follow the console language.
+- Docs: none (presentation of existing pages and labels; no request, permission or API behaviour changes)
+
+### Changed: the Imports list says what each upload and run changed
+
+- Findings > Imports shows one "What changed" column in words ("12 new, 3 resolved, 1 reopened", "No change, 40 still detected", "No findings") instead of six count columns that read 0 on most rows. The counts stay in each receipt's sheet, in the totals under the list and under Display > Columns.
+- The status shows only when it needs a look: Failed, Queued, Processing, or Partly stored (some findings could not be stored or the run reported problems). Completed runs carry no chip.
+- Runs of one tool that received no findings at all (asset discovery such as subfinder) fold into one row, "15 runs, no findings, 40 assets found". Its sheet lists every run, each opening its own receipt, and links to the asset changes over those runs; nothing is dropped.
+- The Source filter and the filter chips from a dashboard link share one toolbar row.
+- On a phone the change summary is the card's main line.
+- Docs: server/docs/architecture/ingest-receipts.md (web section) updated; the user docs (docs PR #316) have no Imports text or screenshot to change.
+
+### Fixed: password, verification and access-request pages show one clear next step
+
+- Forgot password: the "Check your email" card and the "no e-mail on this server" card make Back to sign in the main action; the no-e-mail case keeps the page title and says it in a warning notice.
+- Reset and set password: an invalid link's one way on is the main action; an expired set-password link says to ask the administrator instead of "request a new one".
+- Verify email: sending a new link reports success and failure as notices in the card (also on the sign-in page and the welcome page), and a server without e-mail says so in a notice with Sign in as the main action.
+- Request access: a refused request shows translated words for the API's answer instead of the server's English sentence; the "Thanks" card makes Back to sign in the main action; a confirmation link that failed offers "Send a new request".
+- Docs: none (presentation of existing pages; no behaviour, request or wording of the API changes)
+
+### Fixed: lists and overview charts fit their frame and read in the console's language
+
+- A long task, campaign or other row name no longer widens a table past its frame: the name column is sized by its floor and the room left, so the Deadline and Due columns of Tasks and Campaigns are no longer cut at 1440 px.
+- Vulnerabilities and the other exposure overviews: severity names, the status names and the series name in the charts' legends and tooltips read in Vietnamese, the legend keeps severity order (Critical, High, Medium, Low) in the muted caption size, and the axes and tooltips follow the shared chart defaults.
+- A page header with a view switcher and actions keeps them together on the right when the row is full, so the switcher is never left alone on a row at 1024 px.
+- Certificates: at 1024 px the table folds Issued on, Fingerprint and Detected away instead of scrolling sideways, and the Expires on date and status line up to the right.
+- Docs: none (layout and wording of existing pages; no behaviour, request or API change)
+
+### Fixed: asset lists accept the provider addresses filter
+
+- `GET /assets` (and every list on the same filter registry) now accepts `attribution=provider_address`. It lists a provider's shared addresses. Before, the API refused the value with 400 "1 filter error", so the Needs attention queues "Decide monitoring" and "Validate primary", the inventory's "Show all" and its "Provider addresses" chip never loaded.
+- `attribution=approved` and `attribution=attributed` (the default inventory) leave provider addresses out, as the inventory totals already did. `dependency` and `all` keep them.
+- Docs: server/docs/architecture/easm.md (provider shared addresses: `attribution=provider_address` lists them)
+
+### Fixed: the campaign list no longer cuts its Due column on a tablet with the sidebar open
+
+- Campaigns: the Due column shows the short date ("Apr 29") with a small "23 d overdue" mark instead of one long "date, overdue" string; the full date is in the tooltip.
+- Campaigns: the Tasks cell puts "2 overdue" on a second line; the table drops "Findings fixed" first, then folds the owner into the campaign's second line, by the table's own width.
+- Every table: a cell that is still too wide for its column ends in an ellipsis with its full text in the tooltip, instead of being cut off.
+- Sensors: the list's name column shows a status mark whole or not at all, never a mark cut at the cell's edge.
+- Docs: none (presentation of an existing page; no behaviour, request or API change)
+
+### Fixed: platform console Users and Sessions lists
+
+- Sessions: when a break-glass session other than your own is open, the page's main action is Review, which opens Admin activity on that administrator's events.
+- Users: the State marks of a row are never cut: the state first, the marks that fit, then "+n" naming the others; on a phone the state is the card's chip at the end of its title line.
+- Sessions: the name, This session, Break-glass and the address share one line that never breaks inside a word; on a phone the card shows Last seen first.
+- The console page checks run the layout-break detectors on the Users and Sessions lists with 200, 1 and 0 rows, long and Vietnamese names, on a phone, a tablet and a desktop, light and dark, English and Vietnamese.
+
+- Docs: none (console page layout and one link to an existing page, no behaviour change in the API)
+
+### Fixed: the console draws its own fonts when run with `next dev` or `next start`
+
+- `npm run dev:console` and a `build:console` + `next start console` run (the console's e2e suite and local runs)
+  answered 404 for the six self-hosted font files and drew every page in a fallback font. A new step before both
+  scripts copies `web/public/fonts` to `web/console/public/fonts` (ignored by git); a console e2e spec checks that each
+  font the shared stylesheet loads is served.
+- The console image was not affected: its Dockerfile stage already copies the same files.
+- Docs: web/console/e2e/README.md (the new spec)
+
+### Fixed: console pages no longer shift when the web font arrives (redesign branch)
+
+- The console preloads the Inter files its first paint uses (Latin; plus Latin Extended and Vietnamese on a
+  Vietnamese page), so they arrive with the stylesheet.
+- A size-adjusted fallback face (a local Arial or Liberation Sans with Inter's width, ascent and descent) follows
+  Inter in the font stack of both apps, so a page that paints before the font arrives does not re-wrap or move
+  when it swaps in. `font-display: swap` is unchanged.
+- Console > Admin activity: the audit-chain strip has its final height while it loads, so the list under it no
+  longer moves (4 px, 24 px on a phone).
+- Docs: web/docs/ui-style-contract.md (fonts)
+
+### Fixed: platform console text reads in Vietnamese
+
+- Console: sign-in failures, "Could not create ..." errors, the content pack form checks, the target mapping form checks, the audit chain rebaseline reasons, the "New people" label of a verified domain and the "Failed to load" subjects of the account and content pack pages were English on a Vietnamese console; they now come from the catalog.
+- Console: a "Too many attempts" answer on the identity provider, password change and approval pages follows the console's language.
+- The console text test no longer exempts any file, and now also checks `setError`, `adminErrorMessage` and reason assignments.
+
+Docs: none (wording only, no behaviour change)
+
+### Fixed: the console says server settings in plain words
+
+- Settings whose value comes from the server read "Server default." instead of naming the environment variable; a variable is shown, as code, only where an administrator has to set it on the server (a setting locked by the server, the private networks set on the server).
+- Overview: the storage tile names the fullest volume in words ("Least free: Attachments") instead of its key, and the database tile shows when the schema last changed ("Last change 2026-11-20 09:40 UTC") instead of a 14-digit version. Disk and certificate notices name volumes and certificates the same way.
+
+Docs: none (wording only, no behaviour change)
+
+### Fixed: the console's "Changes" view of administrator activity no longer lists routine sign-ins
+
+- `GET /admin/audit-logs?kind=changes` now also leaves out routine successful session events: sign-in, sign-out, single sign-on, step-up and the ending of a session or an elevation (it already left out page views and write-ahead rows). Failed sign-ins, failed second factor or passkey, a passkey counter that went backwards, recovery codes, emergency and new-network sign-ins, evicted sessions, elevations and any failed row stay in the view. "All events" still lists every row and no row is dropped from the chain. The console overview links for emergency sign-ins and refused actions open "All events".
+- Console: audit action names, sign-in methods, roles and statuses read as translated labels (English and Vietnamese); one set of role names (platform owner, platform admin, read-only) everywhere; the audit detail sheet shows the exact UTC time and the reason, and no empty rows.
+- Docs: none (the filter label already reads "Changes"; no user guide describes sign-in rows in that view)
+
+### Fixed: the More button of a record page never sits alone on a phone row
+
+- On a record page (task, campaign, finding, asset, scan) at phone width, the secondary actions and More are one group that wraps together, so a long label (for example in Vietnamese) no longer leaves the "..." button alone on its own line.
+- Docs: none (layout of existing pages; no behaviour, request or API change)
+
+### Fixed: the layout check no longer fills one end-to-end shard
+
+- The layout check (spec 75) had grown to about 65 routes and variants in one file, and the shard planner places whole files, so one shard held all of it and ran into its 25 minute timeout. It is now four specs by family: 75a lists, 75b settings, 75c entry and shell, 75d detail pages (the web origin Paths tab), with the checks shared in `web/e2e/helpers/layout-breaks.ts`.
+- The shard planner now costs a spec with no recorded duration as the heaviest recorded spec, not the median, so a spec the last green run knows nothing about is never packed with others into one shard. The four new specs carry measured estimates in `web/e2e/ci/spec-estimates.json` until a green run records their own time, so they are not costed as heavy.
+- The full suite is split into up to 7 shards of about 600 s of recorded tests each (was up to 5 of 240 s steps), because the slowest shards ran into the 25 minute job timeout while others finished in 3 minutes.
+- Docs: none (test tooling only; the e2e README lists the new specs)
+
+### Fixed: the scan list layout test follows the phone card's new state line
+
+- The phone layout test for the scan list now expects the run state on its own line under the scan name and long names broken only after a dot or a dash, as the card has behaved since the shared text-breaking change.
+
+Docs: none (test only, no behaviour change)
+
+### Fixed: the end-to-end run no longer loses a test to its own spent sign-in, and its shards keep clear of the job timeout
+
+- Each e2e worker signed in once and every test started from that saved session. The API spends a refresh token the first time it is used and gives the access token 15 minutes, so the first test after those 15 minutes renewed the session, the saved file kept the spent token, and a later test that started more than 30 seconds after that renewal was sent to the sign-in page ("the same sign-in was used from two places"). The worker restarted, signed in afresh and the retry passed: one red test about every 15 minutes of a shard, 1.5 minutes lost each time, which pushed the heaviest shard past its 25 minute timeout. A test that starts when the saved session is 8 minutes old now signs in again first.
+- The full suite is split into up to 5 shards instead of 4 (about 17 minutes of recorded tests each, instead of 21), so the stack start and a retry fit the job timeout with room to spare.
+- Docs: none (test tooling only; the CI guide and the e2e README describe the shard limit and the session renewal)
+
+### Fixed: the finding page names the requester of an approval and says how a closed finding was closed
+
+- The approval band on a finding named a current member "Former member": the finding's approvals
+  (`GET /api/v1/findings/{id}/approvals`) now carry `requested_by_name` like the approvals list, for current
+  members of the organization only.
+- A closed finding no longer shows an SLA countdown, a "Resolved" date for every closure or Proof of fix: it
+  says "Marked false positive", "Risk accepted" until its end date, "Duplicate of" with a link, or "Resolved",
+  and shows Proof of fix only when it was resolved by a fix.
+- The band's Approve and Reject are the outline decision controls of the approvals inbox, named by the
+  request, so the page header keeps its one main action.
+- In Vietnamese, the activity summary ("1 event"), invitation roles and member dates follow the language.
+- Docs: web/docs/finding-detail.md
+
+### Fixed: the finding page's Watchers row stays inside the facts rail
+
+- The Watchers row no longer shows a chevron before the Watch bell; the avatars and count shrink and truncate so the bell stays inside the rail at every width. The finding ID keeps its copy button inside the column and shows the full id as a tooltip.
+- Docs: none (layout of an existing row; no behaviour or wording changes)
+
+### Fixed: the findings title row keeps its shape on load
+
+- Findings: while a view's name loads, the title row shows "Loading…" in place of the name and already holds its Refresh and More actions buttons, so the row and the toolbar under it no longer move when the name arrives.
+- Docs: none (layout of an existing page; no behaviour, request or API change)
+
+### Fixed: console lists keep names whole, one main button per screen, nothing jumps on load
+
+- Content catalog: the "No catalog has been imported yet" notice no longer shows while packages are listed, and the trust block under the list is drawn only once the package list is known, so nothing moves on load.
+- Organizations, Administrators and Sessions: the name column takes the free room (the slug, the address and the "This session" mark give way first); fixed columns fit the frame; Last seen shows "less than a minute ago" whole.
+- Platform sensors: "Add zone" is a secondary button next to the one main "Enroll a sensor". Support access: "Open support session" on a grant is a secondary button.
+- Target mappings: the count shows in the status strip and beside the pager, not in the title; on a phone the list comes first and the status strip follows it; the built-in pairs panel is drawn once the list is known.
+- Docs: none (layout of existing console pages; the public console pages describe none of these details)
+
+### Fixed: the drag handle on a remediation task's findings is a square control
+
+- The drag handle in each finding row of the task detail page is now a standard icon button, so it matches the other controls in the row (height and shape).
+- Docs: none (visual alignment fix, no behaviour change)
+
+### Fixed: the invitation page test no longer races its own pending transition
+
+- The invitation page tests clicked "Open" and the sign-in step button while the accept request's transition was still pending, when the button is disabled and a click is rightly ignored. They now wait for the button to be enabled first. No product change.
+- Docs: none (test-only change, no behaviour change)
+
+### Fixed: Accept on the invitation page works from the first click
+
+- Right after the invitation appeared, a click on Accept (or Decline) could do nothing: the page held the invitation's token in a separate update that could arrive after the invitation was drawn, and the click in between was ignored without a word. The token and the invitation now arrive in one update, so the buttons work as soon as they show. This made the invitation e2e spec fail on slow CI runners.
+- Docs: none (no change to the flow, wording or API)
+
+### Fixed: the layout-breaks check for a web origin's Paths tab no longer runs out of time
+
+- The Paths case of the layout-breaks end-to-end spec walked twelve views (five widths and languages, the endpoint sheet, two tree levels) in one test and hit its 240 second limit. Each view is now its own short test.
+- The layout-breaks spec answers the page's vulnerability-data banner request itself, so a slow or never-finishing answer to it (an API image without that route) no longer holds every page in "loading" for 20 seconds per view; this was also why most other routes of the spec ran out of time on such a stack.
+- Docs: none (test only; no behaviour, request or wording of the product changes)
+
+### Fixed: a list's toolbar keeps its place when a value is chosen, a row is selected or the rows load
+
+- A filter token that can be cleared ("Status: Expired") keeps the room of its clear button while nothing is chosen, so choosing a value no longer widens it and pushes the controls after it (Certificates, Technologies, Exposures, Emerging threats).
+- A table without a bulk bar says "N of M selected" under its rows, in the pager's line, instead of in the toolbar's end, where it moved the buttons beside it (Vulnerabilities).
+- Findings shows its real toolbar and chips row over placeholder rows while the first page loads, and a placeholder of the title row's own height before that, so the list no longer jumps when the rows arrive.
+- Under Compliance, the benchmarks block sits under the chips row and above the rows instead of above the title row, and folds to its heading: the title row and the toolbar no longer move when it loads.
+- On a phone the second toolbar line keeps the chips at its start and the filter tokens at its end, beside the icon actions, whether or not a chip shows: adding the first filter no longer moves the tokens (every list).
+- Sensors holds the fleet bar and its legend line while the fleet loads, so the title row and the list under the health strip no longer drop when the sensors arrive.
+- On a phone a labelled toolbar end action (Export CSV on Technologies, Certificates and Exposures) is a named icon, so the filter tokens and the Clear filters button keep their room on the second line.
+- On a phone card, a field that is only a switch (Enabled on Workflows) reads "On" or "Off" beside it, so the card never shows a label without a value.
+- Docs: web/docs/ui-style-contract.md (list state filter, toolbar end actions, a switch on a phone card), web/docs/ui/shared-kit.md (ToolbarAction), web/docs/findings-list.md ("First load", phone toolbar)
+
+### Fixed: a list's title row no longer appears late on a phone
+
+- A list whose actions show only on wide screens (Assets) kept its name and count row hidden on a phone until a view was changed, then the row appeared and the toolbar moved. Such a row now stays in place.
+- Docs: web/docs/ui-style-contract.md (Lists: the title row on a phone)
+
+### Fixed: layout matrix checks id pages and swipe tab strips correctly
+
+- The matrix "opened" check compares the browser path with the address it resolved (`/assets/<id>`), not the route template, so id pages no longer fail every variant; a redirect such as a bounce to the sign-in page still fails.
+- The cut-text check skips a label past the edge of a page tab strip only when that strip really scrolls sideways and fades the cut edge; a clipped strip, or an edge with no fade, is still reported.
+- The matrix waits for web fonts, finite animations and two frames before measuring, so a defect is no longer reported in one variant and missed in an identical one.
+- Docs: none (test harness only; no product behaviour changes)
+
+### Fixed: layout matrix no longer counts a detail sheet's header as a wasted row
+
+- The matrix's wasted-row check ignores the detail sheet header (title, status chips, facts line), which wraps on a phone.
+- Docs: none (test harness only; no product behaviour change)
+
+### Fixed: Assets and Attack surface pages start their lists without rows of their own
+
+- Assets › Needs attention queues: the back link, reason, count, why line and actions share one row (the why line, cut with an ellipsis, reads whole in its tooltip and in the reason menu on a phone); each queue gets a search, so the Display menu no longer sits alone above the list. On the landing page a phone stacks a reason's unit under its count.
+- Asset Activity fits a 768 px screen without cutting When; Asset groups keeps its row menu in view on a narrow table.
+- Attack surface › Discovery: the Stages and Decisions switch shares the toolbar row with the actions and what holds the stages back; "Updated" and Refresh move to the caption under the stages.
+- Attack surface › Exposures: a last type tile alone on its row takes two columns.
+- Attack surface › Posture: root domains are a list like the fix plan (grade, score, assets and issues on each line), so no column is cut on a phone.
+- Attack surface › Technologies: columns fold by the table's width and each row gets a menu (its assets, its top CVE), which also ends the phone card's title line.
+- Attack surface overview: Fix first and Recent changes put their link beside the title and the description under both. External attack surface: Scan this page and Export move to the list toolbar; the page header keeps Add asset.
+- Scope › Domain proof: the domain field and its button share one row, the list has a search, and every text is translated (en, vi).
+- Docs: none (layout of existing pages; no behaviour, request or API change)
+
+### Fixed: dashboard, My work and Findings fit tablet and wide screens
+
+- Dashboard: the key figures go to one row only when their widget is wide enough, so "Time to fix, median" is no longer cut at 1024 px with the sidebar open; the figures take two balanced rows there instead.
+- My work: on a tablet (768 to 1024 px with the sidebar open) a long finding title ends in an ellipsis instead of pushing the Severity, Due and Status columns out of view.
+- Findings: the Severity column shows "Nghiêm trọng" whole in Vietnamese; on a 768 px tablet the row menu is no longer cut, and the Practice and State scopes move into the filter sheet instead of leaving "Open" alone on a second toolbar row.
+- Finding detail: the retest note and "How checks work" keep a readable line length on wide screens.
+- Docs: none (layout of existing pages; no behaviour, request or API change)
+
+### Fixed: Assets inventory fits a tablet and the asset Activity filters fit a phone
+
+- Assets: on a table frame narrower than the desktop columns (a tablet, or the sidebar open at 1024 px) Service facts drops out instead of scrolling the table sideways with its chips cut; Columns turns it back on.
+- Asset Activity (and the Recent changes lists that share its filters): on a phone the attribute and source filters share one row at equal width instead of two stacked fields of different widths.
+- Docs: none (layout of existing pages; no behaviour, request or API change)
+
+### Fixed: The main action on a detail page is no longer cut off on a phone
+
+- Detail pages (vulnerability, finding and the others on the shared header): at 360 px the "Create remediation task" style main action keeps its whole label; the other buttons wrap to the next line instead of squeezing it.
+- Docs: none (layout fix, no behaviour or setting changes)
+
+### Fixed: Exposure analytics show event types in your language
+
+- Exposures, Analytics view: the "By event type" bars use the same translated names as the list instead of the raw type id.
+- Docs: none (label fix, no behaviour or setting changes)
+
+### Fixed: Exposures and the vulnerability page fit every screen width
+
+- Exposures: the list keeps its row menu and the First seen column on tablet and laptop widths (columns join by the room they need), long titles wrap on the phone card, and the view switch stays beside the title at 360 px.
+- Vulnerability page: the card hints sit under the card titles instead of at the far edge on wide screens.
+- Docs: none (layout fixes, no behaviour or setting changes)
+
+### Fixed: Ready to close and Exceptions read in plain words with no extra rows
+
+- Ready to close: a close confirmed by a retest reads "Retest confirmed the fix", and a reported fix that a scan agrees with reads "Fix reported, scan agrees" (en and vi), instead of the raw method name.
+- Ready to close and Recently auto-closed: Refresh sits in the table toolbar, and the line under the table that repeated the count is gone (the table footer already shows it). On a phone the toolbar no longer holds a lone More button.
+- Exceptions: on a phone, a rule nobody approved no longer ends its card with a lone dash.
+- Triage: the note under the decisions keeps a reading width on a wide screen instead of one 1000 px line.
+- Docs: none (labels and layout of existing pages; no behaviour, request or API change)
+
+### Fixed: Scope, Sensors and Attack surface changes fit a phone and a tablet
+
+- Scope: the Show switch (Entries, Exclusions) sits on the search row, and on a phone it reads just its value, so no row holds it alone. The note about scan intensity moved under the list, so the rows come first. A long e-mail in Authorized by (and Added by on exclusions) ends in an ellipsis instead of pushing the row actions past the table's edge. On a phone the sentence under the title is left to wider screens.
+- Sensors: the table folds Host, Tools, Jobs and then Version by the width it has, so it fits at every width and the row actions are never cut. The install command wraps inside its box, with Copy above it, and a long SDK version in the filters ends in an ellipsis (the whole version shows on hover).
+- Attack surface changes: on a phone the time sits on the change's title row and the host name takes the whole width under it, so a long host name is no longer split into a narrow column; on wider screens the row is the plain list row again. The Surface / Page changes switch sits in the list's toolbar beside Filters. The sentence under the title is left to wider screens.
+- Docs: none (layout of existing pages; no behaviour, request or API change)
+
+### Fixed: security overview, API keys, SLA policies and notification channels fit phone and wide screens
+
+- Security overview: on a phone Re-check shows its icon beside the title instead of taking a header row of its own.
+- API keys: the maximum key lifetime field is as wide as a number needs instead of stretching across a wide screen.
+- API keys and SLA policies: no search box or Display button while there is nothing in the list to search. A revoked key's phone card no longer repeats Revoked as its expiry.
+- API keys, SLA policies and notification channels: on a tablet or a laptop with the sidebar open, less important columns fold away and the row menu stays in view instead of being cut at the table edge.
+- Notification channels: the Connected and Errors tiles keep a tile's width on a wide screen; on a phone each channel is a card with its provider, status and error message, and View events and Queue show their icons so the three header buttons share one row.
+- Docs: none (layout of existing pages; no behaviour, request or wording of the API changes)
+
+### Fixed: API keys show the key list first, and the security overview and notification channels waste no row
+
+- API keys: the key list comes first and the maximum key lifetime form sits below it, so the first key is visible without scrolling past the policy.
+- Security overview: each check's Review link follows its title instead of sitting at the far end of the row on a wide screen; when the checks ran is a caption at the end of the page instead of a row above the score.
+- Notification channels: the header buttons use the standard size; while there is no channel, the one Add channel button is the one in the empty state.
+- Docs: none (layout of existing pages; no behaviour, request or wording of the API changes)
+
+### Fixed: The campaign page follows its board on every screen width
+
+- The campaign page uses the shared detail header: status and priority above the title, the state action as the main button, Add tasks and Edit beside it, the rest in More. The description and facts sit in one block, so no row holds a single control.
+- The campaign task table keeps its row menu at tablet widths (the Progress and Owner columns join by the room they need).
+- Phone cards: a deadline or other chip that would be cut by its half of the line now takes the whole line (the check also sees a chip that cuts its own label).
+- Docs: none (layout fixes, no behaviour or setting changes)
+
+### Fixed: the layout matrix no longer sends a made-up client address
+
+- The entry-page states of the layout matrix (forgot password, reset password,
+  verify e-mail) sent their own X-Forwarded-For so the per-address limit on
+  password and link requests would not refuse one state after another. They
+  send none now: the scratch stack the matrix runs on gives each request its
+  address. The verification link request is sent by the page itself, as the
+  sign-in page does, and its answer is written to the run log. The link is
+  read without the closing bracket the e-mail's text part puts after it, so
+  the "verified" state now opens a valid link.
+- Docs: none (test tooling only; no guide describes the matrix states)
+
+### Fixed: sign-in entry pages say each result once
+
+- Reset password and set password: a refused or expired link is shown once,
+  in the banner on the page. The toast that repeated it is gone; on a phone it
+  covered the page title. A saved password no longer shows a toast beside the
+  success card either.
+- Forgot password: "Check your email" is the page itself, with no toast on
+  top; a refused request shows a banner above the e-mail field instead of a
+  toast that fades.
+- Docs: none (the pages show the same messages, once; no guide describes the
+  toasts)
+
+### Fixed: the Exceptions filters stay on the search row and Triage mode status fits one line on a phone
+
+- Exceptions: once the toolbar folds, the search asks for less room, so the Type and State filters stay on the search row at 768, 820 and 1024 px with the sidebar open instead of wrapping onto a row of their own. Every list built on the shared toolbar benefits.
+- Triage mode on a phone: the position in the queue and the counts (decided, sent, skipped) share one line, with a shorter wording of the counts.
+- Docs: none (layout and wording of existing pages; no behaviour, request or API change)
+
+### Fixed: page tabs swipe on a phone, header buttons stay beside the title, the runs list fits a tablet
+
+- Page tabs (Scans, Assets, Business context, Scope and every other section with route tabs): when the tabs do not fit, they become one row you swipe sideways, with a fade at the edge that has more tabs, and the current tab is scrolled into view. They no longer fold into a More menu.
+- Page header: on a 360 px phone a short title and two icon buttons (Quick scan, New scan) share one row; the title wraps first, and only wider buttons move to a row of their own.
+- Scan runs: on a 768 px tablet and on a 1024 px screen with the sidebar open, the table gives up the Tasks and then the Duration column (both are in the run's own panel) instead of scrolling sideways with Duration cut at the edge.
+- Docs: none (layout of existing pages; no behaviour, request or wording of the API changes)
+
+### Fixed: the scans list fits a tablet, and the runs list on a phone wastes no row
+
+- Scans: between 768 and 1024 px the table gives up the run count and then the schedule column (both are on the scan's own page) instead of scrolling sideways, and each row's menu stays pinned at the end of the row.
+- Runs on a phone: Refresh and Export sit in one More beside Filters, so the filter button no longer has a row of its own and the title row holds only the view name and the count; each run card ends with a chevron that says a tap opens the run.
+- Docs: none (layout of existing pages; no behaviour, request or wording of the API changes)
+
+### Fixed: findings and scans pages on a phone
+
+- Findings: while a view's name loads, the title row shows a placeholder instead of its buttons alone.
+- A finding's "asset not confirmed" note puts the Verify ownership link under its text, so the text uses the note's full width.
+- A scan run's panel shows its summary (findings, tasks, duration, deadline) in its header and its tasks first; a scan's runs on a phone show the requester in full.
+- Docs: none (layout of existing pages; no behaviour, request or API change)
+
+### Fixed: the remediation task page reads on a phone and follows its board
+
+- On a phone, a finding's title in the task's Findings tab takes the whole row and wraps to two lines, with the target under it and the severity and status below; the drag handle shows only where tasks to drop onto are listed (from 1280 px).
+- Above the findings, a count line shows how many are open, in progress, fix applied, verified and closed.
+- The header shows the owner and the deadline under the title; the Details rail keeps risk left, progress and people.
+- When some findings of the task are outside your access, the notice offers Request access: it leaves an internal comment on a finding of the task for whoever may share them. Nothing is shared by it.
+- Docs: none (presentation of an existing page; the request is the existing finding comment)
+
+### Fixed: My work queue columns are sized by kind, so none is cut on a tablet
+
+- My work: the queue table sizes its Priority, Severity, SLA and Status columns by kind. On a frame narrower than 700 px (a tablet) the Status column leaves instead of being cut at the frame edge, in Vietnamese as in English.
+- Docs: none (layout of an existing page; no behaviour, request or API change)
+
+### Fixed: My work shows its Status column whole on a tablet and names its filter on a phone
+
+- My work: the queue table shows the priority class alone (the Findings list does the same), so the Status column is no longer cut at 768 and 820 px in Vietnamese.
+- My work: the "SLA due in 72 hours" filter inside the phone Filters sheet is named in full instead of a bare timer icon and count.
+- Docs: none (layout and label of an existing page; no behaviour, request or API change)
+
+### Fixed: dashboard notice and list filters hold the header still
+
+- Dashboard: the "being built for the first time" and stale notices are back under the page header, so the header and its controls never move. When the seeded-layout note or a layout hint shows, the notice opens that note's line instead of taking a row of its own above the widgets.
+- Findings: the Practice and State chips keep one width again, so opening a saved view (the chip reads "Set by the view", cut to the chip's width and whole in its hint) no longer shrinks the search field. Other filters still show a long value such as "Awaiting approval" whole.
+- CI: a Web E2E shard may run 40 minutes (was 25); the heaviest shard no longer fits 25 now that lists hold seeded rows.
+- Docs: none (layout of existing pages; no behaviour, request or API change)
+
+### Fixed: attack surface buttons keep their name on a phone
+
+- Attack surface: the Discovery "Export CSV" button and the domain proof "Prove a domain" button are icons on a phone and keep their name for screen readers; from a small tablet up they show the label.
+- Build checks: the restyle baseline is lowered for two files that got cleaner, and the shared first-load size budget is raised slightly for the shared list pattern now on most pages.
+- Docs: none (presentation and build checks only; no behaviour, request or API change)
+
+### Fixed: bootstrap shared reads test no longer races, and the asset tabs and the roles table stop hiding things on a phone
+- The bootstrap shared-reads test recorded its calls from parallel goroutines without a lock; it now guards the recorder (a data race under `-race`).
+- The asset page tabs wrap to a second line instead of scrolling out of sight on a phone (Paths tab included).
+- The roles table drops the Level column below 1000 px of table width so the Permissions column is not cut at the edge.
+- Docs: none (a test fix and two layout fixes, no behaviour to document)
+
+### Fixed: a notification whose values hold a NUL character is no longer lost
+
+- PostgreSQL refuses the NUL character in jsonb, so a notice whose message values carried one
+  (for example a finding title with a NUL byte from a scanner) failed to insert. NUL is now
+  removed from every message value before it is stored; the English title and body are
+  unchanged.
+- Docs: server/docs/architecture/notification-system.md#message-codes
+
+### Fixed: Scope and Security overview follow the page rhythm
+
+- Scope: the Check target tool sits with the other page actions in the header, so the summary strip is one full-width row of tiles of one height.
+- Security overview: each tile (score, checks at risk, checks with a warning, checks passed) links to the checks it counts.
+- Docs: none (layout of existing pages, no behaviour change)
+
+### Fixed: phone list cards cut values at the middle of the card
+
+- On a phone, a list card whose fields sit on two lines (a long chip, or a single field) now gives
+  each field the whole line, so a value such as a ticketing host ends at the card's edge instead of
+  "jira.exa…" beside empty space. The whole value shows when you hover or long-press it.
+- Docs: none (layout fix of the shared phone card, no new behaviour to document)
+
+### Fixed: on a phone, toasts sit below the top bar and a list leaves select mode when an action ends the selection
+
+- A toast on a phone covered the top bar and its badges; it now starts below the bar. After a bulk action finished, the select bar stayed at "0 selected"; the list now leaves select mode with the selection.
+- Docs: none (visual fix of the phone toast position and the list select bar; no behaviour change)
+
+### Fixed: list filters on a phone are never hidden in a sideways strip
+
+- On a phone (390 px) a list's filter tokens (status, kind, period, on/off
+  filters) sat in a strip that scrolled sideways with nothing to say so: the
+  token at the edge was cut ("Last 7 d...") and the ones after it were out of
+  view. The list now shows one Filters button with the number of filters in
+  force; it opens the list's filter sheet, where every token is. The filters
+  in force stay on the line under the search, wrapping, and clear in place.
+- Refresh moved from the title row into the toolbar on Asset activity, Scans,
+  Workflows, Scan approvals and Ready to close, so no line holds an icon alone
+  on a phone.
+- Active filter chips wrap onto more lines on a phone instead of scrolling
+  sideways, so none is hidden.
+- The layout check (e2e spec 75) now flags a control a sideways scroller cuts
+  at its edge, a one-line strip that hides a control, and a phone title row
+  holding one icon alone.
+- Docs: web/docs/ui-style-contract.md (Lists and tables, phone toolbar)
+
+### Fixed: the query editor is wide enough to read
+
+- Findings, assets and scans in Query mode: the filter tokens step aside (their values are in the query text) and the editor takes the toolbar row's free width up to Views, Group and Display, so a query reads on one line instead of wrapping inside a narrow box.
+- The expanded editor follows its text: two lines at least, eight at most, then it scrolls. It breaks lines at spaces only, never inside a condition such as `practice!=compliance`. The drag handle and the remembered dragged height are removed.
+- On a phone in Query mode the chips row starts below the toolbar's actions instead of running under them (assets: "Hiding 8 names awaiting review").
+- Scans: the query editor shows its example placeholder in English and Vietnamese instead of a text key.
+- Docs: web/docs/ui-style-contract.md (list toolbar, Query mode), server/docs/architecture/query-language.md
+
+### Fixed: phone queue cards give long text the full card width
+
+- Ready to close, Approvals and the other queue lists on a phone: a long first fact (an asset name, a scope) no longer squeezes into a narrow column beside the card's buttons. It takes the full card width, and the buttons move to their own line under it, at the end. A short fact (an age, a date) keeps the buttons beside it.
+- Docs: none (layout of existing phone cards; no behaviour, request or wording changes)
+
+### Fixed: saving a view in Basic mode works against any API version
+
+- The console sends `page_params` with a saved view only when it holds something other than the page's default. A view saved in Basic mode sends no `page_params`; a view saved in Query mode sends `{"mode": "query"}`. Saving no longer fails with "Invalid request body" against an API that predates the field.
+- When saving a view fails, the Save view dialog stays open with the name and choices kept, and says why.
+- Docs: web/docs/findings-list.md
+
+### Fixed: saved-view page registry test follows the account route group
+- The route walk now also reads the `(account)` route group (the URL has no group segment), and `/account/organizations` is listed as a page without views.
+Docs: none (test-only change of the saved-view page registry)
+
+### Fixed: the Scope lists' Filters button is joined to the search field
+
+- On Scope (entries and exclusions) the Filters button kept four round corners and a doubled border beside the
+  search field, because the popover around it replaced the button's slot name. The button now keeps its own
+  slot, so the search joins it like on every other list (one outer border, round outer corners, one height).
+- The Scope Filters popover is the shared `FilterPopover`; the toolbar guard no longer lists a Scope exception.
+
+- Docs: none (a layout fix; the joined control is already described in web/docs/ui-style-contract.md)
+
+### Fixed: a re-verification step that cannot load now says so (redesign branch)
+
+- When an action asks to confirm your identity again and the browser cannot download that step (offline, or a
+  new version was deployed meanwhile), an error message now says the verification step could not be opened and
+  to check the connection and try again. The action is still refused, as before. Trying the action again
+  downloads the step again.
+- Docs: none (error message for a network failure; no behaviour to document)
+
+### Fixed: campaign and console user lists keep their headers whole; asset overview keeps a readable width
+
+- Campaigns: the table folds Findings closed, Owner and Tasks away by the width it has, so the Due header is never cut at 768 px; on a phone the campaign name takes the full width with its status under it.
+- Asset details: the overview's risk summary and facts keep a readable width instead of stretching across a wide screen.
+- Console users: the table folds Signs in with, Created and Last sign-in away by the width it has, so no header is cut at 768 or 1180 px; on a phone a last sign-in time that does not fit half the card line takes the whole line instead of being cut.
+- Docs: none (layout of existing pages; no behaviour, request or API change)
+
+### Fixed: the finding list of a remediation task ends at a whole row
+
+- Remediation task page: the boxed finding list ends at the bottom of the last row that fits, so a row is never cut in half at the box edge before you scroll; the list still scrolls inside its box and loads later rows as you scroll.
+- Layout matrix (tests): the full-page picture grows only by the page's own scroller, not by a scroll box inside it (a long task list made a 10,000 px picture of empty page), and a new `emptyTail` detector fails a picture more than 1.5 times as tall as its last visible content.
+- Docs: none (layout fix of an existing page and test tooling, no behaviour change)
+
+### Fixed: forms no longer show a dead main button at rest
+
+- Pairing, two-factor setup, access request, terminal sign-in, lookalike and page watches, domain proof, network seeds, quick scan, scan approval, campaign add-tasks, exception requests, new finding, new workflow and new priority rule keep their main button enabled; pressing it with something missing says what under the field and moves focus there.
+- Discovery, emerging-threat alerts, organization leave and the pentest finding and template editors show an action only when it can act, or say why in one line.
+- A page title is no longer repeated by the first card or its description on the pairing, terminal sign-in, lookalike, page-monitor, network, pentest finding and template, activity and connected-application pages.
+- Docs: none (presentation of existing pages; no behaviour, request or API change)
+
+### Fixed: the reorder handle on Settings, Asset sources is a square button again
+- The grip handle in each source row was 24 by 32 pixels after the last layout change; it is now a square of the standard control size, so the page passes the page-anatomy end-to-end check.
+- Docs: none (visual fix of one settings control; no behaviour change)
+
+### Fixed: the discovery stage cards and the risk score fields no longer draw text over each other
+
+- On the attack surface's Discovery tab, a stage card's state ("Paused", with the reason under it) wraps below the stage name when the card is narrow instead of covering it.
+- On Risk scoring, the score fields (exposure, criticality and the others) fit as many columns as have room, so a label and its information icon no longer overlap at a laptop width.
+
+Docs: none (web/docs/ui-style-contract.md and web/e2e/README.md describe the wider layout check: 1280 px and cut button labels)
+
+### Fixed: detail pages and the console no longer cut buttons, stack step cards or show English on Vietnamese pages
+
+- A scan workflow's step cards no longer sit on top of each other: once the cards are drawn, overlapping ones move down so each is readable.
+- A row's labelled buttons (Cancel on a scan's runs, Block on the console's AI applications, Approve in queues, Check on domain proofs) are no longer cut at the table's edge.
+- Opening a record that no longer exists says "Couldn't find ..." in the reader's language, without a Retry or the server's English message.
+- A scan's page says "Manual" once and in Vietnamese on a Vietnamese page; its schedule type is translated.
+- The severity breakdown on asset and pentest campaign pages is translated and wraps on a phone instead of cutting the labels.
+- On a phone, a list's buttons at the end of the toolbar wrap instead of running off the start of the screen, and a card value of two parts (a trigger and who started it) keeps a space between them and ends in an ellipsis.
+
+Docs: web/docs/ui-style-contract.md (column kinds: labelled buttons go in a `decisions` column)
+
+### Fixed: names and addresses no longer break inside a word
+
+- Asset names, host names, e-mail addresses and URLs in lists, phone cards, detail panels and the platform console wrapped at any letter ("Paym|ents platf|orm"). They now wrap at spaces and at their separators (`.`, `@`, `-`, `_`, `/`) only; hashes, keys and tokens in a mono font still break anywhere.
+
+Docs: web/docs/ui-style-contract.md
+
+### Fixed: phone layouts no longer cut, squeeze or leave empty labels
+
+- The Create role and Edit role panels no longer run off a phone screen: the Preview column shows from tablet width up; on a phone the permission count stays above the list.
+- Long scan names that are host names wrap at their dots and dashes, never inside a word.
+- A finding or task whose watcher list cannot be read no longer shows a "Watchers" label over a loading bar that never fills: the row is left out.
+- The asset sources ranking rows draw the drag handle and the days field at the same height as the other controls.
+
+Docs: none (layout fixes of existing screens; no behaviour change)
+
+### Fixed: the asset phone card's type line no longer breaks words or runs under the risk score
+
+- On a phone, the asset card's second line said the type and then the asset's description on one line: the type was squeezed and broken inside the word ("IP Addres" / "s"), and a long description ran past the card and under the Risk score. The line now says the type and the asset's group; the type is never cut, the group ends in an ellipsis with its full name as a tooltip.
+- Descriptions written by discovery ("Root domain auto-created from subdomain discovery") are no longer shown on the card; the asset's details still show the description, as the desktop row already did.
+
+Docs: web/docs/ui-style-contract.md (one-line metadata, system text stays out of lists)
+
+### Fixed: the selected tab is visible on a phone when a page opens on it
+
+- A page opened on a later tab (for example an asset's Activity tab) showed the start of the tab row on a phone, with the selected tab off screen. The tab row now scrolls the selected tab into view once the page has finished loading.
+
+Docs: none (a fix of existing tab behaviour; no setting or guide changes)
+
+### Fixed: triage shows one finding at a time and counts every skip (redesign branch)
+
+- Triage: the finding and its decisions are one column; the queue opens on demand in a side panel (Queue, key `q`)
+  instead of a permanent column beside the finding.
+- On a phone the facts read as two columns, the decisions other than Confirm and Skip are folded under "Other
+  decisions", and the bar at the bottom holds Previous, Skip and "Confirm, a real issue". The queue list is no
+  longer drawn under the finding.
+- A finding passed over because someone else changed it or it left your scope counts as skipped: the session line
+  and "Queue done" said "0 skipped" after such skips. A run of them shows one note instead of a stack of toasts.
+- No API change.
+- Docs: none (the triage keys dialog lists the new `q` key).
+
+### Fixed: Asset groups list after its move to the list pattern (redesign branch)
+
+- A long group name ends in an ellipsis inside its cell; it was drawn over the next column.
+- The list keeps the order the API returns: the table sorts in the browser and took no initial order from the page,
+  so the announced "sorted by name" never applied.
+- On a phone the metric strip is not drawn (the count is in the title row, Criticality in the Filters sheet), so
+  the first group card starts higher, and the search placeholder fits its field.
+- Docs: none (internal redesign branch)
+
+### Fixed: Asset groups list widths and the phone start (redesign branch)
+
+- A long group name has no width of its own: it ends in an ellipsis inside the Name column and never makes the
+  table wider than its frame (in Vietnamese at 1280 px the table was 80 px wider than its frame; at 1024 px the
+  columns now fit the frame).
+- On a phone the metric strip is hidden by the layout (no movement after the first paint), and the page's English
+  description is one line, so the first group card starts within the top 45 % of the screen with a filter on.
+- Docs: none (internal redesign branch)
+
+### Fixed: a phone card's chip and row menu share one height and centre
+
+- On a list's phone card the name, the status and the row menu are centred on one line, and a chip that opens a popover beside the status (the scan workflows' readiness chip) takes the row menu's 36 px box with the chip drawn at its own size. The row menu no longer makes the title line taller.
+- Docs: none (a fix to match the existing one-height-per-row rule of web/docs/ui-style-contract.md; the phone card section already describes what the title line holds)
+
+### Fixed: Display > Columns names every column as its header reads
+
+- The column list of a table's Display menu showed the column's internal id ("asset name", "last seen") for every column without a separate label, in English on a Vietnamese page. It now shows the header the column has in the table, in the page's language (every list). A column with no header (the row menu) is no longer offered there: its only name was its English id ("Actions" on the Credential leaks list).
+- Docs: web/docs/ui-style-contract.md (Display > Columns labels)
+
+### Fixed: a filter token's trigger and clear button take its full height
+
+- The trigger of a filter token ("Status: Pending") stopped inside the token's 1 px border, so on a phone it was 34 px high instead of the 36 px of every other control, and its clear button was a 28 px square. Both now take the token's full height, border included; the clear button still looks the same (every filter token).
+- Docs: web/docs/ui-style-contract.md (filters)
+
+### Fixed: a field's placeholder that does not fit ends in an ellipsis
+
+- A search field on a phone cut its placeholder mid-word ("Search findings by tit") with no mark that the text went on. Every text field now ends a placeholder that does not fit with an ellipsis (every list search, every form field).
+- Docs: none (kit field behaviour; the field sizes in the UI style contract do not change)
+
+### Fixed: list toolbar, phone filter strip and the Findings practice first run (redesign branch)
+
+- One filter entry per width on Findings and Assets: from 768 px "Add filter" sits right after the search field
+  (before Practice and State, so it never moves when they change) and the field stands alone with four round
+  corners; on a phone the Filters button joined to the start of the field is the one entry (no second Add filter).
+  The search field joins a filter button only while that button is drawn.
+- Phone: the filter chip strip always starts at its first chip, never cut at the start; only its end fades, and a
+  leading chip wider than the strip shortens its text instead of being cut.
+- Findings on a phone: "Select" is the first item of the list's More (beside Refresh), followed by a divider; the
+  toolbar's own one-item menu is gone.
+- The Findings list More uses the shared action menu (a menu or a bottom sheet by fit) and gains "Copy link",
+  which copies the list as shown (filters, sort, view) for the current organization.
+- "Clear filters" is drawn by the shared chip row, in the same place on every list with chips; emerging threats,
+  exposures and technologies gain it.
+- Findings, a practice with nothing yet (for example Compliance with no benchmark checks): the table says so with
+  the practice's next step ("Import results", for those who may import), instead of a block above the list and a
+  "No findings match" below it. The benchmarks block shows only when there are benchmarks and no longer pushes
+  the list down when it loads. Choosing a practice keeps the view's name (it no longer turns into "Custom view").
+- My work: the "SLA due in 72 hours" toggle is a standard button at the row's control height.
+- Docs: none (internal redesign branch)
+
+### Fixed: web console menus are as wide as their content and open under their trigger (redesign branch)
+
+- A menu is as wide as its content: at least its trigger or 128 px (160 px with icons), at most 360 px or the
+  screen less both gutters. Fixed widths that only padded short lists are gone (the finding status menu opened
+  256 px wide for two short items); a guard test lists the menus whose content needs a width, with the reason.
+- A menu, popover or select list lines up with its trigger's start edge, and with the end edge only when the start
+  would cross the screen gutter or the edge of the drawer or dialog it was opened from. A menu opened in the
+  finding drawer now opens under its trigger inside the drawer instead of hanging out over the page.
+- Docs: web/docs/ui-style-contract.md ("Floating surfaces")
+
+### Fixed: your own items are recognised on every page load (redesign branch)
+
+- Seven places decided "is this mine" from a user id the page often does not have (the session cookie is not
+  readable by the page). Approving your own exception request or finding disposition opened the normal approve
+  dialog instead of the self-approval one, Cancel was missing on your own content request, the pentest checklist
+  filter "Mine" showed nothing, an AI agent you own did not offer you Attest, Scan approvals did not mark your own
+  request (no "You", Remind or Withdraw), and the new-scan draft was not kept per person.
+- They now read the id from your profile through one shared hook; a source test keeps the other id out of these
+  decisions.
+- Docs: none (no user guide describes these marks; behaviour now matches what the guides already say).
+
+### Fixed: a frozen row actions column is only as wide as its actions
+
+- A list that freezes its row actions column at the end (Findings > Approvals, the asset suggestions and possible duplicates queues) sized it to its declared width on every row, so on rows without an action an empty strip covered the column before it. The column is now as wide as the widest action on the page, never wider than declared, and has no box while no row has an action.
+- Docs: web/docs/ui-style-contract.md (frozen columns)
+
+### Fixed: web console popups keep the page gutter from the screen edges (redesign branch)
+
+- Menus, popovers, select lists, tooltips and date pickers now stay at least 16 px from every screen edge. On a
+  phone the Findings page-header More menu opened flush against the left edge; it now lines up with the page
+  content like the list toolbar's More menu.
+- Docs: web/docs/ui-style-contract.md
+
+### Fixed: a phone property row with a control is 44 px like the others (redesign branch)
+
+- A record's property row on a phone held a 36 px control (a status or assignee picker, the watchers row) in
+  a 49 px line; it is now 44 px, the height of every other row. A value of several lines keeps its padding.
+
+Docs: web/docs/ui-style-contract.md
+
+### Fixed: a select value that does not fit ends in an ellipsis
+
+- A choice field cut a chosen value longer than the field mid-word with no mark that the text went on (seen on the scope policy's one-off entries in Vietnamese on a phone). Every select now ends such a value, its placeholder and a custom value text with an ellipsis; the open list still shows options in full.
+- The layout check that sweeps every page now flags a value cut this way: it no longer trusts a line clamp or an ellipsis on a box that cannot draw one.
+- Docs: none (kit field behaviour; the field sizes in the UI style contract do not change)
+
+### Fixed: Settings headings, switch rows, the time zone field and phone cards fit a phone (redesign branch)
+
+- A settings section keeps its chevron, switch or short button on the title line of a 390 px phone (a collapsed
+  group of the Settings overview was about 137 px tall with the chevron alone on a second line); only actions that
+  do not fit, such as two long buttons, wrap under the title.
+- A settings row keeps its switch or short button at the end of the label's first line on a phone instead of
+  under a long hint; a control that does not fit beside the text (a long button), text fields and selects still go
+  under it.
+- The time zone field (organization settings, scan schedules, approval rules) has the select field's look: one
+  border, height, 16 px phone text and chevron with the other fields of the form; select fields now have 16 px text
+  on a phone like text fields.
+- On a list's automatic phone card a word longer than the card, such as a long e-mail address, breaks inside the
+  card and no longer runs under the row's menu button.
+- A settings form page's header now shares the form's reading column (880 px), so its actions end where the form
+  ends; list settings pages keep the full width, header included.
+- Docs: web/docs/ui-style-contract.md (Settings pages: rows on a phone, picker trigger)
+
+### Fixed: Settings > Members says "1 hour ago", not "1 hours ago" (redesign branch)
+
+- The Last active column and the member detail count minutes, hours and days with the right singular and plural
+  (en and vi).
+- Docs: none (wording fix inside the page)
+
+### Fixed: Settings pages follow the acceptance review (redesign branch)
+
+- Modules: the "Reset to defaults" header button is drawn from the first frame (disabled while the modules
+  load), so the header no longer grows by a line on a phone when the data arrives.
+- Sign-in: the two-factor switches (owners and administrators, everyone, SSO proof) and the re-verification
+  tiers (routine, sensitive, critical) are in the order of the design.
+- Sensor job safety: the opt-ins are named in plain words ("Out-of-band callbacks", "Custom templates"); the
+  technical names an operator meets on the sensor are kept as one secondary help line in mono.
+- General: a refused save marks the field it was about (the field the answer names, or the one field the
+  request carried) and shows the message under it instead of in a notice over the page title.
+- Members: phone cards show the name over the card's width, the e-mail address once (also when the name is the
+  address), role and status on one line, and the menu in its own column; long invitation addresses break inside
+  the card. Dates follow the console language, and built-in role names are translated.
+- Plain words in the settings catalogs (en and vi): "two-factor" for MFA on trusted organizations, "identity
+  provider" for IdP, no "ingest" or "UUID" in asset lifecycle and AI masking texts.
+- Docs: none (layout and copy; no route, permission or API change).
+
+### Fixed: A settings section's heading buttons stay inside the column on phones (redesign branch)
+
+- The actions of a settings section heading may now shrink to the column: when they wrap under the title on a
+  390 px screen, two long buttons wrap onto two lines instead of running past the right edge.
+- Docs: none (layout only).
+
+### Fixed: a list opened from the sidebar starts at its top; findings rows fit their frame
+
+- Opening another view of a list from the sidebar (Findings: Needs triage,
+  Active, My queue and the rest; Assets views) after scrolling the list no
+  longer leaves the page title under the app header: the app shell's columns
+  can no longer be scrolled (they clip), screen reader text on a page stays
+  inside the page scroller, and a page scrolled by less than the header's
+  height also starts at its top. The admin console shell follows the same rule.
+- Findings list: with the default columns the row menu ("...") is whole inside
+  the table at 1024, 1280 and 1440 px, sidebar open or collapsed, with long
+  titles and locations: a long title is cut by its ellipsis instead of widening
+  the table, and Location narrows toward its floor before the table scrolls
+  sideways.
+- The Due / SLA chip shows its whole text ("109 d overdue", "Trễ 109 ngày"); a
+  count above 999 reads "999+". The column is 140 px wide and the width points
+  at which Severity, Signals and Due / SLA drop moved by 28 px accordingly.
+- Docs: none (layout fixes of the redesigned console; no setting or workflow changes)
+
+### Fixed: accessibility defects below the first screen of a page
+
+- The dashboard's CTEM stage figures are named by their visible words first
+  (a voice-control user can say what they see); the CI/CD GitHub App guide link
+  in running text is underlined; secondary text no longer fades below the
+  muted colour (evidence upload hint, onboarding bundle persona, group member
+  "Added by", empty repository figures, empty attack-coverage cells).
+- Docs: none (accessibility fixes, no behaviour change)
+
+### Fixed: a list keeps its height and column widths when its rows arrive
+
+- While a list loaded it always drew five placeholder rows, so a list of 25 grew by 20 rows and a list of one shrank on load. It now draws as many as the list showed last time in this browser session, never more than fit on the screen; a list not shown before still draws five (every list).
+- The table read its frame width only after the first paint, so its column widths changed one frame after the list appeared (cells moved sideways). The width is read before the first paint now.
+- Docs: web/docs/ui-style-contract.md (loading rows)
+
+### Fixed: the selected tab is never left under the strip's edge fade (redesign branch)
+
+- In a tab strip that scrolls sideways (a phone, a record with many tabs), a tab chosen near the end could stay
+  half hidden under the fade that marks more tabs. A tab under that fade now counts as hidden and the strip
+  scrolls it fully into view.
+
+Docs: web/docs/ui-style-contract.md
+
+### Fixed: why a scanner cannot run is shown in the viewer's language
+
+- The reason a scanner or tool cannot run now ("No sensor has checkov", "No online sensor in this zone has semgrep
+  (2 offline)", switched off, not in the catalog, not allowed by grant or local policy) was English in every
+  language. It now comes from the en and vi catalogs in the New scan and Edit scan scanner picker, the workflow
+  editor's tool list and node palette, and the Tools page status and detail.
+- Docs: none (the console text only changes language; the English wording is unchanged)
+
+### Fixed: Tool source keys no longer wobble on a phone
+
+- Settings, Tool source keys: on a phone each source is a card (name, the enabled switch, a Set or Not set chip, the tools that use it and when it was last used) with no sideways scroll; on a desktop the table fits every column.
+- Rotate key, Set key and Remove key moved into the row's "..." menu, with the same permission gates; a key is still never shown.
+- The page no longer has its own refresh button (it re-reads on focus) and a failed read shows Retry in the list.
+- Docs: none (the page keeps its route, its actions and its permissions)
+
+### Fixed: list toolbar: Add filter answers clicks again, and a phone's end controls stay at the end
+
+- A list whose filter tokens are all chips (Assets on a desktop) left only the icon-only Add filter in its tokens group. The empty-group check measured the icon's strokes, which have no area, called the group empty and took clicks away from it: Add filter did nothing. An icon now counts by its own box.
+- On a phone, with the tokens group out of the flow, the end group (Views, Display, Export) sat at the start of its line and jumped to the end when the first filter chip appeared or Query mode was switched on. It now keeps its place at the end.
+- Docs: web/docs/ui-style-contract.md (list toolbar)
+
+### Fixed: on a phone, a list toolbar group with nothing to show takes no line
+
+- On a phone the list toolbar kept a group whose controls were all hidden at that width (the Display menu, or filter tokens moved into the Filters sheet) on a wrapped line of its own. The first filter chip then took that line, so adding a filter moved the list by 36 px instead of one row and its gap. Such a group now leaves the flow until one of its controls is drawn again (every list toolbar).
+- Docs: web/docs/ui-style-contract.md (list toolbar)
+
+### Fixed: pickers no longer open the phone keyboard by themselves (redesign branch)
+
+- On a touch screen, a picker, popover, sheet or dialog no longer focuses its text field when it opens, so the
+  on-screen keyboard does not cover the options. Focus goes to the option list (its first option active) or the
+  dialog body; the keyboard opens when the field is tapped. With a mouse or trackpad the field still gets focus.
+  Command palettes, step-up confirmation, typed confirmation and one-field forms keep focusing their field.
+- Add filter (and every picker with a search field) on a phone: the search field stays pinned at the top of the
+  sheet, group headings stick while the list scrolls, rows are 44 px, and once the keyboard is up the sheet sits on
+  it and never grows taller than the visible screen, so the field and the rows under it stay in view. Enter picks
+  the highlighted option, the clear button keeps the keyboard up, and closing the sheet closes the keyboard.
+- Docs: web/docs/ui-style-contract.md ("Focus on open")
+
+### Fixed: every audit event and the tool details read in Vietnamese on a Vietnamese page
+
+- The 426 audit events that still read in English (AI, campaigns, CI, content, attack surface, MCP, workflows and more) have Vietnamese labels; a test fails when the server writes an event the console cannot name in both languages.
+- The tool details panel (Scanning settings, Tools) is translated: how to add the tool to a sensor, the commands, the sensors that have it and its details.
+- "CTEM" keeps its capitals in labels made from identifiers.
+
+Docs: none (translations of existing screens; no behaviour change)
+
+### Fixed: Vietnamese pages show no English in scanning settings, audit and scope
+
+- The audit log, account activity and sensor activity name sensor, asset, sign-in, API key and other events in Vietnamese, and the Capabilities, Tools, Scanner templates and Credentials pages, the scope kind filter and the scope section tabs read in Vietnamese too.
+- The Capabilities page uses the shared view switcher, so its control matches the height of the Refresh button.
+- Docs: none (UI copy in en and vi only)
+
+### Fixed: the Web tab of an origin stored as a service
+
+- An origin stored as a service with the http sub-type (what ingest writes) did not get its Web tab, because the page
+  only knew the legacy type names. It now gets Web and Paths.
+- Docs: server/docs/architecture/web-surface.md
+
+### Fixed: account tabs, two-factor setup, 404 page and small layout fixes in the web console
+
+- The account area (Profile, Security, Preferences, Organizations) shows its tabs on their own swipeable row on tablets instead of squeezing them into the header, where only one tab showed.
+- Account > Security: on a phone the "Sign out all others" button sits under the Sessions title instead of squeezing it, and each session's Sign out sits on its device line so the details keep the full width.
+- The two-factor setup page shows its title once, and a "too many requests" answer reads in the person's language instead of the server's English.
+- The "Page not found" page is translated (English and Vietnamese).
+- Business units: on a phone the add button has a short label, so it sits beside the title.
+- Program health: "Not measured" fits its tile on a phone, a long "Where to act" label wraps instead of being cut, and the validation downgrade tile says "Not measured" until a validation exists.
+- Letters of authorization shows placeholder rows while the list loads, not table headers over nothing.
+- Indicators of compromise: the type and status filters are filter tokens sized to their labels, so a translated label is not cut.
+- Docs: none (layout and wording fixes in the web console, no documented behaviour changes)
+
+### Fixed: platform console header, admin activity and content pack channels
+
+- The elevation chip shows only its end time below 1536 px (the role is in the sidebar header), so the breadcrumb keeps its names.
+- Admin activity: an administrator's address takes at most two lines, broken at its separators, and the When column gives way on a narrow frame instead of being cut.
+- Content packs: a channel on a phone card reads in words, as in the table.
+- Docs: none (layout and wording of existing screens only)
+
+### Fixed: final acceptance fixes in the web console (meaning no longer cut, reasons shown, tables kept short)
+
+- A needs-attention queue shows its reason line from 768 px as the header's last line instead of hiding it in the reason menu below 1280 px.
+- The error panel no longer prints the request id; "Copy request ID" copies it.
+- A phone card gives a field whose label or value its half of the line would cut ("18 minutes a…") the whole line, as it already did for a chip.
+- The header search is 320 px wide from 1280 to 1535 px, so the breadcrumb beside it keeps its names.
+- Scan runs: "Triggered by" has room for a whole address on a wide screen; asset activity: a long reason takes at most two lines with its full text as a tooltip, so rows stay short.
+- Notifications keep the line breaks of their text instead of return marks.
+- Labels and sentences wrap instead of ending in an ellipsis: the file picker's file name, ATT&CK tactic names, asset source names, proxy scanner sources, exposure type tiles and CTEM loop stage names. Names that may still be cut (dashboard items, finding titles and targets, an assignee) carry their full text as a tooltip.
+- The inventory's hidden-names chip reads "N names hidden"; its tooltip says why.
+- Docs: none (layout and wording of existing screens only)
+
+### Fixed: the header search field is 420 wide again from 1280 px
+
+- The search field kept its 420 px width at 1280 and 1440 px; the breadcrumb beside it folds its levels into the "…" menu by measured width, so its names stay whole.
+Docs: none (layout fix, no change to what users configure or read)
+
+### Fixed: list pages waste no rows and contradict no counts
+
+- A list that fits one page has no pager ("Page 1 of 1"), and "Display" is never a button alone on a row.
+- The list's name and count join the toolbar row; on a phone a row holding only the count is gone (the footer says it).
+- Summary tiles over a list sit after the list on a phone on every list page, and are not drawn over an empty list or when they all count zero.
+- The phone filter sheet has one heading (Clear all moves beside "Show results"), and its selects take the whole width.
+- Phone cards no longer cut field labels, draw a switch as a dot, or squeeze a second name part into a narrow column.
+- Card and section headers keep their button on the title's line.
+- Docs: web/docs/ui-style-contract.md (Metric strip, Lists)
+
+### Fixed: dashboard first count, plain-word sources and reasons, breadcrumb fold and detail properties
+
+- The dashboard shows one notice while the figures are counted for the first time ("Your figures are being prepared", a few minutes, the page updates by itself) instead of a "No data yet" box per widget.
+- Exposure sources read in words in English and Vietnamese (DNS checks, Certificate logs, Paste site, "Data breach: <name>", ...) in the list, the phone cards and the detail header; the detail header names the exposure type in words too.
+- Asset change reasons for renames ("Matched by its host ID") and for values decided by a source read in words, with the time in the reader's format.
+- The header breadcrumb folds its parent levels into the "…" menu by measured width, so the names that show are whole (tenant app and platform console).
+- Detail pages (finding, task, asset): the properties rail is 21rem, and a value that does not fit beside its label goes under it instead of being cut (assignee e-mail, watchers).
+- Ready to close: the "how the platform knows" sentence wraps instead of being cut.
+- Needs attention queues: the "why" sentence sits in the heading row from 768 px (it starts the next line only when the row has no room), not on a row of its own above the list.
+- Phone cards: a two-line table value (a long reason) is one line with an ellipsis and its full text as the title, not cut at the card's edge. Asset activity no longer adds "Internet-facing" beside "Public" (it says so already).
+- Filter options wrap instead of being cut; the finding's assignee shows the whole name in its properties.
+- Docs: none (layout and wording of existing pages; web/docs/ui-style-contract.md already states the cut-meaning rule)
+
+### Fixed: lists with rows fit their frame on tablets and phones
+
+- Components, Cycles, Emerging threats, Pentest campaigns and Internet-facing assets: on a 768 px screen and at 1024 px with the sidebar open, the less important columns step aside instead of the table scrolling sideways and cutting a column header; the row menu stays pinned at the end.
+- Programs uses the shared table: a long program name ends in an ellipsis, and a phone gets the list's cards instead of a table with a cut Max tier column.
+- Emerging threats on a phone: the "Xử lý ngay" level chip gets its own line on the card instead of being cut.
+- Asset changes on a phone: a host name such as shop.example.com wraps only after a dot or a dash, never inside a word.
+- Dialogs on a phone: the stacked footer buttons are the kit's phone size (36 px, the height of the fields above them) instead of 44 px; the asset edit dialog reads "Save changes".
+- Dashboard: the "being built for the first time" notice is the line under the freshness line in the page header, not a row of its own above the widgets.
+- Docs: none (layout and wording of existing pages; no behaviour, request or API change)
+
+### Fixed: web console self-assessment fixes (refresh time, notification tabs, phone card masking, mask detection)
+
+- The dashboard header reads "Refresh due" once the scheduled refresh time has passed, instead of "Next 21s ago".
+- Notification channels: the Events and Queue tabs show only to people who may open them (integrations:manage, as the pages and the API already require); others get no tab row.
+- My work: a finding title on a phone card is masked like the table row, so a secret in a scanner title never shows in clear on a phone.
+- Secret masking treats a value as already masked only when the whole value is a mask (`***`, `[REDACTED]`); `***s3cr3t` is masked.
+- Placeholder and sample addresses use example.com.vn.
+- Docs: none (behaviour of existing screens only; no setting or API changes)
+
+### Fixed: the scan-zone coverage card stays short at any inventory size
+
+- Sensors, Scan zones tab: the Coverage card no longer lists every address outside every zone (one row each, hundreds on a real inventory). It shows labelled counts (private, which scans skip, and public), at most five example addresses (private first) and a link to view all addresses in Assets. The long sentence under the title is gone: the totals stay in the numbers above the zones list.
+- The coverage warnings ("Coverage needs attention") no longer stand above the zones list in the API's English: the card says each of them in its own translated words (the counts, the zones without an online sensor, and "Public, any of your sensors scans these (no default zone)"); a warning it does not know is listed at the end of the card.
+- The sensors list and the zones list show no pager when every row fits the smallest page (no "Showing 1 to 1 of 1" and "Page 1 of 1" over one sensor or one zone).
+- Docs: none (presentation of an existing card; no behaviour, request or API wording changes)
+
+### Fixed: sign-in and entry pages share one way back and one broken-link state
+
+- Every entry page (forgot, reset and set password, register, request access, not set up, invitations) has the same "Back to sign in" button: outline, with a back arrow, last in the card. Signed in, the invitation and application-consent pages lead to the dashboard the same way.
+- A link that does not work (reset, setup, e-mail verification, access-request confirmation, invitation, application consent) is one card titled by the problem ("This reset link does not work"), one plain sentence, at most one way on, then the way back: no red banner under the page's normal title, no two stacked notices.
+- Reset password on a server that cannot send e-mail no longer offers "Request a new reset link" (it led to a page that said reset by e-mail is off); it says to ask the administrator.
+- Sign in and register: the terms and privacy links show once, in the consent line; the frame footer hides its copy of them there.
+- Legal pages: no contact footer repeating the contacts the document already gives.
+- Docs: web/docs/ui-style-contract.md, "Entry pages" (EntryBackLink, EntryLinkProblem, legal links once per screen)
+
+### Fixed: an emerging threat's score always matches its parts
+
+- The emerging-threat list and detail sent a score with parts that did not
+  give it when the stored parts were missing (a row with a score but an empty
+  breakdown showed a score of 87 beside parts of 0, and the recommended action
+  read the empty parts). `ets_breakdown` is now sent only when its parts,
+  times the confidence, give `ets`, and is `null` otherwise; the recommended
+  action then follows the vulnerability's exploitation evidence.
+- The console shows parts only when they give the score, says in plain words
+  how the points make the score (every point counts when the affected version
+  is confirmed, else the share that counts), and says when the parts were not
+  recorded instead of showing zeros.
+- Docs: server/docs/architecture/emerging-threat-alerts.md
+
+### Fixed: text and fields keep a readable width on wide screens, and page descriptions read across a phone
+
+- On a wide window, paragraphs and card, notice and dialog descriptions stop at a reading measure (75 characters), one-line fields at 40rem and multi-line fields at 60rem, on every page of the app and the platform console. Tables and lists keep the full width.
+- Pentest methodology settings sit in the settings column, and the Validation page keeps each "Waiting for you" action beside its line.
+- A page's description is a row of its own under the title and the header's action, so on a phone it runs the full width instead of a narrow column beside the button.
+- Docs: web/docs/ui-style-contract.md (Page header, wide-screen caps)
+
+### Fixed: Imports totals after the list on a phone, Exceptions fits at 1440px
+
+- On a phone the Imports page shows the list of receipts first and the totals block after it.
+- The Exceptions table no longer scrolls sideways at 1440px: a long rule name is cut by its ellipsis and "Requested by" stays in view.
+
+- Docs: none (layout only; the user guide describes the same columns and totals)
+
+### Fixed: a closed finding reads as closed, an asset page says each number once
+
+- Finding page: a resolved, false positive or accepted finding no longer shows "fix within n days" under Why it matters; the note written when it was closed (the reason for a false positive or an accepted risk) is shown under its closed state in the properties instead of under the "Fix" heading; on a phone the assignee reads "Unassigned" instead of an icon alone; a finding whose status, severity and assignee are set by its campaign or reporter says so under the status.
+- Asset page: the Overview's Risk section keeps the breakdown by severity and no longer repeats the risk score and open-finding count that the properties beside it already show.
+- Docs: none (layout and wording fixes of existing pages, no behaviour change)
+
+### Fixed: asset tabs, scope entries and scan approval rows after the acceptance re-shoot
+
+- Asset page: a related asset's name is a link (opens in a new tab with Ctrl or a middle click) and the List / Graph switch is the shared view switcher; the Owners section says "No owners assigned" in one line with "Add owner" once (no second "Add First Owner" button); empty Also known as, Identifiers and Rename history read as one short line; Coverage no longer says "next about 4 hours ago" for a time already passed.
+- Scan approval settings: on a phone a rule's controls stay on one line (Remove no longer wraps alone) and the editor keeps the approver roles together.
+- Relationship suggestions: a short asset name beside a long one keeps its text ("jump-01", not "j...").
+- Asset page: the "Where values come from" section is translated (attribute names, sources, states).
+- Scope: kinds and the "Covers" sentence are translated; long entries wrap at dots and dashes; the phone card no longer cuts the Covers line; the Add to scope summary reads "Permanent" with a capital.
+- Docs: none (layout, wording and translation fixes of existing pages, no behaviour change)
+
+### Fixed: scan approval rules read clearly on every screen
+
+- Settings, Scan approval: a long rule name keeps its number on its first line; the drag handle has the height of the row's other buttons; an off rule shows its state once (the switch, or a badge for someone who can only read); each rule says everything it needs ("2 distinct approvers: owners, a justification, a change ticket" instead of "2 distinct approvers: an owner"); "Add rule" is an outline button so the save bar stays the page's one filled action; the rule editor's "Try it on existing scans" moved into the form, so on a phone the footer holds only Cancel and Save.
+- Docs: none (layout and wording fixes of an existing page, no behaviour change)
+
+### Fixed: relationship suggestions show the reason on a computer
+
+- Assets, Needs attention, Relationships: a desktop row shows the suggested link as one line ("source, verb, target") with the reason under it, as on a phone. Before, the reason was hidden on screens narrower than about 1500 px, and at 1024 px the target name was hidden under the decision buttons. The asset type of each name is in its tooltip.
+- Docs: none (layout of an existing page, no behaviour change)
+
+### Fixed: scope, members, API keys and asset pages after acceptance sprint 2
+
+- Scope: "Expires in 7 days", "Expired 2 days ago", "Permanent" and a path exclusion's "Blocked again in ..." are translated; kinds and the exclusion reason stay on one line in the table; on a Vietnamese page the exclusion columns "Why" and "Reason" no longer carry the same header.
+- Lists on a phone: a status pill (status lozenge or health status) that does not fit beside the second field gets the whole card line instead of being cut at the card edge (every list card built by the shared data table).
+- Asset page, How we found this: the "Is it yours?" buttons are as wide as their longest label, so a longer Vietnamese label is no longer cut.
+- General settings: the URL slug field ends its server address with an ellipsis when it is cut; the "Type ... to confirm" line of a confirmation keeps its line spacing for a long organization name.
+- Members: a member's address beside a long name stays on one line (rows no longer grow to a column of letters); requests to join keep role, Approve and Reject on one line on a phone, and Approve is no longer a second filled button.
+- API keys: "Last used" no longer runs into "Expires" on a Vietnamese page.
+- Role summaries (Invite user, Add user, Roles): AI knowledge, Automations, Detection content, Dashboards and Service accounts are translated.
+- Docs: none (layout and translation fixes of existing pages, no behaviour change)
+
+### Fixed: asset names are readable in narrow lists
+
+- On a 1024 px screen the asset lists (inventory, attention queues) cut each name to a few letters ("Paymen...") because the type label ("Domain", "HTTP Service") sat beside it in the same narrow column. The type now shows beside the name only when the column has room for both; otherwise the name gets the width and the type is in the name's tooltip (the type icon stays).
+
+Docs: web/docs/ui-style-contract.md (Row density, name column)
+
+### Fixed: the breadcrumb names the page as its heading does
+
+- The last crumb carries the page heading or the active tab, in English and
+  Vietnamese, instead of the URL segment in English ("Attention", "Posture",
+  "Groups" on Vietnamese pages) or a menu name that differs from the heading.
+- The Compliance page heading is translated.
+- Docs: none (labels of existing pages; the user guides describe no breadcrumb text)
+
+### Fixed: admin console lists waste no row and fit a tablet
+
+- Lists without a search box (roles and their holders, approvals, platform sensors, sign-ups, target mappings, admin activity, content pack channels, blocked-name exceptions) show their name and count at the start of the toolbar row, with the filters, the list's own action and Display on the same line. Before, Display or the phone's Filters button stood alone on a row under the name. The shared list toolbar has a title slot for this (`ListToolbarTitle`, `DataTable` `toolbarTitle`).
+- Overview: each "Needs attention" problem is one link, its words and its action ("Inspect") with an arrow, instead of text over a lone button.
+- Admin activity: whether the audit log verifies is one line in the page header; a broken chain is still shown in full above the list. Export sits in the toolbar row.
+- Approvals: how approvals work is said under the list. Limits: how the default limits apply is said under the table.
+- Platform scanning, while shared sensors are not available: Policy and Blocked names are two tabs, so the exceptions list is no longer under the policy cards. Page tabs there are one swipeable row on a phone.
+- Content packs: the pack list comes first; the not-delivered notice, the channels and the signing key follow it at full width (the copy button no longer runs past its column at 1024 px). Packs and channels have their own phone cards.
+- Threat intelligence: the bundle's sources are one list of facts with the others, not a table inside the card.
+- Tablet: the row menu stays in view on administrators, role holders, target mappings and blocked-name exceptions; the activity table and the organizations list no longer cut a column header at 768 px.
+- Phone: sign-up, role-holder, pack and channel cards reach the end of their row; the platform sensors info mark sits beside the count; health values ("0.2 ms") never break inside themselves; "Publish announcement" is an icon beside the title; CAPTCHA's On or Off leads its description.
+- Words: the terminal sign-in client and CAPTCHA's site key read in Vietnamese; the announcements empty state reads "No announcements".
+- Docs: none (layout and wording fixes of existing console pages, no behaviour change)
+
+### Fixed: admin console phone cards read cleanly
+
+- Overview on a phone: a "Needs attention" row ends with its arrow only (the action's name is read out), so the problem's text keeps the row's width.
+- Roles on a phone: each platform role is a card with its kind at the end of the name's line, the description under it at the card's width and the permission and administrator counts, instead of a description squeezed beside the name.
+- Admin activity and the overview's recent activity on a phone: each action is a card with its result at the end of the first line, its code on a line of its own, the administrator, then the time and address.
+- Docs: none (layout of existing console pages, no behaviour change)
+
+### Fixed: first visit to the dashboard in two tabs at once
+
+- A person with no dashboard who opened the dashboard in two tabs at the same
+  time could see "You have no dashboards yet" in one of them: both tabs asked
+  for the personal copy of the default template, and the server refuses the
+  second copy because names are unique per person. The tab whose copy was
+  refused now reads the list once more and opens the copy the other tab made;
+  the empty state shows only when the list is still empty.
+- Docs: none (a fix of documented behaviour; no setting, screen or text changes).
+
+### Fixed: sign-in entry pages, legal pages and two console pages read clearly
+
+- Organization picker: each organization's role is shown in the reader's language (Vietnamese showed "owner").
+- Creating another organization: the title now matches what the page offers. Where only the administrator creates organizations, the title says so instead of offering to create one, and the page uses "organization" in both languages (Vietnamese said "nhóm" on the back button).
+- Invitation page: the address the invitation is for sits under the organization's name, and the inviter, already named in the line above, is no longer repeated as its own row.
+- Legal pages (Terms of Service, Acceptable Use Policy, Privacy Policy, Data Processing Addendum, Subprocessors): the page title, the document tabs and the browser tab title are in the reader's language. The document text stays in English, as published, and is marked as English. The effective date, the language note and the phone's table of contents are part of the page header, and the sentence introducing the subprocessor list is that table's caption.
+- Admin console, user page: an account the console cannot act on (a platform administrator, an erased account) no longer shows a row of greyed-out buttons; the reason is given under the account's name. The account's marks (platform admin, MFA) sit under its name too, so on a phone they no longer squeeze the address beside the title, and the sign-in facts card lost its doubled top padding.
+
+Docs: none (layout and wording only, no behaviour change)
+
+### Fixed: numbers and dates follow the console language
+
+- Counts, table cells, dates and times are written in the reader's language
+  ("12,840" / "12.840", "Nov 18, 2026" / "18 thg 11, 2026") instead of the
+  browser's language, a hard-coded English format or a raw "12840".
+- One set of format helpers (`web/src/lib/app-locale.ts`) serves code inside
+  and outside components; a guard test refuses a raw `toLocaleString()`,
+  `toLocaleDateString()`, `toLocaleTimeString()` or a hard-coded locale.
+- Docs: none (formatting of existing values; the user guides show no number or date format)
+
+### Fixed: member access report in Vietnamese, run detail checked by its own section
+
+- The member detail's access report (Roles, Access groups, API keys, visible
+  assets and owned work) reads in the reader's language. Its Roles list is the
+  member's own roles, direct and through teams.
+- The layout check reads a list's toolbar inside a detail sheet from the list's
+  own section only: text under another section heading (Stages, Timeline) is
+  not a wasted row above the run detail's task table.
+- Docs: none (translations of existing labels and a test helper)
+
+### Fixed: teams empty state, run summary on a phone, Vietnamese "dashboard"
+
+- Settings > Teams: with no teams yet, the empty state no longer repeats the
+  header's Create team button; it points to it in words (or tells a reader
+  without the right to ask an owner or administrator).
+- Scans > Runs: the run detail's summary (findings, tasks, duration,
+  deadline) is one wrapping line with each label beside its value, instead
+  of a strip of cells that put every label and value on a row of its own on
+  a phone. Duration and deadline are no longer repeated in the header.
+- Vietnamese: "dashboard" in visible labels reads "bảng điều khiển"
+  (organization dashboard data, the console's dashboard data, the
+  branch-only tooltip and the pentest asset hint).
+- Docs: none (layout and translation fixes; no behaviour a guide describes)
+
+### Fixed: only errors interrupt a screen reader
+
+- A notice, a warning or a success in the page (the shared notice box and the
+  banners of the sign-in pages) is a polite status; only an error is announced
+  as an alert. A static notice no longer interrupts a screen reader on load as
+  if something had failed.
+- Docs: none (accessibility semantics of existing notices; no user guide covers them)
+
+### Fixed: pages stop scrolling after their last content
+
+- Program health kept scrolling for a screen or more of empty background below its last card (about 690 px on a phone, 1,100 px on a desktop with a 90-day trend). The open-findings trend's data table for screen readers was hidden in a way that does not shrink a table, so the page grew by one row per day of the window. Such a table is now clipped inside a hidden box (a shared component), and a unit check refuses a hidden table written any other way.
+- Lists without a pager (for example Attack surface exposures and Assets needing attention) ended with 16 px of empty scroll below the table: the shared list stacked its parts with spacing under every part but the last, and the last part was one that takes no room (the list's screen-reader status line, or on a phone the hidden desktop table). The parts are now spaced by a gap, which skips such parts.
+- An end-to-end check measures every console page at 390 px and 1440 px: the scroll ends within the page's bottom padding plus 8 px after its last visible content, and the document itself never scrolls.
+- Docs: none (layout fix, no change to what any page shows or does)
+
+### Fixed: list actions share the search's line on a phone
+
+- On a 390 px screen the asset inventory showed Views alone on a line under the search, and the findings list Views and Group, which pushed the list down by a row for nothing. On a phone the list toolbar's end actions now sit at the end of the search's line; the second line holds only the filter chips and tokens, and takes no room while it has none.
+- In Query mode the field takes the whole first line on a phone: the end actions step down to the second line.
+
+Docs: web/docs/ui-style-contract.md (list toolbar on a phone)
+
+### Fixed: counts use the singular for one item
+
+- English text with a count says "1 asset", "1 finding", "1 day" instead of
+  "1 assets": 672 catalog strings now carry plural forms, including the
+  selection bar of every bulk list.
+- The number inside a plural is grouped in the reader's language.
+- A count shows grouped digits in Vietnamese too ("12.840 phát hiện đang mở"), and
+  acronym plurals follow the count ("1 CVE", "7 CVEs").
+- Docs: none (wording of existing labels; the user guides quote none of these counts)
+
+### Fixed: the query field keeps the toolbar's height, fills a phone's width with suggestions, and works with saved views
+
+- A query text the server refuses says its problem (with the column and the suggested fixes) in a status row under the list toolbar instead of inside it, so the toolbar row keeps its height and nothing in it moves. The row is one line as tall as the filter chips row, shares that row's line when a context chip or a view's locked chips are there, and is announced as before. Findings, assets and scans.
+- On a phone the suggestions of the query field span the screen between the page gutters instead of the narrow field, with about eight one-line rows; inside a dialog they keep the field's width.
+- With a saved view open, Query mode keeps the view's locked chips on screen, a text that names no state or practice leaves the view's own in force, Enter on an unchanged text changes nothing, and query text applied on top of a view marks the view as modified so Save view and Reset show.
+- Docs: web/docs/findings-list.md, web/docs/ui-style-contract.md
+
+### Fixed: phone cards stay compact whatever a run's message holds (redesign branch)
+
+- Scan runs on a phone: a run with a message (every partial or failed run has one) showed "Status" with no value and
+  then an empty box taller than the screen. The message wrapped in the few pixels the state left beside it, and the
+  state sat at the middle of that height. Each run is now a card with fixed lines: the scan, the state with its
+  reason on one line (cut, whole in the hover text and in the run's sheet), the tasks and findings, then who started
+  it, when and for how long. No label/value grid.
+- Every list that draws its cards from the table columns: a cut text in a card wraps to three lines at most, and a
+  cell's row wraps, so a long text goes under the chip beside it with the whole width.
+- No API change.
+- Docs: none (layout of existing phone lists; nothing to set or learn)
+
+### Fixed: scan names keep their line on a phone
+
+- On a 390 px screen the scans list put the last run's state ("Waiting for a sensor") beside the scan name, which left the name about 130 px; a long host name then broke inside a word ("exa|mple.c|om"). The state now sits on the line under the name, and a host name wraps only after its dots and dashes.
+
+Docs: web/docs/ui-style-contract.md (automatic phone card, own cards)
+
+### Fixed: members and roles tables never cut a column header
+
+- Settings, Members and Roles: columns now fold by the summed width of the columns beside them and the row menu stays in view, so no header is cut at a tablet width with the sidebar open.
+
+Docs: none (layout only, no behaviour change)
+
+### Fixed: settings and smaller pages fit every screen
+
+- Tables that cut a column header on a tablet or a laptop with the sidebar open (audit log, scanning tools, capabilities, tool source keys, finding templates, credential leaks, a scan's runs, scan workflows) now fold their least important columns by the width they have, and the row menu stays in view.
+- Long text no longer runs past its frame: a channel name in the notification history picker, the MCP connection commands (they wrap), template references, category labels, a workflow's readiness badge, the "Add executive summary" link and the leak date with its "Recent" mark.
+- The ATT&CK coverage matrix wraps its tactic columns instead of scrolling sideways; the finding form's section chips are a swipe row with an edge fade.
+- Explanations that stood as a row of their own above a list now follow it: report templates, priority rules, cycles (policy and operating rhythm), sensor products, import totals, exploration status (Refresh now moved to the toolbar), and the executive top risks hint (now the table's caption).
+- One main action per screen: directory sync (SCIM), CI/CD and vulnerability scanners no longer repeat their header action in the empty state.
+- A phone keeps the search box its room: Export (audit log), Refresh now (remediation suggestions), Import .nessus and Reset to defaults (modules, now in the list toolbar) are icons there.
+- Vietnamese: notifications with a fixed server title (API key expires soon, and others) read in Vietnamese; dashboard names and notification bodies are marked as stored text; shorter labels for "View support activity" and "Try the rules on existing scans".
+- Scope settings: a value in words goes under its label on a phone instead of squeezing it; scan profiles have a phone card where the name wraps and the marks and rule read whole.
+- Pentest finding form: from 1280 px the action buttons sit over the summary rail (on two lines), never at the edge of a form field; below that a rule separates Save draft from Submit for review and Publish.
+
+Docs: none (layout and wording only, no behaviour change)
+
+### Fixed: organization settings pages fit every screen
+
+- Settings, General: on a wide screen the logo and its Upload button sat far from their label at the right edge; they now line up with the fields below.
+- Settings, Members: with the app sidebar open on a tablet, the members table cut its last columns; Last active and Two-factor now give way first on a narrow table (Last active stays in the member's detail). The Manage button on a member's roles uses the standard button size.
+- Settings, Teams: the note on members who are in no team ran across the whole width on a wide screen; it now keeps a readable line length.
+
+Docs: none (layout only, no behaviour change)
+
+### Fixed: filter sheet, filter values and tab strip in the web console
+
+- On a phone the filter sheet opens from the bottom and is only as tall as its filters (two filters no longer fill the screen); a long filter list scrolls inside it, below a strip of the page.
+- Filter tokens show their whole value ("Status: Awaiting approval") wherever the toolbar has room: the other values still reserve the same width as before, only a long value shown takes more, and it ends in an ellipsis only when the row is too narrow; the full value stays in the tooltip and the accessible name.
+- Page tab strips that appear a moment after the page (the asset page waits for its reads) mark the edge that hides more tabs once shown, so the fade always shows where a tab continues past the edge; before, the strip could keep the "nothing hidden" state it measured while hidden.
+- Docs: none (layout of existing shared controls, no documented behaviour changes)
+
+### Fixed: ticketing connection host on a phone
+
+- On a phone the ticketing connection card ends a long host name with an ellipsis instead of cutting it off mid-letter; the full host shows on hover.
+- On a narrow desktop window (sidebar open) the connections table keeps its row actions in view and drops the default project and last sync columns instead of cutting the Actions column.
+- Docs: none (layout only, no documented behaviour changes)
+
+### Fixed: Vietnamese pages no longer show English labels
+
+- The asset group create and edit dialogs, the group quick view and the web
+  surface pages are translated.
+- Audit action names (account activity, audit log, sensor activity), asset
+  type names and the "Email and password" sign-in method read in the
+  reader's language; "Needs attention" has one Vietnamese wording.
+- Docs: none (translations of existing labels; the user guides are in English)
+
+### Fixed: phone card fields, owners and the last cut labels are no longer lost to an ellipsis
+
+- A list's phone card shows each field's label and value in full: the value sits beside its label when both fit, else under it, and wraps ("Last active", "about 2 months ago", an IP address). A very long value stops after three lines with its full text as a tooltip. A card's subtitle takes up to two lines, and a long state chip wraps on its own line.
+- An asset's owner, or "No owner", wraps in the table instead of being cut.
+- Wrap instead of being cut: file names next to "Choose a file", exposure category buttons, asset source names, proxy sources, posture categories, CTEM loop stage names, a workflow's name and canvas hint, filter panel options, organization names, role names and descriptions, team, asset, checklist and template names in pickers, task titles when adding tasks to a campaign, and template reference links.
+- Kept on one line with the full text as a tooltip: finding titles and targets, asset names, the assignee, the watchers summary, list headings, copyable IDs, chips, locked filter chips and toolbar select values.
+- Docs: web/docs/ui-style-contract.md (Tables: the automatic phone card)
+
+### Fixed: the admin console no longer cuts addresses, versions and reasons with an ellipsis
+
+- Home: the database tile shows the schema version in full.
+- Administrator activity and sessions: e-mail and IP addresses wrap instead of losing their end; an action's label and code wrap on the phone card; the time column fits "less than a minute ago".
+- Organization detail: owner e-mail addresses wrap.
+- Platform roles: a role's description shows in full on the phone card; a holder's address wraps.
+- Content packs and users: the digest and creation time columns fit their values; a badge cut on a narrow row has its full text as a tooltip.
+- Docs: web/docs/ui-style-contract.md (layout rule, unchanged)
+
+### Fixed: reasons, values and descriptions on several pages are no longer cut by an ellipsis
+
+- Sensors: a sensor's reason ("takes no new jobs") and its heartbeat line wrap under its state in full.
+- Needs attention: the line that says why a queue matters wraps beside the count from 1280 px; on narrower screens it is read in full at the top of the reason menu, as on a phone.
+- Pentest finding and template editors: the CWE, OWASP and ATT&CK pickers show the chosen entry in full (the field grows like a select), and the summary card shows the title, campaign and targets in full.
+- Organization settings: the URL host before the slug keeps its width, and the dashboard data state reads in full.
+- Sensors filter panel: a long build version wraps.
+- Open-source licenses: a module path and its version wrap instead of being cut.
+- Compliance, checklists, import mappings, notifications and asset groups show their descriptions in full.
+- Ticket mapping rows: below 1280 px the source takes its own line, so its selects keep the width of their values.
+- A card's title (findings, exposures, vulnerabilities, exceptions, credentials, campaigns, tasks, receipts, sensors, assets) that ends in an ellipsis shows its full text as a tooltip.
+- Docs: web/docs/ui-style-contract.md (layout rule, unchanged)
+
+### Fixed: labels, chosen values and column headers are no longer cut by an ellipsis
+
+- A headline number's label (the metric strip above a list) wraps instead of ending in an ellipsis or a two-line clamp, so "mất kết nối, SDK, heartbeat cũ" reads in full at every width; the numbers of a row stay on one line.
+- A select field shows its chosen value in full: a long value wraps and the field grows from its usual height, instead of "Mọi mức rủi…".
+- A table's column header wraps to a second line instead of being cut ("Mức độ quan trọng").
+- The Sensors fleet tiles show their detail line in full.
+- A row's name that ends in an ellipsis in a table or a phone card shows its full text as a tooltip.
+- Docs: web/docs/ui-style-contract.md (layout rule, with the layout matrix change)
+
+### Fixed: table cells and headers no longer hide their meaning behind an ellipsis
+
+- A table value that is not the row's name (a description, an owner, an e-mail, a source, scopes, a duration, a reason) wraps to two lines instead of ending in an ellipsis on one; a longer one keeps its full text as a tooltip. An e-mail or a host name wraps only at its separators.
+- A column header wraps instead of being cut ("Risk removed", "Chấp nhận rủi ro kết thúc").
+- Dates fit their column in Vietnamese ("25 thg 11, 2026"), a scan run's start time fits in full, and a relative time wraps in a narrow column instead of being cut ("12 minutes ago").
+- The asset of an external-surface row and the name of a scan profile are the row's name: a long one ends in an ellipsis with its full text as a tooltip.
+- Docs: web/docs/ui-style-contract.md (Tables: what may end in an ellipsis)
+
+### Fixed: dashboard widgets are as tall as their content
+
+- Dashboards: the grid no longer gives each stored row a 128 px floor, so a widget saved taller than its figure (the CTEM loop saved two rows tall stood about 120 px of empty card under its tiles) is as tall as its content at every width. A widget's stored height still places it beside its neighbours, and widgets of one row share its height.
+- The CTEM loop: the tiles stretch to the card, and "Act here" sits on the stage's note line instead of a row of its own, so every tile keeps one height and the status chips one baseline.
+- Docs: web/docs/ui-style-contract.md (Dashboard widgets: a widget is as tall as its content)
+
+### Fixed: one main action and whole names in the last places that cut them
+
+- Lists with saved views (findings, vulnerabilities, assets): a changed view shows the Modified mark and one "Save view" menu (Save view, or Save changes and Save as new view for its owner, and Reset) instead of two buttons, so the view's name is no longer cut at 1024 px and the row's end stays still.
+- Emerging threat detail: one main action and a More menu at every width; from 1280 px the other state moves no longer stand beside it as four equal buttons.
+- Scan workflow editor: no idle disabled buttons at rest (Save draft shows while there are changes, Publish while a saved draft waits); the canvas fits its steps once they are measured, so steps that load after the canvas are no longer drawn past its edge, and the minimap is left out below 1536 px where it covered the steps.
+- Capability tags read in words ("Subdomain discovery", "Discover subdomains") instead of an upper-case key ("DISCOVER.SUBDOMAINS").
+- E-mail addresses wrap only before the "@" (the person's part and the domain each stay whole) instead of at a dot of the domain.
+- A time in the last minute reads "just now" instead of "less than a minute ago", which was cut in date columns.
+- The user menu's initials are hidden from assistive technology, so the button's name no longer has to repeat them.
+
+Docs: none (layout and wording only, no behaviour change)
+
+### Fixed: detail and edit pages fit a phone and read in Vietnamese
+
+- Components: the versions of a package are the shared table, one card per version on a phone (the table cut its headers).
+- Emerging threats: the alert's level, state and recommended action sit under its title; the affected hosts have no lone Display row and five columns (criticality under exposure, version under product) so a tablet shows every header; each phone card ends with the host's exposure or criticality, and an alert with no events shows no empty "What changed" card.
+- Programs: the program targets are the shared table (cards on a phone; bounty, maximum severity and environment in one Terms column), the terms and rules are one label and value list, and the exclusions table's long header wraps.
+- CTEM cycles: the charter's exclusions are translated (the empty value said "Not set" in English).
+- Scan workflows: capability names and port names on the canvas are translated; on a phone the canvas keeps the full width with the tool list under it, and Save draft is an icon there and the minimap is off; the canvas fits its steps again when its frame changes size, until you pan or zoom.
+- Pentest finding and template forms: the section chips are the shared swipe row with an edge fade, the CWE/OWASP clear buttons keep the 8 px gap from their field, and the CVSS "Pick metrics" and "Clear" controls are kit buttons of one height.
+- Grouped tables (findings groups, sensors, emerging-threat hosts): a group's header row no longer makes the table 8 px wider than its frame, which cut the last column's header.
+- Docs: none (layout and translation fixes, no change to what the pages do)
+
+### Fixed: dashboard editor previews match the dashboard, and charts fill a stretched card
+
+- Dashboard editor (Customize): the grid no longer gives each row a 128 px floor, so a preview is as tall as the widget will be on the dashboard, and it spans the same rows (one for the key figures strip and for a full-width widget with no figure). The freshness line shows only when a widget's time differs from the page's, as on the dashboard.
+- The editor's "Taller" / "Shorter" items are now "Span one more row" / "Span one row fewer": a widget is as tall as its content, and the rows only place it beside its neighbours.
+- The editor's widget header: every button at the kit's size (one height in the row), and the cut widget name keeps its full text in a tooltip.
+- Dashboards: a time-series chart in a row whose neighbour is taller grows with its card instead of leaving a blank band under its legend.
+- Docs: web/docs/ui-style-contract.md (Dashboard widgets)
+
+### Fixed: pentest campaign cards, ticket field mappings and import mapping pages on wide screens and phones
+
+- A pentest campaign's cards show their edit button beside the title instead of a hidden button at the far edge of a wide screen, and counts sit next to the title.
+- A ticket field mapping row keeps its transform and remove buttons beside the Jira field on a wide screen.
+- An import mapping's header has one main action (Save as new version) with Check, Rename and Delete in More, and its description under the title; the sample file is picked with a translated button that shows the file name; transform chips wrap in their own column beside the Transforms button.
+- Docs: web/docs/ui-style-contract.md (Detail pages)
+
+### Fixed: the last five pages keep words whole and give no control a row of its own
+
+- Assets › Needs attention (Not scanned, Missing context): between 768 and 1280 px "Open in the inventory" sat on a row of its own above the list; the queue head is now one row at every width, the why line beside the heading and the link in the queue's More below 1280 px.
+- Attack surface › Posture: on a phone a category name ("Vulnerabilities", "Hoạt động đáng ngờ") broke inside its words beside its figures; the figures now move under the name when they do not fit.
+- Validation › ATT&CK coverage: tactic names ("Reconnaissance", "Persistence") were hyphenated inside the word; a column is now wide enough for the longest word, and the headers of one line of columns share a height so the cells under them line up.
+- Scans › Workflow editor: a tool category in the palette ("Infrastructure code security") ended in an ellipsis; it now wraps.
+
+Docs: none (layout only, no behaviour change)
+
+### Fixed: quick-view sheets fit their own width
+
+- Emerging threats: the sheet opened from the list uses the shared quick-view frame. Under the CVE one line holds the state, priority and exploit chips and the product; there is one main action, the next step for the alert's state (Create remediation task, Scan affected assets when the version is not certain, Acknowledge, Mark remediating, or a scan to check the fix), and every other action is in the header's More menu (a bottom sheet on a phone) instead of five buttons on two rows. The full page picks its main action the same way.
+- Emerging threats: "Why it is ranked here" shows each part of the score as a bar of its points against the most it can give, across the sheet's width, then the confidence and the total, with a one-line explanation under it.
+- Every detail view: the headline numbers follow the width they have, not the screen's, so a sheet on a wide screen keeps two per row instead of four squeezed cells; labels and captions wrap instead of being cut ("+1 possibly affected").
+- Docs: server/docs/architecture/emerging-threat-alerts.md (the drawer frame, the main action per state, the score bars), web/docs/ui-style-contract.md (the headline numbers follow their own width)
+
+### Fixed: detail pages and wide screens after the MVP v2 re-sweep
+
+- Emerging threats: below 1280 px (phone, tablet, laptop with the sidebar open) the alert keeps one main action (Create remediation task) with the state moves and the scan in one More actions menu, instead of five buttons on two or three rows; the score and exploit facts keep their values beside their labels on a wide screen; on a phone the affected hosts have no group rows of their own: the cards keep the tier order and each says its match (Confirmed affected, Likely affected, Possibly affected).
+- Programs: the program page shows one part at a time in tabs, targets first (Targets, Scope entries, Exclusions, Rules and source, Notifications), so the targets table is no longer under the rules, the scope source and the notifications.
+- Attack surface overview: the "All exposures" and "View all" links sit right after their card's title on a wide screen, not across a 1100 px card.
+- Pentest finding and template forms: from 1280 px the sticky save bar keeps to the form's column, its buttons ending where the fields end.
+- Legal pages: a document kept in English on a Vietnamese page is marked with its language only (no longer also as text not to translate), so a browser can still offer to translate it.
+- Docs: server/docs/architecture/bounty-programs.md (program page tabs), server/docs/architecture/emerging-threat-alerts.md (the alert's main action and More actions menu)
+
+### Fixed: a scan's last-run time no longer runs under its fix link
+
+- In the scans list, a blocked run's "Check sensors" link drops under the state and time when they do not fit beside it, instead of the wrapped time overlapping it.
+Docs: none (layout fix, no change to what users configure or read)
+
+### Fixed: the sensor list no longer cuts its labels
+
+- Sensors list: the reason or heartbeat age goes on a line under the state instead of being cut beside it; marks (Passive only, Legacy broad grant, Unhardened) sit under the sensor's name in one look, the most serious first and the rest as "+N" with every mark on hover; the version shows one signal at most (Unsupported, Security update, Update available or Latest) that wraps under the version rather than two chips cut at the edge; tools wrap to two lines with "+N"; an idle sensor shows "0/5" without an empty bar; a host never reported is a quiet dash with the words on hover. The phone card shows the marks in the same look.
+- Docs: web/docs/ui-style-contract.md (second facts in a table cell go on a line under the first)
+
+### Fixed: a detail sheet's main action no longer takes a row alone
+
+- Every detail sheet (emerging threats, remediation tasks and campaigns, assets, scan runs and the others on the shared sheet header): the main action ends the line under the title, beside the meta line or the status chips, instead of sitting alone on a row of its own. A toolbar of several controls (the finding sheet's status, severity and assignee) still takes its own row, as a group.
+- Docs: web/docs/ui-style-contract.md (where the sheet header's actions sit)
+
+### Fixed: text written by the server reads in Vietnamese
+
+- Asset activity: the Detail column worded the server's reason in English ("Asset created", "Discovered by scan"); each known reason now comes from the catalog.
+- Scan runs: the Trigger column of a scan's runs said "Manual" and "On Asset Discovery" on a Vietnamese page; the trigger type is now worded from the catalog, on the runs table and the phone card.
+- A finding's activity ("nuclei recorded this finding", "changed status Confirmed → In progress") and the reason of its priority class ("Medium severity, reachable", "capped at P2 until ownership is confirmed") are worded in the console's language; a reason a tenant rule wrote is shown as written.
+- Error messages that pop up after a failed request had English titles ("Not Found", "Server Error") on every page; they now follow the console's language.
+- "Couldn't load ..." messages named what failed in English ("activity", "domain proof", "affected assets"); a test now refuses a literal title.
+
+Docs: none (wording only, no behaviour change)
+
 ## v0.24.2 (2026-11-26)
 
 ### Upgrade notes

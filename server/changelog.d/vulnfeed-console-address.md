@@ -1,8 +1,0 @@
-### Added: the vulnerability feed address is managed in the console
-
-- System > Threat intelligence has a new card, Vulnerability feed address, next to Feed delivery: the release address and up to 5 mirrors the signed vulnerability feed is downloaded from. A change applies at the next import or relay round without a restart; in relay mode the relay sensors download from the release address (the mirrors stay direct mode only), and the job signer's and sensor's origin allowlists still decide what a relay may fetch.
-- Only https addresses without a user name, password, query or fragment that do not point to an internal network are accepted. A change needs the new platform owner permission `platform.settings.feed_sources` (migration `20261125035231_platform_settings_feed_sources_permission`), a fresh authenticator code and a reason; it is a critical admin audit row with the old and new addresses, and every administrator is told.
-- "Test fetch" downloads the key set and the newest signed release index from each address and checks them against the pinned root; it imports nothing and is off in relay mode and with a local bundle folder.
-- The signing root (`VULNFEED_ROOT_KEY_ID`) and the local bundle folder (`VULNFEED_BUNDLE_DIR`) stay server settings: the card shows "Official root" or "Custom root (set on the server)" with the key fingerprint, and whether a folder is set (never its path).
-- **Upgrade note:** `VULNFEED_BASE_URL` and `VULNFEED_MIRRORS` keep working and now pin the address: while either is set the console shows it locked. Remove them from the environment to manage the address in the console.
-- Docs: server/docs/architecture/feed-transfer.md#feed-sources-in-the-console, server/docs/configuration/environment-variables.md

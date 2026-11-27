@@ -1,6 +1,0 @@
-### Changed: settings forms save through the save bar, with no idle Save button
-- Settings pages in the web app and the platform console no longer show a greyed Save button at rest: AI source, asset sources, closing findings, pentest methodology, my notifications, ticket field mappings, console admin sign-in and feed delivery save through the shared save bar, shown only when something changed (Ctrl/Cmd+S saves). The console AI provider page no longer shows the save bar on a fresh load.
-- Buttons that could not act yet are shown only when they can, or stay enabled and say what is missing: console sign-in, test buttons (e-mail, AI key, social sign-in, private destination), Import on software updates, Add capability, wordlist preview, tool source keys ("Set key" instead of a greyed switch), proxies switch.
-- Stored console secrets read as "Stored, never shown" with Replace and Remove instead of an empty input with a placeholder; read-only values (organization name, website, address and time zone for readers, social sign-in redirect addresses) are shown as text.
-- File choosers are one translated picker ("Choose a file", the chosen name) instead of the browser's English control; first card titles that repeated the page header are gone; wrapped labels no longer touch.
-- Docs: none (layout and wording of existing pages; no new setting or behaviour to document)
