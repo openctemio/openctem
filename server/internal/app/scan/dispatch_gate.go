@@ -868,7 +868,10 @@ func (s *Service) routeDispatchTargets(ctx context.Context, in DispatchTargetsIn
 			out.Refused = append(out.Refused, RefusedTarget{Target: r.Target,
 				Reason: fmt.Sprintf("target is in scan zone %q and the pinned sensor is not assigned to it", r.Zone.Name), Code: scopedom.RefusalZoneSensorMismatch})
 		default:
-			if in.ZoneSensorTier != nil {
+			// An unzoned target (r.Zone nil: public, no zone covers it) goes
+			// to the tenant's sensors as before zones; there is no zone
+			// whose sensors the readiness check could judge.
+			if in.ZoneSensorTier != nil && r.Zone != nil {
 				v := scanzone.JudgeZoneSensors(r.Zone, states[r.Zone.ID], scanzone.SensorNeed{
 					Tier: *in.ZoneSensorTier, Private: scanzone.RoutePrivate(r), SensorID: in.SensorID})
 				if v.Kind != "" {
