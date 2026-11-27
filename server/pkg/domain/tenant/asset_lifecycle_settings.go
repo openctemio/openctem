@@ -150,6 +150,26 @@ func (s AssetLifecycleSettings) EffectiveExcludedSourceTypes() []string {
 // and directly from the dedicated PUT /settings/asset-lifecycle
 // endpoint.
 func (s *AssetLifecycleSettings) Validate() error {
+	if err := s.ValidateValues(); err != nil {
+		return err
+	}
+	// First-enable guard: if Enabled=true but no dry-run has ever
+	// completed, reject. DryRunCompletedAt is written by the server after
+	// its own successful dry run (never from a request body), so this
+	// reads the tenant's stored stamp once the service has merged it.
+	if s.Enabled && s.DryRunCompletedAt == nil {
+		return fmt.Errorf(
+			"%w: lifecycle cannot be enabled without a successful dry-run first",
+			shared.ErrValidation,
+		)
+	}
+	return nil
+}
+
+// ValidateValues checks the submitted values (ranges, source types) without
+// the first-enable guard. A request body is checked with it: the dry-run
+// stamp the guard reads is the server's own, merged by the service.
+func (s *AssetLifecycleSettings) ValidateValues() error {
 	if s.StaleThresholdDays != 0 {
 		if s.StaleThresholdDays < MinLifecycleThresholdDays || s.StaleThresholdDays > MaxLifecycleThresholdDays {
 			return fmt.Errorf(
@@ -216,14 +236,5 @@ func (s *AssetLifecycleSettings) Validate() error {
 		seen[st] = struct{}{}
 	}
 
-	// First-enable guard: if Enabled=true but no dry-run has ever
-	// completed, reject. The admin API bypasses this when it calls
-	// Validate() after a successful dry-run and stamps the timestamp.
-	if s.Enabled && s.DryRunCompletedAt == nil {
-		return fmt.Errorf(
-			"%w: lifecycle cannot be enabled without a successful dry-run first",
-			shared.ErrValidation,
-		)
-	}
 	return nil
 }

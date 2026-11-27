@@ -3256,7 +3256,10 @@ func (h *TenantHandler) UpdateAssetLifecycleSettings(w http.ResponseWriter, r *h
 		apierror.BadRequest("Invalid request body").WriteJSON(w)
 		return
 	}
-	if err := req.Validate(); err != nil {
+	// The values only: whether a dry run was done is the tenant's stored
+	// stamp, which the service merges before the full check (a stamp in the
+	// body is ignored).
+	if err := req.ValidateValues(); err != nil {
 		apierror.BadRequest(err.Error()).WriteJSON(w)
 		return
 	}
