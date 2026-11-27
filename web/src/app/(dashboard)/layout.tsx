@@ -66,16 +66,6 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
                   <RouteGuard>
                     {/* Global header that handles per-route visibility */}
                     <DashboardHeader />
-                    <ShellBannerSlot>
-                      {/* The platform operator's notices (maintenance, warnings). */}
-                      <PlatformAnnouncementBanner />
-                      {/* The platform's vulnerability data is out of date: every user is told. */}
-                      <LazyFeedFreshnessBanner />
-                      {/* Platform support can read this organization's data now (RFC-063). */}
-                      <SupportAccessBanner />
-                      {/* An organization created for this account waits for it to accept ownership. */}
-                      <OwnershipInvitationBanner className="mx-4 mt-2" />
-                    </ShellBannerSlot>
                     {/*
                     `flex flex-1 flex-col` propagates the flex context
                     from SidebarInset (which is `flex flex-col flex-1`)
@@ -90,6 +80,19 @@ export default async function SiteLayout({ children }: SiteLayoutProps) {
                     {/* The page's one `main` landmark: a page's own <Main> inside
                       it renders as a plain container. */}
                     <MainRegion className="min-h-0 flex-1 overflow-y-auto overscroll-contain has-[[data-layout=fixed]]:flex has-[[data-layout=fixed]]:flex-col has-[[data-layout=fixed]]:overflow-hidden">
+                      {/* The shell's notices scroll with the page: each takes its own
+                        room above the page and goes away as the page scrolls, so no
+                        page content ever slides under a notice that stays put. */}
+                      <ShellBannerSlot>
+                        {/* The platform operator's notices (maintenance, warnings). */}
+                        <PlatformAnnouncementBanner />
+                        {/* The platform's vulnerability data is out of date: every user is told. */}
+                        <LazyFeedFreshnessBanner />
+                        {/* Platform support can read this organization's data now (RFC-063). */}
+                        <SupportAccessBanner />
+                        {/* An organization created for this account waits for it to accept ownership. */}
+                        <OwnershipInvitationBanner className="mx-4 mt-2" />
+                      </ShellBannerSlot>
                       {children}
                     </MainRegion>
                   </RouteGuard>
