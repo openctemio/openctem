@@ -373,9 +373,14 @@ intelligence > Vulnerability feed address, next to Feed delivery):
   a v1 release) from each address with the guarded feed client, verifies the
   key set against the pinned root and the accepted key set version and the
   pointer against that key set, and answers per address: verified (sequence,
-  and whether it is older than the applied one) or a code
-  (`blocked_address`, `unreachable`, `not_found`, `http_error`,
-  `root_mismatch`, `pointer_invalid`). Nothing is imported or stored. In
+  and whether it is older than the applied one) or one of three codes:
+  `blocked_address` (the guard refuses the address), `not_verified` (no
+  verified feed there: unreachable, no files, an error status or files that do
+  not verify all answer the same, so the test tells nobody which hosts answer)
+  or `not_configured`. The precise cause (and an HTTP status) goes to the
+  server log only. Every test, refused or not, writes a high admin audit row
+  `platform.vulnfeed_sources_tested` with the addresses asked for and the
+  outcome per address (no notice: it changes nothing). Nothing is imported or stored. In
   relay mode or with a bundle directory the platform makes no outbound request,
   so the test answers 409 `FEED_TEST_UNAVAILABLE`.
 

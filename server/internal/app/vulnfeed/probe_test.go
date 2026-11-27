@@ -2,6 +2,7 @@ package vulnfeed
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -71,23 +72,24 @@ func TestProbe_WrongRootRefused(t *testing.T) {
 	srv := goldenServer(t, http.StatusOK, nil)
 	im, _ := probeImporter(t, "SHA256:"+strings.Repeat("0", 64), now, srv)
 	res := im.Probe(context.Background(), srv.URL+"/releases", nil)
-	if len(res) != 1 || res[0].OK || res[0].Error != ProbeRootMismatch {
+	if len(res) != 1 || res[0].OK || res[0].Error != ProbeNotVerified || res[0].Cause != ProbeRootMismatch {
 		t.Fatalf("probe: %+v", res)
 	}
 }
 
-// Fetch failures are classified, never echoed; a mirror is tested at its
-// own path with no v1 fallback.
+// Fetch failures are classified for the server log (Cause) but answer one
+// public code, so the test tells no 404 from a 502 or a dead host; a mirror
+// is tested at its own path with no v1 fallback.
 func TestProbe_FetchFailures(t *testing.T) {
 	root, now := goldenRoot(t)
 	notFound := goldenServer(t, http.StatusNotFound, nil)
 	im, _ := probeImporter(t, root, now, notFound)
-	if res := im.Probe(context.Background(), notFound.URL+"/releases", nil); res[0].Error != ProbeNotFound {
+	if res := im.Probe(context.Background(), notFound.URL+"/releases", nil); res[0].Error != ProbeNotVerified || res[0].Cause != ProbeNotFound {
 		t.Fatalf("404: %+v", res)
 	}
 	broken := goldenServer(t, http.StatusBadGateway, nil)
 	im, _ = probeImporter(t, root, now, broken)
-	if res := im.Probe(context.Background(), broken.URL+"/releases", nil); res[0].Error != ProbeHTTPError || res[0].HTTPStatus != http.StatusBadGateway {
+	if res := im.Probe(context.Background(), broken.URL+"/releases", nil); res[0].Error != ProbeNotVerified || res[0].Cause != ProbeHTTPError || res[0].HTTPStatus != http.StatusBadGateway {
 		t.Fatalf("502: %+v", res)
 	}
 	good := goldenServer(t, http.StatusOK, nil)
@@ -95,8 +97,29 @@ func TestProbe_FetchFailures(t *testing.T) {
 	// The mirror serves the key set but no chunked pointer (v1 only): not a
 	// usable mirror.
 	res := im.Probe(context.Background(), good.URL+"/releases", []string{good.URL + "/releases/latest/download"})
-	if len(res) != 2 || !res[0].OK || res[1].OK || res[1].Error != ProbeNotFound {
+	if len(res) != 2 || !res[0].OK || res[1].OK || res[1].Error != ProbeNotVerified || res[1].Cause != ProbeNotFound {
 		t.Fatalf("mirror: %+v", res)
+	}
+}
+
+// The answer never carries the cause or an HTTP status: only origin, ok and
+// the public code reach the console.
+func TestProbe_AnswerCarriesNoCause(t *testing.T) {
+	root, now := goldenRoot(t)
+	broken := goldenServer(t, http.StatusBadGateway, nil)
+	im, _ := probeImporter(t, root, now, broken)
+	res := im.Probe(context.Background(), broken.URL+"/releases", nil)
+	b, err := json.Marshal(res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leak := range []string{"502", "http_error", "http_status", "cause", "not_found"} {
+		if strings.Contains(string(b), leak) {
+			t.Fatalf("answer leaks %q: %s", leak, b)
+		}
+	}
+	if !strings.Contains(string(b), `"error":"not_verified"`) {
+		t.Fatalf("answer: %s", b)
 	}
 }
 

@@ -50,7 +50,7 @@ interface Row {
   url: string
 }
 
-/** The plain words of a test fetch outcome code. */
+/** The plain words of a test fetch outcome code (blocked_address, not_verified, not_configured). */
 export function probeErrorText(r: FeedProbeResult, t: TFn): string {
   switch (r.error) {
     case 'blocked_address':
@@ -58,29 +58,19 @@ export function probeErrorText(r: FeedProbeResult, t: TFn): string {
         'admin.feedSources.probe.blocked',
         'The address points to an internal network, which the platform never reaches.'
       )
-    case 'not_found':
-      return t('admin.feedSources.probe.notFound', 'No feed files were found at this address.')
-    case 'http_error':
-      return t('admin.feedSources.probe.http', 'The server answered with status {status}.', {
-        status: r.http_status ?? 0,
-      })
-    case 'root_mismatch':
-      return t(
-        'admin.feedSources.probe.root',
-        'The files are not signed by the root this server trusts. Nothing would be imported from here.'
-      )
-    case 'pointer_invalid':
-      return t(
-        'admin.feedSources.probe.pointer',
-        'The newest release there does not check out (bad signature or expired).'
-      )
     case 'not_configured':
       return t(
         'admin.feedSources.probe.notConfigured',
         'The vulnerability feed import is not available on this server.'
       )
     default:
-      return t('admin.feedSources.probe.unreachable', 'The address could not be reached.')
+      // not_verified: unreachable, no feed files, an error status or files
+      // that do not verify all answer the same, so the test is no probe of
+      // which hosts answer (the server log names the cause).
+      return t(
+        'admin.feedSources.probe.notVerified',
+        'No verified feed was found at this address. The server log names the cause.'
+      )
   }
 }
 

@@ -25,15 +25,23 @@ import (
 	"github.com/openctemio/openctem/server/pkg/vulnbundle"
 )
 
-// Probe outcome codes (ProbeResult.Error).
+// Probe outcome codes. ProbeResult.Error carries only the public ones
+// (ProbeBlockedAddress, ProbeNotVerified, ProbeNotConfigured): the test is
+// run by a console user against an address they choose, so the answer must
+// not tell a host that is down from one that answers 404, 502 or files
+// that do not verify (a probe of who answers what). The precise cause
+// (ProbeResult.Cause) goes to the server log for the operator.
 const (
 	ProbeBlockedAddress = "blocked_address"
+	ProbeNotVerified    = "not_verified"
+	ProbeNotConfigured  = "not_configured"
+
+	// Causes, never sent to the client.
 	ProbeUnreachable    = "unreachable"
 	ProbeNotFound       = "not_found"
 	ProbeHTTPError      = "http_error"
 	ProbeRootMismatch   = "root_mismatch"
 	ProbePointerInvalid = "pointer_invalid"
-	ProbeNotConfigured  = "not_configured"
 )
 
 // probeTimeout bounds the test of one origin.
@@ -53,10 +61,28 @@ type ProbeResult struct {
 	KeySetVersion uint64    `json:"keyset_version,omitempty"`
 	// Behind: the origin's newest release is older than the one applied.
 	Behind bool `json:"behind,omitempty"`
-	// Error is a probe outcome code when OK is false; HTTPStatus the
-	// status of an http_error.
-	Error      string `json:"error,omitempty"`
-	HTTPStatus int    `json:"http_status,omitempty"`
+	// Error is the public outcome code when OK is false: blocked_address,
+	// not_verified or not_configured.
+	Error string `json:"error,omitempty"`
+	// Cause is the precise failure (one of the cause codes, with
+	// HTTPStatus for an http_error), for the server log only.
+	Cause      string `json:"-"`
+	HTTPStatus int    `json:"-"`
+}
+
+// public moves the precise failure into Cause and leaves only a public
+// outcome code in Error.
+func (r ProbeResult) public() ProbeResult {
+	if r.OK {
+		return r
+	}
+	r.Cause = r.Error
+	switch r.Error {
+	case ProbeBlockedAddress, ProbeNotConfigured:
+	default:
+		r.Error = ProbeNotVerified
+	}
+	return r
 }
 
 // Probe tests base (a release base URL: files under /latest/download) and
@@ -65,10 +91,10 @@ func (im *Importer) Probe(ctx context.Context, base string, mirrors []string) []
 	out := make([]ProbeResult, 0, 1+len(mirrors))
 	floor, applied := im.probeFloor(ctx)
 	if base != "" {
-		out = append(out, im.probeOne(ctx, base, strings.TrimRight(base, "/")+"/latest/download", true, floor, applied))
+		out = append(out, im.probeOne(ctx, base, strings.TrimRight(base, "/")+"/latest/download", true, floor, applied).public())
 	}
 	for _, m := range mirrors {
-		out = append(out, im.probeOne(ctx, m, strings.TrimRight(m, "/"), false, floor, applied))
+		out = append(out, im.probeOne(ctx, m, strings.TrimRight(m, "/"), false, floor, applied).public())
 	}
 	return out
 }
