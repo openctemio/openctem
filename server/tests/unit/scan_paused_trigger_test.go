@@ -13,7 +13,8 @@ import (
 
 // Pausing a scan turns its schedule off. A member may still run it by hand
 // (POST /scans/{id}/trigger sets Interactive); automatic triggers and a
-// disabled scan are refused, as a blocked run with the reason.
+// disabled scan are refused: an automatic trigger as a blocked run with the
+// reason, a refused "Run now" with the answer only.
 func TestPausedScan_RunByHandButNotAutomatically(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
@@ -44,6 +45,13 @@ func TestPausedScan_RunByHandButNotAutomatically(t *testing.T) {
 			}
 			if err == nil {
 				t.Fatal("trigger accepted, want it refused")
+			}
+			if tc.interactive {
+				// A refused "Run now" is answered, not recorded.
+				if n := len(deps.runRepo.runs); n != 0 {
+					t.Fatalf("runs = %d after a refused Run now, want 0", n)
+				}
+				return
 			}
 			b := blockedRuns(deps, sc.ID)
 			if len(b) != 1 || b[0].RefusalCode != "SCAN_NOT_TRIGGERABLE" {
