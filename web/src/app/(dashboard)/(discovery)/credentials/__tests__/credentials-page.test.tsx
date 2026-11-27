@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { formatDate } from '@/lib/app-locale'
 import { render, screen } from '@testing-library/react'
 
 globalThis.ResizeObserver ??= class {
@@ -93,7 +94,7 @@ describe('credentials page', () => {
     ).not.toBeInTheDocument()
     expect(screen.queryByText('Classification')).not.toBeInTheDocument()
     expect(screen.getByText('Discovered')).toBeInTheDocument()
-    expect(screen.getByText(new Date('2020-05-01').toLocaleDateString('en'))).toBeInTheDocument()
+    expect(screen.getByText(formatDate(new Date('2020-05-01')))).toBeInTheDocument()
   })
 
   it('has no Pending status option', () => {
@@ -105,7 +106,7 @@ describe('credentials page', () => {
   it('shows an error state with retry instead of an empty table', () => {
     listState.error = new Error('boom')
     render(<CredentialsPage />)
-    expect(screen.getByText(/failed to load credential leaks/i)).toBeInTheDocument()
+    expect(screen.getByText(/couldn't load credential leaks/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument()
     expect(screen.queryByText('No credential leaks found')).not.toBeInTheDocument()
   })

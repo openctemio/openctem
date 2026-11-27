@@ -10,7 +10,6 @@
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Gauge } from 'lucide-react'
-import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -21,24 +20,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { Meter } from '@/features/shared/components/meter'
 import { EmptyState, MetricStrip, RelativeTime, TonePill } from '@/features/shared'
 import { PostureCategoryList, PostureGrade } from '@/components/dashboard-kit'
-import { assetDetailHref, isLinkableAssetId } from '@/features/findings/lib/asset-link'
 import { downloadCsv } from '@/hooks/use-csv-export'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
 import type { ApiClientError } from '@/lib/api/error-handler'
 import { setPostureSchedule, usePosture, useRecalculatePosture } from '../hooks/use-posture'
 import { useNextGradeSentence } from './easm-posture-card'
+import { PosturePlanList } from './posture-plan-list'
 import { POSTURE_SCHEDULES, rootsCsv, scoreDelta, type PostureSchedule } from '../lib/posture'
 
 export function EASMPosture() {
@@ -195,10 +186,7 @@ export function EASMPosture() {
             )}
             {can(Permission.SettingsWrite) && (
               <Select value={st.refresh_every} onValueChange={changeSchedule}>
-                <SelectTrigger
-                  className="w-44"
-                  aria-label={t('attackSurface.posture.schedule', 'Refresh schedule')}
-                >
+                <SelectTrigger aria-label={t('attackSurface.posture.schedule', 'Refresh schedule')}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -263,49 +251,7 @@ export function EASMPosture() {
                   {t('attackSurface.posture.planEmpty', 'Nothing to fix to reach the next grade.')}
                 </p>
               ) : (
-                <ol className="flex flex-col divide-y" data-testid="posture-plan">
-                  {posture.plan.steps.map((s, i) => (
-                    <li
-                      key={`${s.asset_id ?? 'none'}-${s.category}`}
-                      className="flex items-center justify-between gap-3 py-2 text-sm"
-                    >
-                      <span className="flex min-w-0 items-baseline gap-2">
-                        <span className="w-5 shrink-0 text-xs text-muted-foreground tabular-nums">
-                          {i + 1}
-                        </span>
-                        <span className="flex min-w-0 flex-col">
-                          {s.asset_id && isLinkableAssetId(s.asset_id) ? (
-                            <Link
-                              href={assetDetailHref(s.asset_id)}
-                              className="truncate hover:underline"
-                            >
-                              {s.asset_name}
-                            </Link>
-                          ) : (
-                            <span className="truncate">
-                              {s.asset_name ||
-                                t('attackSurface.posture.noAsset', 'Issues without an asset')}
-                            </span>
-                          )}
-                          <span className="flex gap-2 text-xs text-muted-foreground">
-                            <span>
-                              {t(`dashboardKit.posture.category.${s.category}`, s.category)}
-                            </span>
-                            <span>
-                              {t('dashboardKit.posture.issues', '{count} issues', {
-                                count: s.issues,
-                              })}
-                            </span>
-                          </span>
-                        </span>
-                      </span>
-                      <span className="flex shrink-0 items-center gap-2 tabular-nums">
-                        <span>{s.score_after}</span>
-                        <PostureGrade grade={s.grade_after} score={s.score_after} size="sm" />
-                      </span>
-                    </li>
-                  ))}
-                </ol>
+                <PosturePlanList steps={posture.plan.steps} />
               )}
             </CardContent>
           </Card>
@@ -413,51 +359,47 @@ export function EASMPosture() {
                   {t('attackSurface.posture.rootsEmpty', 'No root domain in your view.')}
                 </p>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t('attackSurface.posture.col.root', 'Root domain')}</TableHead>
-                      <TableHead>{t('attackSurface.posture.col.grade', 'Grade')}</TableHead>
-                      <TableHead className="text-right">
-                        {t('attackSurface.posture.col.assets', 'Assets')}
-                      </TableHead>
-                      <TableHead className="text-right">
-                        {t('attackSurface.posture.col.issues', 'Issues')}
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {roots.map((r) => (
-                      <TableRow
-                        key={r.root_domain}
-                        data-state={r.root_domain === root ? 'selected' : undefined}
-                      >
-                        <TableCell>
-                          <button
-                            type="button"
-                            className="text-left hover:underline"
-                            onClick={() => setRoot(r.root_domain)}
-                          >
-                            {r.root_domain}
-                          </button>
+                // A list like the fix plan beside it (MVP v2): each root on one
+                // line, its name opening its posture, then grade and counts.
+                // No table frame, so no column is cut on a phone.
+                <ul className="flex flex-col divide-y" data-testid="posture-roots">
+                  {roots.map((r) => (
+                    <li
+                      key={r.root_domain}
+                      data-state={r.root_domain === root ? 'selected' : undefined}
+                      className="flex items-center justify-between gap-3 py-2 text-sm data-[state=selected]:font-medium"
+                    >
+                      <span className="flex min-w-0 flex-col">
+                        <button
+                          type="button"
+                          aria-pressed={r.root_domain === root}
+                          className="truncate text-start hover:underline"
+                          onClick={() => setRoot(r.root_domain)}
+                        >
+                          {r.root_domain}
+                        </button>
+                        <span className="flex flex-wrap gap-x-2 text-xs font-normal text-muted-foreground">
                           {r.top_category && (
-                            <div className="text-xs text-muted-foreground">
+                            <span>
                               {t(`dashboardKit.posture.category.${r.top_category}`, r.top_category)}
-                            </div>
+                            </span>
                           )}
-                        </TableCell>
-                        <TableCell>
-                          <span className="flex items-center gap-2 tabular-nums">
-                            <PostureGrade grade={r.grade} score={r.score} size="sm" />
-                            {r.score}
+                          <span>
+                            {t(
+                              'attackSurface.posture.reductionAssets',
+                              '{assets} assets, {issues} issues',
+                              { assets: r.assets, issues: r.issues }
+                            )}
                           </span>
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">{r.assets}</TableCell>
-                        <TableCell className="text-right tabular-nums">{r.issues}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2 tabular-nums">
+                        <span>{r.score}</span>
+                        <PostureGrade grade={r.grade} score={r.score} size="sm" />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               )}
             </CardContent>
           </Card>

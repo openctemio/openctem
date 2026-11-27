@@ -1,6 +1,6 @@
 'use client'
 
-import { Main } from '@/components/layout'
+import { Main } from '@/components/layout/main'
 import { CIGitHubCallback } from '@/features/ci-runners/components/ci-github-callback'
 
 export default function GitHubAppCallbackPage() {

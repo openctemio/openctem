@@ -317,12 +317,12 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
         {data.capabilityName ? (
           <div className="space-y-1 rounded-md border border-dashed px-1.5 py-1">
             <div className="flex items-center gap-1 text-xs font-medium">
-              <span className="truncate">{data.capabilityName}</span>
-              {data.capabilityTier && (
-                <Badge variant="outline" className="px-1 py-0 text-xs">
-                  {data.capabilityTier}
-                </Badge>
-              )}
+              <span className="truncate">
+                {t(
+                  `workflowStages.capability.${data.capabilityName}`,
+                  data.capabilityName.replace(/[._]+/g, ' ').replace(/^./, (c) => c.toUpperCase())
+                )}
+              </span>
             </div>
             <PortChips
               label={t('workflowStages.node.takesLower')}
@@ -366,7 +366,13 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
           <div className="flex flex-wrap gap-1 items-center">
             <Link2 className="h-3 w-3 text-muted-foreground shrink-0" />
             {dependencyLabels.map((label, i) => (
-              <Badge key={data.dependsOn?.[i] || i} variant="outline" className="text-xs px-1 py-0">
+              // A step's name is the workflow's own text, not catalog copy.
+              <Badge
+                key={data.dependsOn?.[i] || i}
+                variant="outline"
+                translate="no"
+                className="text-xs px-1 py-0"
+              >
                 {label}
               </Badge>
             ))}

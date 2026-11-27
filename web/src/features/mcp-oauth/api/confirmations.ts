@@ -14,6 +14,10 @@ export interface McpConfirmation {
   status: 'pending' | 'approved' | 'denied' | 'used'
   expired: boolean
   expires_at: string
+  /** The summary as a stable code (mcp.add_finding_comment); absent on older confirmations. */
+  summary_code?: string
+  /** Typed values of summary_code: finding, severity, content, client_visible. */
+  summary_params?: Record<string, unknown>
 }
 
 const base = (id: string) => `/api/v1/mcp-access/confirmations/${encodeURIComponent(id)}`

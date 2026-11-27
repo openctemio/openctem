@@ -83,7 +83,7 @@ describe('SensorLocalPolicySection', () => {
     // The corrected guidance next to the sensor's warning (research/25 §2.2).
     const guidance = screen.getByTestId('no-policy-guidance')
     expect(guidance).toHaveTextContent('SENSOR_TEMPLATE_SIGNING_KEYS')
-    expect(guidance).toHaveTextContent('your organization allows interactsh')
+    expect(guidance).toHaveTextContent('only when your organization allows them')
   })
 
   it('says a newly paired sensor with an empty allow list allows nothing, and where to edit it', () => {

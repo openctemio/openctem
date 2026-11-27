@@ -240,14 +240,14 @@ describe('Tag', () => {
     const rects = [...container.querySelectorAll('svg rect')]
     expect(rects).toHaveLength(4)
     expect(rects.filter((r) => r.getAttribute('opacity') === '1')).toHaveLength(4)
-    expect(screen.getByText('Critical').className).toContain('font-bold')
+    expect(screen.getByText('Critical').className).toContain('font-semibold')
     const low = render(<Tag label="Low" level={1} />)
     expect(
       [...low.container.querySelectorAll('svg rect')].filter(
         (r) => r.getAttribute('opacity') === '1'
       )
     ).toHaveLength(1)
-    expect(screen.getByText('Low').className).not.toContain('font-bold')
+    expect(screen.getByText('Low').className).not.toContain('font-semibold')
   })
 
   it('onRemove shows a named button that calls back', () => {
@@ -271,7 +271,7 @@ describe('Counter', () => {
   it('caps at 99+, keeping the real number for assistive tech', () => {
     const { container } = render(<Counter value={1200} />)
     expect(container.textContent).toBe('99+')
-    expect(container.firstElementChild?.getAttribute('aria-label')).toBe('1200 items')
+    expect(container.firstElementChild?.getAttribute('aria-label')).toBe('1,200 items')
   })
   it('honours max', () => {
     const { container } = render(<Counter value={11} max={9} />)

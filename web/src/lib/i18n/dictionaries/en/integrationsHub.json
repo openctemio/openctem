@@ -1,4 +1,5 @@
 {
+  "integrationsHub.addHeading": "Connect another tool",
   "integrationsHub.badge.soon": "Soon",
   "integrationsHub.categories.import-mappings.description": "Turn CSV, JSON or XML exports into findings and assets",
   "integrationsHub.categories.import-mappings.title": "Import mappings",
@@ -9,7 +10,7 @@
   "integrationsHub.categories.security.description": "Import Nessus and Tenable scan exports",
   "integrationsHub.categories.security.title": "Vulnerability scanners",
   "integrationsHub.categories.siem.description": "Forward security events to Splunk",
-  "integrationsHub.categories.siem.title": "SIEM",
+  "integrationsHub.categories.siem.title": "Event forwarding",
   "integrationsHub.categories.ticket-mapping.description": "Which fields and statuses sync with Jira",
   "integrationsHub.categories.ticket-mapping.title": "Ticket field mapping",
   "integrationsHub.categories.ticketing.description": "Connect Jira",

@@ -112,7 +112,9 @@ export function ScopeDurationField({
       <div
         role="radiogroup"
         aria-label={t('scope.duration.label', 'Duration')}
-        className="grid grid-cols-3 gap-1 sm:grid-cols-6"
+        // A segmented control (the kit's track and raised segment), not
+        // filled buttons: the dialog's one filled control is its main action.
+        className="grid grid-cols-3 gap-0.5 rounded-md border bg-muted/40 p-0.5 sm:grid-cols-6"
       >
         {options.map((o) => {
           const checked = o.key === selectedKey
@@ -133,12 +135,12 @@ export function ScopeDurationField({
                 )
               }
               className={cn(
-                'h-9 rounded-md border px-1 text-xs font-medium transition-colors',
+                'h-8 rounded-sm px-1 text-xs font-medium transition-colors pointer-coarse:h-11',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 checked
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'bg-background hover:bg-muted',
-                o.disabled && 'cursor-not-allowed opacity-50 hover:bg-background'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+                o.disabled && 'cursor-not-allowed opacity-50 hover:text-muted-foreground'
               )}
             >
               {o.label}
@@ -163,7 +165,7 @@ export function ScopeDurationField({
               if (n >= 1)
                 onChange({ kind: 'days', days: Math.min(n, policy.maxDays), custom: true })
             }}
-            className="h-8 w-40 text-xs"
+            className="w-40 text-xs"
           />
           <span className="text-xs text-muted-foreground">
             {t('scope.duration.limit', 'Latest {date} (your organization’s limit).', {

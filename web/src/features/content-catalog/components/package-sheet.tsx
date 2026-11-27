@@ -214,7 +214,7 @@ export function PackageSheet({ packageId, onClose, onChanged }: Props) {
         width="lg"
         header={
           <DetailHeader
-            title={<span className="break-all">{packageId ?? ''}</span>}
+            title={<span className="break-words">{packageId ?? ''}</span>}
             badges={
               <>
                 {installedVersion && (

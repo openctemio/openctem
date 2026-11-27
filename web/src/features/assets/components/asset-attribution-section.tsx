@@ -269,8 +269,9 @@ export function AssetAttributionSection({
           {can(Permission.AssetsWrite) && (
             <div className="space-y-2">
               <p className="font-medium">{t('assets.attribution.question', 'Is it yours?')}</p>
+              {/* One button column as wide as the longest label (Vietnamese labels are longer). */}
               <ul
-                className="space-y-2"
+                className="space-y-2 sm:grid sm:grid-cols-[max-content_1fr] sm:items-start sm:gap-x-3 sm:gap-y-2 sm:space-y-0"
                 role="group"
                 aria-label={t('assets.attribution.decideLabel', 'Decide ownership')}
               >
@@ -280,11 +281,11 @@ export function AssetAttributionSection({
                     ? (['needs_review'] as AttributionDecision[])
                     : []),
                 ].map((d) => (
-                  <li key={d} className="flex flex-col gap-1 sm:flex-row sm:items-start sm:gap-3">
+                  <li key={d} className="flex flex-col gap-1 sm:contents">
                     <Button
                       size="sm"
                       variant={d === 'confirmed' ? 'default' : 'outline'}
-                      className="h-7 shrink-0 sm:w-64 sm:justify-start"
+                      className="h-7 shrink-0 sm:justify-start"
                       disabled={saving}
                       aria-describedby={`decision-hint-${d}`}
                       onClick={() => onDecide(d)}

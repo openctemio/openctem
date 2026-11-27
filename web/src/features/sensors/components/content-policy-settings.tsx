@@ -1,20 +1,24 @@
 'use client'
 
 import { useDocsHref } from '@/context/brand-provider'
-import { useState } from 'react'
-import { Info, Lock, Save } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Info } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Switch } from '@/components/ui/switch'
 import { TagInput } from '@/components/ui/tag-input'
 import { useTranslation } from '@/context/i18n-provider'
-import { ErrorState, PageHeader, RelativeTime, PageStack } from '@/features/shared'
+import {
+  RelativeTime,
+  SettingsBlock,
+  SettingsField,
+  SettingsFieldGrid,
+  SettingsPage,
+  SettingsSaveBar,
+  SettingsSection,
+  SettingsSwitchRow,
+} from '@/features/shared'
 import { DOCS } from '@/lib/docs-links'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { updateContentPolicy, useContentPolicy } from '@/lib/api/sensor-content-hooks'
@@ -37,15 +41,6 @@ const PIN_HELP_KEY: Record<string, string> = {
   tag: 'sensors.contentPolicy.pinHelp.tag',
 }
 
-function FieldError({ id, error }: { id: string; error?: string }) {
-  if (!error) return null
-  return (
-    <p id={id} className="text-xs text-destructive">
-      {error}
-    </p>
-  )
-}
-
 function PolicyForm({
   data,
   canWrite,
@@ -56,15 +51,34 @@ function PolicyForm({
   onSaved: (policy: ContentPolicy) => void
 }) {
   const { t } = useTranslation()
-  const [form, setForm] = useState<ContentPolicyForm>(() => policyToForm(data.policy))
+  const initial = useMemo(() => policyToForm(data.policy), [data.policy])
+  const [form, setForm] = useState<ContentPolicyForm>(initial)
   const [applyNow, setApplyNow] = useState(true)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(false)
   const defaults = data.defaults ?? { content: {} }
   const readOnly = !canWrite || saving
 
   const setPin = (name: string, patch: Partial<ContentPolicyForm['content'][string]>) =>
     setForm((f) => ({ ...f, content: { ...f.content, [name]: { ...f.content[name], ...patch } } }))
+
+  const changes = [
+    form.refreshIntervalHours !== initial.refreshIntervalHours &&
+      t('sensors.contentPolicy.checkEvery'),
+    ...POLICY_CONTENT.map(
+      (name) =>
+        JSON.stringify(form.content[name]) !== JSON.stringify(initial.content[name]) &&
+        contentLabel(name)
+    ),
+  ].filter((c): c is string => typeof c === 'string')
+  const dirty = changes.length > 0
+
+  const discard = () => {
+    setForm(initial)
+    setErrors({})
+    setSaveError(false)
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -72,6 +86,7 @@ function PolicyForm({
     setErrors(errs)
     if (Object.keys(errs).length > 0) return
     setSaving(true)
+    setSaveError(false)
     try {
       const res = await updateContentPolicy({ policy, apply_now: applyNow })
       toast.success(
@@ -87,6 +102,7 @@ function PolicyForm({
       )
       onSaved(res.policy)
     } catch (err) {
+      setSaveError(true)
       toast.error(getErrorMessage(err, t('sensors.contentPolicy.saveError')))
     } finally {
       setSaving(false)
@@ -97,118 +113,142 @@ function PolicyForm({
     <form
       id={FORM_ID}
       onSubmit={submit}
-      className="space-y-5"
+      className="contents"
       aria-label={t('sensors.contentPolicy.formLabel')}
     >
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('sensors.contentPolicy.schedule.title')}</CardTitle>
-          <CardDescription>{t('sensors.contentPolicy.schedule.description')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid max-w-xs gap-1.5">
-            <Label htmlFor="refresh-interval">{t('sensors.contentPolicy.checkEvery')}</Label>
-            <Input
+      <SettingsSection
+        framed
+        id="refresh-schedule"
+        title={t('sensors.contentPolicy.schedule.title')}
+        description={t('sensors.contentPolicy.schedule.description')}
+        meta={
+          data.updated_at && (
+            <>
+              {t('sensors.contentPolicy.lastChanged')} <RelativeTime date={data.updated_at} />
+            </>
+          )
+        }
+      >
+        <SettingsBlock>
+          <SettingsFieldGrid>
+            <SettingsField
               id="refresh-interval"
-              inputMode="numeric"
-              value={form.refreshIntervalHours}
-              placeholder={hoursPlaceholder(defaults.refresh_interval_hours, t)}
-              disabled={readOnly}
-              aria-invalid={!!errors.refreshIntervalHours}
-              aria-describedby="refresh-interval-error"
-              onChange={(e) => setForm((f) => ({ ...f, refreshIntervalHours: e.target.value }))}
-            />
-            <FieldError id="refresh-interval-error" error={errors.refreshIntervalHours} />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('sensors.contentPolicy.content.title')}</CardTitle>
-          <CardDescription>{t('sensors.contentPolicy.content.description')}</CardDescription>
-        </CardHeader>
-        <CardContent className="divide-y">
-          {POLICY_CONTENT.map((name) => {
-            const f = form.content[name]
-            const kind = PIN_KIND[name]
-            const def = defaults.content?.[name]
-            return (
-              <div
-                key={name}
-                className="grid grid-cols-1 gap-4 py-4 first:pt-0 last:pb-0 md:grid-cols-[12rem_10rem_minmax(0,1fr)]"
-                data-content={name}
-              >
-                <p className="text-sm font-medium md:pt-7">{contentLabel(name)}</p>
-                <div className="grid gap-1.5">
-                  <Label htmlFor={`${name}-max-age`}>{t('sensors.contentPolicy.maxAge')}</Label>
-                  <Input
-                    id={`${name}-max-age`}
-                    inputMode="numeric"
-                    value={f.maxAgeHours}
-                    placeholder={hoursPlaceholder(def?.max_age_hours, t)}
-                    disabled={readOnly}
-                    aria-invalid={!!errors[`${name}.maxAgeHours`]}
-                    aria-describedby={`${name}-max-age-error`}
-                    onChange={(e) => setPin(name, { maxAgeHours: e.target.value })}
-                  />
-                  <FieldError id={`${name}-max-age-error`} error={errors[`${name}.maxAgeHours`]} />
-                </div>
-                {kind === 'rulesets' ? (
-                  <div className="grid gap-1.5">
-                    <Label>{t('sensors.contentPolicy.rulesets')}</Label>
-                    <TagInput
-                      value={f.rulesets}
-                      onChange={(rulesets) => setPin(name, { rulesets })}
-                      placeholder={t('sensors.contentPolicy.rulesetsPlaceholder')}
-                      maxTags={32}
-                      disabled={readOnly}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      {t('sensors.contentPolicy.rulesetsHelp')}
-                    </p>
-                    <FieldError id={`${name}-rulesets-error`} error={errors[`${name}.rulesets`]} />
-                  </div>
-                ) : (
-                  <div className="grid gap-1.5">
-                    <Label htmlFor={`${name}-version`}>
-                      {t('sensors.contentPolicy.pinnedVersion')}
-                    </Label>
-                    <Input
-                      id={`${name}-version`}
-                      className="font-mono"
-                      value={f.version}
-                      placeholder={kind === 'digest' ? 'sha256:…' : 'v10.4.9'}
-                      disabled={readOnly}
-                      aria-invalid={!!errors[`${name}.version`]}
-                      aria-describedby={`${name}-version-help`}
-                      onChange={(e) => setPin(name, { version: e.target.value })}
-                    />
-                    <p id={`${name}-version-help`} className="text-xs text-muted-foreground">
-                      {PIN_HELP_KEY[kind] ? t(PIN_HELP_KEY[kind]) : ''}
-                    </p>
-                    <FieldError id={`${name}-version-error`} error={errors[`${name}.version`]} />
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </CardContent>
-      </Card>
-
-      {canWrite && (
-        <div className="flex items-center gap-2">
-          <Switch
+              label={t('sensors.contentPolicy.checkEvery')}
+              error={errors.refreshIntervalHours}
+            >
+              {(control) => (
+                <Input
+                  {...control}
+                  inputMode="numeric"
+                  value={form.refreshIntervalHours}
+                  placeholder={hoursPlaceholder(defaults.refresh_interval_hours, t)}
+                  disabled={readOnly}
+                  onChange={(e) => setForm((f) => ({ ...f, refreshIntervalHours: e.target.value }))}
+                />
+              )}
+            </SettingsField>
+          </SettingsFieldGrid>
+        </SettingsBlock>
+        {canWrite && (
+          <SettingsSwitchRow
             id="apply-now"
+            label={t('sensors.contentPolicy.applyNow')}
+            hint={t('sensors.contentPolicy.applyNowHint')}
             checked={applyNow}
             onCheckedChange={setApplyNow}
             disabled={saving}
           />
-          <Label htmlFor="apply-now">{t('sensors.contentPolicy.applyNow')}</Label>
-          <span className="text-xs text-muted-foreground">
-            {t('sensors.contentPolicy.applyNowHint')}
-          </span>
-        </div>
+        )}
+      </SettingsSection>
+
+      <SettingsSection
+        framed
+        id="content"
+        title={t('sensors.contentPolicy.content.title')}
+        description={t('sensors.contentPolicy.content.description')}
+      >
+        {POLICY_CONTENT.map((name) => {
+          const f = form.content[name]
+          const kind = PIN_KIND[name]
+          const def = defaults.content?.[name]
+          return (
+            <SettingsBlock key={name} className="@container">
+              <div data-content={name} className="flex min-w-0 flex-col gap-3">
+                <h3 className="text-body font-medium">{contentLabel(name)}</h3>
+                <SettingsFieldGrid>
+                  <SettingsField
+                    id={`${name}-max-age`}
+                    label={t('sensors.contentPolicy.maxAge')}
+                    error={errors[`${name}.maxAgeHours`]}
+                  >
+                    {(control) => (
+                      <Input
+                        {...control}
+                        inputMode="numeric"
+                        value={f.maxAgeHours}
+                        placeholder={hoursPlaceholder(def?.max_age_hours, t)}
+                        disabled={readOnly}
+                        onChange={(e) => setPin(name, { maxAgeHours: e.target.value })}
+                      />
+                    )}
+                  </SettingsField>
+                  {kind === 'rulesets' ? (
+                    <SettingsField
+                      id={`${name}-rulesets`}
+                      label={t('sensors.contentPolicy.rulesets')}
+                      hint={t('sensors.contentPolicy.rulesetsHelp')}
+                      error={errors[`${name}.rulesets`]}
+                    >
+                      {(control) => (
+                        <TagInput
+                          id={control.id}
+                          value={f.rulesets}
+                          onChange={(rulesets) => setPin(name, { rulesets })}
+                          placeholder={t('sensors.contentPolicy.rulesetsPlaceholder')}
+                          maxTags={32}
+                          disabled={readOnly}
+                        />
+                      )}
+                    </SettingsField>
+                  ) : (
+                    <SettingsField
+                      id={`${name}-version`}
+                      label={t('sensors.contentPolicy.pinnedVersion')}
+                      hint={PIN_HELP_KEY[kind] ? t(PIN_HELP_KEY[kind]) : undefined}
+                      error={errors[`${name}.version`]}
+                    >
+                      {(control) => (
+                        <Input
+                          {...control}
+                          className="font-mono"
+                          value={f.version}
+                          placeholder={kind === 'digest' ? 'sha256:…' : 'v10.4.9'}
+                          disabled={readOnly}
+                          onChange={(e) => setPin(name, { version: e.target.value })}
+                        />
+                      )}
+                    </SettingsField>
+                  )}
+                </SettingsFieldGrid>
+              </div>
+            </SettingsBlock>
+          )
+        })}
+      </SettingsSection>
+
+      {canWrite && (
+        <SettingsSaveBar
+          form={FORM_ID}
+          dirty={dirty}
+          saving={saving}
+          onDiscard={discard}
+          changes={changes}
+          error={
+            saveError
+              ? t('settings.saveBar.failed', "Couldn't save. Your changes are kept.")
+              : undefined
+          }
+        />
       )}
     </form>
   )
@@ -228,74 +268,53 @@ export function ContentPolicySettings() {
   // Re-mount the form after a save so it shows what the API stored.
   const [formKey, setFormKey] = useState(0)
 
+  const title = t('sensors.contentPolicy.page.title')
+  const description = t('sensors.contentPolicy.page.description')
+  if (error || isLoading || !data) {
+    return (
+      <SettingsPage
+        title={title}
+        description={description}
+        state={error ? 'error' : 'loading'}
+        error={error}
+        onRetry={() => void mutate()}
+      />
+    )
+  }
+
   return (
-    <PageStack>
-      <PageHeader
-        title={t('sensors.contentPolicy.page.title')}
-        description={t('sensors.contentPolicy.page.description')}
-      >
-        {canWrite && data && (
-          <Button type="submit" form={FORM_ID} size="sm">
-            <Save className="h-4 w-4" />
-            {t('sensors.contentPolicy.saveChanges')}
-          </Button>
-        )}
-      </PageHeader>
-
-      <Alert>
-        <Info className="h-4 w-4" />
-        <AlertDescription>
-          <p>
-            {t('sensors.contentPolicy.sourceNote')}{' '}
-            <a
-              href={docsHref(DOCS.scanning.scannerContent)}
-              target="_blank"
-              rel="noreferrer"
-              className="underline underline-offset-2"
-            >
-              {t('sensors.contentPolicy.docsLink')}
-            </a>
-          </p>
-        </AlertDescription>
-      </Alert>
-
-      {!canWrite && (
-        <p className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-          <Lock className="h-3.5 w-3.5" aria-hidden />
-          {t('sensors.contentPolicy.needsAdmin')}
-        </p>
-      )}
-
-      {error ? (
-        <ErrorState
-          title={t('sensors.contentPolicy.errorTitle')}
-          error={error}
-          onRetry={() => mutate()}
-        />
-      ) : isLoading || !data ? (
-        <div className="space-y-5" aria-busy>
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-72 w-full" />
-        </div>
-      ) : (
-        <>
-          <PolicyForm
-            key={formKey}
-            data={data}
-            canWrite={canWrite}
-            onSaved={async () => {
-              await mutate()
-              setFormKey((k) => k + 1)
-            }}
-          />
-          {data.updated_at && (
-            <p className="text-xs text-muted-foreground">
-              {t('sensors.contentPolicy.lastChanged')}{' '}
-              <RelativeTime date={data.updated_at} className="text-xs" />
+    <SettingsPage
+      title={title}
+      description={description}
+      readOnly={!canWrite && t('sensors.contentPolicy.needsAdmin')}
+      banners={
+        <Alert className="max-w-settings">
+          <Info className="size-4" aria-hidden />
+          <AlertDescription>
+            <p>
+              {t('sensors.contentPolicy.sourceNote')}{' '}
+              <a
+                href={docsHref(DOCS.scanning.scannerContent)}
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-2"
+              >
+                {t('sensors.contentPolicy.docsLink')}
+              </a>
             </p>
-          )}
-        </>
-      )}
-    </PageStack>
+          </AlertDescription>
+        </Alert>
+      }
+    >
+      <PolicyForm
+        key={formKey}
+        data={data}
+        canWrite={canWrite}
+        onSaved={async () => {
+          await mutate()
+          setFormKey((k) => k + 1)
+        }}
+      />
+    </SettingsPage>
   )
 }

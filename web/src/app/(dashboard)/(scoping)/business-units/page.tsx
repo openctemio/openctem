@@ -72,7 +72,7 @@ import {
 } from '@/components/ui/command'
 import { cn } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { TabsCount } from '@/components/ui/tabs'
+import { TabsCount } from '@/components/ui/tab-strip'
 import { BusinessUnitAssets } from '@/features/business-units/components/business-unit-assets'
 import { toast } from 'sonner'
 import { type BusinessUnit, type Criticality, type RiskTolerance } from '@/features/business-units'
@@ -190,7 +190,7 @@ function ParentUnitSelect({
           <ChevronsUpDown className="ms-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
         <Command shouldFilter={false}>
           <CommandInput
             placeholder={t('businessContext.units.parent.filter', 'Filter units...')}
@@ -576,6 +576,8 @@ export default function BusinessUnitsPage() {
         return (
           <Can permission={Permission.AssetsWrite}>
             <DataTableRowActions
+              title={unit.name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', { name: unit.name })}
               actions={[
                 {
                   label: t('businessContext.units.action.view', 'View details'),
@@ -768,16 +770,24 @@ export default function BusinessUnitsPage() {
       <Main>
         <PageStack>
           <PageHeader
-            title={t('businessContext.units.title', 'Business units')}
+            title={t('nav.item.business-context', 'Business context')}
             description={t(
               'businessContext.units.description',
               'Your organizational structure, so security priorities follow the business.'
             )}
           >
             <Can permission={Permission.AssetsWrite}>
-              <Button size="sm" onClick={() => setIsCreateOpen(true)}>
+              {/* A phone shows the short label, so the button stays beside the title. */}
+              <Button
+                size="sm"
+                onClick={() => setIsCreateOpen(true)}
+                aria-label={t('businessContext.units.new', 'New business unit')}
+              >
                 <Plus className="me-2 h-4 w-4" />
-                {t('businessContext.units.new', 'New business unit')}
+                <span className="sm:hidden">{t('businessContext.units.newShort', 'New unit')}</span>
+                <span className="max-sm:hidden">
+                  {t('businessContext.units.new', 'New business unit')}
+                </span>
               </Button>
             </Can>
           </PageHeader>
@@ -786,7 +796,7 @@ export default function BusinessUnitsPage() {
             label={t('businessContext.sectionsLabel', 'Business context sections')}
           />
 
-          <MetricStrip loading={isLoading} items={metrics} />
+          <MetricStrip loading={isLoading} items={metrics} listFirst />
 
           <div>
             <DataTable
@@ -813,7 +823,7 @@ export default function BusinessUnitsPage() {
                 <>
                   <Select value={filterCriticality} onValueChange={setFilterCriticality}>
                     <SelectTrigger
-                      className="h-9 w-auto min-w-36"
+                      className="w-auto min-w-36"
                       aria-label={t(
                         'businessContext.units.filter.criticality.aria',
                         'Filter by criticality'
@@ -834,7 +844,7 @@ export default function BusinessUnitsPage() {
                   </Select>
                   <Select value={filterRiskTolerance} onValueChange={setFilterRiskTolerance}>
                     <SelectTrigger
-                      className="h-9 w-auto min-w-36"
+                      className="w-auto min-w-36"
                       aria-label={t(
                         'businessContext.units.filter.tolerance.aria',
                         'Filter by risk tolerance'
@@ -859,9 +869,10 @@ export default function BusinessUnitsPage() {
               }
               toolbarEnd={
                 <Button
+                  iconOnlyBelow="md"
                   variant="outline"
                   size="sm"
-                  className="h-9"
+
                   onClick={handleExport}
                   disabled={businessUnits.length === 0}
                 >
@@ -1054,7 +1065,7 @@ export default function BusinessUnitsPage() {
                 <DetailSection title={t('businessContext.units.sheet.owner', 'Owner')}>
                   <p className="text-sm font-medium">{viewUnit.owner || unassigned}</p>
                   {viewUnit.ownerEmail && (
-                    <p className="flex items-center gap-1 text-xs break-all text-muted-foreground">
+                    <p className="flex items-center gap-1 text-xs break-words text-muted-foreground">
                       <Mail className="h-3 w-3 shrink-0" />
                       {viewUnit.ownerEmail}
                     </p>

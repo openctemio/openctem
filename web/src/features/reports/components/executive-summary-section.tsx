@@ -54,16 +54,13 @@ export function ExecutiveSummarySection() {
           <p className="text-sm text-muted-foreground">
             {t(
               'reports.executiveHint',
-              'Program-level risk, findings, SLA and MTTR for the selected window.'
+              'Risk, findings, time limits and average time to fix for the selected period.'
             )}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <Select value={days} onValueChange={(v) => setDays(v as Period)}>
-            <SelectTrigger
-              className="h-9 w-[150px]"
-              aria-label={t('insights.period.label', 'Period')}
-            >
+            <SelectTrigger className="w-[150px]" aria-label={t('insights.period.label', 'Period')}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -76,13 +73,7 @@ export function ExecutiveSummarySection() {
           </Select>
           {/* The export route is gated on the same grant as the summary itself. */}
           <Can permission={Permission.DashboardRead}>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9"
-              onClick={handleDownload}
-              disabled={downloading}
-            >
+            <Button variant="outline" size="sm" onClick={handleDownload} disabled={downloading}>
               <Download className="me-2 h-4 w-4" />
               {downloading
                 ? t('reports.executive.preparing', 'Preparing…')
@@ -111,7 +102,7 @@ export function ExecutiveSummarySection() {
             },
             {
               key: 'p0',
-              label: t('reports.executive.p0', 'P0 open'),
+              label: t('reports.executive.p0', 'Highest priority open (P0)'),
               value: summary ? summary.p0_open : '—',
               tone: 'danger',
               href: DRILL.p0Open,

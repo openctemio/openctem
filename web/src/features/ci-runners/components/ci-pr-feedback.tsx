@@ -41,6 +41,7 @@ import {
   useRemoveSCMInstallation,
   useSCMApps,
 } from '../api/use-ci'
+import { formatDate } from '@/lib/app-locale'
 
 type Pending = { kind: 'github' | 'gitlab'; id: string; label: string } | null
 
@@ -100,10 +101,7 @@ export function CIPRFeedback({ canWrite }: { canWrite: boolean }) {
                     'scans.ci.feedback.githubMissing',
                     'This deployment has no GitHub App yet. An operator registers it; then install it here.'
                   )}{' '}
-                  <SafeExternalLink
-                    href={docsHref(DOCS.ci.githubApp)}
-                    className="text-primary underline-offset-4 hover:underline"
-                  >
+                  <SafeExternalLink href={docsHref(DOCS.ci.githubApp)} className="link-inline">
                     {t('scans.ci.feedback.githubGuide', 'GitHub App guide')}
                   </SafeExternalLink>
                 </>
@@ -209,7 +207,7 @@ export function CIPRFeedback({ canWrite }: { canWrite: boolean }) {
                   {c.token_expires_at && (
                     <span className="text-muted-foreground">
                       {t('scans.ci.feedback.expires', 'token expires {date}', {
-                        date: new Date(c.token_expires_at).toLocaleDateString(),
+                        date: formatDate(new Date(c.token_expires_at)),
                       })}
                     </span>
                   )}

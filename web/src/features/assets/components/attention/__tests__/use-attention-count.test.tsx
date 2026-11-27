@@ -5,6 +5,8 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook } from '@testing-library/react'
+import type { ReactNode } from 'react'
+import { SWRConfig } from 'swr'
 import type { AssetSearchFilters } from '../../../hooks/use-assets'
 
 const calls = vi.hoisted(() => ({
@@ -14,6 +16,7 @@ const calls = vi.hoisted(() => ({
 }))
 
 vi.mock('../../../hooks/use-assets', () => ({
+  assetListKey: (q: AssetSearchFilters) => `assets:${q.monitoringState?.join(',')}:${q.pageSize}`,
   useAssets: (q: AssetSearchFilters) => {
     calls.assets.push(q)
     return { total: 549, hasLoaded: true }
@@ -83,5 +86,41 @@ describe('useAttentionCount', () => {
     expect(result.current).toBeUndefined()
     expect(calls.assets.at(-1)!.skip).toBe(true)
     expect(calls.suggestions.at(-1)).toBe(false)
+  })
+
+  describe('cacheOnly', () => {
+    // A cache holding `entries`, and an app-wide fetcher that must not run.
+    const fetcher = vi.fn()
+    const withCache = (entries: [string, unknown][]) => {
+      const cache = new Map(entries.map(([k, data]) => [k, { data }]))
+      function Wrapper({ children }: { children: ReactNode }) {
+        return (
+          <SWRConfig value={{ provider: () => cache as never, fetcher, dedupingInterval: 0 }}>
+            {children}
+          </SWRConfig>
+        )
+      }
+      return Wrapper
+    }
+
+    it('shows the figure another request already holds and sends nothing', () => {
+      const { result } = renderHook(
+        () => useAttentionCount('decide_monitoring', true, { cacheOnly: true }),
+        { wrapper: withCache([['assets:pending_decision,unvalidated:1', { total: 462 }]]) }
+      )
+      expect(result.current).toBe(462)
+      expect(calls.assets.at(-1)!.skip).toBe(true)
+      expect(fetcher).not.toHaveBeenCalled()
+    })
+
+    it('shows nothing when the cache does not hold it', () => {
+      const { result } = renderHook(
+        () => useAttentionCount('decide_monitoring', true, { cacheOnly: true }),
+        { wrapper: withCache([]) }
+      )
+      expect(result.current).toBeUndefined()
+      expect(calls.assets.at(-1)!.skip).toBe(true)
+      expect(fetcher).not.toHaveBeenCalled()
+    })
   })
 })

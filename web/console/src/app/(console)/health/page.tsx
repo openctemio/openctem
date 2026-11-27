@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/component
 import { DataTable, ErrorState, PageHeader, PageStack, RelativeTime } from '@/features/shared'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { TonePill, type PillTone } from '@/features/shared/components/tone-pill'
+import { cn } from '@/lib/utils'
 import { useTranslation } from '@/context/i18n-provider'
 import { useAdminOperations } from '@console/features/admin-console/api/use-admin-operations'
 import { useAdminSystem } from '@console/features/admin-console/api/use-admin-system'
@@ -33,6 +34,8 @@ import {
 } from '@console/features/admin-console/lib/system'
 import type { AdminOperations, AdminSystem } from '@console/features/admin-console/types'
 import { DOCS } from '@/lib/docs-links'
+import { formatNumber } from '@/lib/app-locale'
+import { humanizeIdentifier } from '@/lib/humanize-identifier'
 
 /**
  * One health page: what the host reports (services, storage, backup,
@@ -77,7 +80,9 @@ function BackgroundJobs({ o }: { o: AdminOperations }) {
       {
         accessorKey: 'errors_total',
         header: t('admin.ops.jobs.errors', 'Errors since start'),
-        cell: ({ row }) => <span className="tabular-nums">{row.original.errors_total}</span>,
+        cell: ({ row }) => (
+          <span className="tabular-nums">{formatNumber(row.original.errors_total)}</span>
+        ),
       },
       {
         id: 'state',
@@ -165,12 +170,14 @@ function Row({
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 py-1.5">
       <dt className="text-sm text-muted-foreground">{label}</dt>
+      {/* The value side wraps as whole pieces, aligned to the end: a long
+          detail (the database pool) takes a line of its own, and a short
+          value (a latency, a pill) never breaks inside itself. */}
       <dd
-        className={
-          warn
-            ? 'flex items-center gap-2 text-sm font-medium text-warning tabular-nums'
-            : 'flex items-center gap-2 text-sm tabular-nums'
-        }
+        className={cn(
+          'flex min-w-0 flex-wrap items-center justify-end gap-x-2 gap-y-1 text-end text-body tabular-nums',
+          warn && 'font-medium text-warning'
+        )}
       >
         {value}
         {children}
@@ -223,27 +230,37 @@ function HostSections({ s, o }: { s: AdminSystem; o?: AdminOperations }) {
                 <Row key={sv.name} label={t(`admin.system.service.${sv.name}`, sv.name)}>
                   {sv.name === 'api' && (s.version.running || o?.build.version) && (
                     <span className="text-muted-foreground">
-                      {[s.version.running || o?.build.version, o?.build.commit, s.version.channel]
-                        .filter(Boolean)
-                        .join(', ')}
+                      {Array.from(
+                        new Set(
+                          [
+                            s.version.running || o?.build.version,
+                            o?.build.commit,
+                            s.version.channel,
+                          ].filter((x): x is string => !!x && x !== 'unknown')
+                        )
+                      ).join(', ')}
                     </span>
                   )}
                   {sv.name === 'postgres' && o?.database && (
                     <span className="text-muted-foreground">
-                      {t('admin.ops.pool', 'Pool {inUse} in use of {open} open (max {max})', {
-                        inUse: o.database.in_use,
-                        open: o.database.open_connections,
-                        max: o.database.max_open || '-',
-                      })}
+                      {t(
+                        'admin.ops.pool',
+                        'Database connections: {inUse} in use of {open} open (limit {max})',
+                        {
+                          inUse: o.database.in_use,
+                          open: o.database.open_connections,
+                          max: o.database.max_open || '-',
+                        }
+                      )}
                     </span>
                   )}
                   {sv.name === 'sensors' && sv.configured && (
-                    <span className="text-muted-foreground">
+                    <span className="whitespace-nowrap text-muted-foreground">
                       {t('admin.system.sensorsOnline', '{n} online', { n: sv.detail ?? 0 })}
                     </span>
                   )}
                   {sv.name !== 'sensors' && sv.configured && sv.ok && sv.latency_ms > 0 && (
-                    <span className="text-muted-foreground">
+                    <span className="whitespace-nowrap text-muted-foreground">
                       {t('admin.system.latency', '{ms} ms', { ms: sv.latency_ms.toFixed(1) })}
                     </span>
                   )}
@@ -262,7 +279,10 @@ function HostSections({ s, o }: { s: AdminSystem; o?: AdminOperations }) {
           ) : (
             <dl className="divide-y">
               {s.storage.volumes.map((v) => (
-                <Row key={v.name} label={v.name}>
+                <Row
+                  key={v.name}
+                  label={t(`admin.system.volume.${v.name}`, humanizeIdentifier(v.name))}
+                >
                   {v.ok ? (
                     <>
                       <span className="text-muted-foreground">
@@ -334,7 +354,7 @@ function HostSections({ s, o }: { s: AdminSystem; o?: AdminOperations }) {
             <p className="text-sm text-muted-foreground">
               {t(
                 'admin.system.backupNotReported',
-                'No backup status is reported. Set SYSTEM_BACKUP_STATUS_FILE to the backup job status file.'
+                'No backup status is reported. Point the server at the backup job status file.'
               )}
             </p>
           )}
@@ -348,7 +368,10 @@ function HostSections({ s, o }: { s: AdminSystem; o?: AdminOperations }) {
               </p>
             )}
             {s.certificates.map((c) => (
-              <Row key={c.name} label={c.name}>
+              <Row
+                key={c.name}
+                label={t(`admin.system.cert.${c.name}`, humanizeIdentifier(c.name))}
+              >
                 {c.ok ? (
                   <>
                     <span className="text-muted-foreground">

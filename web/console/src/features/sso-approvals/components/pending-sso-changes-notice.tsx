@@ -4,6 +4,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { Clock } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { usePendingSSOChanges } from '@console/features/saml/api/use-saml-config'
+import { formatDate } from '@/lib/app-locale'
 
 /**
  * Admin console: SSO changes submitted for this organization that wait for an
@@ -33,7 +34,7 @@ export function PendingSSOChangesNotice({ tenantId }: { tenantId: string }) {
             <li key={c.id}>
               {c.summary}{' '}
               {t('admin.pendingSsoChangesNotice.expires', '(expires {date})', {
-                date: new Date(c.expires_at).toLocaleDateString(),
+                date: formatDate(new Date(c.expires_at)),
               })}
             </li>
           ))}

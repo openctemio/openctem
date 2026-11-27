@@ -1,4 +1,5 @@
 {
+  "toolSources.actionsFor": "Thao tác cho {name}",
   "toolSources.col.actions": "Thao tác",
   "toolSources.col.enabled": "Bật",
   "toolSources.col.key": "Khóa",
@@ -24,6 +25,7 @@
   "toolSources.error.tooShort": "Khóa quá ngắn (tối thiểu 8 ký tự).",
   "toolSources.error.whitespace": "Khóa không được chứa khoảng trắng hoặc xuống dòng.",
   "toolSources.errorTitle": "khóa nguồn công cụ",
+  "toolSources.keySet": "Đã đặt",
   "toolSources.neverUsed": "Chưa dùng",
   "toolSources.notSet": "Chưa đặt",
   "toolSources.remove": "Xóa khóa",
@@ -33,7 +35,9 @@
   "toolSources.saveFailed": "Không thể lưu khóa",
   "toolSources.saved": "Đã lưu khóa cho {name}",
   "toolSources.set": "Đặt khóa",
+  "toolSources.setNamed": "Đặt khóa cho {name}",
   "toolSources.title": "Khóa nguồn công cụ",
   "toolSources.toggleFailed": "Không thể thay đổi khóa",
-  "toolSources.updatedBy": "bởi {name}"
+  "toolSources.updatedBy": "bởi {name}",
+  "toolSources.usedBy": "Dùng bởi {tools}"
 }

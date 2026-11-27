@@ -14,6 +14,12 @@ vi.mock('../target-picker/selection-summary', () => ({
 vi.mock('../scanner-select', async () => {
   const React = await import('react')
   return {
+    useScannerOptions: () => ({
+      options: [],
+      availability: null,
+      isLoading: false,
+      error: undefined,
+    }),
     // A scanner is already chosen: only readiness decides the button.
     ScannerSelect: ({ onChange }: { onChange: (v: string) => void }) => {
       React.useEffect(() => onChange('nuclei'), [onChange])
@@ -35,7 +41,7 @@ const candidates = [{ id: 'a1', label: 'go.example.com', target: 'go.example.com
 describe('ScanAssetsDialog start button follows the preflight', () => {
   it('is disabled when nothing can be scanned and enabled again when something can', async () => {
     render(<ScanAssetsDialog open onOpenChange={vi.fn()} candidates={candidates} />)
-    const start = screen.getByRole('button', { name: /Start Scan/ })
+    const start = screen.getByRole('button', { name: /Start scan/ })
     expect(start).toBeEnabled()
 
     await act(async () =>

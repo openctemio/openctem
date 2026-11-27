@@ -233,6 +233,13 @@ bounty eligibility, maximum severity, environment, testing instructions
 `published_by_platform`, `inferred`). Enforcement of the limits:
 [active-probe-gate.md](active-probe-gate.md#port--and-path-limited-entries-rfc-065-168).
 
+The program page shows one part at a time, in tabs with the targets first:
+**Targets** (these items), **Scope entries**, **Exclusions**, **Rules and
+source** (the accepted terms, the rules and where the scope is read from)
+and, for a private program, **Notifications**. What needs a decision
+(accepting the terms, pending scope changes, suggestions, the re-import
+form) stays above the tabs.
+
 ## Program targets as assets
 
 Each time a program's scope is applied (import, re-import, follow, feed

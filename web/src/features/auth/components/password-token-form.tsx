@@ -15,12 +15,18 @@ import { useState, useTransition } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import Link from '@/components/link'
-import { ArrowLeft, CheckCircle, Loader2, KeyRound } from 'lucide-react'
-import { toast } from 'sonner'
+import { Loader2 } from 'lucide-react'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import {
+  EntryActions,
+  EntryBackLink,
+  EntryBanner,
+  EntryCard,
+  EntryHeader,
+  EntryLinkProblem,
+} from '@/components/entry'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { TextLink } from '@/components/ui/text-link'
 import {
   Form,
   FormControl,
@@ -31,13 +37,14 @@ import {
 } from '@/components/ui/form'
 import { PasswordInput } from '@/components/password-input'
 import { useTranslation } from '@/context/i18n-provider'
+import { safeHref } from '@/lib/safe-href'
 
 import { resetPasswordSchema, type ResetPasswordInput } from '../schemas/auth.schema'
 import { authErrorText } from '../lib/auth-error-codes'
 import { translatingResolver } from '../lib/translating-resolver'
 import { RevokeApiKeysOption } from './revoke-api-keys-option'
 import { resetPasswordAction } from '../actions/local-auth-actions'
-import { usePasswordPolicy } from '../api/use-auth-providers'
+import { useEmailUnavailable, usePasswordPolicy } from '../api/use-auth-providers'
 import { passwordPolicyIssue } from '../lib/password-policy'
 import { PasswordPolicyHint } from './password-policy-hint'
 
@@ -51,8 +58,13 @@ interface ModeCopy {
   successDescription: string
   invalidTitle: string
   invalidDescription: string
-  /** Where to get a new link; null when only an administrator can issue one. */
+  /**
+   * Where to get a new link; null when only an administrator can issue one.
+   * A reset link on a server that cannot send email is also null (useModeCopy),
+   * so the page never sends the visitor to a form that cannot help.
+   */
   newLink: { href: string; label: string } | null
+  /** Who issues a new link when the visitor cannot request one here. */
   newLinkHint: string
 }
 
@@ -64,11 +76,10 @@ export const PASSWORD_TOKEN_COPY: Record<PasswordTokenMode, ModeCopy> = {
     successTitle: 'Password reset',
     successDescription:
       'Your password has been updated. Your sessions were signed out and connected apps were revoked. You can now sign in with your new password.',
-    invalidTitle: 'Invalid reset link',
-    invalidDescription:
-      'This password reset link is invalid or missing a token. Request a new one.',
+    invalidTitle: 'This reset link does not work',
+    invalidDescription: 'The link is incomplete or no longer works. Request a new one.',
     newLink: { href: '/forgot-password', label: 'Request a new reset link' },
-    newLinkHint: '',
+    newLinkHint: 'This server cannot send email. Ask your administrator for a new reset link.',
   },
   setup: {
     title: 'Set your password',
@@ -76,9 +87,9 @@ export const PASSWORD_TOKEN_COPY: Record<PasswordTokenMode, ModeCopy> = {
     submit: 'Set password',
     successTitle: 'Password set',
     successDescription: 'Your password is set. Sign in to continue.',
-    invalidTitle: 'Invalid setup link',
+    invalidTitle: 'This setup link does not work',
     invalidDescription:
-      'This setup link is invalid or missing a token. Ask your administrator for a new setup link.',
+      'The link is incomplete or no longer works. Ask your administrator for a new one.',
     newLink: null,
     newLinkHint: 'Setup links work once and expire. Ask your administrator for a new one.',
   },
@@ -87,7 +98,10 @@ export const PASSWORD_TOKEN_COPY: Record<PasswordTokenMode, ModeCopy> = {
 /** Translates a mode's copy; the English text in PASSWORD_TOKEN_COPY is the fallback. */
 function useModeCopy(mode: PasswordTokenMode): ModeCopy {
   const { t } = useTranslation()
+  const emailUnavailable = useEmailUnavailable()
   const c = PASSWORD_TOKEN_COPY[mode]
+  // No email on this server: a new reset link only comes from an administrator.
+  const newLink = emailUnavailable ? null : c.newLink
   const k = (field: string, fallback: string) =>
     fallback ? t(`auth.passwordToken.${mode}.${field}`, fallback) : fallback
   return {
@@ -97,8 +111,11 @@ function useModeCopy(mode: PasswordTokenMode): ModeCopy {
     successTitle: k('successTitle', c.successTitle),
     successDescription: k('successDescription', c.successDescription),
     invalidTitle: k('invalidTitle', c.invalidTitle),
-    invalidDescription: k('invalidDescription', c.invalidDescription),
-    newLink: c.newLink ? { href: c.newLink.href, label: k('newLinkLabel', c.newLink.label) } : null,
+    invalidDescription:
+      c.newLink && !newLink
+        ? k('newLinkHint', c.newLinkHint)
+        : k('invalidDescription', c.invalidDescription),
+    newLink: newLink ? { href: newLink.href, label: k('newLinkLabel', newLink.label) } : null,
     newLinkHint: k('newLinkHint', c.newLinkHint),
   }
 }
@@ -116,30 +133,20 @@ function isStaleLinkError(code: string | null) {
 
 export function PasswordTokenForm({ mode, token }: { mode: PasswordTokenMode; token: string }) {
   const copy = useModeCopy(mode)
-  const { t } = useTranslation()
 
   if (!token) {
     return (
-      <Card className="gap-4">
-        <CardHeader>
-          <CardTitle className="text-lg tracking-tight">
-            <h1>{copy.invalidTitle}</h1>
-          </CardTitle>
-          <CardDescription>{copy.invalidDescription}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button variant="outline" asChild>
-            {copy.newLink ? (
+      <EntryLinkProblem
+        title={copy.invalidTitle}
+        description={copy.invalidDescription}
+        action={
+          copy.newLink && (
+            <Button variant="signal" asChild>
               <Link href={copy.newLink.href}>{copy.newLink.label}</Link>
-            ) : (
-              <Link href="/login">
-                <ArrowLeft className="h-4 w-4" />
-                {t('auth.common.backToSignIn', 'Back to sign in')}
-              </Link>
-            )}
-          </Button>
-        </CardContent>
-      </Card>
+            </Button>
+          )
+        }
+      />
     )
   }
 
@@ -167,7 +174,7 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
   function onSubmit(data: ResetPasswordInput) {
     setError(null)
     setErrorCode(null)
-    const issue = passwordPolicy && passwordPolicyIssue(data.password, passwordPolicy)
+    const issue = passwordPolicy && passwordPolicyIssue(data.password, passwordPolicy, t)
     if (issue) {
       form.setError('password', { message: issue })
       return
@@ -179,8 +186,8 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
         mode === 'reset' && revokeKeys
       )
       if (result.success) {
+        // The success card says it; a toast on top would say it twice.
         setIsSuccess(true)
-        toast.success(copy.successDescription)
       } else {
         // The words come from the API's code; the server's sentence is never shown.
         const code = 'code' in result && typeof result.code === 'string' ? result.code : null
@@ -189,145 +196,121 @@ function TokenPasswordForm({ mode, token }: { mode: PasswordTokenMode; token: st
           t,
           t(`auth.passwordToken.${mode}.failed`, `${PASSWORD_TOKEN_COPY[mode].submit} failed`)
         )
+        // The inline banner is the one message: a toast too said it twice and,
+        // on a phone, covered the page title.
         setError(errorMessage)
         setErrorCode(code)
-        toast.error(errorMessage)
       }
     })
   }
 
   if (isSuccess) {
     return (
-      <Card className="gap-4">
-        <CardHeader>
-          <div className="text-primary mb-2 flex justify-center">
-            <CheckCircle className="h-10 w-10" />
-          </div>
-          <CardTitle className="text-center text-lg tracking-tight">
-            <h1>{copy.successTitle}</h1>
-          </CardTitle>
-          <CardDescription className="text-center">{copy.successDescription}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button asChild className="w-full">
-            <Link href="/login">
-              <ArrowLeft className="h-4 w-4" />
-              {mode === 'setup'
-                ? t('auth.passwordToken.signIn', 'Sign in')
-                : t('auth.common.backToSignIn', 'Back to sign in')}
-            </Link>
+      <EntryCard>
+        <EntryHeader title={copy.successTitle} />
+        <EntryBanner tone="ok">{copy.successDescription}</EntryBanner>
+        <EntryActions>
+          <Button variant="signal" asChild>
+            {/* Signing in is the next step, not a way back. */}
+            <Link href="/login">{t('auth.passwordToken.signIn', 'Sign in')}</Link>
           </Button>
-        </CardContent>
-      </Card>
+        </EntryActions>
+      </EntryCard>
     )
   }
 
   return (
-    <Card className="gap-4">
-      <CardHeader>
-        <CardTitle className="text-lg tracking-tight">
-          <h1>{copy.title}</h1>
-        </CardTitle>
-        <CardDescription>{copy.description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <form method="post" onSubmit={form.handleSubmit(onSubmit)} className="grid gap-3">
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>
-                  <p>{error}</p>
-                  {isStaleLinkError(errorCode) &&
-                    (copy.newLink ? (
-                      <Link
-                        href={copy.newLink.href}
-                        className="text-primary hover:text-primary/80 mt-2 inline-block text-sm underline underline-offset-4"
-                      >
-                        {copy.newLink.label}
-                      </Link>
-                    ) : (
-                      <p className="mt-2">{copy.newLinkHint}</p>
-                    ))}
-                </AlertDescription>
-              </Alert>
+    <EntryCard>
+      <EntryHeader title={copy.title} description={copy.description} />
+      <Form {...form}>
+        <form
+          method="post"
+          onSubmit={form.handleSubmit(onSubmit)}
+          className="flex flex-col gap-3.5"
+        >
+          {error &&
+            (isStaleLinkError(errorCode) && !copy.newLink ? (
+              // A setup link only comes from an administrator: say so instead of
+              // the generic "request a new one", which has no page to go to.
+              <EntryBanner tone="danger" role="alert" title={copy.invalidTitle}>
+                <p>{copy.newLinkHint}</p>
+              </EntryBanner>
+            ) : (
+              <EntryBanner tone="danger" role="alert">
+                <p>{error}</p>
+                {isStaleLinkError(errorCode) && copy.newLink && (
+                  <TextLink href={safeHref(copy.newLink.href)} variant="inline">
+                    {copy.newLink.label}
+                  </TextLink>
+                )}
+              </EntryBanner>
+            ))}
+
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>
+                  {mode === 'setup'
+                    ? t('auth.passwordToken.password', 'Password')
+                    : t('auth.passwordToken.newPassword', 'New password')}
+                </FormLabel>
+                <FormControl>
+                  <PasswordInput
+                    placeholder={
+                      mode === 'setup'
+                        ? t('auth.passwordToken.choosePassword', 'Choose a password')
+                        : t('auth.passwordToken.enterNewPassword', 'Enter new password')
+                    }
+                    autoComplete="new-password"
+                    disabled={isPending}
+                    {...field}
+                  />
+                </FormControl>
+                <PasswordPolicyHint />
+                <FormMessage />
+              </FormItem>
             )}
+          />
 
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    {mode === 'setup'
-                      ? t('auth.passwordToken.password', 'Password')
-                      : t('auth.passwordToken.newPassword', 'New password')}
-                  </FormLabel>
-                  <FormControl>
-                    <PasswordInput
-                      placeholder={
-                        mode === 'setup'
-                          ? t('auth.passwordToken.choosePassword', 'Choose a password')
-                          : t('auth.passwordToken.enterNewPassword', 'Enter new password')
-                      }
-                      autoComplete="new-password"
-                      disabled={isPending}
-                      {...field}
-                    />
-                  </FormControl>
-                  <PasswordPolicyHint />
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="confirmPassword"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    {t('auth.passwordToken.confirmPassword', 'Confirm password')}
-                  </FormLabel>
-                  <FormControl>
-                    <PasswordInput
-                      placeholder={t('auth.passwordToken.confirmPassword', 'Confirm password')}
-                      autoComplete="new-password"
-                      disabled={isPending}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {mode === 'reset' && (
-              <RevokeApiKeysOption
-                id="reset-revoke-keys"
-                checked={revokeKeys}
-                onCheckedChange={setRevokeKeys}
-                disabled={isPending}
-              />
+          <FormField
+            control={form.control}
+            name="confirmPassword"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('auth.passwordToken.confirmPassword', 'Confirm password')}</FormLabel>
+                <FormControl>
+                  <PasswordInput
+                    placeholder={t('auth.passwordToken.confirmPassword', 'Confirm password')}
+                    autoComplete="new-password"
+                    disabled={isPending}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
             )}
+          />
 
-            <Button className="mt-2" disabled={isPending} type="submit">
-              {isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <KeyRound className="h-4 w-4" />
-              )}
+          {mode === 'reset' && (
+            <RevokeApiKeysOption
+              id="reset-revoke-keys"
+              checked={revokeKeys}
+              onCheckedChange={setRevokeKeys}
+              disabled={isPending}
+            />
+          )}
+
+          <EntryActions>
+            <Button variant="signal" disabled={isPending} type="submit">
+              {isPending ? <Loader2 aria-hidden className="size-4 animate-spin" /> : null}
               {copy.submit}
             </Button>
-
-            <Button variant="link" size="sm" asChild className="mt-1">
-              <Link href="/login">
-                <ArrowLeft className="h-4 w-4" />
-                {t('auth.common.backToSignIn', 'Back to sign in')}
-              </Link>
-            </Button>
-          </form>
-        </Form>
-      </CardContent>
-    </Card>
+            <EntryBackLink />
+          </EntryActions>
+        </form>
+      </Form>
+    </EntryCard>
   )
 }

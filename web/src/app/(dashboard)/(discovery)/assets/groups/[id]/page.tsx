@@ -22,7 +22,7 @@ import {
 } from '@/features/shared'
 import { copyToClipboard } from '@/lib/clipboard'
 import { cn } from '@/lib/utils'
-import { Can, Permission } from '@/lib/permissions'
+import { Can, Permission, usePermissions } from '@/lib/permissions'
 import { CriticalityBadge } from '@/features/assets/components/classification-badges'
 import type { Criticality } from '@/features/assets/types'
 import { Button } from '@/components/ui/button'
@@ -33,13 +33,7 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog, ConfirmSample } from '@/components/confirm-dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu, type ActionMenuEntry } from '@/components/ui/action-menu'
 import { Tabs, TabsContent, TabsList, TabsTrigger, TabsCount } from '@/components/ui/tabs'
 import { GroupHistoryPanel } from '@/features/asset-groups/components/members/group-history-panel'
 import { RuleStatusNote } from '@/features/asset-groups/components/members/rule-status-note'
@@ -54,7 +48,6 @@ import {
   Plus,
   MoreHorizontal,
   ExternalLink,
-  Copy,
   Globe,
   Server,
   Database,
@@ -93,6 +86,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import { confirmName } from '@/lib/confirm-name'
 import { shareableLink } from '@/lib/org-link'
+import { formatDate } from '@/lib/app-locale'
 
 /** Most severe first when sorted descending. */
 const SEVERITY_RANK: Record<string, number> = { critical: 5, high: 4, medium: 3, low: 2, info: 1 }
@@ -142,6 +136,7 @@ export default function AssetGroupDetailPage({ params }: PageProps) {
 
 function AssetGroupDetailContent({ params }: PageProps) {
   const { t } = useTranslation()
+  const { can } = usePermissions()
   const { id } = use(params)
   const router = useRouter()
 
@@ -373,7 +368,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
         ),
         cell: ({ row }) => (
           <span className="text-muted-foreground">
-            {new Date(row.original.lastSeen).toLocaleDateString()}
+            {formatDate(new Date(row.original.lastSeen))}
           </span>
         ),
       },
@@ -384,7 +379,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+
             onClick={() => router.push(groupMemberHref(row.original.id))}
             aria-label={t('assetGroups.detail.openAsset', 'Open {name}', {
               name: row.original.name,
@@ -453,7 +448,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
         ),
         cell: ({ row }) => (
           <span className="text-muted-foreground">
-            {new Date(row.original.discoveredAt).toLocaleDateString()}
+            {formatDate(new Date(row.original.discoveredAt))}
           </span>
         ),
       },
@@ -464,7 +459,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+
             onClick={() => router.push(`/findings/${row.original.id}`)}
             aria-label={t('assetGroups.detail.openAsset', 'Open {name}', {
               name: row.original.title,
@@ -600,11 +595,6 @@ function AssetGroupDetailContent({ params }: PageProps) {
   const envLabel = (env: string) => t(`assetGroups.environment.${env}`, env)
 
   // Handlers
-  const handleCopyId = () => {
-    copyToClipboard(group.id)
-    toast.success(t('assetGroups.idCopied', 'Group ID copied'))
-  }
-
   const handleCopyLink = () => {
     copyToClipboard(shareableLink(`/assets/groups/${group.id}`))
     toast.success(t('assetGroups.linkCopied', 'Link copied'))
@@ -697,6 +687,40 @@ function AssetGroupDetailContent({ params }: PageProps) {
     URL.revokeObjectURL(url)
   }
 
+  const moreItems: ActionMenuEntry[] = [
+    {
+      id: 'copy-link',
+      label: t('assetGroups.detail.copyLink', 'Copy link'),
+      icon: Link,
+      onSelect: handleCopyLink,
+    },
+    {
+      id: 'export-json',
+      section: 'export',
+      label: t('assetGroups.detail.exportJson', 'Export as JSON'),
+      icon: Download,
+      onSelect: () => handleExport('JSON'),
+    },
+    {
+      id: 'export-csv',
+      section: 'export',
+      label: t('assetGroups.detail.exportCsv', 'Export as CSV'),
+      icon: Download,
+      onSelect: () => handleExport('CSV'),
+    },
+    ...(can(Permission.AssetGroupsDelete)
+      ? [
+          {
+            id: 'delete',
+            label: t('assetGroups.detail.deleteGroup', 'Delete group'),
+            icon: Trash2,
+            destructive: true,
+            onSelect: () => setDeleteDialogOpen(true),
+          },
+        ]
+      : []),
+  ]
+
   return (
     <>
       <Main>
@@ -726,52 +750,26 @@ function AssetGroupDetailContent({ params }: PageProps) {
               </div>
             }
           >
-            <Button variant="outline" size="sm" onClick={handleCopyId}>
-              <Copy className="me-2 h-4 w-4" />
-              {t('assetGroups.detail.copyId', 'Copy ID')}
-            </Button>
             <Can permission={Permission.AssetGroupsWrite}>
               <Button variant="outline" size="sm" onClick={handleEdit}>
                 <Pencil className="me-2 h-4 w-4" />
                 {t('assetGroups.detail.edit', 'Edit')}
               </Button>
             </Can>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <ActionMenu
+              title={group.name}
+              label={t('common.actionMenu.more', 'More actions')}
+              items={moreItems}
+              trigger={
                 <Button
                   variant="outline"
                   size="icon"
-                  aria-label={t('assetGroups.detail.moreActions', 'More actions')}
+                  aria-label={t('common.actionMenu.more', 'More actions')}
                 >
-                  <MoreHorizontal className="h-4 w-4" />
+                  <MoreHorizontal className="h-4 w-4" aria-hidden />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleCopyLink}>
-                  <Link className="me-2 h-4 w-4" />
-                  {t('assetGroups.detail.copyLink', 'Copy link')}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => handleExport('JSON')}>
-                  <Download className="me-2 h-4 w-4" />
-                  {t('assetGroups.detail.exportJson', 'Export as JSON')}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleExport('CSV')}>
-                  <Download className="me-2 h-4 w-4" />
-                  {t('assetGroups.detail.exportCsv', 'Export as CSV')}
-                </DropdownMenuItem>
-                <Can permission={Permission.AssetGroupsDelete}>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-destructive"
-                    onClick={() => setDeleteDialogOpen(true)}
-                  >
-                    <Trash2 className="me-2 h-4 w-4" />
-                    {t('assetGroups.detail.deleteGroup', 'Delete group')}
-                  </DropdownMenuItem>
-                </Can>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              }
+            />
           </PageHeader>
 
           <MetricStrip
@@ -802,7 +800,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
                 key="updated"
                 label={t('assetGroups.detail.stat.lastUpdated', 'Last updated')}
               >
-                {new Date(group.updatedAt).toLocaleDateString()}
+                {formatDate(new Date(group.updatedAt))}
               </MetaItem>,
             ]}
           />
@@ -964,23 +962,16 @@ function AssetGroupDetailContent({ params }: PageProps) {
                     <div className="space-y-3 text-sm">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">
-                          {t('assetGroups.detail.info.id', 'Group ID')}
-                        </span>
-                        <span className="font-mono">{group.id}</span>
-                      </div>
-                      <Separator />
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
                           {t('assetGroups.detail.info.created', 'Created')}
                         </span>
-                        <span>{new Date(group.createdAt).toLocaleDateString()}</span>
+                        <span>{formatDate(new Date(group.createdAt))}</span>
                       </div>
                       <Separator />
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">
                           {t('assetGroups.detail.info.updated', 'Updated')}
                         </span>
-                        <span>{new Date(group.updatedAt).toLocaleDateString()}</span>
+                        <span>{formatDate(new Date(group.updatedAt))}</span>
                       </div>
                       <Separator />
                       <div className="flex justify-between">
@@ -1095,7 +1086,6 @@ function AssetGroupDetailContent({ params }: PageProps) {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-9"
                         onClick={() => setRemoveAssetsDialogOpen(true)}
                       >
                         <X className="me-2 h-4 w-4" />
@@ -1104,7 +1094,7 @@ function AssetGroupDetailContent({ params }: PageProps) {
                         })}
                       </Button>
                     )}
-                    <Button size="sm" className="h-9" onClick={() => setAddAssetsDialogOpen(true)}>
+                    <Button size="sm" onClick={() => setAddAssetsDialogOpen(true)}>
                       <Plus className="me-2 h-4 w-4" />
                       {t('assetGroups.detail.addAssets', 'Add assets')}
                     </Button>

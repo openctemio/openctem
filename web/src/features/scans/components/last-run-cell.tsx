@@ -54,11 +54,18 @@ export function LastRunCell({
   run,
   onOpen,
   showHint = false,
+  inline = false,
 }: {
   run: ScanLastRun | null
   onOpen?: (runId: string) => void
   /** Show why a blocked run was refused under it, with the fix link. */
   showHint?: boolean
+  /**
+   * One line (a table row): the state, when it started and, for a blocked
+   * run, the link to where it is fixed, side by side. The reason is the
+   * state's hover text and the link's title.
+   */
+  inline?: boolean
 }) {
   const { t } = useTranslation()
   if (!run) {
@@ -74,16 +81,64 @@ export function LastRunCell({
     ts.total > 0 &&
     ts.queued === ts.total
   const body = (
-    <span className="flex min-w-0 flex-col items-start gap-0.5">
+    <span
+      className={cn(
+        'flex min-w-0',
+        inline
+          ? 'items-center gap-2 whitespace-nowrap [&>:first-child]:shrink-0'
+          : 'flex-col items-start gap-0.5'
+      )}
+    >
       <RunStatusBadge
         status={waiting ? 'queued' : run.status}
         progress={waiting ? undefined : run.progress}
         label={waiting ? t('scans.cell.waitingForSensor') : undefined}
         title={reason}
       />
-      <RelativeTime date={run.started_at ?? run.created_at} className="text-xs" />
+      <RelativeTime
+        date={run.started_at ?? run.created_at}
+        // In a row the time wraps between its words, never cut.
+        className={cn('text-xs', inline && 'min-w-0 whitespace-normal')}
+      />
     </span>
   )
+  if (inline) {
+    const blocked = showHint ? blockedRunHint(run, t) : null
+    return (
+      // The fix link drops under the state and time when they do not fit
+      // beside it, so a wrapped time never runs under the link.
+      <div
+        data-slot="last-run-cell"
+        className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5"
+      >
+        {onOpen ? (
+          <button
+            type="button"
+            className="flex min-w-0 rounded-sm text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpen(run.id)
+            }}
+            aria-label={t('scans.cell.openLatestRun', undefined, { status: run.status })}
+          >
+            {body}
+          </button>
+        ) : (
+          <span className="flex min-w-0">{body}</span>
+        )}
+        {blocked?.fix && (
+          <Link
+            href={safeHref(blocked.fix.href) ?? '#'}
+            title={blocked.text}
+            className="shrink-0 text-meta font-medium text-foreground underline underline-offset-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {blocked.fix.label}
+          </Link>
+        )}
+      </div>
+    )
+  }
   const hint = showHint ? <BlockedRunHint run={run} className="mt-1 max-w-[16rem]" /> : null
   if (!onOpen)
     return hint ? (

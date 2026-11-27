@@ -34,7 +34,12 @@ vi.mock('swr', async () => {
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: React.ReactNode }) => children,
+  usePermissions: () => ({ can: () => true, permissions: [], isLoading: false }),
   Permission: { IntegrationsManage: 'integrations:manage' },
+}))
+vi.mock('@/lib/permissions/can-mutate', async (orig) => ({
+  ...(await orig<typeof import('@/lib/permissions/can-mutate')>()),
+  passesRouteGate: () => true,
 }))
 
 const row = (over: Record<string, unknown>) => ({
@@ -147,7 +152,9 @@ describe('TicketingIntegrationPage', () => {
     mockSync.mockResolvedValue({})
     render(<TicketingIntegrationPage />)
     const jiraRow = screen.getByText('Security board').closest('tr') as HTMLElement
-    await userEvent.click(within(jiraRow).getByRole('button', { name: 'Open row actions' }))
+    await userEvent.click(
+      within(jiraRow).getByRole('button', { name: 'Actions for Security board' })
+    )
     await userEvent.click(await screen.findByRole('menuitem', { name: 'Sync now' }))
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Sync "Security board" now?')
@@ -161,7 +168,9 @@ describe('TicketingIntegrationPage', () => {
     mockDelete.mockResolvedValue({})
     render(<TicketingIntegrationPage />)
     const jiraRow = screen.getByText('Security board').closest('tr') as HTMLElement
-    await userEvent.click(within(jiraRow).getByRole('button', { name: 'Open row actions' }))
+    await userEvent.click(
+      within(jiraRow).getByRole('button', { name: 'Actions for Security board' })
+    )
     await userEvent.click(await screen.findByRole('menuitem', { name: /Delete/ }))
     const dialog = await screen.findByRole('alertdialog')
     const confirm = within(dialog).getByRole('button', { name: 'Delete connection' })

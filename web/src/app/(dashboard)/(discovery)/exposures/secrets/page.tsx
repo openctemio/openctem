@@ -1,6 +1,8 @@
 'use client'
 
 import { Main } from '@/components/layout'
+import Link from '@/components/link'
+import { Button } from '@/components/ui/button'
 import { PageHeader, PageStack, EmptyState, ErrorState } from '@/features/shared'
 import { useFindingTypeStats } from '@/features/exposures/hooks'
 import {
@@ -17,6 +19,7 @@ import { SECRET_SOURCES } from '@/features/exposures/lib/type-sources'
 import { useTenant } from '@/context/tenant-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { Lock } from 'lucide-react'
+import { formatNumber } from '@/lib/app-locale'
 
 export default function SecretsExposurePage() {
   const { t } = useTranslation()
@@ -34,7 +37,7 @@ export default function SecretsExposurePage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('exposures.secrets.title', 'Secrets')}
+          title={t('exposures.page.title', 'Exposures')}
           description={t(
             'exposures.secrets.description',
             'Secrets committed to your code (API keys, tokens, passwords), by severity and remediation status.'
@@ -60,8 +63,13 @@ export default function SecretsExposurePage() {
             title={t('exposures.secrets.emptyTitle', 'No secret exposures yet')}
             description={t(
               'exposures.secrets.emptyDescription',
-              'Configure secret scanning to detect exposed credentials in your codebase.'
+              'Scan your code repositories to find passwords and keys left in the code.'
             )}
+            action={
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/scans">{t('exposures.empty.setUpScan', 'Set up a scan')}</Link>
+              </Button>
+            }
           />
         ) : !typeStats.scoped ? (
           <TypeBreakdownUnavailable
@@ -81,7 +89,7 @@ export default function SecretsExposurePage() {
                 description={t(
                   'exposures.secrets.severityDescription',
                   '{count} secret findings by severity',
-                  { count: typeStats.total.toLocaleString() }
+                  { count: formatNumber(typeStats.total) }
                 )}
               >
                 <SeverityDonut bySeverity={typeStats.bySeverity} />

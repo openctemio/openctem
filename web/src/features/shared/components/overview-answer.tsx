@@ -24,7 +24,7 @@ export function OverviewAnswer({
   children,
   className,
 }: {
-  /** The question the page answers ("P0 fixed within target"). */
+  /** The question the page answers ("Highest priority (P0) fixed within target"). */
   question: string
   /** The answer, already formatted ("86%"). Ignored when `notMeasured` is set. */
   value?: string
@@ -135,7 +135,8 @@ function ActRow({ row }: { row: OverviewActItem }) {
         className="flex min-w-0 items-baseline justify-between gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5"
       >
         <span className="min-w-0">
-          <span className="block truncate font-medium">{row.label}</span>
+          {/* Wraps instead of cutting: a translated label runs long beside the status. */}
+          <span className="block font-medium break-words text-pretty">{row.label}</span>
           {row.detail ? <span className="block text-muted-foreground">{row.detail}</span> : null}
         </span>
         <span

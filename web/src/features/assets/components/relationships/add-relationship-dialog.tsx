@@ -740,7 +740,7 @@ export function AddRelationshipDialog({
                       <span className="ms-1 text-xs font-normal text-muted-foreground">
                         {t(
                           'assets.relationshipAdd.appliedToAll',
-                          '— applied to all {n} relationships',
+                          '(applied to all {n, plural, one {# relationship} other {# relationships}})',
                           { n: selectedTargets.length }
                         )}
                       </span>
@@ -823,7 +823,7 @@ export function AddRelationshipDialog({
                         <span className="ms-1 text-xs text-muted-foreground">
                           {t(
                             'assets.relationshipAdd.appliedToAll',
-                            '— applied to all {n} relationships',
+                            '(applied to all {n, plural, one {# relationship} other {# relationships}})',
                             { n: selectedTargets.length }
                           )}
                         </span>

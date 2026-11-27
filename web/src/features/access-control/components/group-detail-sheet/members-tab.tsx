@@ -19,6 +19,7 @@ import { MemberRoleConfig, getInitials, type GroupMember } from '@/features/acce
 import { useState, useEffect } from 'react'
 import { daysUntil, formatShortDate } from '@/features/organization/lib/external-access'
 import { ListSearch } from '@/features/shared/components/list-search'
+import { BreakText } from '@/features/shared/components/break-text'
 
 interface MembersTabProps {
   members: GroupMember[]
@@ -152,10 +153,10 @@ export function MembersTab({
                   </Avatar>
                   <div className="min-w-0">
                     <p className="text-sm font-medium break-words">{name}</p>
-                    <p className="text-xs break-all text-muted-foreground">
-                      {email}
+                    <p className="text-xs break-words text-muted-foreground">
+                      <BreakText>{email}</BreakText>
                       {(member.added_by_name || member.added_by) && (
-                        <span className="ms-2 text-xs text-muted-foreground/60">
+                        <span className="ms-2 text-xs text-muted-foreground">
                           {t('org.teamMembers.addedBy', 'Added by {name}', {
                             name: member.added_by_name || member.added_by || '',
                           })}
@@ -209,6 +210,10 @@ export function MembersTab({
                   </Badge>
                   {(onRemoveMember || onChangeEnd) && (
                     <DataTableRowActions
+                      title={member.name}
+                      label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                        name: member.name,
+                      })}
                       actions={[
                         ...(onChangeEnd
                           ? [
@@ -256,7 +261,7 @@ export function MembersTab({
           </span>
           <div className="flex items-center gap-1">
             <Button
-              size="sm"
+              size="icon-sm"
               variant="outline"
               disabled={offset === 0}
               aria-label={t('org.teamMembers.prev', 'Previous page')}
@@ -265,7 +270,7 @@ export function MembersTab({
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Button
-              size="sm"
+              size="icon-sm"
               variant="outline"
               disabled={offset + limit >= totalCount}
               aria-label={t('org.teamMembers.next', 'Next page')}

@@ -29,7 +29,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState, PageStack } from '@/features/shared'
+import { EmptyState, PageHeader, PageStack } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import type { SupportGrant } from '@/lib/api/generated'
 
@@ -117,19 +117,42 @@ export function SupportAccessSettings({
     }
   }
 
+  // The page header carries the one main action (Grant access), as on the
+  // sibling settings pages; the explainer below only explains.
+  const header = (
+    <PageHeader
+      title={t('supportAccess.title', 'Support access')}
+      description={t(
+        'supportAccess.description',
+        'Let platform support read your data, read-only and for a limited time, while they help you.'
+      )}
+    >
+      {canRead && isOwner && (
+        <Button onClick={() => setGranting(true)}>
+          <Plus className="size-4" aria-hidden="true" />
+          {t('supportAccess.grant.open', 'Grant access')}
+        </Button>
+      )}
+    </PageHeader>
+  )
+
   if (!canRead) {
     return (
-      <Alert>
-        <AlertCircle className="size-4" />
-        <AlertDescription>
-          {t('supportAccess.ownersOnly', 'Only owners and admins can see support access.')}
-        </AlertDescription>
-      </Alert>
+      <PageStack>
+        {header}
+        <Alert>
+          <AlertCircle className="size-4" />
+          <AlertDescription>
+            {t('supportAccess.ownersOnly', 'Only owners and admins can see support access.')}
+          </AlertDescription>
+        </Alert>
+      </PageStack>
     )
   }
 
   return (
     <PageStack>
+      {header}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
@@ -171,12 +194,6 @@ export function SupportAccessSettings({
             </li>
           </ul>
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            {isOwner && (
-              <Button onClick={() => setGranting(true)}>
-                <Plus className="size-4" aria-hidden="true" />
-                {t('supportAccess.grant.open', 'Grant access')}
-              </Button>
-            )}
             <Button variant="outline" asChild>
               <Link href={SUPPORT_AUDIT_HREF}>
                 {t('supportAccess.auditLink', 'View support activity in the audit log')}

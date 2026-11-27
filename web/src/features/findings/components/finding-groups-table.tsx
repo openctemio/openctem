@@ -15,12 +15,15 @@ import {
   DataTable,
   ErrorState,
   SeverityBadge,
+  type DataTableBulk,
   type DataTableRowGroups,
+  type DataTableSelectMode,
   type MobileRowSelection,
 } from '@/features/shared'
 import { formatEpssScore } from '@/lib/epss'
 import { KevBadge } from '@/components/ui/kev-badge'
 import { cn } from '@/lib/utils'
+import { maskSensitiveText } from '@/lib/mask-sensitive'
 import { useLazyGroupRows } from '@/hooks/use-lazy-group-rows'
 import type { FilterPanelToggleProps } from '@/features/shared/components/filter-button'
 import type { DataTableSearch } from '@/features/shared'
@@ -129,6 +132,16 @@ class GroupFilterUnsupported extends Error {}
 
 const humanize = (v: string) => v.charAt(0).toUpperCase() + v.slice(1).replace(/_/g, ' ')
 
+/**
+ * A group's name as a header may show it. A rule, asset, component, type,
+ * family or CVE label is text a scanner or an importer wrote, so it is masked
+ * like a row's title. An owner group is named after a member of the
+ * organization (an identity, not scanner text) and stays as it is.
+ */
+export function groupDisplayLabel(group: Pick<FindingGroup, 'group_type' | 'label'>): string {
+  return group.group_type === 'owner' ? group.label : maskSensitiveText(group.label)
+}
+
 /** Group name plus the facts that identify it (type, owner, CVSS / EPSS, KEV). */
 function GroupTitle({ group }: { group: FindingGroup }) {
   const { t } = useTranslation()
@@ -141,13 +154,14 @@ function GroupTitle({ group }: { group: FindingGroup }) {
   }
   if (group.group_type === 'asset') {
     if (meta.asset_type) facts.push(humanize(String(meta.asset_type)))
+    // The owner is a member's name: an identity, not scanner text.
     if (meta.owner)
       facts.push(t('findings.groupsTable.owner', 'Owner {name}', { name: String(meta.owner) }))
   }
   if (group.group_type === 'component' && meta.ecosystem) facts.push(String(meta.ecosystem))
   if (group.group_type === 'rule') {
     // The rule id is the key; the label is the rule name or a title.
-    if (group.label !== group.group_key) facts.push(group.group_key)
+    if (group.label !== group.group_key) facts.push(maskSensitiveText(group.group_key))
     if (Array.isArray(meta.tools) && meta.tools.length > 0) facts.push(meta.tools.join(', '))
   }
   facts.push(
@@ -164,6 +178,7 @@ function GroupTitle({ group }: { group: FindingGroup }) {
   }
 
   const isSeverityGroup = group.group_type === 'severity'
+  const label = groupDisplayLabel(group)
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1">
       {isSeverityGroup ? (
@@ -176,9 +191,9 @@ function GroupTitle({ group }: { group: FindingGroup }) {
             'max-w-[28rem] truncate text-sm font-medium text-foreground',
             group.group_type === 'cve' && /^CVE-/i.test(group.label) && 'font-mono'
           )}
-          title={group.label}
+          title={label}
         >
-          {group.group_type === 'finding_type' ? humanize(group.label) : group.label}
+          {group.group_type === 'finding_type' ? humanize(label) : label}
         </span>
       )}
       {group.group_type === 'cve' && group.severity && (
@@ -293,6 +308,10 @@ export interface FindingGroupsTableProps<TRow extends { id: string }> {
   onViewGroup?: (group: FindingGroup) => void
   onRowClick?: (row: TRow) => void
   onSelectionChange?: (rows: TRow[]) => void
+  /** Several rows at once: the table's checkbox column and bulk bar. */
+  bulk?: DataTableBulk<TRow>
+  /** Phone select mode held by the page (its More offers "Select"). */
+  selectMode?: DataTableSelectMode
   resetSelectionKey?: string | number
   mobileRow?: (row: TRow, selection: MobileRowSelection) => React.ReactNode
   filterToggle?: FilterPanelToggleProps
@@ -302,6 +321,8 @@ export interface FindingGroupsTableProps<TRow extends { id: string }> {
   toolbarEnd?: React.ReactNode
   /** A full-width row under the toolbar (the active context-filter chips). */
   toolbarBelow?: React.ReactNode
+  /** Page content between the toolbar and the rows (`DataTable` `beforeRows`). */
+  beforeRows?: React.ReactNode
   /** Bump to reload groups and their rows after a change. */
   reloadKey?: number
   /** Called with the groups on screen (e.g. to decide on page-level actions). */
@@ -324,6 +345,8 @@ export function FindingGroupsTable<TRow extends { id: string }>({
   onViewGroup,
   onRowClick,
   onSelectionChange,
+  bulk,
+  selectMode,
   resetSelectionKey,
   mobileRow,
   filterToggle,
@@ -331,6 +354,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
   toolbarStart,
   toolbarEnd,
   toolbarBelow,
+  beforeRows,
   reloadKey = 0,
   onGroupsLoaded,
   emptyMessage,
@@ -486,12 +510,15 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       selectable: true,
       expandedKeys,
       onExpandedKeysChange: setExpandedKeys,
-      getLabel: (key) => byKey.get(key)?.label || key,
+      getLabel: (key) => {
+        const g = byKey.get(key)
+        return g ? groupDisplayLabel(g) || maskSensitiveText(key) : maskSensitiveText(key)
+      },
       // An open group that has not answered yet shows skeleton rows.
       isGroupLoading: (key) => expandable && (!lazy.groups[key] || !!lazy.groups[key]?.loading),
       renderHeader: (key) => {
         const g = byKey.get(key)
-        return g ? <GroupTitle group={g} /> : key
+        return g ? <GroupTitle group={g} /> : maskSensitiveText(key)
       },
       renderSummary: (key) => {
         const g = byKey.get(key)
@@ -615,6 +642,7 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       toolbarStart={toolbarStart}
       toolbarEnd={toolbarEnd}
       toolbarBelow={toolbarBelow}
+      beforeRows={beforeRows}
       getRowId={(r) => r.id}
       manualPagination
       rowCount={data?.pagination?.total ?? 0}
@@ -626,6 +654,8 @@ export function FindingGroupsTable<TRow extends { id: string }>({
       isLoading={isLoading && !data}
       onRowClick={onRowClick}
       onSelectionChange={onSelectionChange}
+      bulk={bulk}
+      selectMode={selectMode}
       resetSelectionKey={resetSelectionKey}
       showSelectionCount={false}
       mobileRow={mobileRow}

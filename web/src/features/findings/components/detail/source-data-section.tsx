@@ -31,6 +31,7 @@ import { SafeExternalLink } from '@/components/safe-external-link'
 import Link from '@/components/link'
 import { formatEpssScore } from '@/lib/epss'
 import type { FindingSourceData, FindingSourceScore } from '../../types'
+import { formatDate } from '@/lib/app-locale'
 
 type Translate = (key: string, fallback?: string, vars?: Record<string, string | number>) => string
 
@@ -72,11 +73,11 @@ function humanize(s: string): string {
   return s.replace(/_/g, ' ')
 }
 
-function day(iso: string | undefined, locale: string): string | undefined {
+function day(iso: string | undefined, _locale: string): string | undefined {
   if (!iso) return undefined
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return undefined
-  return d.toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })
+  return formatDate(d, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 function Mono({ children }: { children: React.ReactNode }) {
@@ -343,7 +344,7 @@ export function SourceDataSection({
               <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
                 {extra.map(([k, v]) => (
                   <div key={k} className="min-w-0">
-                    <dt className="text-xs break-all text-muted-foreground">{k}</dt>
+                    <dt className="text-xs break-words text-muted-foreground">{k}</dt>
                     <dd className="text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">{v}</dd>
                   </div>
                 ))}

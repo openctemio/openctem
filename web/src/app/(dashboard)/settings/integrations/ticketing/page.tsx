@@ -6,19 +6,14 @@ import { Main } from '@/components/layout'
 import type { ColumnDef } from '@tanstack/react-table'
 import {
   PageHeader,
-  EmptyState,
-  ErrorState,
   DataTable,
   DataTableRowActions,
-  MetricStrip,
   RelativeTime,
   StackedCell,
-  type MetricStripItem,
   PageStack,
 } from '@/features/shared'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
   DialogContent,
@@ -84,6 +79,11 @@ import { SEVERITY_LEVELS, type SeverityLevel } from '@/lib/severity'
 import { useSeverityLabel } from '@/hooks/use-scale-labels'
 import { mutate } from '@/lib/swr-mutate'
 import { SafeExternalLink } from '@/components/safe-external-link'
+import {
+  IntegrationList,
+  integrationStatusGroup,
+  type IntegrationStatusGroup,
+} from '@/features/integrations/components/integration-list'
 import { useTranslation } from '@/context/i18n-provider'
 
 type TranslateFn = ReturnType<typeof useTranslation>['t']
@@ -519,7 +519,7 @@ function ConfigureTicketingDialog({
                     type="button"
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 shrink-0"
+                    className="shrink-0"
                     onClick={() => setStatusInbound((rows) => rows.filter((_, j) => j !== i))}
                     aria-label={t('ticketingIntegration.configure.removeMapping', 'Remove mapping')}
                   >
@@ -720,7 +720,13 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
   if (!supported) {
     return (
       <>
-        <DataTableRowActions actions={[{ ...deleteAction, separatorBefore: false }]} />
+        <DataTableRowActions
+          title={integration.name}
+          label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+            name: integration.name,
+          })}
+          actions={[{ ...deleteAction, separatorBefore: false }]}
+        />
         {confirmDelete}
       </>
     )
@@ -729,6 +735,8 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
   return (
     <>
       <DataTableRowActions
+        title={integration.name}
+        label={t('common.rowActions.actionsFor', 'Actions for {name}', { name: integration.name })}
         actions={[
           ...(integration.provider === 'jira'
             ? [
@@ -751,6 +759,9 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
                   icon: PlugZap,
                   onClick: () => void handleTest(),
                   disabled: isTesting,
+                  disabledReason: isTesting
+                    ? t('ticketingIntegration.actions.testBusy', 'Test in progress')
+                    : undefined,
                   route: 'POST /api/v1/integrations/{id}/test' as const,
                 },
               ]
@@ -764,6 +775,9 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
                   icon: RefreshCw,
                   onClick: () => setSyncOpen(true),
                   disabled: isSyncing,
+                  disabledReason: isSyncing
+                    ? t('ticketingIntegration.actions.syncBusy', 'Sync in progress')
+                    : undefined,
                   route: 'POST /api/v1/integrations/{id}/sync' as const,
                 },
               ]
@@ -773,6 +787,9 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
             icon: Route,
             onClick: () => setRoutingOpen(true),
             disabled: !jiraReady,
+            disabledReason: !jiraReady
+              ? t('ticketingIntegration.actions.needsJira', 'Needs a connected Jira integration')
+              : undefined,
             route: 'PUT /api/v1/integrations/{id}' as const,
           },
           {
@@ -780,6 +797,9 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
             icon: Settings,
             onClick: () => setConfigOpen(true),
             disabled: !jiraReady,
+            disabledReason: !jiraReady
+              ? t('ticketingIntegration.actions.needsJira', 'Needs a connected Jira integration')
+              : undefined,
             route: 'PUT /api/v1/integrations/{id}' as const,
           },
           {
@@ -787,6 +807,9 @@ function TicketingRowActions({ integration }: { integration: Integration }) {
             icon: SlidersHorizontal,
             onClick: () => setPolicyOpen(true),
             disabled: !jiraReady,
+            disabledReason: !jiraReady
+              ? t('ticketingIntegration.actions.needsJira', 'Needs a connected Jira integration')
+              : undefined,
             route: 'PUT /api/v1/integrations/{id}/ticket-create-policy' as const,
           },
           ...(integration.provider === 'jira'
@@ -891,6 +914,7 @@ function useColumns(): ColumnDef<Integration>[] {
         id: 'project',
         header: t('ticketingIntegration.columns.defaultProject', 'Default project'),
         accessorFn: (i) => getProjectKey(i),
+        meta: { hideBelow: 900 },
         cell: ({ getValue }) => <span className="text-sm">{getValue<string>()}</span>,
       },
       {
@@ -901,10 +925,11 @@ function useColumns(): ColumnDef<Integration>[] {
           row.original.base_url ? (
             <SafeExternalLink
               href={row.original.base_url}
-              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+              title={hostnameOf(row.original.base_url)}
+              className="flex min-w-0 max-w-full items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
             >
-              <ExternalLink className="h-3 w-3" />
-              {hostnameOf(row.original.base_url)}
+              <ExternalLink className="h-3 w-3 shrink-0" />
+              <span className="min-w-0 truncate">{hostnameOf(row.original.base_url)}</span>
             </SafeExternalLink>
           ) : (
             <span className="text-sm text-muted-foreground">—</span>
@@ -919,6 +944,7 @@ function useColumns(): ColumnDef<Integration>[] {
         id: 'last_sync',
         header: t('ticketingIntegration.columns.lastSync', 'Last sync'),
         accessorFn: (i) => i.last_sync_at ?? '',
+        meta: { hideBelow: 900 },
         cell: ({ row }) => <RelativeTime date={row.original.last_sync_at} />,
       },
       {
@@ -1302,51 +1328,19 @@ export default function TicketingIntegrationPage() {
 
   const connections = integrationsData?.data ?? []
 
-  const supported = connections.filter(isSupported)
-  const connected = supported.filter((c) => c.status === 'connected').length
-  // An unsupported row does nothing, so it needs attention rather than
-  // counting as pending.
-  const needsAttention =
-    connections.length -
-    supported.length +
-    supported.filter((c) => c.status === 'error' || c.status === 'expired').length
-  const pending = supported.filter(
-    (c) => c.status === 'pending' || c.status === 'disconnected'
-  ).length
+  // The shared strip groups; an unsupported row does nothing, so it needs
+  // attention rather than counting as pending.
+  const groupOf = (c: (typeof connections)[number]): IntegrationStatusGroup | null =>
+    isSupported(c) ? integrationStatusGroup(c.status) : 'attention'
 
-  // The strip filters the list: click a tile to show only those connections, again to clear.
-  const [group, setGroup] = useState<'connected' | 'attention' | 'pending' | null>(null)
-  const inGroup = (c: (typeof connections)[number], g: 'connected' | 'attention' | 'pending') => {
-    if (g === 'connected') return isSupported(c) && c.status === 'connected'
-    if (g === 'attention') return !isSupported(c) || c.status === 'error' || c.status === 'expired'
-    return isSupported(c) && (c.status === 'pending' || c.status === 'disconnected')
-  }
-  const visible = group ? connections.filter((c) => inGroup(c, group)) : connections
-  const tile = (g: 'connected' | 'attention' | 'pending') => ({
-    active: group === g,
-    onClick: () => setGroup(group === g ? null : g),
-  })
-  const metrics: MetricStripItem[] = [
-    {
-      key: 'connected',
-      label: t('ticketingIntegration.status.connected', 'Connected'),
-      value: connected,
-      ...tile('connected'),
-    },
-    {
-      key: 'attention',
-      label: t('ticketingIntegration.metrics.needsAttention', 'Needs attention'),
-      value: needsAttention,
-      tone: 'danger',
-      ...tile('attention'),
-    },
-    {
-      key: 'pending',
-      label: t('ticketingIntegration.status.pending', 'Pending'),
-      value: pending,
-      ...tile('pending'),
-    },
-  ]
+  const connectButton = (
+    <Can route="POST /api/v1/integrations">
+      <Button size="sm" onClick={() => setDialogOpen(true)}>
+        <Plus className="me-2 h-4 w-4" />
+        {t('ticketingIntegration.connect.title', 'Connect Jira')}
+      </Button>
+    </Can>
+  )
 
   return (
     <Main>
@@ -1358,67 +1352,40 @@ export default function TicketingIntegrationPage() {
             'Connect ticketing systems to create and track remediation tickets automatically.'
           )}
         >
-          <Can route="POST /api/v1/integrations">
-            <Button size="sm" onClick={() => setDialogOpen(true)}>
-              <Plus className="me-2 h-4 w-4" />
-              {t('ticketingIntegration.connect.title', 'Connect Jira')}
-            </Button>
-          </Can>
+          {/* The create button stays in the header; the empty state only explains. */}
+          {connectButton}
         </PageHeader>
 
-        {error ? (
-          <div>
-            <ErrorState
-              title={t('ticketingIntegration.page.errorTitle', 'ticketing connections')}
-              error={error}
-              onRetry={() => void reloadIntegrations()}
-            />
-          </div>
-        ) : (
-          <>
-            <MetricStrip loading={isLoading} items={metrics} />
-
-            <div>
-              {isLoading ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-9 w-full max-w-sm" />
-                  <Skeleton className="h-48 w-full" />
-                </div>
-              ) : connections.length === 0 ? (
-                <EmptyState
-                  icon={Ticket}
-                  title={t(
-                    'ticketingIntegration.page.emptyTitle',
-                    'No ticketing systems connected'
-                  )}
-                  description={t(
-                    'ticketingIntegration.page.emptyDescription',
-                    'Connect a ticketing system to automatically create and track remediation tickets.'
-                  )}
-                  action={
-                    <Can route="POST /api/v1/integrations">
-                      <Button size="sm" onClick={() => setDialogOpen(true)}>
-                        <Plus className="me-2 h-4 w-4" />
-                        {t('ticketingIntegration.connect.title', 'Connect Jira')}
-                      </Button>
-                    </Can>
-                  }
-                />
-              ) : (
-                <DataTable
-                  columns={columns}
-                  data={visible}
-                  getRowId={(c) => c.id}
-                  searchPlaceholder={t(
-                    'ticketingIntegration.page.searchPlaceholder',
-                    'Search connections…'
-                  )}
-                  showSelectionCount={false}
-                />
+        <IntegrationList
+          rows={connections}
+          isLoading={isLoading}
+          error={error}
+          onRetry={() => void reloadIntegrations()}
+          errorTitle={t('ticketingIntegration.page.errorTitle', 'ticketing connections')}
+          groupOf={groupOf}
+          empty={{
+            icon: Ticket,
+            title: t('ticketingIntegration.page.emptyTitle', 'No ticketing systems connected'),
+            description: t(
+              'ticketingIntegration.page.emptyDescription',
+              'Connect a ticketing system to automatically create and track remediation tickets.'
+            ),
+          }}
+        >
+          {(visible) => (
+            <DataTable
+              columns={columns}
+              data={visible}
+              getRowId={(c) => c.id}
+              searchPlaceholder={t(
+                'ticketingIntegration.page.searchPlaceholder',
+                'Search connections…'
               )}
-            </div>
-          </>
-        )}
+              showSelectionCount={false}
+              pinActions
+            />
+          )}
+        </IntegrationList>
 
         <ConnectJiraDialog
           open={dialogOpen}

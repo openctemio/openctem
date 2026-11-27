@@ -3,14 +3,76 @@
 import { useTranslation } from '@/context/i18n-provider'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Badge } from '@/components/ui/badge'
-import { DataTable, RelativeTime, StackedCell } from '@/features/shared'
-import { humanizeIdentifier } from '@/lib/humanize-identifier'
+import { History } from 'lucide-react'
+import {
+  DataTable,
+  EmptyState,
+  MetaLine,
+  RelativeTime,
+  type FilterPanelToggleProps,
+} from '@/features/shared'
+import { toDisplayText } from '@/lib/untrusted-text'
+import { EmptyCell } from '@/features/shared/components/empty-cell'
+import { CellText } from '@/features/shared/components/cell-text'
+import { auditActionLabel } from '../lib/audit-action-label'
 import type { AdminAuditEntry } from '../types'
 
-/** "organization.idp_create" -> "Identity provider create". */
-export function humanizeAction(action: string): string {
-  const [area, verb] = action.split('.')
-  return humanizeIdentifier(verb ?? area)
+function ResultBadge({ entry }: { entry: AdminAuditEntry }) {
+  const { t } = useTranslation()
+  return entry.success ? (
+    <Badge variant="secondary">{t('admin.adminActivityTable.succeeded', 'Succeeded')}</Badge>
+  ) : (
+    <Badge variant="destructive">
+      {entry.response_status
+        ? t('admin.adminActivityTable.failed', 'Failed ({response_status})', {
+            response_status: entry.response_status,
+          })
+        : t('admin.adminActivityTable.failedPlain', 'Failed')}
+    </Badge>
+  )
+}
+
+/**
+ * An administrator action on a phone:
+ *
+ *   Password changed                                       Succeeded
+ *   admin@example.com
+ *   8 minutes ago   192.0.2.10
+ */
+export function AdminActivityPhoneCard({
+  entry,
+  showIp,
+}: {
+  entry: AdminAuditEntry
+  showIp: boolean
+}) {
+  const { t } = useTranslation()
+  const email = toDisplayText(entry.admin_email)
+  return (
+    <div data-slot="activity-card" className="flex w-full min-w-0 flex-col gap-1 px-3 py-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0 flex-1 font-medium break-words">
+          {auditActionLabel(t, entry.action)}
+        </span>
+        <ResultBadge entry={entry} />
+      </div>
+      {email && (
+        <span data-token className="text-cap [overflow-wrap:anywhere]">
+          {email}
+        </span>
+      )}
+      <MetaLine
+        items={[
+          <RelativeTime key="when" date={entry.created_at} />,
+          showIp && entry.ip_address ? (
+            <span key="ip" className="tabular-nums">
+              {entry.ip_address}
+            </span>
+          ) : null,
+        ]}
+      />
+    </div>
+  )
 }
 
 function useColumns(): ColumnDef<AdminAuditEntry>[] {
@@ -19,45 +81,71 @@ function useColumns(): ColumnDef<AdminAuditEntry>[] {
     {
       accessorKey: 'action',
       header: t('admin.adminActivityTable.action', 'Action'),
+      // The action is the row's name: what happened in words, then its code,
+      // on one line. It stays in view while the table scrolls sideways.
+      meta: {
+        kind: 'name',
+        pin: 'start',
+        minWidth: 168,
+        label: t('admin.adminActivityTable.action', 'Action'),
+      },
       cell: ({ row }) => (
-        <StackedCell
-          primary={humanizeAction(row.original.action)}
-          secondary={row.original.action}
-        />
+        <span className="truncate font-medium">{auditActionLabel(t, row.original.action)}</span>
       ),
     },
     {
       accessorKey: 'admin_email',
       header: t('admin.adminActivityTable.administrator', 'Administrator'),
-      cell: ({ row }) => <span className="text-sm">{row.original.admin_email}</span>,
+      // Room for an address on two lines at most, broken at its separators
+      // (a 176 px column broke one into three lines and made every row tall);
+      // it gives way down to its floor on a narrow frame.
+      meta: {
+        kind: 'text',
+        width: 240,
+        minWidth: 160,
+        label: t('admin.adminActivityTable.administrator', 'Administrator'),
+      },
+      cell: ({ row }) => <CellText dir="auto">{toDisplayText(row.original.admin_email)}</CellText>,
     },
     {
       accessorKey: 'success',
       header: t('admin.adminActivityTable.result', 'Result'),
-      cell: ({ row }) =>
-        row.original.success ? (
-          <Badge variant="secondary">{t('admin.adminActivityTable.succeeded', 'Succeeded')}</Badge>
-        ) : (
-          <Badge variant="destructive">
-            {row.original.response_status
-              ? t('admin.adminActivityTable.failed', 'Failed ({response_status})', {
-                  response_status: row.original.response_status,
-                })
-              : t('admin.adminActivityTable.failedPlain', 'Failed')}
-          </Badge>
-        ),
+      meta: { kind: 'status', width: 128, label: t('admin.adminActivityTable.result', 'Result') },
+      cell: ({ row }) => <ResultBadge entry={row.original} />,
     },
     {
       accessorKey: 'ip_address',
       header: t('admin.adminActivityTable.ipAddress', 'IP address'),
-      cell: ({ row }) => (
-        <span className="text-sm tabular-nums">{row.original.ip_address || '—'}</span>
-      ),
+      meta: {
+        kind: 'text',
+        width: 144,
+        hideBelow: 900,
+        label: t('admin.adminActivityTable.ipAddress', 'IP address'),
+      },
+      cell: ({ row }) =>
+        row.original.ip_address ? (
+          <span
+            data-token
+            className="block whitespace-normal tabular-nums [overflow-wrap:anywhere]"
+          >
+            {row.original.ip_address}
+          </span>
+        ) : (
+          <EmptyCell title={t('admin.adminActivityTable.noIp', 'No address recorded')} />
+        ),
     },
     {
       accessorKey: 'created_at',
       header: t('admin.adminActivityTable.when', 'When'),
-      cell: ({ row }) => <RelativeTime date={row.original.created_at} className="text-sm" />,
+      meta: {
+        kind: 'datetime-recent',
+        // "less than a minute ago" whole; on a narrow frame it wraps rather
+        // than push the column, and its header, past the frame's edge.
+        width: 176,
+        minWidth: 120,
+        label: t('admin.adminActivityTable.when', 'When'),
+      },
+      cell: ({ row }) => <RelativeTime date={row.original.created_at} />,
     },
   ]
 }
@@ -73,8 +161,26 @@ interface AdminActivityTableProps {
     onPageChange: (page: number) => void
   }
   toolbarStart?: React.ReactNode
+  /** The list's name and count, leading the toolbar row (`ListToolbarTitle`). */
+  toolbarTitle?: React.ReactNode
+  /** The list's own actions (Export), before the Display menu. */
+  toolbarEnd?: React.ReactNode
+  /** The active filter chips, one row under the toolbar. */
+  toolbarBelow?: React.ReactNode
+  /** The phone's filter entry (a sheet), joined to the toolbar's start. */
+  filterToggle?: FilterPanelToggleProps
   /** Opens one entry (the detail sheet). */
   onRowClick?: (entry: AdminAuditEntry) => void
+  /** The table's accessible name. */
+  caption?: string
+  /** A failed read: shown in the table with Retry, the toolbar stays. */
+  error?: unknown
+  onRetry?: () => void
+  /** A re-read while rows are shown. */
+  isRefreshing?: boolean
+  /** Filters narrow the list: the empty state offers Clear filters. */
+  isFiltered?: boolean
+  onClearFilters?: () => void
 }
 
 /** Platform admin audit trail (admin_audit_logs). */
@@ -83,7 +189,17 @@ export function AdminActivityTable({
   isLoading,
   paging,
   toolbarStart,
+  toolbarTitle,
+  toolbarEnd,
+  toolbarBelow,
+  filterToggle,
   onRowClick,
+  caption,
+  error,
+  onRetry,
+  isRefreshing,
+  isFiltered,
+  onClearFilters,
 }: AdminActivityTableProps) {
   const { t } = useTranslation()
   const allColumns = useColumns()
@@ -98,18 +214,43 @@ export function AdminActivityTable({
     <DataTable
       columns={columns}
       data={entries}
+      caption={caption ?? t('admin.adminActivityTable.caption', 'Administrator activity')}
       getRowId={(e) => e.id}
       isLoading={isLoading}
+      isRefreshing={isRefreshing}
+      refreshingLabel={t('admin.adminActivityTable.refreshing', 'Refreshing activity')}
+      error={error}
+      onRetry={onRetry}
+      errorTitle={t('admin.securityActivityPage.adminActivity', 'admin activity')}
       showSearch={false}
-      showColumnToggle={false}
+      showToolbar={!!toolbarStart || !!toolbarTitle}
       showSelectionCount={false}
       showPagination={!!paging}
+      toolbarTitle={toolbarTitle}
+      toolbarEnd={toolbarEnd}
       toolbarStart={toolbarStart}
-      emptyMessage={t(
-        'admin.adminActivityTable.noAdministratorActivityYet',
-        'No administrator activity yet'
-      )}
-      mobileCards
+      toolbarBelow={toolbarBelow}
+      filterToggle={filterToggle}
+      isFiltered={isFiltered}
+      onClearFilters={onClearFilters}
+      emptyState={{
+        nothingYet: (
+          <EmptyState
+            icon={History}
+            title={t(
+              'admin.adminActivityTable.noAdministratorActivityYet',
+              'No administrator activity yet'
+            )}
+          />
+        ),
+        noMatch: {
+          title: t('admin.adminActivityTable.noMatch', 'No activity matches these filters'),
+        },
+      }}
+      paginationNoun={t('admin.adminActivityTable.noun', 'events')}
+      // A phone card with fixed slots: the action's code gets a line of its
+      // own instead of breaking beside the action's words.
+      mobileRow={(e) => <AdminActivityPhoneCard entry={e} showIp={showIp} />}
       onRowClick={onRowClick}
       {...(paging && {
         manualPagination: true,

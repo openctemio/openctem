@@ -10,6 +10,7 @@
  * titles, summaries and asset names are scan output, shown as text.
  */
 
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { useCallback, useMemo, useState } from 'react'
 import Link from '@/components/link'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -27,8 +28,8 @@ import {
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ToolbarAction } from '@/features/shared/components/toolbar-action'
 import {
   DataTable,
   DataTableColumnHeader,
@@ -36,6 +37,7 @@ import {
   EmptyState,
   ErrorState,
   FilterSelect,
+  FilterToggle,
   MetricStrip,
   RelativeTime,
   SeverityBadge,
@@ -96,6 +98,7 @@ import {
   type ExposureItemRow,
   type ExposureItemStats,
 } from '../lib/exposure-items'
+import { formatNumber } from '@/lib/app-locale'
 
 const PAGE_SIZES = [20, 50, 100]
 const SORT_FIELDS = ['severity', 'last_seen', 'first_seen', 'asset_name', 'state'] as const
@@ -295,6 +298,8 @@ function useItemColumns(h: RowHandlers): ColumnDef<ExposureItemRow>[] {
           return (
             <div onClick={(ev) => ev.stopPropagation()}>
               <DataTableRowActions
+                title={e.title}
+                label={t('common.rowActions.actionsFor', 'Actions for {name}', { name: e.title })}
                 actions={[
                   ...(open
                     ? [
@@ -400,7 +405,9 @@ function useAssetColumns(): ColumnDef<ExposureAssetGroupRow>[] {
         enableSorting: false,
         cell: ({ row }) => (
           <StackedCell
-            primary={<span className="font-medium tabular-nums">{row.original.total}</span>}
+            primary={
+              <span className="font-medium tabular-nums">{formatNumber(row.original.total)}</span>
+            }
             secondary={ACTIONABLE_SEVERITIES.filter((s) => (row.original.by_severity[s] ?? 0) > 0)
               .map((s) =>
                 t('attackSurface.exposures.severityCount', '{count} {severity}', {
@@ -443,7 +450,9 @@ export function ExposureTypeSummary({
       <h2 className="text-sm font-medium text-muted-foreground">
         {t('attackSurface.exposures.byType', 'By type')}
       </h2>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      {/* A last tile alone on its row of four takes two columns, so it never
+          sits as a narrow row of its own above the list. */}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4 lg:[&>:last-child:nth-child(4n+1)]:col-span-2">
         {keys.map((k) => {
           const n = counts?.[k] ?? 0
           const pressed = selected.includes(k)
@@ -459,8 +468,13 @@ export function ExposureTypeSummary({
                 n === 0 && !pressed && 'text-muted-foreground'
               )}
             >
-              <span className="truncate">{labels.category(k)}</span>
-              <span className="shrink-0 font-semibold tabular-nums">{loading ? '' : n}</span>
+              {/* A label: it wraps rather than end in an ellipsis. */}
+              <span className="min-w-0 break-words">{labels.category(k)}</span>
+              {/* The count keeps its width while it loads, so the label wraps
+                  the same before and after it arrives (the header holds still). */}
+              <span className="min-w-[3ch] shrink-0 text-end font-semibold tabular-nums">
+                {loading ? '' : n}
+              </span>
             </button>
           )
         })}
@@ -490,7 +504,6 @@ export function EASMExposureItems() {
     setPagination,
   } = useListParams({
     pageSizes: PAGE_SIZES,
-    defaultPageSize: 20,
     sortFields: SORT_FIELDS,
     defaultSort: '-severity',
     filters: {
@@ -689,15 +702,12 @@ export function EASMExposureItems() {
         options={monitoringOptions}
         onChange={(v) => setFilter('monitoring', v)}
       />
-      <Button
-        variant={filters.primaryOnly ? 'secondary' : 'outline'}
-        size="sm"
-        aria-pressed={!!filters.primaryOnly}
-        onClick={() => setFilter('primary', filters.primaryOnly ? '' : 'true')}
-      >
-        <Star className="me-2 h-4 w-4" aria-hidden />
-        {t('attackSurface.exposures.filter.primary', 'Primary assets')}
-      </Button>
+      <FilterToggle
+        label={t('attackSurface.exposures.filter.primary', 'Primary assets')}
+        icon={Star}
+        pressed={!!filters.primaryOnly}
+        onPressedChange={(on) => setFilter('primary', on ? 'true' : '')}
+      />
     </>
   )
   const toolbarEnd = (
@@ -718,10 +728,12 @@ export function EASMExposureItems() {
           },
         ]}
       />
-      <Button variant="outline" size="sm" onClick={exportCsv} disabled={exporting}>
-        <Download className="me-2 h-4 w-4" aria-hidden />
-        {t('attackSurface.exposures.export', 'Export CSV')}
-      </Button>
+      <ToolbarAction
+        icon={Download}
+        label={t('attackSurface.exposures.export', 'Export CSV')}
+        onClick={exportCsv}
+        disabled={exporting}
+      />
     </>
   )
   const toolbarBelow =
@@ -729,10 +741,13 @@ export function EASMExposureItems() {
       <FilterChipsRow
         label={t('attackSurface.exposures.activeFilters', 'Active filters')}
         chips={chips}
-        end={
-          view === 'list'
-            ? t('attackSurface.exposures.count', '{count} exposures', { count: list.total })
-            : t('attackSurface.exposures.assetCount', '{count} assets', { count: groups.total })
+        onClearAll={
+          chips.length > 1
+            ? () => {
+                for (const name of ['severity', 'category', 'primary', 'asset'] as const)
+                  setFilter(name, '')
+              }
+            : undefined
         }
       />
     ) : undefined
@@ -769,12 +784,32 @@ export function EASMExposureItems() {
 
   return (
     <>
-      <MetricStrip loading={stats.isLoading && !s} items={metrics} />
+      <MetricStrip loading={stats.isLoading && !s} items={metrics} listFirst />
       <ExposureTypeSummary
         counts={s?.by_category}
         selected={categories}
         loading={stats.isLoading && !s}
         onToggle={(c) => setList('category', toggleValue(categories, c))}
+      />
+      <ListTitleRow
+        title={
+          view === 'list'
+            ? t('attackSurface.exposures.viewAll', 'All exposures')
+            : t('attackSurface.exposures.viewAssets', 'Assets with exposures')
+        }
+        count={
+          <ListCount
+            total={view === 'list' ? list.total : groups.total}
+            loading={active.isLoading}
+            label={
+              view === 'list'
+                ? t('attackSurface.exposures.count', '{count} exposures', { count: list.total })
+                : t('attackSurface.exposures.assetCount', '{count} assets', {
+                    count: groups.total,
+                  })
+            }
+          />
+        }
       />
       {view === 'list' ? (
         <DataTable

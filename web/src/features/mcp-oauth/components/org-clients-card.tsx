@@ -142,7 +142,7 @@ export function OrgClientsCard({ canEdit }: OrgClientsCardProps) {
                 <div className="min-w-0 space-y-1">
                   <p className="font-medium break-words">{c.name}</p>
                   <p className="font-mono text-xs break-all">{c.client_id}</p>
-                  <p className="text-muted-foreground text-xs break-all">
+                  <p className="text-muted-foreground text-xs break-words">
                     {c.redirect_uris.join(', ')}
                   </p>
                 </div>

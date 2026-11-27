@@ -18,6 +18,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import { useRecentDetections, iocTypeLabel, type IOCMatch, type IOCType } from '../api/use-iocs-api'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDateTime } from '@/lib/app-locale'
 
 // Detections view — the tenant-wide Detect/Respond feed. Each row is a runtime
 // detection (from an EDR/XDR/SIEM forwarder via /telemetry-events) that matched
@@ -58,7 +59,7 @@ export function DetectionsPanel() {
         ),
         cell: ({ row }) => (
           <span className="whitespace-nowrap tabular-nums">
-            {new Date(row.original.matched_at).toLocaleString()}
+            {formatDateTime(new Date(row.original.matched_at))}
           </span>
         ),
       },
@@ -113,7 +114,7 @@ export function DetectionsPanel() {
         title={t('threatIntel.detections.title', 'Detections')}
         description={t(
           'threatIntel.detections.description',
-          'Runtime detections from your EDR, XDR or SIEM that matched a known indicator; a match on a resolved finding reopens it.'
+          'Detections from your endpoint and security monitoring tools that matched a known indicator; a match on a resolved finding reopens it.'
         )}
       />
 
@@ -146,8 +147,13 @@ export function DetectionsPanel() {
           title={t('threatIntel.detections.emptyTitle', 'No detections yet')}
           description={t(
             'threatIntel.detections.emptyDescription',
-            'Detections appear here when a collector sensor forwards a runtime event that matches an indicator in your catalogue.'
+            'Detections appear here when a sensor forwards an event from your monitoring tools that matches an indicator in your catalog.'
           )}
+          action={
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/sensors">{t('threatIntel.detections.openSensors', 'Open sensors')}</Link>
+            </Button>
+          }
         />
       ) : (
         <DataTable

@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from 'react'
 import { Loader2, Mail } from 'lucide-react'
 
+import { EntryBanner } from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,6 +15,8 @@ import { useEmailUnavailable } from '../api/use-auth-providers'
 interface ResendVerificationProps {
   /** Known address (the sign-in form). Without it the person types theirs. */
   email?: string
+  /** The card's one main action (the failed verification page): teal, no icon. */
+  primary?: boolean
 }
 
 /**
@@ -22,7 +25,10 @@ interface ResendVerificationProps {
  * account. On a server that cannot send email the person is told to ask an
  * administrator instead.
  */
-export function ResendVerification({ email: knownEmail }: ResendVerificationProps) {
+export function ResendVerification({
+  email: knownEmail,
+  primary = false,
+}: ResendVerificationProps) {
   const { t } = useTranslation()
   const emailUnavailable = useEmailUnavailable()
   const [typed, setTyped] = useState('')
@@ -33,23 +39,23 @@ export function ResendVerification({ email: knownEmail }: ResendVerificationProp
 
   if (emailUnavailable) {
     return (
-      <p className="text-muted-foreground text-sm" role="note">
+      <EntryBanner tone="warn" role="note">
         {t(
           'auth.verifyEmail.noEmail',
           'This server cannot send email. Ask your administrator to verify your address.'
         )}
-      </p>
+      </EntryBanner>
     )
   }
 
   if (done) {
     return (
-      <p className="text-sm" role="status">
+      <EntryBanner tone="ok" role="status">
         {t(
           'auth.verifyEmail.resendDone',
           'If this address has an account that is not verified yet, a new link is on its way.'
         )}
-      </p>
+      </EntryBanner>
     )
   }
 
@@ -69,7 +75,13 @@ export function ResendVerification({ email: knownEmail }: ResendVerificationProp
   }
 
   return (
-    <form onSubmit={submit} className="grid w-full gap-2 text-start">
+    <form onSubmit={submit} className="flex w-full flex-col gap-2 text-start">
+      {/* A refusal is one banner in the card, above the fields (entry rule). */}
+      {error && (
+        <EntryBanner tone="danger" role="alert">
+          {t('auth.verifyEmail.resendFailed', 'Could not send the link. Try again in a minute.')}
+        </EntryBanner>
+      )}
       {knownEmail === undefined && (
         <>
           <Label htmlFor="resend-verification-email">
@@ -85,15 +97,14 @@ export function ResendVerification({ email: knownEmail }: ResendVerificationProp
           />
         </>
       )}
-      <Button type="submit" variant="outline" disabled={busy || !email}>
-        {busy ? <Loader2 className="size-4 animate-spin" /> : <Mail className="size-4" />}
+      <Button type="submit" variant={primary ? 'signal' : 'outline'} disabled={busy || !email}>
+        {busy ? (
+          <Loader2 aria-hidden className="size-4 animate-spin" />
+        ) : (
+          !primary && <Mail aria-hidden className="size-4" />
+        )}
         {t('auth.verifyEmail.resendSubmit', 'Send a new verification link')}
       </Button>
-      {error && (
-        <p className="text-destructive text-sm" role="alert">
-          {t('auth.verifyEmail.resendFailed', 'Could not send the link. Try again in a minute.')}
-        </p>
-      )}
     </form>
   )
 }

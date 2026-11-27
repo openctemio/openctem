@@ -15,8 +15,8 @@
   "assetAddresses.historyTitle": "Lịch sử địa chỉ",
   "assetAddresses.more": "+{count} nữa",
   "assetAddresses.other": "Địa chỉ khác",
-  "assetAddresses.providerHint": "Địa chỉ mà nhà cung cấp dùng chung cho nhiều tổ chức được ghi trên tên này, không phải tài sản của bạn. Lần quét kiểm tra tên này, không quét các địa chỉ đó.",
+  "assetAddresses.providerHint": "Địa chỉ mà nhà cung cấp dùng chung cho nhiều tổ chức được ghi trên tên này, không phải tài sản của bạn. Lượt quét kiểm tra tên này, không quét các địa chỉ đó.",
   "assetAddresses.servedBy": "Do {provider} phục vụ",
   "assetAddresses.title": "Địa chỉ",
-  "assetAddresses.truncated": "{count} địa chỉ cũ hơn không được liệt kê."
+  "assetAddresses.truncated": "{count, plural, other {# địa chỉ cũ hơn không được liệt kê.}}"
 }

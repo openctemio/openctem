@@ -84,7 +84,7 @@ export function useProjectMeta(
   if (projectId) params.set('project_id', projectId)
   const key =
     currentTenant && integrationId && projectKey && issueTypeId
-      ? `/api/v1/integrations/${integrationId}/jira/metadata?${params.toString()}`
+      ? `/api/v1/integrations/${encodeURIComponent(integrationId)}/jira/metadata?${params.toString()}`
       : null
   return useSWR<ProjectMeta>(key, (u: string) => get<ProjectMeta>(u), {
     ...quiet,

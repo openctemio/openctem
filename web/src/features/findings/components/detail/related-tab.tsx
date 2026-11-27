@@ -119,8 +119,8 @@ function RelatedFindingsTable({
         cell: ({ row }) => (
           <Button
             variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
+            size="icon-sm"
+            className="p-0"
             aria-label={t('findings.relatedTab.open', 'Open {title}', {
               title: row.original.title,
             })}
@@ -192,7 +192,7 @@ export function RelatedTab({ finding }: RelatedTabProps) {
                   <Repeat className="h-4 w-4 text-info" />
                 </div>
                 <div>
-                  <p className="text-lg font-bold">{finding.occurrenceCount}</p>
+                  <p className="text-lg font-semibold">{finding.occurrenceCount}</p>
                   <p className="text-muted-foreground text-xs">
                     {t('findings.relatedTab.occurrences', 'Occurrences')}
                   </p>
@@ -205,7 +205,7 @@ export function RelatedTab({ finding }: RelatedTabProps) {
                   <Copy className="h-4 w-4 text-warning" />
                 </div>
                 <div>
-                  <p className="text-lg font-bold">{finding.duplicateCount}</p>
+                  <p className="text-lg font-semibold">{finding.duplicateCount}</p>
                   <p className="text-muted-foreground text-xs">
                     {t('findings.relatedTab.duplicates', 'Duplicates')}
                   </p>

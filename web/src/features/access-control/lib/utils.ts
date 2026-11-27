@@ -1,5 +1,6 @@
 import type { Group, GroupType } from '../types'
 import { GroupTypeConfig } from '../types'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
 
 /**
  * Generate a URL-friendly slug from a name
@@ -30,7 +31,7 @@ export const getGroupType = (group: Group): GroupType => {
  * Format a date string for display
  */
 export const formatDate = (dateString: string): string => {
-  return new Date(dateString).toLocaleDateString('en-US', {
+  return localeFormatDate(new Date(dateString), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

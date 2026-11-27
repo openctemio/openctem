@@ -46,7 +46,6 @@ export default function SlaCompliancePage() {
   const sla = useSlaCompliance()
   const { pagination, setPagination } = useListParams({
     pageSizes: PAGE_SIZES,
-    defaultPageSize: 20,
   })
 
   // The breached list is a server page over the same filter as the Past due tile.
@@ -193,7 +192,7 @@ export default function SlaCompliancePage() {
           />
         ) : null}
 
-        <MetricStrip loading={sla.isLoading} items={items} />
+        <MetricStrip loading={sla.isLoading} items={items} listFirst />
 
         <section className="grid grid-cols-1 gap-5 lg:grid-cols-2">
           <Card>

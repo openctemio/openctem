@@ -53,6 +53,11 @@ export const NON_FILTER_PARAMS: ReadonlySet<string> = new Set([
   'from',
   // A filter chips cannot show, as query text (filter-query-mode.tsx).
   'fq',
+  // The search field's mode (`mode=query`, features/query/components/query-mode.tsx).
+  'mode',
+  // The saved view the list was derived from once another query text is
+  // applied (`FROM_VIEW_PARAM`): the title names it, the request never sends it.
+  'from_view',
 ])
 
 /** The URL suffix each operator uses, longest first (`_gte` before `_gt`). */
@@ -234,6 +239,36 @@ export function withFilter(
   return next
 }
 
+/**
+ * `search` with the filter held by `oldParam` rewritten as `op` + `values` on
+ * the same field, in the same place in the URL (so its chip keeps its place),
+ * the page reset. The param and its value are the ones `withFilter` writes; a
+ * param the new operator shares with another filter of the field is replaced.
+ */
+export function withFilterReplaced(
+  search: URLSearchParams,
+  oldParam: string,
+  field: FieldContract,
+  op: FilterOp,
+  values: string[]
+): URLSearchParams {
+  const param = paramFor(field, op)
+  if (!param) return new URLSearchParams(search)
+  const value = withFilter(new URLSearchParams(), field, op, values).get(param)
+  if (value === null) return withoutParam(search, oldParam)
+  const next = new URLSearchParams()
+  let placed = false
+  for (const [k, v] of search.entries()) {
+    if (k === 'page') continue
+    if (k === oldParam) {
+      if (!placed) next.append(param, value)
+      placed = true
+    } else if (k !== param) next.append(k, v)
+  }
+  if (!placed) next.append(param, value)
+  return next
+}
+
 /** `search` without one param, the page reset. */
 export function withoutParam(search: URLSearchParams, param: string): URLSearchParams {
   const next = new URLSearchParams(search)
@@ -303,6 +338,11 @@ const NOT_PICKABLE: ReadonlySet<string> = new Set([
   // The findings of one grouped notification: reached from its link.
   'notification_group_id',
 ])
+
+/** Whether a person can edit a filter on the field (Add filter offers it). */
+export function isEditableField(field: FieldContract): boolean {
+  return !NOT_PICKABLE.has(field.name) && editableOps(field).length > 0
+}
 
 /** Fields derived from the asset: reading them needs permission to read assets. */
 export const ASSET_FIELDS: ReadonlySet<string> = new Set([

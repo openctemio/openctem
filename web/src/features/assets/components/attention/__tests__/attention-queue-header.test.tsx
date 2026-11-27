@@ -56,7 +56,7 @@ describe('AttentionQueueHeader', () => {
       '/assets/attention'
     )
     expect(screen.getByRole('heading', { level: 2, name: 'No owner' })).toBeInTheDocument()
-    expect(screen.getByTestId('attention-queue-count')).toHaveTextContent('549 assets')
+    expect(document.querySelector('[data-slot="list-count"]')).toHaveTextContent('549 assets')
     expect(
       screen.getByText('Findings on these assets have nobody to assign to.')
     ).toBeInTheDocument()
@@ -66,10 +66,36 @@ describe('AttentionQueueHeader', () => {
     )
   })
 
+  it('shows the why from 768 px in the heading row, never only in the menu', () => {
+    render(<AttentionQueueHeader reason="no_owner" count={549} />)
+    const why = document.querySelector('[data-slot="attention-why"]')
+    // Hidden only on a phone (read at the top of the reason menu there).
+    expect(why).toHaveClass('max-md:hidden', 'flex-1')
+    expect(why).not.toHaveClass('max-xl:hidden')
+    // Never forced onto a line of its own above the list.
+    expect(why?.className).not.toMatch(/basis-full|order-last/)
+  })
+
+  it('keeps one heading row: below 1280 px the inventory link is the More, never a row alone', () => {
+    render(
+      <AttentionQueueHeader reason="no_owner" count={549} inventoryHref="/assets?has_owner=false" />
+    )
+    const row = screen.getByTestId('attention-queue-header')
+    expect(row.className).not.toMatch(/flex-wrap/)
+    // The button shows from 1280 px; below it the More (alone, the link itself) holds it.
+    const link = screen.getByRole('link', { name: /open in the inventory/i })
+    expect(link).toHaveClass('max-xl:hidden')
+    const more = document.querySelector('[data-slot="attention-more"]')
+    expect(more).toHaveClass('xl:hidden')
+    expect(more).toContainElement(screen.getByRole('button', { name: /open in the inventory/i }))
+    // The why line takes what the row has left.
+    expect(document.querySelector('[data-slot="attention-why"]')).toHaveClass('flex-1', 'min-w-0')
+  })
+
   it('has no inventory link for a reason with no inventory view', () => {
     render(<AttentionQueueHeader reason="duplicates" count={3} />)
     expect(screen.queryByRole('link', { name: /open in the inventory/i })).toBeNull()
-    expect(screen.getByTestId('attention-queue-count')).toHaveTextContent('3 pairs')
+    expect(document.querySelector('[data-slot="list-count"]')).toHaveTextContent('3 pairs')
   })
 
   it('opens a menu of every reason with counts, the current one checked', async () => {
@@ -130,5 +156,23 @@ describe('AttentionQueueHeader', () => {
   it('renders no tablist', () => {
     render(<AttentionQueueHeader reason="no_owner" count={1} />)
     expect(screen.queryByRole('tablist')).toBeNull()
+  })
+
+  it('draws the queue More only when it has items, and runs the chosen one', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    const { unmount } = render(<AttentionQueueHeader reason="no_owner" count={1} />)
+    expect(screen.queryByRole('button', { name: 'More actions' })).toBeNull()
+    unmount()
+    render(
+      <AttentionQueueHeader
+        reason="no_owner"
+        count={1}
+        moreItems={[{ id: 'select', label: 'Select', onSelect }]}
+      />
+    )
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Select' }))
+    expect(onSelect).toHaveBeenCalledTimes(1)
   })
 })

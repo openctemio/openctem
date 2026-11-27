@@ -142,7 +142,9 @@ describe('ScopePendingEntry', () => {
     wrap(<ScopePendingEntry entryId="e1" probeTier={2} sensorPreference="auto" />)
     const box = await screen.findByTestId('pending-entry')
     expect(within(box).getByText('3 things left before it can be scanned:')).toBeInTheDocument()
-    expect(within(box).getByText(/probes at T2 intrusive; the entry allows T1/)).toBeInTheDocument()
+    expect(
+      within(box).getByText(/needs: Intrusive\. The entry allows: Safe active/)
+    ).toBeInTheDocument()
     expect(within(box).getByText(/controls example\.com/)).toBeInTheDocument()
     expect(within(box).getByRole('button', { name: 'Verify domain' })).toBeInTheDocument()
   })

@@ -46,7 +46,7 @@ export interface TicketHold {
 export const MAX_DAILY_CAP = 10000
 
 const policyPath = (integrationId: string) =>
-  `/api/v1/integrations/${integrationId}/ticket-create-policy`
+  `/api/v1/integrations/${encodeURIComponent(integrationId)}/ticket-create-policy`
 
 function body(p: TicketCreatePolicy) {
   return {

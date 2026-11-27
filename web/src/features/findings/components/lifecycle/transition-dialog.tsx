@@ -237,7 +237,7 @@ export function TransitionDialog({
                 type="number"
                 min={1}
                 max={500}
-                className="h-8 w-20"
+                className="w-20"
                 disabled={!noteOn}
                 value={noteMin}
                 aria-label={t('findingLifecycle.guard.noteMin', 'Shortest note')}

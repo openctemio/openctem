@@ -202,27 +202,23 @@ export function CvssCalculator({ vector, onScoreChange, onVectorChange }: CvssCa
         )}
       </div>
 
-      <div className="flex items-center justify-between">
-        <button
+      {/* One row of two kit buttons of one height: open the metrics, clear. */}
+      <div className="flex items-center justify-between gap-2">
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
         >
-          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', !open && '-rotate-90')} />
+          <ChevronDown className={cn('transition-transform', !open && '-rotate-90')} />
           {open
             ? t('common.cvss.hideMetrics', 'Hide metrics')
             : t('common.cvss.showMetrics', 'Pick metrics')}
-        </button>
+        </Button>
         {(vector || text) && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            onClick={() => applyText('')}
-          >
-            <RotateCcw className="me-1 h-3 w-3" />
+          <Button type="button" variant="ghost" size="sm" onClick={() => applyText('')}>
+            <RotateCcw />
             {t('common.cvss.reset', 'Clear')}
           </Button>
         )}

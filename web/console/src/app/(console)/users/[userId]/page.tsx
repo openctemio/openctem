@@ -1,11 +1,15 @@
 'use client'
 
+import {
+  accountStatusLabel,
+  authProviderLabel,
+  memberRoleLabel,
+} from '@console/features/admin-console/lib/value-labels'
+import { EmptyCell } from '@/features/shared/components/empty-cell'
 import { use } from 'react'
 import Link from '@/components/link'
-import { ChevronLeft } from 'lucide-react'
-import { Main } from '@/components/layout'
+import { Main, useBreadcrumbTitle } from '@/components/layout'
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -21,9 +25,13 @@ import { usePlatformUser } from '@console/features/admin-console/api/use-platfor
 import { useAdminAuditLogs } from '@console/features/admin-console/api/use-admin-audit'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { AdminActivityTable } from '@console/features/admin-console/components/admin-activity-table'
-import { PlatformUserActions } from '@console/features/admin-console/components/platform-user-actions'
+import {
+  PlatformUserActions,
+  platformUserUnavailableNote,
+} from '@console/features/admin-console/components/platform-user-actions'
 import { PlatformUserBadges } from '@console/features/admin-console/components/platform-user-badges'
 import { adminHas } from '@console/features/admin-console/types'
+import { formatTime } from '@/lib/app-locale'
 
 export default function AdminUserPage({ params }: { params: Promise<{ userId: string }> }) {
   const { userId } = use(params)
@@ -40,18 +48,21 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
     void mutate()
     void activity.mutate()
   }
+  // Why the account offers no actions, said once under its name (no row of
+  // greyed-out buttons).
+  const unavailableNote = user ? platformUserUnavailableNote(t, user) : undefined
+  // The breadcrumb names the account and is the way back to the list.
+  useBreadcrumbTitle(user ? user.name || user.email : undefined)
 
   return (
     <Main>
       <PageStack>
-        <Button asChild variant="ghost" size="sm" className="-ms-2 self-start">
-          <Link href="/users">
-            <ChevronLeft className="me-1 size-4" />
-            {t('admin.nav.users', 'Users')}
-          </Link>
-        </Button>
         {error ? (
-          <ErrorState title="the account" error={error} onRetry={refresh} />
+          <ErrorState
+            title={t('admin.users.theAccount', 'the account')}
+            error={error}
+            onRetry={refresh}
+          />
         ) : isLoading || !user ? (
           <div className="space-y-3">
             <Skeleton className="h-10 w-1/3" />
@@ -59,9 +70,21 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
           </div>
         ) : (
           <>
-            <PageHeader title={user.name || user.email} description={user.email}>
-              <PlatformUserBadges user={user} />
-            </PageHeader>
+            <PageHeader
+              title={user.name || user.email}
+              // The address, why the account offers no actions (if so) and its
+              // marks, all under the name: beside the title the marks squeezed
+              // the address onto two lines on a phone.
+              description={
+                <>
+                  <span className="block [overflow-wrap:anywhere]">{user.email}</span>
+                  {unavailableNote && <span className="block">{unavailableNote}</span>}
+                  <div className="mt-2">
+                    <PlatformUserBadges user={user} />
+                  </div>
+                </>
+              }
+            />
 
             {adminHas(admin, 'platform.users.support') && (
               <PlatformUserActions
@@ -72,10 +95,10 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
             )}
 
             <Card>
-              <CardContent className="pt-6">
+              <CardContent>
                 <DetailFieldGrid>
                   <DetailField label={t('admin.users.field.signIn', 'Signs in with')}>
-                    <span className="capitalize">{user.auth_provider}</span>
+                    <span>{authProviderLabel(t, user.auth_provider)}</span>
                   </DetailField>
                   <DetailField label={t('admin.users.field.mfa', 'Two-step verification')}>
                     {user.mfa_enabled
@@ -95,15 +118,12 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
                       <span className="text-muted-foreground">
                         {' '}
                         ({t('admin.users.field.lockedUntil', 'locked until')}{' '}
-                        {new Date(user.locked_until).toLocaleTimeString()})
+                        {formatTime(new Date(user.locked_until))})
                       </span>
                     )}
                   </DetailField>
                   <DetailField label={t('admin.users.field.created', 'Created')}>
                     <RelativeTime date={user.created_at} />
-                  </DetailField>
-                  <DetailField label={t('admin.users.field.id', 'User ID')}>
-                    <code className="text-xs break-all select-all">{user.id}</code>
                   </DetailField>
                 </DetailFieldGrid>
               </CardContent>
@@ -138,13 +158,9 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
                             {m.tenant_name}
                           </Link>
                           <div className="flex shrink-0 items-center gap-2">
-                            <Badge variant="secondary" className="capitalize">
-                              {m.role}
-                            </Badge>
+                            <Badge variant="secondary">{memberRoleLabel(t, m.role)}</Badge>
                             {m.status !== 'active' && (
-                              <Badge variant="outline" className="capitalize">
-                                {m.status}
-                              </Badge>
+                              <Badge variant="outline">{accountStatusLabel(t, m.status)}</Badge>
                             )}
                           </div>
                         </li>
@@ -218,9 +234,11 @@ export default function AdminUserPage({ params }: { params: Promise<{ userId: st
                         {user.sessions.map((s) => (
                           <tr key={s.id}>
                             <td className="py-2 pe-3 tabular-nums" title={s.user_agent}>
-                              {s.ip_address || '-'}
+                              {s.ip_address || (
+                                <EmptyCell title={t('admin.users.noIp', 'No address recorded')} />
+                              )}
                             </td>
-                            <td className="py-2 pe-3 capitalize">{s.auth_method}</td>
+                            <td className="py-2 pe-3">{authProviderLabel(t, s.auth_method)}</td>
                             <td className="py-2 pe-3">
                               <RelativeTime date={s.created_at} />
                             </td>

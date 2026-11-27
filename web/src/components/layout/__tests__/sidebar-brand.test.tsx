@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => false }))
+vi.mock('@/hooks/use-mobile', async (orig) => ({
+  ...(await orig<typeof import('@/hooks/use-mobile')>()),
+  useIsMobile: () => false,
+}))
 
 // Radix tooltips measure with ResizeObserver, which jsdom does not have.
 globalThis.ResizeObserver ??= class {
@@ -13,7 +16,7 @@ globalThis.ResizeObserver ??= class {
 
 import { SidebarProvider, useSidebar } from '@/components/ui/sidebar'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { SidebarBrand } from '../sidebar-brand'
+import { SidebarBrand, SIDEBAR_TRAILING_SLOT_CLASS } from '../sidebar-brand'
 
 function State() {
   const { state } = useSidebar()
@@ -63,5 +66,38 @@ describe('SidebarBrand, collapsed', () => {
     await userEvent.hover(screen.getByRole('button', { name: 'Expand sidebar' }))
     const tip = await screen.findAllByText('B')
     expect(tip.length).toBeGreaterThan(0)
+  })
+})
+
+describe('SidebarBrand, expanded', () => {
+  it('names the home link by the brand (its lockup is a picture)', () => {
+    render(
+      <TooltipProvider>
+        <SidebarProvider defaultOpen>
+          <SidebarBrand />
+        </SidebarProvider>
+      </TooltipProvider>
+    )
+    const link = screen.getByRole('link', { name: 'OpenCTEM home' })
+    expect(link).toHaveAttribute('href', '/')
+    expect(link.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('ends the collapse button at the row edge, the same slot as the organization chevron', () => {
+    const { container } = render(
+      <TooltipProvider>
+        <SidebarProvider defaultOpen>
+          <SidebarBrand />
+        </SidebarProvider>
+      </TooltipProvider>
+    )
+    const row = container.querySelector('[data-slot="sidebar-brand-row"]')!
+    expect(row.className).toContain('pe-0')
+    // The button is the same width as the chevron's slot (both `control`).
+    const trigger = container.querySelector('[data-sidebar="trigger"]')!
+    expect(trigger.className).toContain('size-control')
+    expect(trigger.className).toContain('max-md:size-control-touch')
+    expect(SIDEBAR_TRAILING_SLOT_CLASS).toContain('w-control')
+    expect(SIDEBAR_TRAILING_SLOT_CLASS).toContain('max-md:w-control-touch')
   })
 })

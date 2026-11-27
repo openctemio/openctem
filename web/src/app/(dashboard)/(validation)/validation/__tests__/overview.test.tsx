@@ -152,7 +152,7 @@ describe('Validation overview', () => {
 
   it('puts P0/P1 coverage first in the strip, with its classes and definition link', () => {
     render(<ValidationOverviewPage />)
-    const tile = screen.getByRole('link', { name: /P0\/P1 validation coverage/ })
+    const tile = screen.getByRole('link', { name: /Validated top-priority fixes/ })
     expect(tile).toHaveAttribute('href', '/findings?state=closed&priority_class=P0%2CP1')
     expect(tile).toHaveTextContent('68%')
     expect(tile).toHaveTextContent('P0 9 of 12')
@@ -168,7 +168,7 @@ describe('Validation overview', () => {
     const saved = state.coverage
     state.coverage = { p0_p1_total: 0, p0_p1_validated: 0, by_priority: [] }
     render(<ValidationOverviewPage />)
-    const tile = screen.getByRole('link', { name: /P0\/P1 validation coverage/ })
+    const tile = screen.getByRole('link', { name: /Validated top-priority fixes/ })
     expect(tile).toHaveTextContent('–')
     expect(tile).not.toHaveTextContent('0%')
     state.coverage = saved

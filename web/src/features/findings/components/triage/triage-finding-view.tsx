@@ -10,6 +10,8 @@
  * Design: research/234 §5.2.
  */
 
+import { ChevronDown, ExternalLink } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { SeverityBadge } from '@/features/shared'
 import type { Severity } from '@/features/shared/types'
@@ -30,6 +32,7 @@ import {
   codeLocationOf,
   hasCodeLocation,
 } from '../detail/finding-code-location'
+import { Kbd } from './kbd'
 
 /** Multi-line untrusted text: each line made safe on its own, the breaks kept. */
 function displayLines(value: string, max: number): string {
@@ -40,10 +43,11 @@ function displayLines(value: string, max: number): string {
     .join('\n')
 }
 
+/** One label and value row of the facts list: label column, value column, at every width. */
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="min-w-0 space-y-1">
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+    <div className="grid min-w-0 grid-cols-[7rem_minmax(0,1fr)] gap-x-4 gap-y-0.5 sm:grid-cols-[9rem_minmax(0,1fr)]">
+      <dt className="text-sm text-muted-foreground">{label}</dt>
       <dd className="min-w-0 text-sm">{children}</dd>
     </div>
   )
@@ -64,11 +68,17 @@ export function TriageFindingSkeleton() {
 export function TriageFindingView({
   finding,
   showEvidence,
+  onToggleEvidence,
+  onOpenPage,
   note,
   advisory,
 }: {
   finding: ApiFinding
   showEvidence: boolean
+  /** The Evidence button and `e`: load and show the tool's evidence items. */
+  onToggleEvidence: () => void
+  /** The Full page button and Enter. */
+  onOpenPage: () => void
   /** The AI suggestion card, under the evidence. */
   advisory?: React.ReactNode
   /** A notice about this finding (changed by someone else, pending approval). */
@@ -90,40 +100,50 @@ export function TriageFindingView({
 
   return (
     <article className="min-w-0 space-y-4" aria-labelledby="triage-finding-title">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <PriorityClassBadge
-          priorityClass={finding.priority_class}
-          showWord
-          assetId={finding.asset_id}
-        />
-        {typeof finding.rank === 'number' && (
-          <span className="font-mono text-xs text-muted-foreground tabular-nums">
-            {t('findings.triageMode.rank', 'rank {rank}', { rank: Math.round(finding.rank) })}
-          </span>
-        )}
-        <SeverityBadge severity={finding.severity as Severity} />
-        <FindingStatusBadge status={finding.status} />
-        <ExploitSignals
-          isInKev={finding.is_in_kev}
-          kevDueDate={finding.kev_due_date}
-          kevRansomware={finding.kev_ransomware}
-          epssScore={finding.epss_score}
-        />
-        {finding.cve_id && (
-          <span className="rounded border px-1.5 py-0.5 font-mono text-xs">
-            {toDisplayText(finding.cve_id, 40)}
-          </span>
-        )}
-        {(finding.cwe_ids ?? []).slice(0, 3).map((cwe) => (
-          <span key={cwe} className="rounded border px-1.5 py-0.5 font-mono text-xs">
-            {toDisplayText(cwe, 20)}
-          </span>
-        ))}
-        {tool && (
-          <span className="rounded border px-1.5 py-0.5 text-xs text-muted-foreground">
-            {t('findings.triageMode.foundBy', 'Found by {tool}', { tool: toDisplayText(tool, 60) })}
-          </span>
-        )}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <PriorityClassBadge
+            priorityClass={finding.priority_class}
+            showWord
+            assetId={finding.asset_id}
+          />
+          {typeof finding.rank === 'number' && (
+            <span className="font-mono text-xs text-muted-foreground tabular-nums">
+              {t('findings.triageMode.rank', 'rank {rank}', { rank: Math.round(finding.rank) })}
+            </span>
+          )}
+          <SeverityBadge severity={finding.severity as Severity} />
+          <FindingStatusBadge status={finding.status} />
+          <ExploitSignals
+            isInKev={finding.is_in_kev}
+            kevDueDate={finding.kev_due_date}
+            kevRansomware={finding.kev_ransomware}
+            epssScore={finding.epss_score}
+          />
+          {finding.cve_id && (
+            <span className="rounded border px-1.5 py-0.5 font-mono text-xs">
+              {toDisplayText(finding.cve_id, 40)}
+            </span>
+          )}
+          {(finding.cwe_ids ?? []).slice(0, 3).map((cwe) => (
+            <span key={cwe} className="rounded border px-1.5 py-0.5 font-mono text-xs">
+              {toDisplayText(cwe, 20)}
+            </span>
+          ))}
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onOpenPage}
+          aria-keyshortcuts="Enter"
+          className="ms-auto"
+          data-triage-action="openPage"
+        >
+          <ExternalLink aria-hidden />
+          {t('findings.triageMode.action.openPage', 'Full page')}
+          {/* i18n-ok: the name printed on the key cap */}
+          <Kbd className="max-sm:hidden">Enter</Kbd>
+        </Button>
       </div>
 
       <h2
@@ -134,29 +154,24 @@ export function TriageFindingView({
         {title}
       </h2>
 
-      <p className="text-sm text-muted-foreground">
-        {lastSeen
-          ? t('findings.triageMode.lastSeen', 'Last seen {when}. First seen {first}.', {
-              when: formatRelativeTime(lastSeen, locale),
-              first: formatRelativeTime(firstSeen, locale),
-            })
-          : t('findings.triageMode.firstSeen', 'First seen {first}.', {
-              first: formatRelativeTime(firstSeen, locale),
-            })}
-      </p>
+      {desc && (
+        <p dir="auto" className="line-clamp-4 text-sm whitespace-pre-line [unicode-bidi:isolate]">
+          {displayLines(desc, 2000)}
+        </p>
+      )}
 
       {note}
 
-      <dl className="grid grid-cols-2 gap-4 rounded-lg border bg-card p-4 md:grid-cols-4">
+      <dl className="grid gap-2">
         <Fact label={t('findings.triageMode.fact.asset', 'Asset')}>
           {asset?.name ? (
             <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <span dir="auto" className="truncate font-medium [unicode-bidi:isolate]">
+              <span dir="auto" className="min-w-0 font-medium break-words [unicode-bidi:isolate]">
                 {toDisplayText(asset.name, 200)}
               </span>
               {asset.is_internet_accessible && (
                 <span className="rounded border px-1 font-mono text-xs font-semibold">
-                  {t('findings.triageMode.internet', 'NET')}
+                  {t('findings.triageMode.internet', 'Internet')}
                 </span>
               )}
               {asset.criticality && (
@@ -170,6 +185,30 @@ export function TriageFindingView({
               {t('findings.triageMode.noAsset', 'No asset')}
             </span>
           )}
+        </Fact>
+        <Fact label={t('findings.triageMode.fact.owner', 'Owner')}>
+          {finding.assigned_to_user?.name || finding.assigned_to_user?.email ? (
+            <span dir="auto" className="break-words [unicode-bidi:isolate]">
+              {toDisplayText(
+                finding.assigned_to_user?.name || finding.assigned_to_user?.email,
+                120
+              )}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">
+              {t('findings.triageMode.unassigned', 'Unassigned')}
+            </span>
+          )}
+        </Fact>
+        <Fact label={t('findings.triageMode.fact.sla', 'SLA')}>
+          <span className="flex flex-wrap items-center gap-1.5">
+            <SlaStatusBadge status={finding.sla_status} />
+            {finding.sla_deadline && (
+              <span className="text-xs text-muted-foreground">
+                {formatRelativeTime(finding.sla_deadline, locale)}
+              </span>
+            )}
+          </span>
         </Fact>
         <Fact label={t('findings.triageMode.fact.exploitation', 'Exploitation')}>
           {finding.is_in_kev || typeof finding.epss_score === 'number' ? (
@@ -193,46 +232,42 @@ export function TriageFindingView({
             </span>
           )}
         </Fact>
-        <Fact label={t('findings.triageMode.fact.sla', 'SLA')}>
-          <span className="flex flex-wrap items-center gap-1.5">
-            <SlaStatusBadge status={finding.sla_status} />
-            {finding.sla_deadline && (
-              <span className="text-xs text-muted-foreground">
-                {formatRelativeTime(finding.sla_deadline, locale)}
-              </span>
-            )}
-          </span>
-        </Fact>
-        <Fact label={t('findings.triageMode.fact.owner', 'Owner')}>
-          {finding.assigned_to_user?.name || finding.assigned_to_user?.email ? (
-            <span dir="auto" className="truncate [unicode-bidi:isolate]">
-              {toDisplayText(
-                finding.assigned_to_user?.name || finding.assigned_to_user?.email,
-                120
-              )}
+        {tool && (
+          <Fact label={t('findings.triageMode.fact.foundBy', 'Found by')}>
+            <span dir="auto" className="break-words [unicode-bidi:isolate]">
+              {toDisplayText(tool, 60)}
             </span>
-          ) : (
-            <span className="text-muted-foreground">
-              {t('findings.triageMode.unassigned', 'Unassigned')}
-            </span>
-          )}
+          </Fact>
+        )}
+        <Fact label={t('findings.triageMode.fact.seen', 'Seen')}>
+          {lastSeen
+            ? t('findings.triageMode.lastSeen', 'Last seen {when}. First seen {first}.', {
+                when: formatRelativeTime(lastSeen, locale),
+                first: formatRelativeTime(firstSeen, locale),
+              })
+            : t('findings.triageMode.firstSeen', 'First seen {first}.', {
+                first: formatRelativeTime(firstSeen, locale),
+              })}
         </Fact>
       </dl>
 
-      {desc && (
-        <p dir="auto" className="line-clamp-4 text-sm whitespace-pre-line [unicode-bidi:isolate]">
-          {displayLines(desc, 2000)}
-        </p>
-      )}
-
-      <section
-        aria-labelledby="triage-evidence-title"
-        className="space-y-2 rounded-lg border bg-card p-4"
-      >
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h3 id="triage-evidence-title" className="text-sm font-medium">
-            {t('findings.triageMode.evidence', 'Evidence')}
-          </h3>
+      <section aria-labelledby="triage-evidence-title" className="space-y-2">
+        <h3 id="triage-evidence-title" className="sr-only">
+          {t('findings.triageMode.evidence', 'Evidence')}
+        </h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onToggleEvidence}
+            aria-expanded={showEvidence}
+            aria-keyshortcuts="e"
+            data-triage-action="evidence"
+          >
+            {t('findings.triageMode.action.evidence', 'Evidence')}
+            <Kbd className="max-sm:hidden">e</Kbd>
+            <ChevronDown className={showEvidence ? 'rotate-180' : undefined} aria-hidden />
+          </Button>
           <span className="text-xs text-muted-foreground">
             {t(
               'findings.triageMode.evidenceMasked',

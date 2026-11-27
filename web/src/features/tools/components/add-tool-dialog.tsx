@@ -52,6 +52,7 @@ import {
   INSTALL_METHOD_OPTIONS,
 } from '../schemas/tool-schema'
 import { ToolCategoryIcon } from './tool-category-icon'
+import { useTranslation } from '@/context/i18n-provider'
 
 interface AddToolDialogProps {
   open: boolean
@@ -62,6 +63,7 @@ interface AddToolDialogProps {
 }
 
 export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDialogProps) {
+  const { t } = useTranslation()
   const [tagInput, setTagInput] = useState('')
   const [capabilityInput, setCapabilityInput] = useState('')
   const [targetInput, setTargetInput] = useState('')
@@ -174,10 +176,18 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
 
       if (isEditMode) {
         await updateTool(payload)
-        toast.success(`Tool "${data.display_name || data.name}" updated`)
+        toast.success(
+          t('scans.tools.form.updated', 'Tool "{name}" updated', {
+            name: data.display_name || data.name,
+          })
+        )
       } else {
         await createTool(payload)
-        toast.success(`Tool "${data.display_name || data.name}" created`)
+        toast.success(
+          t('scans.tools.form.created', 'Tool "{name}" created', {
+            name: data.display_name || data.name,
+          })
+        )
       }
 
       await invalidateToolsCache()
@@ -188,7 +198,11 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
       onSuccess?.()
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : `Failed to ${isEditMode ? 'update' : 'create'} tool`
+        err instanceof Error
+          ? err.message
+          : isEditMode
+            ? t('scans.tools.form.updateFailed', 'Failed to update tool')
+            : t('scans.tools.form.createFailed', 'Failed to create tool')
       )
     }
   }
@@ -229,11 +243,15 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isEditMode ? 'Edit Tool' : 'Add Custom Tool'}</DialogTitle>
+          <DialogTitle>
+            {isEditMode
+              ? t('scans.tools.form.editTitle', 'Edit tool')
+              : t('scans.tools.form.addTitle', 'Add custom tool')}
+          </DialogTitle>
           <DialogDescription>
             {isEditMode
-              ? 'Update the tool configuration.'
-              : 'Register a new security tool for your team.'}
+              ? t('scans.tools.form.editDescription', 'Update the tool configuration.')
+              : t('scans.tools.form.addDescription', 'Register a new security tool for your team.')}
           </DialogDescription>
         </DialogHeader>
 
@@ -249,9 +267,14 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                       name="name"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Name *</FormLabel>
+                          <FormLabel>{t('scans.tools.form.name', 'Name *')}</FormLabel>
                           <FormControl>
-                            <Input {...field} placeholder="semgrep" className="font-mono" />
+                            <Input
+                              {...field}
+                              // i18n-ok: example tool identifier
+                              placeholder="semgrep"
+                              className="font-mono"
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -263,9 +286,15 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                       name="display_name"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Display Name *</FormLabel>
+                          <FormLabel>
+                            {t('scans.tools.form.displayName', 'Display name *')}
+                          </FormLabel>
                           <FormControl>
-                            <Input {...field} placeholder="Semgrep" />
+                            <Input
+                              {...field}
+                              // i18n-ok: example product name
+                              placeholder="Semgrep"
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -279,11 +308,16 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                       name="category"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Category *</FormLabel>
+                          <FormLabel>{t('scans.tools.form.category', 'Category *')}</FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
                               <SelectTrigger>
-                                <SelectValue placeholder="Select category" />
+                                <SelectValue
+                                  placeholder={t(
+                                    'scans.tools.form.selectCategory',
+                                    'Select category'
+                                  )}
+                                />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
@@ -307,11 +341,15 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                       name="install_method"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Install Method *</FormLabel>
+                          <FormLabel>
+                            {t('scans.tools.form.installMethod', 'Install method *')}
+                          </FormLabel>
                           <Select onValueChange={field.onChange} defaultValue={field.value}>
                             <FormControl>
                               <SelectTrigger>
-                                <SelectValue placeholder="Select method" />
+                                <SelectValue
+                                  placeholder={t('scans.tools.form.selectMethod', 'Select method')}
+                                />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
@@ -333,11 +371,14 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                     name="description"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Description</FormLabel>
+                        <FormLabel>{t('scans.tools.form.description', 'Description')}</FormLabel>
                         <FormControl>
                           <Textarea
                             {...field}
-                            placeholder="Brief description of what this tool does..."
+                            placeholder={t(
+                              'scans.tools.form.descriptionPlaceholder',
+                              'Brief description of what this tool does...'
+                            )}
                             rows={2}
                             className="resize-none"
                           />
@@ -353,7 +394,7 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                       name="github_url"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>GitHub URL</FormLabel>
+                          <FormLabel>{t('scans.tools.form.githubUrl', 'GitHub URL')}</FormLabel>
                           <FormControl>
                             <Input {...field} type="url" placeholder="https://github.com/..." />
                           </FormControl>
@@ -367,7 +408,7 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                       name="docs_url"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Docs URL</FormLabel>
+                          <FormLabel>{t('scans.tools.form.docsUrl', 'Docs URL')}</FormLabel>
                           <FormControl>
                             <Input {...field} type="url" placeholder="https://docs.example.com" />
                           </FormControl>
@@ -388,9 +429,9 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                     >
                       <div className="flex items-center gap-2">
                         <Terminal className="h-4 w-4 text-muted-foreground" />
-                        <span>Commands</span>
+                        <span>{t('scans.tools.form.commands', 'Commands')}</span>
                         <span className="text-xs text-muted-foreground font-normal">
-                          (optional)
+                          {t('scans.tools.form.optional', '(optional)')}
                         </span>
                       </div>
                       {commandsOpen ? (
@@ -406,10 +447,13 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                       name="install_cmd"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Install Command</FormLabel>
+                          <FormLabel>
+                            {t('scans.tools.form.installCommand', 'Install command')}
+                          </FormLabel>
                           <FormControl>
                             <Input
                               {...field}
+                              // i18n-ok: example command
                               placeholder="go install github.com/example/tool@latest"
                               className="font-mono text-sm"
                             />
@@ -424,10 +468,13 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                       name="update_cmd"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Update Command</FormLabel>
+                          <FormLabel>
+                            {t('scans.tools.form.updateCommand', 'Update command')}
+                          </FormLabel>
                           <FormControl>
                             <Input
                               {...field}
+                              // i18n-ok: example command
                               placeholder="go install github.com/example/tool@latest"
                               className="font-mono text-sm"
                             />
@@ -443,10 +490,13 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                         name="version_cmd"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Version Command</FormLabel>
+                            <FormLabel>
+                              {t('scans.tools.form.versionCommand', 'Version command')}
+                            </FormLabel>
                             <FormControl>
                               <Input
                                 {...field}
+                                // i18n-ok: example command
                                 placeholder="tool --version"
                                 className="font-mono text-sm"
                               />
@@ -461,7 +511,9 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                         name="version_regex"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Version Regex</FormLabel>
+                            <FormLabel>
+                              {t('scans.tools.form.versionRegex', 'Version regex')}
+                            </FormLabel>
                             <FormControl>
                               <Input
                                 {...field}
@@ -480,13 +532,17 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                       name="min_version"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Minimum version</FormLabel>
+                          <FormLabel>
+                            {t('scans.tools.form.minVersion', 'Minimum version')}
+                          </FormLabel>
                           <FormControl>
                             <Input {...field} placeholder="3.2.0" className="font-mono text-sm" />
                           </FormControl>
                           <FormDescription>
-                            When every online sensor runs an older version, the tool shows as
-                            outdated. Scans still run.
+                            {t(
+                              'scans.tools.form.minVersionHint',
+                              'When every online sensor runs an older version, the tool shows as outdated. Scans still run.'
+                            )}
                           </FormDescription>
                           <FormMessage />
                         </FormItem>
@@ -505,9 +561,9 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                     >
                       <div className="flex items-center gap-2">
                         <Tag className="h-4 w-4 text-muted-foreground" />
-                        <span>Metadata</span>
+                        <span>{t('scans.tools.form.metadata', 'Metadata')}</span>
                         <span className="text-xs text-muted-foreground font-normal">
-                          (optional)
+                          {t('scans.tools.form.optional', '(optional)')}
                         </span>
                       </div>
                       {metadataOpen ? (
@@ -520,12 +576,14 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                   <CollapsibleContent className="space-y-4 pt-3">
                     {/* Tags */}
                     <div>
-                      <FormLabel className="text-sm">Tags</FormLabel>
+                      <FormLabel className="text-sm">
+                        {t('scans.tools.form.tags', 'Tags')}
+                      </FormLabel>
                       <div className="mt-1.5 flex gap-2">
                         <Input
                           value={tagInput}
                           onChange={(e) => setTagInput(e.target.value)}
-                          placeholder="Add tag..."
+                          placeholder={t('scans.tools.form.addTag', 'Add tag...')}
                           className="flex-1"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
@@ -563,12 +621,14 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
 
                     {/* Capabilities */}
                     <div>
-                      <FormLabel className="text-sm">Capabilities</FormLabel>
+                      <FormLabel className="text-sm">
+                        {t('scans.tools.form.capabilities', 'Capabilities')}
+                      </FormLabel>
                       <div className="mt-1.5 flex gap-2">
                         <Input
                           value={capabilityInput}
                           onChange={(e) => setCapabilityInput(e.target.value)}
-                          placeholder="Add capability..."
+                          placeholder={t('scans.tools.form.addCapability', 'Add capability...')}
                           className="flex-1"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
@@ -608,12 +668,17 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
 
                     {/* Supported Targets */}
                     <div>
-                      <FormLabel className="text-sm">Supported Targets</FormLabel>
+                      <FormLabel className="text-sm">
+                        {t('scans.tools.form.supportedTargets', 'Supported targets')}
+                      </FormLabel>
                       <div className="mt-1.5 flex gap-2">
                         <Input
                           value={targetInput}
                           onChange={(e) => setTargetInput(e.target.value)}
-                          placeholder="e.g., python, javascript"
+                          placeholder={t(
+                            'scans.tools.form.targetsPlaceholder',
+                            'e.g., python, javascript'
+                          )}
                           className="flex-1"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
@@ -653,12 +718,17 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
 
                     {/* Output Formats */}
                     <div>
-                      <FormLabel className="text-sm">Output Formats</FormLabel>
+                      <FormLabel className="text-sm">
+                        {t('scans.tools.form.outputFormats', 'Output formats')}
+                      </FormLabel>
                       <div className="mt-1.5 flex gap-2">
                         <Input
                           value={formatInput}
                           onChange={(e) => setFormatInput(e.target.value)}
-                          placeholder="e.g., json, sarif"
+                          placeholder={t(
+                            'scans.tools.form.formatsPlaceholder',
+                            'e.g., json, sarif'
+                          )}
                           className="flex-1"
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
@@ -702,7 +772,7 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                       name="logo_url"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Logo URL</FormLabel>
+                          <FormLabel>{t('scans.tools.form.logoUrl', 'Logo URL')}</FormLabel>
                           <FormControl>
                             <Input
                               {...field}
@@ -726,11 +796,13 @@ export function AddToolDialog({ open, onOpenChange, onSuccess, tool }: AddToolDi
                 onClick={() => handleOpenChange(false)}
                 disabled={isMutating}
               >
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </Button>
               <Button type="submit" disabled={isMutating}>
                 {isMutating && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                {isEditMode ? 'Update Tool' : 'Create Tool'}
+                {isEditMode
+                  ? t('scans.tools.form.update', 'Update tool')
+                  : t('scans.tools.form.create', 'Create tool')}
               </Button>
             </DialogFooter>
           </DialogForm>

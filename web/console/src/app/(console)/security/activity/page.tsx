@@ -5,7 +5,19 @@ import { Download } from 'lucide-react'
 import { Main } from '@/components/layout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ErrorState, FilterSelect, PageHeader, PageStack } from '@/features/shared'
+import {
+  AddFilterPanel,
+  FacetOption,
+  FacetPanel,
+  FacetSection,
+  FilterChipsRow,
+  FilterSelect,
+  FilterSheet,
+  PageHeader,
+  PageStack,
+} from '@/features/shared'
+import { ListCount, ListToolbarTitle } from '@/features/shared/components/list-title-row'
+import { RemovableFilterChip } from '@/features/shared/components/removable-filter-chip'
 import { useTranslation } from '@/context/i18n-provider'
 import { useCsvExport, type ExportFieldConfig } from '@/hooks/use-csv-export'
 import { useSearchQuery } from '@/hooks/use-search-query'
@@ -19,7 +31,10 @@ import {
   AuditKindLens,
   auditKind,
 } from '@console/features/admin-console/components/audit-kind-lens'
-import { AdminAuditChainStatus } from '@console/features/admin-console/components/admin-audit-chain-status'
+import {
+  AdminAuditChainBadge,
+  AdminAuditChainStatus,
+} from '@console/features/admin-console/components/admin-audit-chain-status'
 import { AdminAuditDetailSheet } from '@console/features/admin-console/components/admin-audit-detail-sheet'
 import { dayBound } from '@console/features/admin-console/lib/audit-range'
 import type { AdminAuditEntry } from '@console/features/admin-console/types'
@@ -74,7 +89,7 @@ export default function AdminActivityPage() {
       : ''
   const dAction = useSearchQuery(action).term
   const dEmail = useSearchQuery(adminEmail).term
-  const { data, error, isLoading, mutate } = useAdminAuditLogs({
+  const { data, error, isLoading, isValidating, mutate } = useAdminAuditLogs({
     page,
     action: dAction,
     adminEmail: dEmail,
@@ -84,8 +99,136 @@ export default function AdminActivityPage() {
     to: dayBound(list.filters.to, true),
   })
   const [openId, setOpenId] = useState<string | null>(null)
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const entries = useMemo(() => data?.data ?? [], [data])
   const { handleExport } = useCsvExport(entries, exportFields(t), 'admin-activity')
+  const total = data?.total ?? 0
+  // The kind lens is a view, not a filter: Clear filters keeps it.
+  const filtered = Boolean(action || adminEmail || outcome || list.filters.from || list.filters.to)
+  const clearFilters = () => {
+    for (const k of ['action', 'admin_email', 'outcome', 'from', 'to'] as const)
+      list.setFilter(k, '')
+  }
+
+  // Action, administrator and the two dates live behind Add filter and show
+  // as chips; the kind lens and Result are the toolbar's own selects.
+  const chipFields = [
+    {
+      key: 'action',
+      field: t('admin.securityActivityPage.action', 'Action'),
+      value: action,
+    },
+    {
+      key: 'admin_email',
+      field: t('admin.securityActivityPage.administrator', 'Administrator'),
+      value: adminEmail,
+    },
+    { key: 'from', field: t('admin.activity.fromShort', 'From'), value: list.filters.from },
+    { key: 'to', field: t('admin.activity.toShort', 'To'), value: list.filters.to },
+  ] as const
+  const chips = chipFields.filter((c) => c.value)
+  const clearChipFilters = () => {
+    for (const c of chipFields) list.setFilter(c.key, '')
+  }
+  const chipsRow =
+    chips.length > 0 ? (
+      <FilterChipsRow
+        data-testid="activity-filter-chips"
+        label={t('common.filterChips.label', 'Active filters')}
+        chips={chips.map((c) => {
+          const text = t('admin.activity.chip', '{field}: {value}', {
+            field: c.field,
+            value: c.value,
+          })
+          return (
+            <RemovableFilterChip
+              key={c.key}
+              text={text}
+              onRemove={() => list.setFilter(c.key, '')}
+              removeLabel={t('admin.activity.removeFilter', 'Remove filter {filter}', {
+                filter: text,
+              })}
+            />
+          )
+        })}
+        onClearAll={chips.length > 1 ? clearChipFilters : undefined}
+      />
+    ) : undefined
+
+  const outcomeOptions = [
+    { value: 'success', label: t('admin.activity.outcomeSuccess', 'Succeeded') },
+    { value: 'failure', label: t('admin.activity.outcomeFailure', 'Refused or failed') },
+  ] as const
+
+  // `withResult`: the phone sheet also holds Result (a toolbar select from
+  // 768), so every filter is in one place there.
+  const facetPanel = (withResult: boolean) => (
+    <FacetPanel
+      activeCount={chips.length + (withResult && outcome ? 1 : 0)}
+      onClearAll={withResult ? clearFilters : clearChipFilters}
+    >
+      {withResult && (
+        <FacetSection
+          title={t('admin.securityActivityPage.result', 'Result')}
+          selectedCount={outcome ? 1 : 0}
+        >
+          {outcomeOptions.map((o) => (
+            <FacetOption
+              key={o.value}
+              label={o.label}
+              checked={outcome === o.value}
+              onCheckedChange={(on) => list.setFilter('outcome', on ? o.value : '')}
+            />
+          ))}
+        </FacetSection>
+      )}
+      <FacetSection
+        title={t('admin.securityActivityPage.action', 'Action')}
+        selectedCount={action ? 1 : 0}
+      >
+        <div className="pe-1 pt-1">
+          <Input
+            placeholder={t('admin.activity.actionFilter', 'Search actions')}
+            value={action}
+            onChange={(e) => list.setFilter('action', e.target.value)}
+            aria-label={t('admin.activity.actionFilterLabel', 'Filter by action')}
+          />
+        </div>
+      </FacetSection>
+      <FacetSection
+        title={t('admin.securityActivityPage.administrator', 'Administrator')}
+        selectedCount={adminEmail ? 1 : 0}
+      >
+        <div className="pe-1 pt-1">
+          <Input
+            placeholder={t('admin.activity.adminFilter', 'Administrator email')}
+            value={adminEmail}
+            onChange={(e) => list.setFilter('admin_email', e.target.value)}
+            aria-label={t('admin.activity.adminFilterLabel', 'Filter by administrator')}
+          />
+        </div>
+      </FacetSection>
+      <FacetSection
+        title={t('admin.activity.dateRange', 'Date')}
+        selectedCount={(list.filters.from ? 1 : 0) + (list.filters.to ? 1 : 0)}
+      >
+        <div className="grid gap-2 pe-1 pt-1">
+          <Input
+            type="date"
+            value={list.filters.from}
+            onChange={(e) => list.setFilter('from', e.target.value)}
+            aria-label={t('admin.activity.from', 'From date')}
+          />
+          <Input
+            type="date"
+            value={list.filters.to}
+            onChange={(e) => list.setFilter('to', e.target.value)}
+            aria-label={t('admin.activity.to', 'To date')}
+          />
+        </div>
+      </FacetSection>
+    </FacetPanel>
+  )
 
   return (
     <Main>
@@ -97,86 +240,107 @@ export default function AdminActivityPage() {
             'Every action taken by platform administrators, including sign-ins and refused attempts.'
           )}
         >
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleExport}
-            disabled={entries.length === 0}
-          >
-            <Download className="me-2 size-4" />
-            {t('admin.activity.export', 'Export this page (CSV)')}
-          </Button>
+          {/* Whether the log verifies: one line in the header, never a row of
+              its own above the list. A broken chain is said in full below. */}
+          <AdminAuditChainBadge />
         </PageHeader>
         <AdminAuditChainStatus />
-        {error ? (
-          <ErrorState
-            title={t('admin.securityActivityPage.adminActivity', 'admin activity')}
-            error={error}
-            onRetry={() => void mutate()}
-          />
-        ) : (
-          <AdminActivityTable
-            entries={entries}
-            isLoading={isLoading}
-            onRowClick={(e) => setOpenId(e.id)}
-            paging={{
-              page,
-              pageCount: data?.total_pages ?? 1,
-              rowCount: data?.total ?? 0,
-              onPageChange: setPage,
-            }}
-            toolbarStart={
-              <div className="grid w-full gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap">
-                <AuditKindLens
-                  value={kind}
-                  onChange={(v) => list.setFilter('kind', v === 'all' ? 'all' : '')}
+        <AdminActivityTable
+          // The view name and count lead the toolbar row; the filters (on a
+          // phone, the Filters button), Export and Display share its line.
+          toolbarTitle={
+            <ListToolbarTitle
+              title={
+                kind === 'all'
+                  ? t('admin.activity.kindAll', 'All events')
+                  : t('admin.activity.kindChanges', 'Changes')
+              }
+              count={
+                <ListCount
+                  total={total}
+                  loading={!data && !error}
+                  label={t(
+                    'admin.activity.total',
+                    '{count, plural, one {# event} other {# events}}',
+                    { count: total }
+                  )}
                 />
-                <Input
-                  placeholder={t('admin.activity.actionFilter', 'Action, e.g. console.login')}
-                  value={action}
-                  onChange={(e) => list.setFilter('action', e.target.value)}
-                  className="lg:max-w-56"
-                  aria-label={t('admin.activity.actionFilterLabel', 'Filter by action')}
-                />
-                <Input
-                  placeholder={t('admin.activity.adminFilter', 'Administrator email')}
-                  value={adminEmail}
-                  onChange={(e) => list.setFilter('admin_email', e.target.value)}
-                  className="lg:max-w-56"
-                  aria-label={t('admin.activity.adminFilterLabel', 'Filter by administrator')}
-                />
-                <FilterSelect
-                  label={t('admin.activity.outcomeLabel', 'Filter by result')}
-                  value={outcome}
-                  onChange={(v) => list.setFilter('outcome', v)}
-                  allLabel={t('admin.activity.outcomeAll', 'All results')}
-                  options={[
-                    { value: 'success', label: t('admin.activity.outcomeSuccess', 'Succeeded') },
-                    {
-                      value: 'failure',
-                      label: t('admin.activity.outcomeFailure', 'Refused or failed'),
-                    },
-                  ]}
-                />
-                <Input
-                  type="date"
-                  value={list.filters.from}
-                  onChange={(e) => list.setFilter('from', e.target.value)}
-                  className="lg:w-40"
-                  aria-label={t('admin.activity.from', 'From date')}
-                />
-                <Input
-                  type="date"
-                  value={list.filters.to}
-                  onChange={(e) => list.setFilter('to', e.target.value)}
-                  className="lg:w-40"
-                  aria-label={t('admin.activity.to', 'To date')}
-                />
-              </div>
-            }
-          />
-        )}
+              }
+            />
+          }
+          // The list's own action: export the rows on this page. Labelled like
+          // Display: an icon below a 64rem toolbar or while it folds.
+          toolbarEnd={
+            <Button
+              variant="outline"
+              size="sm"
+              iconOnlyBelow="@5xl/toolbar"
+              onClick={handleExport}
+              disabled={entries.length === 0}
+              aria-label={t('admin.activity.export', 'Export this page (CSV)')}
+            >
+              <Download aria-hidden />
+              <span className="sr-only @5xl/toolbar:not-sr-only group-data-[fold=true]/toolbar:sr-only">
+                {t('admin.activity.export', 'Export this page (CSV)')}
+              </span>
+            </Button>
+          }
+          entries={entries}
+          caption={t('admin.nav.activity', 'Admin activity')}
+          isLoading={isLoading && !data}
+          isRefreshing={isValidating && !!data}
+          error={error}
+          onRetry={() => void mutate()}
+          isFiltered={filtered}
+          onClearFilters={clearFilters}
+          onRowClick={(e) => setOpenId(e.id)}
+          paging={{
+            page,
+            pageCount: data?.total_pages ?? 1,
+            rowCount: total,
+            onPageChange: setPage,
+          }}
+          // One filter entry per width: Add filter from 768, this button on a
+          // phone, where it opens the sheet.
+          filterToggle={{
+            open: false,
+            onToggle: () => setFilterSheetOpen(true),
+            onOpenSheet: () => setFilterSheetOpen(true),
+            activeCount: chips.length + (outcome ? 1 : 0),
+            controlsId: 'admin-activity-filters',
+            label: t('admin.activity.filtersLabel', 'Activity filters'),
+            sheetOnly: true,
+          }}
+          toolbarStart={
+            <>
+              <AddFilterPanel>{facetPanel(false)}</AddFilterPanel>
+              <AuditKindLens
+                value={kind}
+                onChange={(v) => list.setFilter('kind', v === 'all' ? 'all' : '')}
+              />
+              <FilterSelect
+                label={t('admin.activity.outcomeLabel', 'Filter by result')}
+                value={outcome}
+                foldLabel
+                onChange={(v) => list.setFilter('outcome', v)}
+                allLabel={t('admin.activity.outcomeAll', 'All results')}
+                options={[...outcomeOptions]}
+              />
+            </>
+          }
+          // Always mounted (an empty row is hidden): the toolbar would mount
+          // again when the first chip appears, closing the Add filter panel
+          // while its field is being typed in.
+          toolbarBelow={chipsRow ?? <></>}
+        />
         <AdminAuditDetailSheet entryId={openId} onClose={() => setOpenId(null)} />
+        <FilterSheet
+          open={filterSheetOpen}
+          onOpenChange={setFilterSheetOpen}
+          title={t('admin.activity.filtersLabel', 'Activity filters')}
+        >
+          {facetPanel(true)}
+        </FilterSheet>
       </PageStack>
     </Main>
   )

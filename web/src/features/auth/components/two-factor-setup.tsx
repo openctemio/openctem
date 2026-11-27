@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react'
 
+import { EntryHeader } from '@/components/entry'
 import { useTranslation } from '@/context/i18n-provider'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
 import { getCookie } from '@/lib/cookies'
@@ -54,24 +55,20 @@ export function TwoFactorSetup({ next, org }: { next?: string; org?: string }) {
   }, [target])
 
   return (
-    <div className="grid gap-4">
-      <div className="space-y-1">
-        <h1 className="text-lg font-semibold">
-          {t('auth.mfaSession.pageTitle', 'Set up two-factor authentication')}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {t(
-            'auth.mfaSession.pageBody',
-            'Your organization now requires two-factor authentication. Set it up to keep working; you stay signed in.'
-          )}
-        </p>
-      </div>
+    <>
+      <EntryHeader
+        title={t('auth.mfaSession.pageTitle', 'Set up two-factor authentication')}
+        description={t(
+          'auth.mfaSession.pageBody',
+          'Your organization now requires two-factor authentication. Set it up to keep working; you stay signed in.'
+        )}
+      />
       <MfaSessionStep
         tenantId={tenantId}
         onComplete={onComplete}
         onSessionExpired={onSessionExpired}
         onReauthRequired={onSessionExpired}
       />
-    </div>
+    </>
   )
 }

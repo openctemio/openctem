@@ -13,6 +13,8 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  usePermissions: () => ({ can: () => true, permissions: [], isLoading: false }),
+  useHasPermission: () => true,
 }))
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -141,7 +143,7 @@ describe('EmergingThreatsList', () => {
   it('exploit: KEV hides the EPSS figure; without KEV it reads "Exploit chance"', async () => {
     renderList()
     await screen.findByText('CVE-2026-1000')
-    expect(screen.getAllByText('KEV').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Exploited').length).toBeGreaterThan(0)
     expect(screen.queryByText('Exploit chance 50.0%')).not.toBeInTheDocument()
     expect(screen.getByText('Exploit chance 0.6%')).toBeInTheDocument()
   })
@@ -312,11 +314,25 @@ describe('EmergingThreatsList', () => {
       '/assets/as4'
     )
     expect(within(sheet).getByText('Most important affected hosts')).toBeInTheDocument()
+    // The header: one main action, the rest in the header's More menu; the
+    // state, priority and exploit chips on one line under the title.
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByRole('button', { name: /Create remediation task/ })).toBeVisible()
+    expect(within(dialog).queryByRole('button', { name: 'Acknowledge' })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: /Scan affected/ })).toBeNull()
+    expect(within(dialog).getByRole('button', { name: 'More actions' })).toBeInTheDocument()
+    const meta = dialog.querySelector('[data-slot="et-meta"]') as HTMLElement
+    expect(meta.textContent).toContain('New')
+    expect(meta.textContent).toContain('Exploited')
   })
 
   it('shows the API error', async () => {
-    api.get.mockRejectedValue(new Error('boom'))
+    // A refusal the API explains in a sentence is shown as written (a bare
+    // code reads as the shared "Something went wrong" line: error-state tests).
+    api.get.mockRejectedValue(new Error('The threat feed is not reachable right now.'))
     renderList()
-    expect(await screen.findByText('boom')).toBeInTheDocument()
+    expect(
+      await screen.findByText('The threat feed is not reachable right now.')
+    ).toBeInTheDocument()
   })
 })

@@ -76,6 +76,10 @@ for (const width of [390, 1440] as const) {
         const card = document.querySelector('[data-testid="scanner-addresses-card"]')!
         const cb = card.getBoundingClientRect()
         for (const e of Array.from(card.querySelectorAll('*'))) {
+          // The format picker is one swipeable row: its tabs may sit past the
+          // card's edge (the strip itself, checked here, may not).
+          const strip = e.parentElement?.closest('[data-tab-strip]')
+          if (strip && card.contains(strip)) continue
           const b = e.getBoundingClientRect()
           if (b.width > 0 && (b.right > cb.right + 0.5 || b.left < cb.left - 0.5)) {
             out.push(`"${(e.textContent ?? '').trim().slice(0, 40)}" runs out of the card`)

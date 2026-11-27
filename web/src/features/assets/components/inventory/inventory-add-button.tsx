@@ -62,30 +62,61 @@ export function InventoryAddButton({
   registry,
   view,
   onAdd,
+  open,
+  onOpenChange,
+  compact = false,
 }: {
+  /**
+   * In the page's title row: an icon-only square below 768 px (its name stays
+   * the full label), the label from 768 px.
+   */
+  compact?: boolean
   registry: AssetTypeRegistry | undefined
   view: TypeView | null
   onAdd: (view: TypeView) => void
+  /** The type menu's open state, when the page opens it (`?new=asset`). */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
   const { t } = useTranslation()
+  const content = (label: string) =>
+    compact ? (
+      <>
+        <Plus className="h-4 w-4" aria-hidden />
+        <span className="sr-only md:not-sr-only">{label}</span>
+      </>
+    ) : (
+      <>
+        <Plus className="me-2 h-4 w-4" aria-hidden />
+        {label}
+      </>
+    )
   if (view) {
+    const label = t('assets.addButton.addType', 'Add {type}', { type: inSentence(view.label) })
     return (
-      <Button size="sm" onClick={() => onAdd(view)}>
-        <Plus className="me-2 h-4 w-4" />
-        {t('assets.addButton.addType', 'Add {type}', { type: inSentence(view.label) })}
+      <Button
+        size="sm"
+        iconOnlyBelow={compact ? 'md' : undefined}
+        aria-label={compact ? label : undefined}
+        onClick={() => onAdd(view)}
+      >
+        {content(label)}
       </Button>
     )
   }
   if (!registry?.types?.length) return null
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
-        <Button size="sm">
-          <Plus className="me-2 h-4 w-4" />
-          {t('assets.addButton.addAsset', 'Add asset')}
+        <Button
+          size="sm"
+          iconOnlyBelow={compact ? 'md' : undefined}
+          aria-label={compact ? t('assets.addButton.addAsset', 'Add asset') : undefined}
+        >
+          {content(t('assets.addButton.addAsset', 'Add asset'))}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="max-h-[60vh] w-56 overflow-y-auto">
+      <DropdownMenuContent className="max-h-[60vh] overflow-y-auto">
         {choicesByLens(registry).map(({ lens, choices }, i) => (
           <DropdownMenuGroup key={lens || 'other'}>
             {i > 0 && <DropdownMenuSeparator />}

@@ -45,7 +45,7 @@ describe('SensorVersionCell', () => {
     expect(tip?.getAttribute('title')).toContain('SDK: openctem-sdk-go v0.9.0')
     // A current SDK carries no SDK tag.
     expect(screen.queryByText(/SDK (outdated|advisory)/)).toBeNull()
-    expect(screen.getByText('latest')).toBeInTheDocument()
+    expect(screen.getByText('Latest')).toBeInTheDocument()
   })
 
   it('leaves out the parts that are not reported', () => {
@@ -72,9 +72,9 @@ describe('SensorVersionCell', () => {
     // v0.1.5 is far below the scanning sensor's minimum (v0.4.0), but the
     // connector's own line is v0.1.0..v0.2.0: an update, not unsupported.
     cell({ version: 'v0.1.5', sensor_product: 'openctemio-connector-tenable' })
-    const update = screen.getByText('update')
+    const update = screen.getByText('Update available')
     expect(update).toHaveAttribute('title', 'v0.2.0 is available')
-    expect(screen.queryByText('unsupported')).toBeNull()
+    expect(screen.queryByText('Unsupported')).toBeNull()
   })
 
   it('prefers the release line the API sent for the sensor', () => {
@@ -85,7 +85,7 @@ describe('SensorVersionCell', () => {
       product_latest_version: 'v0.3.0',
       product_min_version: 'v0.2.0',
     })
-    expect(screen.getByText('unsupported')).toHaveAttribute(
+    expect(screen.getByText('Unsupported')).toHaveAttribute(
       'title',
       'Older than the minimum supported v0.2.0'
     )
@@ -113,5 +113,27 @@ describe('sdkVersionOptions', () => {
       ['unknown', 1],
     ])
     expect(sdkVersionOptions(undefined)).toEqual([])
+  })
+
+  it('shows one signal at most in the list row, the worst of the release and its SDK', () => {
+    const row = (sensor: SensorVersionFields) =>
+      render(<SensorVersionCell sensor={sensor} channel={CHANNEL} inline />).container
+    // A release update and an outdated SDK: one "Update available", no SDK chip.
+    let c = row({ version: 'v0.4.5', sdk_version: 'v0.8.0', sdk_status: 'outdated' })
+    expect(c.querySelectorAll('[data-slot="health-status"]')).toHaveLength(1)
+    expect(c.querySelector('[data-state="update_available"]')).toHaveTextContent('Update available')
+    expect(c.textContent).not.toContain('SDK outdated')
+    const tip = c.querySelector('[data-slot="sensor-version-cell"]')?.getAttribute('title')
+    expect(tip).toContain('v0.5.0 is available')
+    expect(tip).toContain('SDK v0.9.0 is available')
+    // The chip may wrap under the version, never be cut beside it.
+    expect(c.querySelector('[data-slot="sensor-version-cell"]')).toHaveClass('flex-wrap')
+
+    // An SDK advisory outranks an update; an unsupported part outranks both.
+    c = row({ version: 'v0.4.5', sdk_version: 'v0.6.0', sdk_status: 'advisory' })
+    expect(c.querySelector('[data-state="security_update"]')).toHaveTextContent('Security update')
+    c = row({ version: 'v0.5.0', sdk_version: 'v0.1.0', sdk_status: 'unsupported' })
+    expect(c.querySelectorAll('[data-slot="health-status"]')).toHaveLength(1)
+    expect(c.querySelector('[data-state="unsupported"]')).toHaveTextContent('Unsupported')
   })
 })

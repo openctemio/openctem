@@ -109,7 +109,7 @@ describe('EASMMonitoringCard', () => {
 
   it('turns network seed lookups off with only that field changed', async () => {
     wrap(<EASMMonitoringCard />)
-    const sw = await screen.findByRole('switch', { name: 'Network seed lookups' })
+    const sw = await screen.findByRole('switch', { name: 'Network lookups' })
     await userEvent.click(sw)
     expect(api.put).toHaveBeenCalledWith('/api/v1/easm/settings', {
       ct_enabled: true,

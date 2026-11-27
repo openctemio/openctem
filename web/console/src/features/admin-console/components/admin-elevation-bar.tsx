@@ -28,9 +28,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { useTranslation } from '@/context/i18n-provider'
 import { adminElevate, adminEndElevation } from '../api/use-admin-session'
 import { useConsoleFactors } from '../api/use-console-factors'
+import { roleName } from '../lib/role-name'
 import { actingRoleLabel, adminCanElevate, elevationChoices, type AdminIdentity } from '../types'
 import { REASON_MAX, REASON_MIN, stepUpErrorMessage } from './admin-confirm-dialog'
 import { StepUpCodeField, useReasonAndCode } from './step-up-code-hint'
+import { formatTime } from '@/lib/app-locale'
 
 const DURATIONS = [15, 30, 60] as const
 
@@ -89,7 +91,7 @@ export function AdminElevationBar({
 
   const acting = actingRoleLabel(admin)
   const until = admin.elevated_until
-    ? new Date(admin.elevated_until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    ? formatTime(new Date(admin.elevated_until), { hour: '2-digit', minute: '2-digit' })
     : ''
   const activeText = t('admin.elevation.active', 'Acting as {role} until {until}.', {
     role: t(acting.key, acting.fallback),
@@ -104,10 +106,13 @@ export function AdminElevationBar({
           <span className="sr-only" role="status">
             {activeText}
           </span>
+          {/* The role and the time from 1536 px; below, the time only (the
+              role is in the sidebar's header), so the breadcrumb beside the
+              search keeps its names. */}
           <TonePill
             tone="warning"
             title={activeText}
-            className="hidden sm:inline-flex"
+            className="hidden 2xl:inline-flex"
             label={t('admin.elevation.chip', '{role} until {until}', {
               role: t(acting.key, acting.fallback),
               until,
@@ -116,7 +121,7 @@ export function AdminElevationBar({
           <TonePill
             tone="warning"
             title={activeText}
-            className="sm:hidden"
+            className="2xl:hidden"
             label={t('admin.elevation.chipShort', 'Until {until}', { until })}
           />
           <Button size="sm" variant="outline" disabled={busy} onClick={() => void end()}>
@@ -230,9 +235,7 @@ function ElevateDialog({
                   <SelectContent>
                     {roles.map((r) => (
                       <SelectItem key={r} value={r}>
-                        {r.includes('_admin') && !r.startsWith('platform_')
-                          ? t(`admin.role.${r}`, r)
-                          : t(`admin.platformRole.${r}`, r)}
+                        {roleName(t, r)}
                       </SelectItem>
                     ))}
                   </SelectContent>

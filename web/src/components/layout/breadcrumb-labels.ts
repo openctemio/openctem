@@ -1,10 +1,16 @@
 import { sidebarData } from '@/config/sidebar-data'
+import { ACCOUNT_NAV } from '@/config/account-nav'
 import { settingsNavItems } from '@/config/settings-nav'
+import * as sectionTabs from '@/config/section-tabs'
 
 /**
- * Breadcrumb labels come from the navs (main sidebar and settings rail), the
- * places pages are named, so the trail always says what the menu says. Only paths the sidebar does not
- * list fall back to FALLBACK_LABELS, then to the segment itself.
+ * Breadcrumb labels come from the places pages are named, with the same i18n
+ * key, so the last crumb always says what the page heading or its active tab
+ * says, in the reader's language: a page's own title (PATH_LABELS), the tab
+ * strip of a section (config/section-tabs.ts), then the navs (main sidebar and
+ * settings rail). Section roots and sub-pages no nav names use FALLBACK_LABELS.
+ * `__tests__/breadcrumb-heading.test.ts` fails on a page route whose crumb has
+ * no key in en and vi.
  */
 
 type NavNode = { id?: string; title?: string; url?: string; items?: NavNode[] }
@@ -41,21 +47,99 @@ const SIDEBAR_LABELS: Map<string, string> = (() => {
   collect(settingsNavItems as NavNode[], map, SIDEBAR_KEYS, (n) =>
     n.id ? `settings.item.${n.id}` : undefined
   )
+  // The account area has its own navigation, named the way its tabs are.
+  collect(ACCOUNT_NAV as unknown as NavNode[], map, SIDEBAR_KEYS, (n) =>
+    n.id ? `account.area.nav.${n.id}` : undefined
+  )
   return map
 })()
 
-/** Sub-pages the sidebar does not list, by full path. */
-const PATH_LABELS: Record<string, string> = {
-  // The first tab of Scoping > Business context: the row is named after the
-  // section, the crumb after the page (its siblings humanize to "Business
-  // services" and "Business units").
-  '/crown-jewels': 'Crown jewels',
-  // Attack surface > Review (the decisions that still need a person); the
-  // crumb carries the tab's name.
-  '/attack-surface/review': 'Review',
+type Named = { label: string; key: string }
+
+/**
+ * Menu titles that only make sense inside their menu group ("Overview"), or
+ * that name a section's index page ("All integrations"): as a crumb, the
+ * section's own name reads better.
+ */
+const GENERIC_TITLES = new Set(['Overview', 'All', 'All integrations'])
+
+/**
+ * Pages no nav or tab strip names, by full path: the label and key of the
+ * page's own heading (its `PageHeader` title), so crumb and heading agree.
+ */
+const PATH_LABELS: Record<string, Named> = {
   // About > Open-source licenses (reached from Help > About).
-  '/about/licenses': 'Open-source licenses',
+  '/about/licenses': { label: 'Open-source licenses', key: 'nav.crumb.licenses' },
+  '/activate': { label: 'Approve a sensor', key: 'sensors.activate.title' },
+  '/attack-surface/external': {
+    label: 'External attack surface',
+    key: 'attackSurface.external.title',
+  },
+  '/ci-cd/github-app/callback': {
+    label: 'GitHub App installation',
+    key: 'scans.ci.callback.title',
+  },
+  '/settings/scanning/content': {
+    label: 'Scanner content',
+    key: 'sensors.contentPolicy.page.title',
+  },
+  '/control-testing': { label: 'Control testing', key: 'validation.controlTesting.title' },
+  '/controls': { label: 'Compensating controls', key: 'validation.controls.title' },
+  '/dashboards': { label: 'Dashboards', key: 'dashboards.manage.title' },
+  '/findings/approvals': { label: 'Approval requests', key: 'findings.approvals.title' },
+  '/findings/imports': { label: 'Imports', key: 'findings.receiptHistory.title' },
+  '/findings/triage': { label: 'Triage', key: 'findings.triageMode.title' },
+  '/pentest/findings': { label: 'Findings', key: 'nav.item.findings' },
+  '/insights/ctem-maturity': { label: 'CTEM maturity', key: 'insights.maturity.title' },
+  '/notifications': { label: 'Notifications', key: 'settings.notifications.title' },
+  '/programs/new': { label: 'Import program', key: 'programs.new.title' },
+  // The section's root names the section, as its heading does on every tab
+  // ("Remediation"), not its first tab ("Fix plan").
+  '/remediation': { label: 'Remediation', key: 'remediationHub.plan.title' },
+  '/scoping': { label: 'Scoping', key: 'scoping.overview.title' },
+  '/settings/asset-sources': { label: 'Asset sources', key: 'assetSources.title' },
+  '/settings/integrations/notifications/history': {
+    label: 'Notification events',
+    key: 'notificationChannels.history.title',
+  },
+  '/settings/integrations/notifications/outbox': {
+    label: 'Notification queue',
+    key: 'notificationChannels.outbox.title',
+  },
+  '/settings/integrations/scm': { label: 'SCM connections', key: 'scmIntegration.page.title' },
+  '/settings/integrations/ticketing': {
+    label: 'Ticketing',
+    key: 'ticketingIntegration.page.title',
+  },
+  // The methodology tabs keep the section title as their heading: each crumb
+  // is its tab ("Pentest methodology > Finding library"), never the title twice.
+  '/settings/pentest/checklists': { label: 'Checklists', key: 'pentestChecklists.tabLabel' },
+  '/settings/pentest/report-templates': {
+    label: 'Report templates',
+    key: 'pentest.methodologyTabs.reportTemplates',
+  },
+  '/settings/pentest/templates': {
+    label: 'Finding library',
+    key: 'pentest.methodologyTabs.findingLibrary',
+  },
+  '/settings/tenant/create': { label: 'Create organization', key: 'settings.createTeam.title' },
+  '/threat-intel': { label: 'Threat intelligence', key: 'threatIntel.title' },
+  '/validation': { label: 'Validation', key: 'validation.overview.title' },
 }
+
+/** Tab names of every section tab strip and attention queue, by URL. */
+const TAB_LABELS: Map<string, Named> = (() => {
+  const map = new Map<string, Named>()
+  for (const value of Object.values(sectionTabs)) {
+    if (!Array.isArray(value)) continue
+    for (const tab of value as { href?: unknown; label?: unknown; labelKey?: unknown }[]) {
+      if (typeof tab?.href !== 'string' || typeof tab.label !== 'string') continue
+      if (typeof tab.labelKey !== 'string' || GENERIC_TITLES.has(tab.label)) continue
+      if (!map.has(tab.href)) map.set(tab.href, { label: tab.label, key: tab.labelKey })
+    }
+  }
+  return map
+})()
 
 /** Segments that are not sidebar entries themselves (section roots, sub-pages). */
 const FALLBACK_LABELS: Record<string, string> = {
@@ -68,7 +152,6 @@ const FALLBACK_LABELS: Record<string, string> = {
   scanning: 'Scanning',
   account: 'Account',
   insights: 'Insights',
-  pentest: 'Penetration testing',
   new: 'New',
   edit: 'Edit',
   builder: 'Builder',
@@ -76,8 +159,9 @@ const FALLBACK_LABELS: Record<string, string> = {
   'api-keys': 'API keys',
   'service-accounts': 'Service accounts',
   cicd: 'CI/CD',
+  'github-app': 'GitHub App',
   siem: 'SIEM',
-  scm: 'SCM',
+  scm: 'Source control',
   saml: 'SAML',
   scim: 'SCIM',
   mcp: 'MCP',
@@ -93,15 +177,29 @@ function humanize(segment: string): string {
 }
 
 /**
- * Menu titles that only make sense inside their menu group ("Overview"), or
- * that name a section's index page ("All integrations", "Profile" for
- * /account): as a crumb, the section's own name reads better.
+ * Whether a crumb at `path` has a name of its own (a heading, tab, nav item or
+ * section name). A folder with no page and no name (`/settings/tenant`,
+ * `/pentest`) is left out of the trail rather than shown as a humanised slug
+ * ("Tenant") that no menu uses.
  */
-const GENERIC_TITLES = new Set(['Overview', 'All', 'All integrations', 'Profile'])
+export function breadcrumbIsNamed(path: string, segment: string): boolean {
+  return breadcrumbLabelKey(path, segment) !== undefined
+}
+
+/**
+ * A page that lives under another level than its URL says: its trail goes
+ * through that parent (the review queues of Assets › Needs attention keep their
+ * older URLs, but read "Inventory › Needs attention › Possible duplicates").
+ */
+export const CRUMB_PARENTS: Readonly<Record<string, string>> = {
+  '/assets/duplicates': '/assets/attention',
+  '/assets/suggestions': '/assets/attention',
+}
 
 /** Label for the breadcrumb item at `path` whose last segment is `segment`. */
 export function breadcrumbLabel(path: string, segment: string): string {
-  if (PATH_LABELS[path]) return PATH_LABELS[path]
+  const own = PATH_LABELS[path] ?? TAB_LABELS.get(path)
+  if (own) return own.label
   const fromSidebar = SIDEBAR_LABELS.get(path)
   if (fromSidebar && !GENERIC_TITLES.has(fromSidebar)) return fromSidebar
   return FALLBACK_LABELS[segment] ?? humanize(segment)
@@ -109,12 +207,13 @@ export function breadcrumbLabel(path: string, segment: string): string {
 
 /**
  * The i18n key for the same label, so the trail speaks the reader's language:
- * the key the sidebar or settings rail renders the page with, else
- * `nav.crumb.<segment>` for the section names above. Undefined for a segment
- * with no known name (it shows humanized, in English).
+ * the key the page heading, its tab, the sidebar or the settings rail renders
+ * the page with, else `nav.crumb.<segment>` for the section names above.
+ * Undefined for a segment with no known name (it shows humanized, in English).
  */
 export function breadcrumbLabelKey(path: string, segment: string): string | undefined {
-  if (PATH_LABELS[path]) return `nav.crumb.${segment}`
+  const own = PATH_LABELS[path] ?? TAB_LABELS.get(path)
+  if (own) return own.key
   const fromSidebar = SIDEBAR_LABELS.get(path)
   if (fromSidebar && !GENERIC_TITLES.has(fromSidebar)) return SIDEBAR_KEYS.get(path)
   return FALLBACK_LABELS[segment] ? `nav.crumb.${segment}` : undefined
@@ -155,10 +254,9 @@ export const BREADCRUMB_OWN_KEYS: Record<string, string> = {
     Object.entries({ ...FALLBACK_LABELS }).map(([seg, label]) => [`nav.crumb.${seg}`, label])
   ),
   ...Object.fromEntries(
-    Object.entries(PATH_LABELS).map(([path, label]) => [
-      `nav.crumb.${path.split('/').pop()}`,
-      label,
-    ])
+    Object.values(PATH_LABELS)
+      .filter(({ key }) => key.startsWith('nav.crumb.'))
+      .map(({ key, label }) => [key, label])
   ),
   ...Object.fromEntries(
     Object.entries(RECORD_LABELS).map(([parent, label]) => [`nav.record.${parent}`, label])

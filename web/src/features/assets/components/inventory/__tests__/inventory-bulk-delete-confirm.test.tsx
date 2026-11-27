@@ -12,6 +12,7 @@ vi.mock('../../../hooks/use-assets', () => ({
 vi.mock('../../../hooks/use-asset-owners', () => ({ addAssetOwner: vi.fn() }))
 vi.mock('../inventory-business-context-actions', () => ({
   InventoryBusinessContextActions: () => null,
+  useBusinessContextAccess: () => ({ canUnit: false, canService: false }),
 }))
 vi.mock('swr', () => ({ default: () => ({ data: undefined, isLoading: false }) }))
 vi.mock('@/context/tenant-provider', () => ({ useTenant: () => ({ currentTenant: { id: 't1' } }) }))
@@ -45,10 +46,16 @@ function asset(id: string, findingCount = 0): Asset {
 
 beforeEach(() => deleteAsset.mockReset().mockResolvedValue(undefined))
 
+/** The bar's More, then one of its items. */
+async function chooseMore(name: string) {
+  await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+  await userEvent.click(await screen.findByRole('menuitem', { name }))
+}
+
 async function openDelete(selected: Asset[]) {
   const onDone = vi.fn()
   render(<InventoryBulkBar selected={selected} canWrite onClear={vi.fn()} onDone={onDone} />)
-  await userEvent.click(screen.getByRole('button', { name: `Delete ${selected.length}` }))
+  await chooseMore(`Delete ${selected.length}`)
   return { dialog: await screen.findByRole('alertdialog'), onDone }
 }
 

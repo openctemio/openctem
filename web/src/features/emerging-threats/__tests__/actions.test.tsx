@@ -3,8 +3,14 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { SWRConfig } from 'swr'
 import { NotAffectedDialog } from '../components/not-affected-dialog'
-import { AlertActions, OutOfScopeHint, scanCandidates } from '../components/alert-actions'
-import { splitTaskable, taskTitle } from '../types'
+import {
+  AlertActions,
+  OutOfScopeHint,
+  pickPrimary,
+  scanCandidates,
+  type AlertAction,
+} from '../components/alert-actions'
+import { splitTaskable, taskTitle, type AlertState, type RecommendedAction } from '../types'
 import { asset, detail } from './fixtures'
 
 const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }))
@@ -14,6 +20,12 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/permissions', async (orig) => ({
   ...(await orig<typeof import('@/lib/permissions')>()),
   Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  useHasPermission: () => true,
+}))
+const mobile = vi.hoisted(() => ({ phone: false }))
+vi.mock('@/hooks/use-mobile', () => ({
+  useIsMobile: () => mobile.phone,
+  useIsWide: () => !mobile.phone,
 }))
 
 const wrap = (ui: React.ReactNode) =>
@@ -21,6 +33,7 @@ const wrap = (ui: React.ReactNode) =>
 
 beforeEach(() => {
   api.post.mockReset()
+  mobile.phone = false
 })
 
 describe('NotAffectedDialog', () => {
@@ -55,7 +68,8 @@ describe('AlertActions', () => {
   it('sends the chosen reason and note with the state change', async () => {
     api.post.mockResolvedValue(detail({ state: 'not_affected' }))
     wrap(<AlertActions alert={detail()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Mark not affected' }))
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Mark not affected' }))
     await userEvent.click(screen.getByLabelText('The match is the wrong product'))
     await userEvent.click(screen.getAllByRole('button', { name: 'Mark not affected' }).at(-1)!)
     await waitFor(() =>
@@ -66,7 +80,7 @@ describe('AlertActions', () => {
     )
   })
 
-  it('hides Mark not affected when the alert reaches outside the scope, and says why', () => {
+  it('hides Mark not affected when the alert reaches outside the scope, and says why', async () => {
     const alert = detail({ can_suppress: false })
     wrap(
       <>
@@ -75,19 +89,59 @@ describe('AlertActions', () => {
       </>
     )
     expect(screen.queryByRole('button', { name: 'Mark not affected' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(screen.queryByRole('menuitem', { name: 'Mark not affected' })).toBeNull()
     expect(screen.getByText(/outside your scope/)).toBeInTheDocument()
   })
 
   it('acknowledges', async () => {
     api.post.mockResolvedValue(detail({ state: 'acknowledged' }))
     wrap(<AlertActions alert={detail()} />)
-    await userEvent.click(screen.getByRole('button', { name: 'Acknowledge' }))
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Acknowledge' }))
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/api/v1/emerging-threats/a1/state', {
         state: 'acknowledged',
       })
     )
   })
+
+  it('picks the main action from the state and the recommendation', () => {
+    const acts = (...ids: AlertAction['id'][]): AlertAction[] =>
+      ids.map((id) => ({ id, label: id, run: () => {} }))
+    const all = acts('acknowledge', 'remediating', 'not-affected', 'task', 'scan')
+    const pick = (state: AlertState, rec: RecommendedAction, list = all) =>
+      pickPrimary({ state, recommended_action: rec }, list)?.id ?? null
+    expect(pick('new', 'patch_now')).toBe('task')
+    // The version is not certain: check it first.
+    expect(pick('new', 'confirm')).toBe('scan')
+    // Nothing to plan: the next state move.
+    const noTask = all.map((a) => (a.id === 'task' ? { ...a, disabledReason: 'none' } : a))
+    expect(pick('new', 'patch_now', noTask)).toBe('acknowledge')
+    expect(pick('acknowledged', 'patch_now', noTask)).toBe('remediating')
+    // Remediating: scan again to check the fix.
+    expect(pick('remediating', 'patch_now', acts('not-affected', 'reopen', 'scan'))).toBe('scan')
+    // Closed: no main action, Reopen stays in the menu.
+    expect(pick('resolved', 'patch_now', acts('reopen'))).toBeNull()
+  })
+
+  it.each([
+    ['a phone', true],
+    ['a wide screen', false],
+  ])(
+    'keeps one main action on %s: the state moves and the scan are in More actions',
+    async (_, phone) => {
+      mobile.phone = phone
+      wrap(<AlertActions alert={detail()} />)
+      expect(screen.getByRole('button', { name: /Create remediation task/ })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Acknowledge' })).toBeNull()
+      expect(screen.queryByRole('button', { name: /Scan affected/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: 'Mark not affected' })).toBeNull()
+      await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+      expect(await screen.findByRole('menuitem', { name: 'Acknowledge' })).toBeInTheDocument()
+      expect(screen.getByRole('menuitem', { name: 'Mark not affected' })).toBeInTheDocument()
+    }
+  )
 })
 
 describe('create remediation task', () => {
@@ -116,7 +170,7 @@ describe('create remediation task', () => {
     api.post.mockResolvedValue({ id: 'task-42' })
     wrap(<AlertActions alert={mixed} />)
     await userEvent.click(screen.getByRole('button', { name: /Create remediation task/ }))
-    expect(screen.getByText(/1 findings are already in a task/)).toBeInTheDocument()
+    expect(screen.getByText(/1 finding is already in a task/)).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Create task with 2 findings' }))
     await waitFor(() =>
       expect(api.post).toHaveBeenCalledWith('/api/v1/remediation/tasks', {
@@ -138,13 +192,15 @@ describe('create remediation task', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('finding already in a task')
   })
 
-  it('is disabled when there is nothing to add', () => {
+  it('is not drawn as a dead button when there is nothing to add', () => {
     wrap(
       <AlertActions
         alert={detail({ assets: [asset({ task_id: 't1' }), asset({ finding_id: '' })] })}
       />
     )
-    expect(screen.getByRole('button', { name: /Create remediation task/ })).toBeDisabled()
+    expect(
+      screen.queryByRole('button', { name: /Create remediation task/ })
+    ).not.toBeInTheDocument()
     expect(api.post).not.toHaveBeenCalled()
   })
 })
@@ -167,13 +223,8 @@ describe('scan affected assets', () => {
     expect(scanCandidates(d).map((c) => c.id)).toEqual(['d1', 'i1'])
   })
 
-  it('shows the scan button disabled with a reason when nothing can be scanned', () => {
+  it('leaves out the scan button when nothing can be scanned (no greyed button)', () => {
     wrap(<AlertActions alert={detail({ assets: [asset({ asset_type: 'host' })] })} />)
-    const btn = screen.getByRole('button', { name: /Scan affected assets/ })
-    expect(btn).toBeDisabled()
-    expect(btn).toHaveAttribute(
-      'title',
-      'No affected asset is a domain or IP address that can be scanned.'
-    )
+    expect(screen.queryByRole('button', { name: /Scan affected assets/ })).toBeNull()
   })
 })

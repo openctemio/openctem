@@ -36,29 +36,29 @@ describe('landingFor', () => {
 })
 
 describe('landingHref', () => {
-  it('a new account with no organization lands on /welcome, not on the dashboard', () => {
-    expect(landingHref({ kind: 'account' }, '/')).toBe('/welcome')
-    expect(landingHref({ kind: 'account' }, '/findings')).toBe('/welcome')
+  it('a new account with no organization lands on /account/organizations, not on the dashboard', () => {
+    expect(landingHref({ kind: 'account' }, '/')).toBe('/account/organizations')
+    expect(landingHref({ kind: 'account' }, '/findings')).toBe('/account/organizations')
   })
   it('an invited person without an organization goes back to the invitation', () => {
     expect(landingHref({ kind: 'account' }, '/invitations')).toBe('/invitations')
     expect(landingHref({ kind: 'account' }, '/account/security/')).toBe('/account/security/')
-    expect(landingHref({ kind: 'account' }, '/invitations/x')).toBe('/welcome')
+    expect(landingHref({ kind: 'account' }, '/invitations/x')).toBe('/account/organizations')
   })
   it('refused by its one organization: the account space names the reason and the organization', () => {
     expect(
       landingHref({ kind: 'account', refusal: { code: 'SSO_REQUIRED', slug: 'acme' } }, '/')
-    ).toBe('/welcome?notice=sso_required&org=acme')
+    ).toBe('/account/organizations?notice=sso_required&org=acme')
     expect(
       landingHref(
         { kind: 'account', refusal: { code: 'OWN_SIGN_IN_REQUIRED', slug: 'acme' } },
         '/findings'
       )
-    ).toBe('/welcome?notice=own_sign_in_required&org=acme')
+    ).toBe('/account/organizations?notice=own_sign_in_required&org=acme')
     // An unknown code: the plain account space; the page asked for still wins
     // when an account session may open it.
     expect(landingHref({ kind: 'account', refusal: { code: 'NEW', slug: 'acme' } }, '/')).toBe(
-      '/welcome'
+      '/account/organizations'
     )
     expect(
       landingHref(
@@ -80,8 +80,8 @@ describe('landingHref', () => {
   it('several organizations: the picker', () => {
     expect(landingHref({ kind: 'choose' }, '/')).toBe('/select-tenant')
   })
-  it('a session that could not start: /welcome says so instead of looping', () => {
-    expect(landingHref({ kind: 'unavailable' }, '/')).toBe('/welcome?start_failed=1')
+  it('a session that could not start: /account/organizations says so instead of looping', () => {
+    expect(landingHref({ kind: 'unavailable' }, '/')).toBe('/account/organizations?start_failed=1')
   })
   it('a dead session: sign in', () => {
     expect(landingHref({ kind: 'signed_out' }, '/findings')).toBe('/login')

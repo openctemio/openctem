@@ -19,7 +19,7 @@
   "limits.console.defaults.saved": "Default limits saved",
   "limits.console.defaults.start": "Starts with",
   "limits.console.defaults.superOnly": "Only a super admin can change them.",
-  "limits.console.defaults.title": "Limits of self-service organizations",
+  "limits.console.defaults.title": "Defaults for self-service organizations",
   "limits.console.expires": "Expires (optional)",
   "limits.console.expiryPast": "Pick a date in the future.",
   "limits.console.invalidValue": "Use a whole number of 0 or more, or leave it empty for no limit.",

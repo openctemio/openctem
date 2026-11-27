@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Eye, Loader2, RotateCcw, Save } from 'lucide-react'
+import { Eye, Loader2, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { useTranslation } from '@/context/i18n-provider'
-import { SettingsSection, PageStack } from '@/features/shared'
+import { SettingsSaveBar, SettingsSection, PageStack } from '@/features/shared'
 import { get } from '@/lib/api/client'
 import {
   ATTRIBUTE_LABEL,
@@ -80,7 +80,7 @@ function AddSourceRow({
       }}
     >
       <SelectTrigger
-        className="mt-2 h-8 w-full sm:w-72"
+        className="mt-2 w-full sm:w-72"
         aria-label={t('assetSources.addSource', 'Rank a source separately')}
       >
         <SelectValue placeholder={t('assetSources.addSource', 'Rank a source separately')} />
@@ -128,7 +128,7 @@ function AssetPicker({ onPick }: { onPick: (a: AssetHit | null) => void }) {
   return (
     <div className="space-y-1">
       <Input
-        className="h-8 w-full sm:w-72"
+        className="w-full sm:w-72"
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder={t('assetSources.preview.searchAsset', 'Search an asset by name')}
@@ -194,10 +194,13 @@ function PreviewPanel({
       )}
     >
       <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1">
+        {/* Wide enough for its longest value on one line: on a phone the
+            whole line (Preview goes under it), 18rem from 640 px. A value that
+            wraps makes the field taller than the button beside it. */}
+        <div className="w-full space-y-1 sm:w-auto">
           <Label htmlFor="preview-mode">{t('assetSources.preview.on', 'Preview on')}</Label>
           <Select value={mode} onValueChange={(v) => setMode(v as 'sample' | 'asset')}>
-            <SelectTrigger id="preview-mode" className="h-8 w-56">
+            <SelectTrigger id="preview-mode" className="w-full sm:w-72">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -418,22 +421,21 @@ export function AssetSourcesSettingsForm({
       {canEdit && <PreviewPanel draft={draft} onPreview={onPreview} />}
 
       {canEdit && (
-        <div className="flex items-center gap-3">
-          <Button onClick={submit} disabled={saving || !valid || !dirty}>
-            {saving ? (
-              <Loader2 className="me-1 h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="me-1 h-4 w-4" />
-            )}
-            {t('assetSources.save', 'Save changes')}
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            {t(
-              'assetSources.saveHint',
-              'Moving a connector down asks you to confirm your identity. Values on assets update in the background; changes appear in each asset’s timeline.'
-            )}
-          </p>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          {t(
+            'assetSources.saveHint',
+            'Moving a connector down asks you to confirm your identity. Values on assets update in the background; changes appear in each asset’s timeline.'
+          )}
+        </p>
+      )}
+      {canEdit && (
+        <SettingsSaveBar
+          dirty={dirty}
+          saving={saving}
+          saveDisabled={!valid}
+          onSave={() => void submit()}
+          onDiscard={() => setDraft(initial)}
+        />
       )}
     </PageStack>
   )

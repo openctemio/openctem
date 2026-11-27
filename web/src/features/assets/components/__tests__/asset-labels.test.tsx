@@ -21,10 +21,24 @@ describe('criticality is a Tag level, not a severity hue', () => {
 
   it('makes only critical bold and gives low one bar (not green)', () => {
     const { container, rerender } = render(<CriticalityBadge criticality="critical" />)
-    expect(container.querySelector('[data-slot="tag-label"]')?.className).toContain('font-bold')
+    expect(container.querySelector('[data-slot="tag-label"]')?.className).toContain('font-semibold')
     rerender(<CriticalityBadge criticality="low" />)
     expect(container.querySelector('[data-slot="tag"]')).toHaveAttribute('data-level', '1')
     expect(container.innerHTML).not.toMatch(/green/)
+  })
+
+  it('has one look in a list and in a header: no solid fill, even for critical', () => {
+    for (const labelled of [false, true]) {
+      const { container, unmount } = render(
+        <CriticalityBadge criticality="critical" labelled={labelled} showTooltip={false} />
+      )
+      const tag = container.querySelector('[data-slot="tag"]')
+      expect(tag).toHaveAttribute('data-level', '4')
+      expect(tag?.className).not.toContain('bg-lvl-4-bg')
+      expect(tag?.className).not.toContain('bg-lvl-3-bg')
+      expect(tag?.className).toContain('bg-card')
+      unmount()
+    }
   })
 })
 

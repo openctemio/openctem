@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildHealthTiles, PLATFORM_SENSORS_URL } from '../lib/installation-health'
+import { buildHealthTiles, PLATFORM_SENSORS_URL, schemaDate } from '../lib/installation-health'
+import { resolveNamedVars } from '../lib/named-vars'
 import { buildSystemAttention } from '../lib/attention'
 import type { AdminOverview, AdminSystem } from '../types'
 
@@ -103,6 +104,20 @@ describe('installation health strip', () => {
     ).toBe('muted')
   })
 
+  it('names the fullest volume in words, not by its key', () => {
+    const storage = tile(buildHealthTiles(overview(), system()), 'storage')
+    const t = (key: string, fallback?: string) =>
+      key === 'admin.system.volume.attachments' ? 'Attachments' : (fallback ?? key)
+    expect(resolveNamedVars(t, storage.vars, storage.named)?.name).toMatch(/^[A-Z][a-z ]+$/)
+  })
+
+  it('reads the schema version as the time of its last change', () => {
+    expect(tile(buildHealthTiles(overview(), system()), 'database').vars).toEqual({
+      date: '2026-11-02 02:05 UTC',
+    })
+    expect(schemaDate(7)).toBe('7')
+  })
+
   it('reads the schema state: in sync, behind, stopped midway', () => {
     expect(tile(buildHealthTiles(overview(), system()), 'database').tone).toBe('success')
     expect(
@@ -134,5 +149,15 @@ describe('system attention copy', () => {
     )
     expect(storage).toHaveLength(1)
     expect(storage[0].vars?.name).toBe('attachments, sensor-ca')
+    const t = (key: string, fallback?: string) =>
+      ({
+        'admin.system.volume.attachments': 'Attachments',
+        'admin.system.volume.sensor-ca': 'Sensor certificate authority',
+      })[key] ??
+      fallback ??
+      key
+    expect(resolveNamedVars(t, storage[0].vars, storage[0].named)?.name).toBe(
+      'Attachments, Sensor certificate authority'
+    )
   })
 })

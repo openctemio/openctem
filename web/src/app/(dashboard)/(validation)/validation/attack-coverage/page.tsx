@@ -185,9 +185,9 @@ function getCellColor(cell: TechniqueCell | undefined): string {
 }
 
 function getCellTextColor(cell: TechniqueCell | undefined): string {
-  if (!cell) return 'text-muted-foreground/40'
+  if (!cell) return 'text-muted-foreground'
   const total = cell.findingCount + cell.simulationCount
-  if (total === 0) return 'text-muted-foreground/40'
+  if (total === 0) return 'text-muted-foreground'
   return 'text-white'
 }
 
@@ -455,7 +455,7 @@ export default function MitreCoveragePage() {
                 )
           }
         >
-          <Button variant="outline" size="sm" onClick={handleRefresh}>
+          <Button iconOnlyBelow="sm" variant="outline" size="sm" onClick={handleRefresh}>
             <RefreshCw className="h-4 w-4 sm:me-2" />
             <span className="sr-only sm:not-sr-only">
               {t('validation.attackCoverage.refresh', 'Refresh')}
@@ -506,7 +506,7 @@ export default function MitreCoveragePage() {
             {simulationEnabled && (
               <Select value={source} onValueChange={setSourceParam}>
                 <SelectTrigger
-                  className="h-9 w-40"
+                  className="w-40"
                   aria-label={t('validation.attackCoverage.sourceAria', 'Coverage source')}
                 >
                   <SelectValue />
@@ -555,25 +555,15 @@ export default function MitreCoveragePage() {
               )}
             </div>
           </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <div className="min-w-[900px]">
-              {/* Tactic headers */}
-              <div
-                className="mb-2 grid gap-1"
-                style={{ gridTemplateColumns: `repeat(${MITRE_TACTICS.length}, 1fr)` }}
-              >
-                {MITRE_TACTICS.map((tactic) => (
-                  <TacticHeader key={tactic.id} tactic={tactic} />
-                ))}
-              </div>
-
-              {/* Technique rows — we render by row index across all tactics */}
-              <TechniqueGrid
-                tactics={MITRE_TACTICS}
-                enrichedTacticTechniques={enrichedTacticTechniques}
-                coverageMap={coverageMap}
-              />
-            </div>
+          <CardContent>
+            {/* One column per tactic (its header over its techniques). The
+                columns wrap onto more lines when the card is narrow, so the
+                matrix never scrolls sideways or cuts a tactic at the edge. */}
+            <TechniqueGrid
+              tactics={MITRE_TACTICS}
+              enrichedTacticTechniques={enrichedTacticTechniques}
+              coverageMap={coverageMap}
+            />
           </CardContent>
         </Card>
 
@@ -684,17 +674,22 @@ export default function MitreCoveragePage() {
 // ============================================
 
 function TacticHeader({ tactic }: { tactic: MitreTactic }) {
+  const { t } = useTranslation()
+  const label = t(`validation.attackCoverage.tactic.${tactic.slug}`, tactic.name)
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
+        {/* A tactic's name wraps between words, never inside one: a column
+            is wide enough for the longest word ("Reconnaissance"), and every
+            header has room for three lines so the cells under the headers of
+            one line of columns start at the same height. */}
         <TooltipTrigger asChild>
-          <div className="bg-primary/10 rounded px-1 py-1.5 text-center">
-            <p className="text-primary truncate text-xs font-semibold">{tactic.shortName}</p>
-            <p className="text-muted-foreground font-mono text-xs">{tactic.id}</p>
+          <div className="bg-primary/10 flex min-h-[3.25rem] items-center justify-center rounded px-1 py-0.5 text-center">
+            <p className="text-primary text-xs leading-tight font-semibold break-words">{label}</p>
           </div>
         </TooltipTrigger>
         <TooltipContent>
-          <p className="font-semibold">{tactic.name}</p>
+          <p className="font-semibold">{label}</p>
           <p className="text-muted-foreground text-xs">{tactic.description}</p>
         </TooltipContent>
       </Tooltip>
@@ -715,25 +710,18 @@ function TechniqueGrid({
   enrichedTacticTechniques: Record<string, { id: string; name: string }[]>
   coverageMap: Map<string, TechniqueCell>
 }) {
-  const maxRows = Math.max(...tactics.map((t) => (enrichedTacticTechniques[t.id] ?? []).length))
-
   return (
-    <div className="space-y-1">
-      {Array.from({ length: maxRows }).map((_, rowIdx) => (
-        <div
-          key={rowIdx}
-          className="grid gap-1"
-          style={{ gridTemplateColumns: `repeat(${tactics.length}, 1fr)` }}
-        >
-          {tactics.map((tactic) => {
-            const techniques = enrichedTacticTechniques[tactic.id] ?? []
-            const tech = techniques[rowIdx]
-            if (!tech) {
-              return <div key={tactic.id} className="h-8" />
-            }
-            const cell = coverageMap.get(`${tactic.id}::${tech.id}`)
-            return <HeatmapCell key={tactic.id} cell={cell} tacticId={tactic.id} />
-          })}
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-x-1 gap-y-3">
+      {tactics.map((tactic) => (
+        <div key={tactic.id} className="flex min-w-0 flex-col gap-1">
+          <TacticHeader tactic={tactic} />
+          {(enrichedTacticTechniques[tactic.id] ?? []).map((tech) => (
+            <HeatmapCell
+              key={tech.id}
+              cell={coverageMap.get(`${tactic.id}::${tech.id}`)}
+              tacticId={tactic.id}
+            />
+          ))}
         </div>
       ))}
     </div>

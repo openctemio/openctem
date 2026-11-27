@@ -11,15 +11,9 @@ import { describe, expect, it } from 'vitest'
  */
 const ALLOW_LIST = [
   'src/app/(dashboard)/settings/members/page.tsx',
-  'src/app/(dashboard)/settings/roles/page.tsx',
-  'src/features/access-control/components/assignment-rules-section.tsx',
-  'src/features/access-control/components/teams-section.tsx',
-  'src/features/assets/components/dedup-review-page.tsx',
   'src/features/assets/components/resolved-ports-section.tsx',
   'src/features/capabilities/components/capability-table.tsx',
-  'src/features/credentials/components/credential-identity-groups.tsx',
   'src/features/findings/components/detail/related-tab.tsx',
-  'src/features/findings/components/group-exceptions-panel.tsx',
   'src/features/my-work/components/finding-queue.tsx',
   'src/features/pentest/components/pentest-findings-section.tsx',
   'src/features/pentest/components/pentest-reports-section.tsx',
@@ -29,13 +23,11 @@ const ALLOW_LIST = [
   'src/features/scan-zones/components/scan-zone-table.tsx',
   'src/features/scope/components/scope-entries-table.tsx',
   'src/features/scope/components/scope-exclusions-table.tsx',
-  'src/features/sensors/components/sensor-table.tsx',
   'src/features/threat-intel/components/detections-panel.tsx',
   'src/features/threat-intel/components/iocs-panel.tsx',
   'src/features/threat-intel/components/threat-actors-panel.tsx',
   'src/features/threat-model/components/threat-model-table.tsx',
   'src/features/tools/components/tool-table.tsx',
-  'src/features/vulnerabilities/components/vulnerability-catalog-table.tsx',
 ]
 
 const SRC = join(__dirname, '..', '..', '..', '..')

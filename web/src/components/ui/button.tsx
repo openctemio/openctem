@@ -9,25 +9,45 @@ import { cn } from '@/lib/utils'
 // changes after load (data arriving, hydration) therefore never animates from
 // one look to another: no light flash on first paint.
 const buttonVariants = cva(
-  "cursor-pointer inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-none hover:transition-[color,background-color,border-color,box-shadow] focus-visible:transition-[color,background-color,border-color,box-shadow] duration-(--dur-fast) disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  "relative cursor-pointer inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-body font-medium transition-none hover:transition-[color,background-color,border-color,box-shadow] focus-visible:transition-[color,background-color,border-color,box-shadow] duration-(--dur-fast) disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none max-md:text-dense max-md:before:absolute max-md:before:inset-x-0 max-md:before:top-1/2 max-md:before:h-touch-target max-md:before:-translate-y-1/2 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
   {
     variants: {
       variant: {
         default: 'bg-primary text-primary-foreground shadow-xs hover:bg-primary/90',
-        signal: 'bg-signal text-signal-ink shadow-xs hover:bg-signal/90',
+        // The one primary call to action of an entry page (sign in, continue):
+        // the teal fill. Entry pages only: app pages keep `default` (ink).
+        signal: 'bg-signal text-signal-ink shadow-xs hover:bg-signal-hover',
         destructive:
           'bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
         outline:
           'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50',
         secondary: 'bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80',
+        // An on/off button (`aria-pressed`): the outline box in both states,
+        // filled while pressed. The border stays, so pressing it never
+        // changes its width (outline and secondary differ by the border).
+        toggle:
+          'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 aria-pressed:bg-secondary aria-pressed:text-secondary-foreground aria-pressed:hover:bg-secondary/80 dark:aria-pressed:bg-secondary dark:aria-pressed:hover:bg-secondary/80',
         ghost: 'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50',
-        link: 'text-primary underline-offset-4 hover:underline',
+        // A standalone link: plain at rest, underlined on hover and focus.
+        link: 'text-signal-text underline-offset-4 hover:underline focus-visible:underline',
       },
+      // Control scale ("Sizes" in web/docs/ui-style-contract.md): 32 default;
+      // sm and icon-sm 28 in a dense place (density.tsx), 32 elsewhere; lg 36
+      // (entry pages); xs 24 (the info icon). Below 768px the live UI's
+      // heights (36; sm 32 in a dense place, 36 elsewhere; lg 40) with compact content (13px text, 10px
+      // padding, 8 beside an icon) and an invisible touch target (::before):
+      // 44px tall, the button's own width, so neighbours never share a hit
+      // area and nothing reaches past the button's sides.
       size: {
-        default: 'h-9 px-4 py-2 has-[>svg]:px-3',
-        sm: 'h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5',
-        lg: 'h-10 rounded-md px-6 has-[>svg]:px-4',
-        icon: 'size-9',
+        default:
+          'h-control px-3 has-[>svg]:px-2.5 max-md:h-control-touch max-md:px-2.5 max-md:has-[>svg]:px-2',
+        sm: 'h-control-dense px-2.5 has-[>svg]:px-2 max-md:h-control-touch-dense',
+        lg: 'h-control-entry px-4 has-[>svg]:px-3 max-md:h-control-touch-lg max-md:px-2.5 max-md:has-[>svg]:px-2',
+        icon: 'size-control max-md:size-control-touch',
+        'icon-sm': 'size-control-dense max-md:size-control-touch-dense',
+        xs: 'size-control-xs',
+        // A segment inside a bordered 32 track (36 below 768): ViewSwitcher.
+        'icon-seg': 'size-control-seg max-md:size-control-touch-seg',
       },
     },
     defaultVariants: {
@@ -37,22 +57,62 @@ const buttonVariants = cva(
   }
 )
 
+/**
+ * A button whose label shows only from a width up (`hidden sm:inline`,
+ * `sr-only sm:not-sr-only`) is icon-only below it, and a square there.
+ * An always icon-only button takes an icon size (icon, icon-sm, xs).
+ * src/components/ui/__tests__/icon-button-guard.test.ts enforces both.
+ */
+const ICON_ONLY_BELOW = {
+  sm: 'max-sm:aspect-square max-sm:px-0 max-sm:has-[>svg]:px-0',
+  md: 'max-md:aspect-square max-md:px-0 max-md:has-[>svg]:px-0',
+  lg: 'max-lg:aspect-square max-lg:px-0 max-lg:has-[>svg]:px-0',
+  // The list toolbar's container (DataTable): the label shows from @2xl.
+  '@2xl/toolbar':
+    '@max-2xl/toolbar:aspect-square @max-2xl/toolbar:px-0 @max-2xl/toolbar:has-[>svg]:px-0',
+  // The list toolbar's view controls (Views, Group, Display): labels from a
+  // 64rem toolbar (a 1366px screen with the sidebar), icons below it.
+  // Also icon-only while the toolbar folds to fit one line (`data-fold`).
+  '@5xl/toolbar':
+    '@max-5xl/toolbar:aspect-square @max-5xl/toolbar:px-0 @max-5xl/toolbar:has-[>svg]:px-0 group-data-[fold=true]/toolbar:aspect-square group-data-[fold=true]/toolbar:px-0 group-data-[fold=true]/toolbar:has-[>svg]:px-0',
+} as const
+
+/**
+ * The page header's actions below 640 px (PageHeader, `page-header-actions`):
+ * a button with an icon shows only its first icon, as a square. The label is
+ * still its text, so it stays the accessible name (font-size 0, not hidden),
+ * and it returns from sm. One rule for every page instead of each page
+ * choosing iconOnlyBelow; a text-only button keeps its label.
+ */
+const IN_PAGE_HEADER =
+  'max-sm:in-data-[slot=page-header-actions]:has-[>svg]:aspect-square max-sm:in-data-[slot=page-header-actions]:has-[>svg]:gap-0 max-sm:in-data-[slot=page-header-actions]:has-[>svg]:px-0 max-sm:in-data-[slot=page-header-actions]:has-[>svg]:!text-[0px] max-sm:in-data-[slot=page-header-actions]:[&>svg~svg]:hidden max-sm:in-data-[slot=page-header-actions]:has-[>svg]:[&>span]:!text-[0px]' // anatomy-ok: hides the label visually on a phone, keeps it as the accessible name
+
 function Button({
   className,
   variant,
   size,
   asChild = false,
+  iconOnlyBelow,
   ...props
 }: React.ComponentProps<'button'> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
+    /** Icon-only below this breakpoint: drawn as a square there. */
+    iconOnlyBelow?: keyof typeof ICON_ONLY_BELOW
   }) {
   const Comp = asChild ? Slot : 'button'
 
   return (
     <Comp
       data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
+      data-size={size ?? 'default'}
+      data-variant={variant ?? 'default'}
+      className={cn(
+        buttonVariants({ variant, size }),
+        IN_PAGE_HEADER,
+        iconOnlyBelow && ICON_ONLY_BELOW[iconOnlyBelow],
+        className
+      )}
       {...props}
     />
   )

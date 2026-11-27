@@ -74,6 +74,7 @@ import {
 } from '@/components/ui/status-glyphs'
 import type { StatusTone } from '@/lib/status-colors'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate } from '@/lib/app-locale'
 
 // ── Local view types ──────────────────────────────────────────────────────────
 
@@ -201,7 +202,7 @@ function FrameworkCard({
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
         <div className="min-w-0 space-y-1.5">
           <CardTitle>{fw.name}</CardTitle>
-          <CardDescription className="line-clamp-2">{fw.description}</CardDescription>
+          <CardDescription>{fw.description}</CardDescription>
         </div>
         <div className="shrink-0 text-end">
           <div className="text-2xl font-semibold tabular-nums">{score}%</div>
@@ -460,9 +461,21 @@ export default function CompliancePage() {
       enableHiding: false,
       cell: ({ row }) => (
         <DataTableRowActions
+          title={row.original.title}
+          label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+            name: row.original.title,
+          })}
           actions={[
-            { label: 'View details', icon: Eye, onClick: () => setViewRequirement(row.original) },
-            { label: 'Update status', icon: Pencil, onClick: () => openEdit(row.original) },
+            {
+              label: t('scoping.compliance.action.viewDetails', 'View details'),
+              icon: Eye,
+              onClick: () => setViewRequirement(row.original),
+            },
+            {
+              label: t('scoping.compliance.action.updateStatus', 'Update status'),
+              icon: Pencil,
+              onClick: () => openEdit(row.original),
+            },
           ]}
         />
       ),
@@ -473,7 +486,7 @@ export default function CompliancePage() {
   const filterSelects = (
     <>
       <Select value={selectedFrameworkId} onValueChange={setSelectedFrameworkId}>
-        <SelectTrigger className="h-9 w-44" aria-label="Framework">
+        <SelectTrigger className="w-44" aria-label="Framework">
           <SelectValue placeholder="Framework" />
         </SelectTrigger>
         <SelectContent>
@@ -486,7 +499,7 @@ export default function CompliancePage() {
         </SelectContent>
       </Select>
       <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-        <SelectTrigger className="h-9 w-40" aria-label="Status">
+        <SelectTrigger className="w-40" aria-label="Status">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -505,10 +518,13 @@ export default function CompliancePage() {
       <Main>
         <PageStack>
           <PageHeader
-            title="Compliance"
-            description="How far each compliance framework's controls are implemented."
+            title={t('scoping.compliance.title', 'Compliance')}
+            description={t(
+              'scoping.compliance.description',
+              "How far each compliance framework's controls are implemented."
+            )}
           >
-            <Button variant="outline" size="sm" onClick={handleExport}>
+            <Button iconOnlyBelow="sm" variant="outline" size="sm" onClick={handleExport}>
               <Download className="h-4 w-4 sm:me-2" />
               <span className="sr-only sm:not-sr-only">Export</span>
             </Button>
@@ -530,7 +546,11 @@ export default function CompliancePage() {
                 onRetry={() => void retryStats()}
               />
             ) : (
-              <MetricStrip items={metrics} />
+              <MetricStrip
+                items={metrics}
+                listFirst
+                listEmpty={!loadingFrameworks && !frameworksError && frameworks.length === 0}
+              />
             )}
 
             <TabsContent value="frameworks">
@@ -647,12 +667,12 @@ export default function CompliancePage() {
                   <DetailField label="Owner">{viewRequirement.owner || '—'}</DetailField>
                   {viewRequirement.dueDate && (
                     <DetailField label="Due date">
-                      {new Date(viewRequirement.dueDate).toLocaleDateString()}
+                      {formatDate(new Date(viewRequirement.dueDate))}
                     </DetailField>
                   )}
                   {viewRequirement.lastAssessed && (
                     <DetailField label="Last assessed">
-                      {new Date(viewRequirement.lastAssessed).toLocaleDateString()}
+                      {formatDate(new Date(viewRequirement.lastAssessed))}
                     </DetailField>
                   )}
                 </DetailFieldGrid>

@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslation } from '@/context/i18n-provider'
 import { ChevronDown, ExternalLink, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -25,13 +26,14 @@ interface NotificationEventsProps {
   limit?: number
 }
 
-const STATUS_HEALTH: Record<NotificationEventStatus, { state: HealthState; label: string }> = {
-  completed: { state: 'ok', label: 'Sent' },
-  failed: { state: 'down', label: 'Failed' },
-  skipped: { state: 'off', label: 'Skipped' },
+const STATUS_HEALTH: Record<NotificationEventStatus, { state: HealthState; labelKey: string }> = {
+  completed: { state: 'ok', labelKey: 'sent' },
+  failed: { state: 'down', labelKey: 'failed' },
+  skipped: { state: 'off', labelKey: 'skipped' },
 }
 
 function NotificationEventItem({ entry }: { entry: NotificationEventEntry }) {
+  const { t } = useTranslation()
   // Get the first send result for this integration (already filtered by backend)
   const sendResult = entry.send_results?.[0]
 
@@ -57,7 +59,13 @@ function NotificationEventItem({ entry }: { entry: NotificationEventEntry }) {
           <HealthStatus
             state={statusConfig.state}
             value={integrationStatus}
-            label={statusConfig.label}
+            label={
+              statusConfig.labelKey === 'sent'
+                ? t('notifications.events.sent', 'Sent')
+                : statusConfig.labelKey === 'failed'
+                  ? t('notifications.events.failed', 'Failed')
+                  : t('notifications.events.skipped', 'Skipped')
+            }
           />
         </div>
 
@@ -81,7 +89,7 @@ function NotificationEventItem({ entry }: { entry: NotificationEventEntry }) {
                 href={entry.url}
                 className="flex items-center gap-1 hover:underline text-primary"
               >
-                View Link
+                {t('notifications.events.viewLink', 'View link')}
                 <ExternalLink className="h-3 w-3" />
               </SafeExternalLink>
             </>
@@ -101,6 +109,7 @@ function NotificationEventItem({ entry }: { entry: NotificationEventEntry }) {
 }
 
 export function NotificationEvents({ integrationId, limit = 10 }: NotificationEventsProps) {
+  const { t } = useTranslation()
   const { data, error, isLoading, mutate } = useNotificationEventsApi(integrationId, { limit })
 
   const handleRefresh = async () => {
@@ -116,7 +125,7 @@ export function NotificationEvents({ integrationId, limit = 10 }: NotificationEv
         <CollapsibleTrigger asChild>
           <Button variant="ghost" size="sm" className="gap-2 p-0 h-auto font-medium">
             <ChevronDown className="h-4 w-4 transition-transform duration-200 [&[data-state=open]>svg]:rotate-180" />
-            Recent Notifications
+            {t('notifications.events.recent', 'Recent notifications')}
             {history.length > 0 && (
               <Badge variant="secondary" className="ms-1">
                 {history.length}
@@ -127,7 +136,7 @@ export function NotificationEvents({ integrationId, limit = 10 }: NotificationEv
         <Button
           variant="ghost"
           size="icon"
-          className="h-6 w-6"
+
           onClick={(e) => {
             e.stopPropagation()
             handleRefresh()
@@ -144,11 +153,11 @@ export function NotificationEvents({ integrationId, limit = 10 }: NotificationEv
             <div className="p-4 text-center text-sm text-muted-foreground">Loading...</div>
           ) : error ? (
             <div className="p-4 text-center text-sm text-destructive">
-              Failed to load notifications
+              {t('notifications.events.loadError', 'Failed to load notifications')}
             </div>
           ) : history.length === 0 ? (
             <div className="p-4 text-center text-sm text-muted-foreground">
-              No notifications sent yet
+              {t('notifications.events.none', 'No notifications sent yet')}
             </div>
           ) : (
             <ScrollArea className="h-[200px]">

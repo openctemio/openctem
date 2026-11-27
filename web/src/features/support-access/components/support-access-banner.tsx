@@ -14,7 +14,8 @@ import { Eye, LifeBuoy } from 'lucide-react'
 import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
 import { useBootstrapPending } from '@/context/bootstrap-provider'
-import { Permission, usePermissions } from '@/lib/permissions'
+import { Permission } from '@/lib/permissions/constants'
+import { usePermissions } from '@/lib/permissions/hooks'
 import { cn } from '@/lib/utils'
 
 import { useActiveSupportAccess } from '../api/use-support-access'
@@ -60,7 +61,7 @@ export function SupportAccessBanner() {
           >
             <div className="flex min-w-0 flex-1 items-start gap-3">
               <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-              <p className="min-w-0 flex-1 break-words">
+              <p className="min-w-0 max-w-none flex-1 break-words">
                 {g.open_session
                   ? t(
                       'supportAccess.banner.viewing',

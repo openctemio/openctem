@@ -11,17 +11,13 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { RoleRiskBadge, RoleSummaryLine } from './role-risk'
 import { RoleTemplateUpdate } from './role-template-update'
 import { useTranslation } from '@/context/i18n-provider'
+import { roleDisplayDescription, roleDisplayName } from '../lib/system-role'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { TabsCount } from '@/components/ui/tabs'
+import { ActionMenu } from '@/components/ui/action-menu'
+import { TabsCount } from '@/components/ui/tab-strip'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { toast } from 'sonner'
 import { copyToClipboard } from '@/lib/clipboard'
@@ -65,6 +61,8 @@ import { AddMemberToRoleDialog } from './add-member-to-role-dialog'
 import { RoleCapabilities } from './role-capabilities'
 import { isAdminBypassRole } from '../lib/authz-reference'
 import { ListSearch } from '@/features/shared/components/list-search'
+import { formatDate as localeFormatDate } from '@/lib/app-locale'
+import { BreakText } from '@/features/shared/components/break-text'
 
 interface RoleDetailSheetProps {
   role: Role | null
@@ -137,7 +135,7 @@ function getPermissionType(permissionId: string): 'read' | 'write' | 'delete' {
 }
 
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
+  return localeFormatDate(new Date(dateString), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -394,7 +392,7 @@ export function RoleDetailSheet({
         panel={activeTab}
         header={
           <DetailHeader
-            title={role.name}
+            title={roleDisplayName(t, role)}
             badges={
               <>
                 {role.is_system ? (
@@ -438,8 +436,8 @@ export function RoleDetailSheet({
       >
         {activeTab === 'permissions' && (
           <div className="space-y-5">
-            {role.description && (
-              <p className="text-sm text-muted-foreground">{role.description}</p>
+            {roleDisplayDescription(t, role) && (
+              <p className="text-sm text-muted-foreground">{roleDisplayDescription(t, role)}</p>
             )}
             {role.summary && (
               <div className="space-y-1">
@@ -657,18 +655,6 @@ export function RoleDetailSheet({
                     : t('org.roleDetail.noMembers', 'No members with this role')
                 }
                 card={false}
-                action={
-                  !memberSearchQuery && !isTeamRole ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setAddMemberDialogOpen(true)}
-                    >
-                      <UserPlus className="h-4 w-4" />
-                      {t('org.roleDetail.addFirstMember', 'Add first member')}
-                    </Button>
-                  ) : undefined
-                }
               />
             ) : (
               <ul className="divide-y rounded-lg border">
@@ -684,9 +670,9 @@ export function RoleDetailSheet({
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium break-words">{label}</p>
                         {member.name && (
-                          <p className="flex items-center gap-1 text-xs break-all text-muted-foreground">
+                          <p className="flex items-center gap-1 text-xs break-words text-muted-foreground">
                             <Mail className="h-3 w-3 shrink-0" />
-                            {member.email}
+                            <BreakText>{member.email}</BreakText>
                           </p>
                         )}
                       </div>
@@ -697,12 +683,33 @@ export function RoleDetailSheet({
                       )}
                       {/* Always visible: a hover-only trigger cannot be found on touch. */}
                       {(!isTeamRole || demoteTo) && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
+                        <ActionMenu
+                          title={label ?? ''}
+                          label={t('org.roleDetail.actionsFor', 'Actions for {name}', {
+                            name: label ?? '',
+                          })}
+                          items={[
+                            {
+                              id: 'remove',
+                              label: isTeamRole
+                                ? t('org.roles.changeTo', 'Change to {role}', {
+                                    role: demoteLabel,
+                                  })
+                                : t('org.roleDetail.removeFromRole', 'Remove from role'),
+                              icon: UserMinus,
+                              destructive: true,
+                              disabledReason:
+                                removingMemberId === member.id
+                                  ? t('org.roleDetail.removing', 'Removing...')
+                                  : undefined,
+                              onSelect: () => setPendingRemove(member),
+                            },
+                          ]}
+                          trigger={
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-8 w-8 shrink-0"
+                              className="shrink-0"
                               aria-label={t('org.roleDetail.actionsFor', 'Actions for {name}', {
                                 name: label ?? '',
                               })}
@@ -713,20 +720,8 @@ export function RoleDetailSheet({
                                 <MoreHorizontal className="h-4 w-4" />
                               )}
                             </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onSelect={() => setPendingRemove(member)}
-                              disabled={removingMemberId === member.id}
-                            >
-                              <UserMinus className="h-4 w-4" />
-                              {isTeamRole
-                                ? t('org.roles.changeTo', 'Change to {role}', { role: demoteLabel })
-                                : t('org.roleDetail.removeFromRole', 'Remove from role')}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                          }
+                        />
                       )}
                     </li>
                   )

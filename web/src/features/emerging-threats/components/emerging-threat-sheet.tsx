@@ -8,18 +8,8 @@
  */
 
 import { useMemo } from 'react'
-import { useRouter } from 'next/navigation'
-import { Siren } from 'lucide-react'
 import Link from '@/components/link'
 import { Badge } from '@/components/ui/badge'
-import {
-  Sheet,
-  SheetBody,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { formatEpssScore } from '@/lib/epss'
@@ -30,14 +20,17 @@ import {
   DetailFieldGrid,
   DetailSection,
   DetailSections,
-  DetailSheetHeader,
   DetailStat,
   DetailStatGrid,
   type DetailCalloutTone,
 } from '@/features/shared/components/detail-sheet'
+import {
+  DetailHeader,
+  DetailSheet,
+  type DetailMenuItem,
+} from '@/features/shared/components/detail-sheet-layout'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { RelativeTime } from '@/features/shared/components/relative-time'
-import { SheetDetailToolbar } from '@/features/shared/components/sheet-detail-toolbar'
 import { useEmergingThreat } from '../api'
 import type {
   AssetTier,
@@ -46,9 +39,14 @@ import type {
   RecommendedAction,
 } from '../types'
 import { HostTitle, type HostRow } from './affected-assets'
-import { AlertActions, OutOfScopeHint, TaskCoverageNote } from './alert-actions'
 import {
-  EtsBreakdownList,
+  AlertActionButton,
+  OutOfScopeHint,
+  TaskCoverageNote,
+  useAlertActions,
+} from './alert-actions'
+import {
+  EtsBreakdownBars,
   ExploitBadges,
   LevelBadge,
   StateBadge,
@@ -133,51 +131,107 @@ export function EmergingThreatSheet({
   onClose: () => void
 }) {
   const { t } = useTranslation()
-  const router = useRouter()
   const { data, error, isLoading, mutate } = useEmergingThreat(alertId ?? undefined)
   const fullPage = alertId ? `/emerging-threats/${alertId}` : ''
+  const ready = !error && !isLoading && !!data && data.id === alertId
   return (
-    <Sheet open={alertId !== null} onOpenChange={(open) => !open && onClose()}>
-      <SheetContent
-        side="right"
-        showCloseButton={false}
-        className="w-full sm:max-w-xl"
-        data-testid="emerging-threat-sheet"
-      >
-        <SheetHeader className="block p-0 sm:p-0">
-          <SheetTitle className="sr-only">
-            {data?.vuln_id ?? t('emergingThreats.sheet.title')}
-          </SheetTitle>
-          <SheetDescription className="sr-only">
-            {t('emergingThreats.sheet.description')}
-          </SheetDescription>
-          <SheetDetailToolbar
+    <DetailSheet
+      open={alertId !== null}
+      onOpenChange={(open) => !open && onClose()}
+      header={
+        ready ? (
+          <ThreatHeader alert={data} fullPage={fullPage} onClose={onClose} />
+        ) : (
+          <DetailHeader
             title={t('emergingThreats.sheet.title')}
+            fullPageHref={fullPage || undefined}
             onClose={onClose}
-            onOpenExternal={fullPage ? () => router.push(fullPage) : undefined}
           />
-        </SheetHeader>
-        <SheetBody className="p-0">
-          {error ? (
-            <div className="p-4 sm:p-6">
-              <ErrorState
-                title={t('emergingThreats.loadOneError')}
-                error={error}
-                onRetry={() => void mutate()}
+        )
+      }
+    >
+      <div data-testid="emerging-threat-sheet">
+        {error ? (
+          <ErrorState
+            title={t('emergingThreats.loadOneError')}
+            error={error}
+            onRetry={() => void mutate()}
+          />
+        ) : !ready ? (
+          <div className="space-y-4">
+            <Skeleton className="h-10 w-2/3" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-48 w-full" />
+          </div>
+        ) : (
+          <SheetBodyContent alert={data} fullPage={fullPage} />
+        )}
+      </div>
+    </DetailSheet>
+  )
+}
+
+/**
+ * The sheet's header, the shared quick-view frame: the CVE, one line under
+ * it with the state, priority and exploit chips and the product (as the list
+ * row reads), the one main action for the alert's state, and every other
+ * action in the header's More menu (a bottom sheet on a phone).
+ */
+function ThreatHeader({
+  alert,
+  fullPage,
+  onClose,
+}: {
+  alert: EmergingThreatDetail
+  fullPage: string
+  onClose: () => void
+}) {
+  const { t } = useTranslation()
+  const { primary, rest, dialogs } = useAlertActions(alert)
+  const more = Math.max(0, alert.product_count - 1)
+  const product = alert.product
+    ? more > 0
+      ? `${alert.product} ${t('emergingThreats.threat.moreProducts', undefined, { n: more })}`
+      : alert.product
+    : null
+  // State moves first; the task and the scan each start a section.
+  const menu: DetailMenuItem[] = rest.map((a, i) => ({
+    label: a.label,
+    icon: a.icon,
+    onSelect: a.run,
+    disabledReason: a.disabledReason,
+    separatorBefore: i > 0 && (a.id === 'task' || a.id === 'scan') ? true : undefined,
+  }))
+  return (
+    <>
+      <DetailHeader
+        title={<span className="font-mono">{alert.vuln_id}</span>}
+        badges={
+          // One line under the title: state, priority and exploit chips, then
+          // the product, as the list row reads.
+          <span
+            data-slot="et-meta"
+            className="flex basis-full flex-wrap items-center gap-x-3 gap-y-1"
+          >
+            <span className="flex flex-wrap items-center gap-2">
+              <StateBadge state={alert.state} />
+              <LevelBadge level={alert.level} />
+              <ExploitBadges
+                inKev={alert.in_kev}
+                ransomware={alert.kev_ransomware}
+                epss={alert.epss}
               />
-            </div>
-          ) : isLoading || !data || data.id !== alertId ? (
-            <div className="space-y-4 p-4 sm:p-6">
-              <Skeleton className="h-10 w-2/3" />
-              <Skeleton className="h-24 w-full" />
-              <Skeleton className="h-48 w-full" />
-            </div>
-          ) : (
-            <SheetBodyContent alert={data} fullPage={fullPage} />
-          )}
-        </SheetBody>
-      </SheetContent>
-    </Sheet>
+            </span>
+            {product && <span className="text-meta text-muted-foreground">{product}</span>}
+          </span>
+        }
+        actions={primary ? <AlertActionButton action={primary} /> : undefined}
+        menu={menu}
+        fullPageHref={fullPage}
+        onClose={onClose}
+      />
+      {dialogs}
+    </>
   )
 }
 
@@ -198,35 +252,10 @@ function SheetBodyContent({ alert, fullPage }: { alert: EmergingThreatDetail; fu
     .slice(1)
     .map((p) => p.text)
     .join(', ')
-  const more = Math.max(0, alert.product_count - 1)
-  const b = alert.ets_breakdown
 
   return (
-    <>
-      <DetailSheetHeader
-        icon={Siren}
-        title={<span className="font-mono">{alert.vuln_id}</span>}
-        subtitle={
-          alert.product
-            ? more > 0
-              ? `${alert.product} ${t('emergingThreats.threat.moreProducts', undefined, { n: more })}`
-              : alert.product
-            : undefined
-        }
-        status={<StateBadge state={alert.state} />}
-        badges={
-          <>
-            <LevelBadge level={alert.level} />
-            <ExploitBadges
-              inKev={alert.in_kev}
-              ransomware={alert.kev_ransomware}
-              epss={alert.epss}
-            />
-          </>
-        }
-        actions={<AlertActions alert={alert} />}
-      />
-      <div className="space-y-4 px-4 pb-5 sm:px-6">
+    <div className="space-y-5">
+      <div className="space-y-4">
         <OutOfScopeHint alert={alert} />
         <TaskCoverageNote alert={alert} />
         <DetailCallout
@@ -262,12 +291,10 @@ function SheetBodyContent({ alert, fullPage }: { alert: EmergingThreatDetail; fu
           />
         </DetailStatGrid>
       </div>
-      <DetailSections className="px-4 pb-6 sm:px-6">
+      <DetailSections>
         <DetailSection title={t('emergingThreats.sheet.why')}>
-          <p className="mb-2 text-sm text-muted-foreground">
-            {t('emergingThreats.detail.scoreHint')}
-          </p>
-          <EtsBreakdownList breakdown={b} />
+          <EtsBreakdownBars ets={alert.ets} breakdown={alert.ets_breakdown} />
+          <p className="text-meta text-muted-foreground">{t('emergingThreats.sheet.whyCaption')}</p>
         </DetailSection>
 
         <DetailSection title={t('emergingThreats.sheet.exploit')}>
@@ -406,6 +433,6 @@ function SheetBodyContent({ alert, fullPage }: { alert: EmergingThreatDetail; fu
           )}
         </DetailSection>
       </DetailSections>
-    </>
+    </div>
   )
 }

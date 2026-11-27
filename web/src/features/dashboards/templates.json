@@ -27,18 +27,59 @@
       {
         "widget_type": "metric",
         "w": 12,
-        "h": 4,
+        "h": 1,
         "config": {
           "v": 2,
-          "id": "w_ct20",
+          "id": "w_ct22",
           "data": {
             "kind": "metric",
-            "metric": "exposure.flow",
+            "metric": "ctem.loop",
             "filter": {},
             "time": {}
           },
           "viz": {
-            "type": "flow",
+            "type": "loop",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ct6",
+          "data": {
+            "kind": "metric",
+            "metric": "fix.next",
+            "filter": {},
+            "time": {}
+          },
+          "viz": {
+            "type": "list",
+            "options": {}
+          }
+        }
+      },
+      {
+        "widget_type": "metric",
+        "w": 6,
+        "h": 2,
+        "config": {
+          "v": 2,
+          "id": "w_ct11",
+          "data": {
+            "kind": "metric",
+            "metric": "flow.new_vs_fixed",
+            "filter": {},
+            "time": {
+              "range": "90d",
+              "bucket": "week"
+            }
+          },
+          "viz": {
+            "type": "diverging",
             "options": {}
           }
         }
@@ -58,25 +99,6 @@
           },
           "viz": {
             "type": "levers",
-            "options": {}
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
-        "w": 12,
-        "h": 3,
-        "config": {
-          "v": 2,
-          "id": "w_ct6",
-          "data": {
-            "kind": "metric",
-            "metric": "fix.next",
-            "filter": {},
-            "time": {}
-          },
-          "viz": {
-            "type": "list",
             "options": {}
           }
         }
@@ -118,47 +140,6 @@
           },
           "viz": {
             "type": "area",
-            "options": {}
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
-        "w": 6,
-        "h": 2,
-        "config": {
-          "v": 2,
-          "id": "w_ct11",
-          "data": {
-            "kind": "metric",
-            "metric": "flow.new_vs_fixed",
-            "filter": {},
-            "time": {
-              "range": "90d",
-              "bucket": "week"
-            }
-          },
-          "viz": {
-            "type": "diverging",
-            "options": {}
-          }
-        }
-      },
-      {
-        "widget_type": "metric",
-        "w": 6,
-        "h": 2,
-        "config": {
-          "v": 2,
-          "id": "w_ct12",
-          "data": {
-            "kind": "metric",
-            "metric": "findings.age_bands",
-            "filter": {},
-            "time": {}
-          },
-          "viz": {
-            "type": "heatmap",
             "options": {}
           }
         }
@@ -328,7 +309,9 @@
             "time": {
               "range": "365d"
             },
-            "group_by": ["priority_class"]
+            "group_by": [
+              "priority_class"
+            ]
           },
           "viz": {
             "type": "bar",
@@ -748,7 +731,9 @@
             "time": {
               "range": "90d"
             },
-            "group_by": ["priority_class"]
+            "group_by": [
+              "priority_class"
+            ]
           },
           "viz": {
             "type": "bar",
@@ -937,7 +922,9 @@
             "time": {
               "compare": "previous_period"
             },
-            "group_by": ["severity"]
+            "group_by": [
+              "severity"
+            ]
           },
           "viz": {
             "type": "bar",
@@ -957,7 +944,9 @@
             "metric": "findings.open",
             "filter": {},
             "time": {},
-            "group_by": ["sla_state"]
+            "group_by": [
+              "sla_state"
+            ]
           },
           "viz": {
             "type": "bar",

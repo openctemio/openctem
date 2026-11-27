@@ -185,7 +185,8 @@ describe('CompensatingControlsPage — record test', () => {
     const user = userEvent.setup()
     render(<CompensatingControlsPage />)
 
-    await user.click(screen.getByRole('button', { name: /^test$/i }))
+    await user.click(await screen.findByRole('button', { name: /^actions for/i }))
+    await user.click(await screen.findByRole('menuitem', { name: /^test$/i }))
     await user.click(screen.getByRole('button', { name: /^record$/i }))
 
     expect(mockPost).toHaveBeenCalledWith('/api/v1/compensating-controls/c1/test', {

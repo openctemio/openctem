@@ -73,6 +73,14 @@ export function LayoutProvider({ children }: LayoutProviderProps) {
   return <LayoutContext value={contextValue}>{children}</LayoutContext>
 }
 
+/**
+ * The layout settings, or null outside a LayoutProvider (the platform console
+ * renders the shared header without one: its sidebar is always `icon`).
+ */
+export function useLayoutOrNull() {
+  return useContext(LayoutContext)
+}
+
 // Define the hook for the provider
 export function useLayout() {
   const context = useContext(LayoutContext)

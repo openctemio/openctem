@@ -14,7 +14,10 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { SafeExternalLink } from '@/components/safe-external-link'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ActionMenu } from '@/components/ui/action-menu'
+import { CircleStop, MoreHorizontal, Pause, RefreshCw } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Table,
   TableBody,
@@ -26,7 +29,7 @@ import {
 import { useTranslation } from '@/context/i18n-provider'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { Permission, useHasPermission, usePermissions } from '@/lib/permissions'
-import { ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { ErrorState, KeyValueList, PageHeader, PageStack } from '@/features/shared'
 import Link from '@/components/link'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -54,6 +57,9 @@ import {
   type ProgramFormValues,
 } from '@/features/programs'
 import { confirmName } from '@/lib/confirm-name'
+import { formatDateTime } from '@/lib/app-locale'
+
+type ProgramTab = 'targets' | 'entries' | 'exclusions' | 'rules' | 'notifications'
 
 function formFromProgram(p: ProgramDetail): ProgramFormValues {
   const lines = (inScope: boolean) =>
@@ -94,6 +100,7 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
   const [reattest, setReattest] = useState(false)
   const [busy, setBusy] = useState(false)
   const [pending, setPending] = useState<'suspend' | 'end' | null>(null)
+  const [tab, setTab] = useState<ProgramTab | null>(null)
 
   if (error) {
     return (
@@ -151,37 +158,75 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
 
   const forbidden = new Set(p.rules.forbidden ?? [])
   const refresh = () => Promise.all([mutate(), invalidatePrograms()])
+  const inScopeCount = p.items.filter((i) => i.in_scope).length
+  const hasTargets = inScopeCount > 0
+  const tabs: ProgramTab[] = [
+    ...(hasTargets ? (['targets'] as const) : []),
+    'entries',
+    'exclusions',
+    'rules',
+    ...(p.visibility === 'private' ? (['notifications'] as const) : []),
+  ]
+  const current: ProgramTab = tab && tabs.includes(tab) ? tab : tabs[0]
 
   return (
     <Main>
       <PageStack>
         <PageHeader
           title={p.name}
+          // The status belongs to the name: on its line, never under the actions.
+          titleAction={
+            <Badge variant={p.status === 'active' ? 'outline' : 'secondary'}>
+              {t(`programs.status.${p.status}`, PROGRAM_STATUS_LABEL[p.status])}
+            </Badge>
+          }
           description={
-            <span className="flex flex-wrap items-center gap-2">
-              <Badge variant={p.status === 'active' ? 'default' : 'secondary'}>
-                {t(`programs.status.${p.status}`, PROGRAM_STATUS_LABEL[p.status])}
-              </Badge>
-              <SafeExternalLink href={p.program_url} className="text-sm underline">
-                {p.program_url}
-              </SafeExternalLink>
-            </span>
+            <SafeExternalLink href={p.program_url} className="break-words underline">
+              {p.program_url}
+            </SafeExternalLink>
           }
         >
           {canWrite && p.status !== 'ended' && (
             <>
               <Button variant="outline" onClick={() => setReimport((x) => !x)} disabled={busy}>
+                <RefreshCw aria-hidden />
                 {t('programs.reimport', 'Re-import scope')}
               </Button>
-              {p.status === 'active' && (
-                <Button variant="outline" disabled={busy} onClick={() => setPending('suspend')}>
-                  {t('programs.suspend', 'Suspend')}
-                </Button>
-              )}
-              <span aria-hidden className="mx-1 h-6 w-px shrink-0 bg-border" />
-              <Button variant="destructive" disabled={busy} onClick={() => setPending('end')}>
-                {t('programs.end', 'End')}
-              </Button>
+              {/* Suspend and End (irreversible) wait behind "More actions": no
+                  filled destructive button at rest. */}
+              <ActionMenu
+                title={p.name}
+                label={t('common.actionMenu.more', 'More actions')}
+                items={[
+                  ...(p.status === 'active'
+                    ? [
+                        {
+                          id: 'suspend',
+                          label: t('programs.suspend', 'Suspend'),
+                          icon: Pause,
+                          onSelect: () => setPending('suspend'),
+                        },
+                      ]
+                    : []),
+                  {
+                    id: 'end',
+                    label: t('programs.end', 'End'),
+                    icon: CircleStop,
+                    destructive: true,
+                    onSelect: () => setPending('end'),
+                  },
+                ]}
+                trigger={
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={busy}
+                    aria-label={t('common.actionMenu.more', 'More actions')}
+                  >
+                    <MoreHorizontal aria-hidden />
+                  </Button>
+                }
+              />
             </>
           )}
         </PageHeader>
@@ -241,129 +286,158 @@ export default function ProgramPage({ params }: { params: Promise<{ id: string }
             </section>
           )}
 
-          <section className="grid gap-2 text-sm sm:grid-cols-2">
-            <div>
-              <span className="text-muted-foreground">
-                {t('programs.attestation', 'Accepted terms')}:{' '}
-              </span>
-              <span className="font-mono">{shortHash(p.terms_sha256)}</span>
-              {p.accepted_at && (
-                <span className="text-muted-foreground">
-                  {' '}
-                  ({new Date(p.accepted_at).toLocaleString()})
-                </span>
-              )}
-            </div>
-            <div>
-              <span className="text-muted-foreground">{t('programs.col.tier', 'Max tier')}: </span>
-              <span className="font-mono">{p.max_tier}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">
-                {t('programs.form.rate', 'Rate limit (requests per second)')}:{' '}
-              </span>
-              {p.rules.rate_limit_rps || '-'}
-            </div>
-            <div>
-              <span className="text-muted-foreground">
-                {t('programs.form.ua', 'Required User-Agent')}:{' '}
-              </span>
-              <span className="font-mono">
-                {p.rules.user_agents?.length
-                  ? t('programs.rotatingOver', 'Rotating over {n} values', {
-                      n: p.rules.user_agents.length,
-                    })
-                  : p.rules.user_agent || '-'}
-              </span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">
-                {t('programs.identificationRequired', 'Identification required')}:{' '}
-              </span>
-              {p.rules.identification_required ? t('common.yes', 'Yes') : t('common.no', 'No')}
-            </div>
-            <div className="sm:col-span-2">
-              <span className="text-muted-foreground">
-                {t('programs.windows', 'Testing windows')}:{' '}
-              </span>
-              {p.rules.testing_windows?.length ? (
-                <span className="font-mono text-xs">
-                  {p.rules.testing_windows.map(formatWindow).join('; ')}
-                </span>
-              ) : (
-                t('programs.windowsAny', 'Any time')
-              )}
-            </div>
-            <div className="sm:col-span-2">
-              <span className="text-muted-foreground">
-                {t('programs.form.forbidden', 'The program forbids')}:{' '}
-              </span>
-              {FORBIDDEN_TECHNIQUES.filter((f) => forbidden.has(f.value))
-                .map((f) => t(`programs.forbidden.${f.value}`, f.label))
-                .join(', ') || '-'}
-            </div>
-          </section>
-
           <ProgramPendingTerms program={p} canWrite={canWrite} onChanged={refresh} />
           <ProgramSuggestions program={p} canWrite={canWrite} onChanged={refresh} />
 
-          <ProgramSource program={p} canWrite={canWrite} onChanged={refresh} />
-
-          {p.items.some((i) => i.in_scope) && (
-            <section className="space-y-2">
-              <h3 className="text-base font-semibold">
-                {t('programs.targets.title', 'Program targets')}
-              </h3>
-              <ProgramTargetsTable items={p.items} />
-            </section>
-          )}
-          <ProgramNotifications
-            program={p}
-            canManage={canWrite && canManageIntegrations}
-            isOwner={isOwner()}
-          />
-
-          <section className="space-y-2">
-            <h3 className="text-base font-semibold">{t('programs.entries', 'Scope entries')}</h3>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('programs.preview.target', 'In scope')}</TableHead>
-                  <TableHead>{t('programs.preview.type', 'Type')}</TableHead>
-                  <TableHead>{t('programs.col.status', 'Status')}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {p.entries.map((e) => (
-                  <TableRow key={e.id}>
-                    <TableCell className="font-mono text-xs break-all">
-                      {e.pattern}
-                      {portLimit(e.ports, e.protocol) && (
-                        <Badge variant="outline" className="ml-2">
-                          {t('programs.targets.onlyPorts', 'only {ports}', {
-                            ports: portLimit(e.ports, e.protocol),
-                          })}
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-xs">{e.target_type}</TableCell>
-                    <TableCell>
-                      <Badge variant={e.in_effect ? 'default' : 'secondary'}>
-                        {e.in_effect ? t('programs.inEffect', 'In effect') : e.status}
-                      </Badge>
-                    </TableCell>
+          {/* One job per tab (MVP v2): the targets table first, not under
+              the rules, the scope source and the notifications. */}
+          <Tabs value={current} onValueChange={(v) => setTab(v as ProgramTab)}>
+            <TabsList>
+              {hasTargets && (
+                <TabsTrigger value="targets">
+                  {t('programs.tab.targets', 'Targets')}
+                  <TabsCount value={inScopeCount} />
+                </TabsTrigger>
+              )}
+              <TabsTrigger value="entries">
+                {t('programs.entries', 'Scope entries')}
+                <TabsCount value={p.entries.length} />
+              </TabsTrigger>
+              <TabsTrigger value="exclusions">
+                {t('programs.tab.exclusions', 'Exclusions')}
+                <TabsCount value={p.exclusions.length} />
+              </TabsTrigger>
+              <TabsTrigger value="rules">{t('programs.tab.rules', 'Rules and source')}</TabsTrigger>
+              {p.visibility === 'private' && (
+                <TabsTrigger value="notifications">
+                  {t('programs.notify.title', 'Notifications')}
+                </TabsTrigger>
+              )}
+            </TabsList>
+            {hasTargets && (
+              <TabsContent value="targets">
+                <ProgramTargetsTable items={p.items} error={error} onRetry={() => void mutate()} />
+              </TabsContent>
+            )}
+            <TabsContent value="entries">
+              <Table aria-label={t('programs.entries', 'Scope entries')}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('programs.preview.target', 'In scope')}</TableHead>
+                    <TableHead>{t('programs.preview.type', 'Type')}</TableHead>
+                    <TableHead>{t('programs.col.status', 'Status')}</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </section>
-
-          <section className="space-y-2">
-            <h3 className="text-base font-semibold">
-              {t('programs.exclusions', 'Program exclusions')}
-            </h3>
-            <ProgramExclusionsTable exclusions={p.exclusions} />
-          </section>
+                </TableHeader>
+                <TableBody>
+                  {p.entries.map((e) => (
+                    <TableRow key={e.id}>
+                      <TableCell className="font-mono text-xs break-all">
+                        {e.pattern}
+                        {portLimit(e.ports, e.protocol) && (
+                          <Badge variant="outline" className="ml-2">
+                            {t('programs.targets.onlyPorts', 'only {ports}', {
+                              ports: portLimit(e.ports, e.protocol),
+                            })}
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-xs">
+                        {e.target_type}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={e.in_effect ? 'outline' : 'secondary'}>
+                          {e.in_effect ? t('programs.inEffect', 'In effect') : e.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TabsContent>
+            <TabsContent value="exclusions">
+              <ProgramExclusionsTable exclusions={p.exclusions} />
+            </TabsContent>
+            <TabsContent value="rules" className="flex flex-col gap-4">
+              {/* The program's terms and rules: label and value pairs (the shared
+                list), so a long value wraps under its label, not into rows of
+                loose text. */}
+              <KeyValueList
+                items={[
+                  {
+                    key: 'terms',
+                    label: t('programs.attestation', 'Accepted terms'),
+                    value: (
+                      <>
+                        <span className="font-mono">{shortHash(p.terms_sha256)}</span>
+                        {p.accepted_at && (
+                          <span className="text-muted-foreground">
+                            {' '}
+                            ({formatDateTime(new Date(p.accepted_at))})
+                          </span>
+                        )}
+                      </>
+                    ),
+                  },
+                  {
+                    key: 'tier',
+                    label: t('programs.col.tier', 'Max tier'),
+                    value: <span className="font-mono">{p.max_tier}</span>,
+                  },
+                  {
+                    key: 'rate',
+                    label: t('programs.form.rate', 'Rate limit (requests per second)'),
+                    value: p.rules.rate_limit_rps || '-',
+                  },
+                  {
+                    key: 'ua',
+                    label: t('programs.form.ua', 'Required User-Agent'),
+                    value: p.rules.user_agents?.length
+                      ? t('programs.rotatingOver', 'Rotating over {n} values', {
+                          n: p.rules.user_agents.length,
+                        })
+                      : p.rules.user_agent || '-',
+                    token: !p.rules.user_agents?.length,
+                  },
+                  {
+                    key: 'identification',
+                    label: t('programs.identificationRequired', 'Identification required'),
+                    value: p.rules.identification_required
+                      ? t('common.yes', 'Yes')
+                      : t('common.no', 'No'),
+                  },
+                  {
+                    key: 'windows',
+                    label: t('programs.windows', 'Testing windows'),
+                    value: p.rules.testing_windows?.length ? (
+                      <span className="font-mono text-xs">
+                        {p.rules.testing_windows.map(formatWindow).join('; ')}
+                      </span>
+                    ) : (
+                      t('programs.windowsAny', 'Any time')
+                    ),
+                  },
+                  {
+                    key: 'forbidden',
+                    label: t('programs.form.forbidden', 'The program forbids'),
+                    value:
+                      FORBIDDEN_TECHNIQUES.filter((f) => forbidden.has(f.value))
+                        .map((f) => t(`programs.forbidden.${f.value}`, f.label))
+                        .join(', ') || '-',
+                  },
+                ]}
+              />
+              <ProgramSource program={p} canWrite={canWrite} onChanged={refresh} />
+            </TabsContent>
+            {p.visibility === 'private' && (
+              <TabsContent value="notifications">
+                <ProgramNotifications
+                  program={p}
+                  canManage={canWrite && canManageIntegrations}
+                  isOwner={isOwner()}
+                />
+              </TabsContent>
+            )}
+          </Tabs>
         </>
         <ConfirmDialog
           open={pending !== null}

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from '@/components/link'
 import { Loader2 } from 'lucide-react'
+import { EntryActions, EntryCard, EntryHeader, EntryLinkProblem } from '@/components/entry'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/context/i18n-provider'
 import { verifyEmailAction } from '../actions/local-auth-actions'
@@ -32,24 +33,46 @@ export function VerifyEmail() {
     void verifyEmailAction(token).then((res) => setState(res.success ? 'verified' : 'failed'))
   }, [])
 
+  if (state === 'failed') {
+    // One message under a title that names the problem; the way on is a new
+    // link (or, on a server without email, who to ask).
+    return (
+      <EntryLinkProblem
+        title={t('auth.verifyEmail.failedTitle', 'This verification link does not work')}
+        description={t('auth.verifyEmail.failedBody', 'It may have expired or been used already.')}
+      >
+        <ResendVerification primary />
+      </EntryLinkProblem>
+    )
+  }
+
+  if (state === 'verified') {
+    return (
+      <EntryCard>
+        <EntryHeader
+          title={t('auth.verifyEmail.verifiedTitle', 'Your email is verified')}
+          description={
+            <span role="status">
+              {t('auth.verifyEmail.verified', 'Your email address is verified. You can sign in.')}
+            </span>
+          }
+        />
+        <EntryActions>
+          <Button asChild variant="signal">
+            <Link href="/login">{t('auth.passwordToken.signIn', 'Sign in')}</Link>
+          </Button>
+        </EntryActions>
+      </EntryCard>
+    )
+  }
+
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col items-center gap-4 text-center">
-      {state === 'verifying' ? (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
-          <Loader2 className="size-4 animate-spin" aria-hidden />
-          {t('auth.verifyEmail.verifying', 'Verifying your email address...')}
-        </p>
-      ) : (
-        <p className="text-sm" role="status">
-          {state === 'verified'
-            ? t('auth.verifyEmail.verified', 'Your email address is verified. You can sign in.')
-            : t('auth.verifyEmail.failed', 'This link is invalid or has expired.')}
-        </p>
-      )}
-      {state === 'failed' && <ResendVerification />}
-      <Button asChild variant="outline">
-        <Link href="/login">{t('auth.notSetUp.backToSignIn', 'Back to sign in')}</Link>
-      </Button>
-    </div>
+    <EntryCard>
+      <EntryHeader title={t('auth.verifyEmail.title', 'Verify your email')} />
+      <p className="text-body text-muted-foreground flex items-center gap-2" role="status">
+        <Loader2 className="size-4 animate-spin" aria-hidden />
+        {t('auth.verifyEmail.verifying', 'Verifying your email address...')}
+      </p>
+    </EntryCard>
   )
 }

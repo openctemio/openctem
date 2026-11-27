@@ -23,7 +23,7 @@ vi.mock('@/lib/permissions', async (orig) => {
 const clip = vi.hoisted(() => ({ copyToClipboard: vi.fn().mockResolvedValue(true) }))
 vi.mock('@/lib/clipboard', () => clip)
 
-const { EASMCertificates } = await import('../easm-certificates')
+const { EASMCertificates, CertificatePhoneCard } = await import('../easm-certificates')
 const { certificatesCsv } = await import('../../lib/certificates')
 
 const wrap = (ui: ReactNode) =>
@@ -130,5 +130,28 @@ describe('certificatesCsv', () => {
     expect(lines[1]).toContain(`'=HYPERLINK`)
     expect(lines[1]).toContain(`'+cmd`)
     expect(lines[1]).toContain(FP)
+  })
+})
+
+describe('CertificatePhoneCard', () => {
+  it('shows subject, issuer, expiry with its status and the fingerprint, each on its own line', () => {
+    wrap(<CertificatePhoneCard row={row({ is_wildcard: true }) as never} />)
+    expect(screen.getByText('www.example.com')).toBeInTheDocument()
+    expect(screen.getByText('Wildcard')).toBeInTheDocument()
+    expect(screen.getByText('Issuer Example CA, Example Trust')).toBeInTheDocument()
+    expect(screen.getByText(/^Expires on /)).toBeInTheDocument()
+    expect(screen.getByTitle(FP)).toBeInTheDocument()
+  })
+})
+
+describe('certificate table fits its frame', () => {
+  it('keeps Issued to, Issuer and Expires on in the 700 px frame of a 1024 px window, and folds the rest away', async () => {
+    const { CERTIFICATE_HIDE_BELOW } = await import('../easm-certificates')
+    const frame = 700
+    for (const below of Object.values(CERTIFICATE_HIDE_BELOW)) expect(below).toBeGreaterThan(frame)
+    // Every column that stays plus the name floor (192) fits.
+    expect(192 + 260 + 160).toBeLessThanOrEqual(frame)
+    // The full set (name floor, fingerprint 184, issuer, issued on 144, expires on 160, detected 168) fits at 1440.
+    expect(192 + 184 + 260 + 144 + 160 + 168).toBeLessThanOrEqual(1114 + 120)
   })
 })

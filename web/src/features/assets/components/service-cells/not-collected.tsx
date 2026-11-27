@@ -6,7 +6,7 @@ import { useTranslation } from '@/context/i18n-provider'
  * "Unknown facts"):
  *
  * - in a list cell: nothing. A cell left with no content at all shows one
- *   muted `—` (`EmptyCell`), the house empty-cell style;
+ *   muted `—` (`EmptyCell` of the shared kit), the house empty-cell style;
  * - in a drawer or detail page: one muted line at the end of the facts,
  *   "Not collected yet: port, HTTP status, …" (`NotCollectedNote`);
  * - in filters: the facets that have a "Not collected" value keep it, so
@@ -15,19 +15,6 @@ import { useTranslation } from '@/context/i18n-provider'
  * A known negative ("No TLS", "No open ports", "No technologies detected")
  * is data, not a gap, and is always shown.
  */
-
-/** The muted `—` of a list cell with nothing known to show. */
-export function EmptyCell({ title, className }: { title?: string; className?: string }) {
-  const { t } = useTranslation()
-  return (
-    <span
-      className={cn('text-muted-foreground', className)}
-      title={title ?? t('assets.facts.notCollectedTitle', 'Not collected')}
-    >
-      —
-    </span>
-  )
-}
 
 /** "Not collected yet: port, HTTP status" for the facts in `items`, or nothing. */
 export function notCollectedText(items: readonly string[]): string | null {

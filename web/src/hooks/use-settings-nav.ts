@@ -5,7 +5,8 @@ import { useTranslation } from '@/context/i18n-provider'
 import { useTenantModules } from '@/features/integrations/api/use-tenant-modules'
 import useSWR from 'swr'
 import { LIMITS_APPLY_KEY } from '@/context/bootstrap-session'
-import { useNavItemAccess, subModuleStatus } from '@/lib/permissions'
+import { useNavItemAccess } from '@/lib/permissions/use-filtered-sidebar'
+import { subModuleStatus } from '@/lib/permissions/sub-modules'
 import { settingsNav, type SettingsNavGroup, type SettingsNavItem } from '@/config/settings-nav'
 import type { SearchableAnchor } from '@/config/settings-search'
 
@@ -35,7 +36,7 @@ export interface VisibleSettingsGroup extends Omit<SettingsNavGroup, 'items'> {
  * An item is hidden when the user lacks its permission, or its module (or
  * integration sub-module) is off for the tenant: the same decision the main
  * sidebar makes (useNavItemAccess, subModuleStatus). A group with no visible
- * item is dropped. "My account" items carry no permission, so every signed-in
+ * item is dropped. "Your membership" items carry no permission, so every signed-in
  * user sees at least that group. An item marked onlyWhenLimitsApply (Usage &
  * limits) is listed only while a limit or a module deny applies to the
  * organization: the session bootstrap says so (limits_apply, owners and

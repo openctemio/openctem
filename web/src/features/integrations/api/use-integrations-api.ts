@@ -81,6 +81,13 @@ const defaultConfig: SWRConfiguration = {
 
 const BASE_URL = '/api/v1/integrations'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** An integration id read from the address: the id when it is a UUID, else ''. */
+export function integrationIdFromParam(value: string | null | undefined): string {
+  return value && UUID_RE.test(value) ? value : ''
+}
+
 function buildIntegrationsEndpoint(filters?: IntegrationListFilters): string {
   if (!filters) return BASE_URL
 
@@ -103,7 +110,7 @@ function buildRepositoriesEndpoint(
   integrationId: string,
   options?: { search?: string; page?: number; per_page?: number }
 ): string {
-  const url = `${BASE_URL}/${integrationId}/repositories`
+  const url = `${BASE_URL}/${encodeURIComponent(integrationId)}/repositories`
   if (!options) return url
 
   const params = new URLSearchParams()
@@ -196,7 +203,8 @@ export function useSCMIntegrationsApi(config?: SWRConfiguration) {
 export function useIntegrationApi(integrationId: string | null, config?: SWRConfiguration) {
   const { currentTenant } = useTenant()
 
-  const key = currentTenant && integrationId ? `${BASE_URL}/${integrationId}` : null
+  const key =
+    currentTenant && integrationId ? `${BASE_URL}/${encodeURIComponent(integrationId)}` : null
 
   return useSWR<Integration>(key, fetchIntegration, { ...defaultConfig, ...config })
 }
@@ -226,7 +234,7 @@ export function useUpdateIntegrationApi(integrationId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && integrationId ? `${BASE_URL}/${integrationId}` : null,
+    currentTenant && integrationId ? `${BASE_URL}/${encodeURIComponent(integrationId)}` : null,
     async (url: string, { arg }: { arg: UpdateIntegrationRequest }) => {
       return put<Integration>(url, arg)
     }
@@ -240,7 +248,7 @@ export function useDeleteIntegrationApi(integrationId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && integrationId ? `${BASE_URL}/${integrationId}` : null,
+    currentTenant && integrationId ? `${BASE_URL}/${encodeURIComponent(integrationId)}` : null,
     async (url: string) => {
       return del<void>(url)
     }
@@ -254,7 +262,7 @@ export function useTestIntegrationApi(integrationId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && integrationId ? `${BASE_URL}/${integrationId}/test` : null,
+    currentTenant && integrationId ? `${BASE_URL}/${encodeURIComponent(integrationId)}/test` : null,
     async (url: string) => {
       return post<Integration>(url, {})
     }
@@ -268,7 +276,7 @@ export function useSyncIntegrationApi(integrationId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && integrationId ? `${BASE_URL}/${integrationId}/sync` : null,
+    currentTenant && integrationId ? `${BASE_URL}/${encodeURIComponent(integrationId)}/sync` : null,
     async (url: string) => {
       return post<Integration>(url, {})
     }
@@ -282,7 +290,9 @@ export function useEnableIntegrationApi(integrationId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && integrationId ? `${BASE_URL}/${integrationId}/enable` : null,
+    currentTenant && integrationId
+      ? `${BASE_URL}/${encodeURIComponent(integrationId)}/enable`
+      : null,
     async (url: string) => {
       return post<Integration>(url, {})
     }
@@ -296,7 +306,9 @@ export function useDisableIntegrationApi(integrationId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && integrationId ? `${BASE_URL}/${integrationId}/disable` : null,
+    currentTenant && integrationId
+      ? `${BASE_URL}/${encodeURIComponent(integrationId)}/disable`
+      : null,
     async (url: string) => {
       return post<Integration>(url, {})
     }
@@ -312,7 +324,9 @@ export function useResumeCoverageRotationApi(integrationId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && integrationId ? `${BASE_URL}/${integrationId}/coverage/reactivate` : null,
+    currentTenant && integrationId
+      ? `${BASE_URL}/${encodeURIComponent(integrationId)}/coverage/reactivate`
+      : null,
     async (url: string) => {
       return post<Integration>(url, {})
     }
@@ -481,7 +495,9 @@ export function useTestNotificationApi(integrationId: string) {
   const { currentTenant } = useTenant()
 
   return useSWRMutation(
-    currentTenant && integrationId ? `${BASE_URL}/${integrationId}/test-notification` : null,
+    currentTenant && integrationId
+      ? `${BASE_URL}/${encodeURIComponent(integrationId)}/test-notification`
+      : null,
     async (url: string) => {
       return post<TestNotificationResponse>(url, {})
     }
@@ -499,7 +515,9 @@ export function useNotificationEventsApi(
   const { currentTenant } = useTenant()
 
   // Build URL with query params
-  let url = integrationId ? `${BASE_URL}/${integrationId}/notification-events` : null
+  let url = integrationId
+    ? `${BASE_URL}/${encodeURIComponent(integrationId)}/notification-events`
+    : null
   if (url) {
     const params = new URLSearchParams()
     // page / per_page (one list convention); callers keep an offset window.
@@ -530,7 +548,8 @@ export async function invalidateNotificationEventsCache(integrationId: string) {
   const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
     (key) =>
-      typeof key === 'string' && key.includes(`/integrations/${integrationId}/notification-events`),
+      typeof key === 'string' &&
+      key.includes(`/integrations/${encodeURIComponent(integrationId)}/notification-events`),
     undefined,
     { revalidate: true }
   )
@@ -568,7 +587,8 @@ export async function invalidateIntegrationsCache() {
 export async function invalidateIntegrationCache(integrationId: string) {
   const { mutate } = await import('@/lib/swr-mutate')
   await mutate(
-    (key) => typeof key === 'string' && key.includes(`/integrations/${integrationId}`),
+    (key) =>
+      typeof key === 'string' && key.includes(`/integrations/${encodeURIComponent(integrationId)}`),
     undefined,
     { revalidate: true }
   )
@@ -600,7 +620,10 @@ export interface JiraWebhookConfig {
 /** The webhook URL and whether a secret is set (never the secret). */
 export function useJiraWebhookApi(integrationId: string | null) {
   const { currentTenant } = useTenant()
-  const key = currentTenant && integrationId ? `${BASE_URL}/${integrationId}/jira-webhook` : null
+  const key =
+    currentTenant && integrationId
+      ? `${BASE_URL}/${encodeURIComponent(integrationId)}/jira-webhook`
+      : null
   return useSWR<JiraWebhookConfig>(key, (url: string) => get<JiraWebhookConfig>(url), defaultConfig)
 }
 
@@ -609,7 +632,7 @@ export function useRotateJiraWebhookSecretApi(integrationId: string) {
   const { currentTenant } = useTenant()
   return useSWRMutation(
     currentTenant && integrationId
-      ? `${BASE_URL}/${integrationId}/jira-webhook/secret/rotate`
+      ? `${BASE_URL}/${encodeURIComponent(integrationId)}/jira-webhook/secret/rotate`
       : null,
     async (url: string) => post<JiraWebhookConfig>(url, {})
   )
@@ -619,7 +642,9 @@ export function useRotateJiraWebhookSecretApi(integrationId: string) {
 export function useSetJiraWebhookSecretApi(integrationId: string) {
   const { currentTenant } = useTenant()
   return useSWRMutation(
-    currentTenant && integrationId ? `${BASE_URL}/${integrationId}/jira-webhook/secret` : null,
+    currentTenant && integrationId
+      ? `${BASE_URL}/${encodeURIComponent(integrationId)}/jira-webhook/secret`
+      : null,
     async (url: string, { arg }: { arg: { secret: string } }) => put<JiraWebhookConfig>(url, arg)
   )
 }

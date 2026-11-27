@@ -149,20 +149,34 @@ export function ScopeExclusionDialog({
       const hostKind = host === '*' ? 'domain' : detectScopeKind(host)
       if (hostKind !== 'domain' && hostKind !== 'url')
         return setError(
-          'A path rule applies to hosts: enter a domain, *.domain, a URL origin or leave it empty for every host.'
+          t(
+            'scope.exclusion.err.pathHost',
+            'A path rule applies to hosts: enter a domain, *.domain, a URL origin or leave it empty for every host.'
+          )
         )
-      const problem = pathPrefixProblem(pathPrefix)
+      const problem = pathPrefixProblem(pathPrefix, t)
       if (problem) return setError(problem)
-    } else if (!pattern) return setError('Enter what scans must never touch.')
+    } else if (!pattern)
+      return setError(t('scope.exclusion.err.empty', 'Enter what scans must never touch.'))
     if (!pathOnly && !override && !detected)
       return setError(
-        'This is not a domain, IP address, IP range, URL or repository. Pick its kind.'
+        t(
+          'scope.exclusion.err.kind',
+          'This is not a domain, IP address, IP range, URL or repository. Pick its kind.'
+        )
       )
     if (!pathOnly && !(EXCLUSION_KINDS as string[]).includes(kind))
-      return setError('Exclusions cover domains, addresses, URLs and repositories.')
+      return setError(
+        t(
+          'scope.exclusion.err.kinds',
+          'Exclusions cover domains, addresses, URLs and repositories.'
+        )
+      )
     if (!reason.trim()) return setError(t('scope.error.REASON_REQUIRED'))
     if (days.trim() && (!Number.isFinite(n) || n < 1 || n > MAX_DAYS))
-      return setError(`Days must be between 1 and ${MAX_DAYS}.`)
+      return setError(
+        t('scope.exclusion.err.days', 'Days must be between 1 and {max}.', { max: MAX_DAYS })
+      )
     setSaving(true)
     setError(null)
     try {
@@ -208,7 +222,9 @@ export function ScopeExclusionDialog({
         setCriticalConfirmed(false)
         return
       }
-      setError(scopeErrorMessage(t, err, 'Could not add the exclusion.'))
+      setError(
+        scopeErrorMessage(t, err, t('scope.exclusion.err.add', 'Could not add the exclusion.'))
+      )
     } finally {
       setSaving(false)
     }
@@ -218,10 +234,12 @@ export function ScopeExclusionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Put out of scope</DialogTitle>
+          <DialogTitle>{t('scope.exclusion.dialog.title', 'Put out of scope')}</DialogTitle>
           <DialogDescription>
-            Scans never touch what you list here, even inside an in-scope entry: fragile production
-            hosts, partners&apos; systems, payment gateways.
+            {t(
+              'scope.exclusion.dialog.description',
+              'Scans never touch what you list here, even inside an in-scope entry: fragile production hosts, partners’ systems, payment gateways.'
+            )}
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
@@ -289,14 +307,19 @@ export function ScopeExclusionDialog({
               />
             )}
             <div className="space-y-2">
-              <Label htmlFor={`${id}-what`}>What</Label>
+              <Label htmlFor={`${id}-what`}>{t('scope.exclusion.dialog.what', 'What')}</Label>
               <Input
                 id={`${id}-what`}
                 value={what}
                 autoComplete="off"
                 spellCheck={false}
                 placeholder={
-                  pathOnly ? '*.example.com (empty: every host)' : SCOPE_KIND_PLACEHOLDER[kind]
+                  pathOnly
+                    ? t(
+                        'scope.exclusion.dialog.hostPlaceholder',
+                        '*.example.com (empty: every host)'
+                      )
+                    : SCOPE_KIND_PLACEHOLDER[kind]
                 }
                 onChange={(e) => {
                   setWhat(e.target.value)
@@ -305,16 +328,21 @@ export function ScopeExclusionDialog({
               />
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 {pathOnly ? (
-                  <span>The hosts the path rule applies to; they stay in scope.</span>
+                  <span>
+                    {t(
+                      'scope.exclusion.dialog.hostHint',
+                      'The hosts the path rule applies to; they stay in scope.'
+                    )}
+                  </span>
                 ) : override ? (
                   <>
-                    <span>Kind:</span>
+                    <span>{t('scope.exclusion.dialog.kindColon', 'Kind:')}</span>
                     <ScopeTargetTypeSelect
                       value={override}
                       onValueChange={(v) => setOverride(v as ScopeKind)}
                       only={EXCLUSION_KINDS}
                       className="h-7 w-44 text-xs"
-                      aria-label="Kind"
+                      aria-label={t('scope.kindPlaceholder', 'Kind')}
                     />
                   </>
                 ) : (
@@ -322,9 +350,19 @@ export function ScopeExclusionDialog({
                     <span aria-live="polite">
                       {pattern
                         ? detected
-                          ? `Detected: ${SCOPE_KIND_LABEL[detected]}, covers ${coversText({ pattern, target_type: detected })}`
-                          : 'Kind not recognised'
-                        : 'A domain (*.x covers x and every name below it), IP address or range, URL or repository.'}
+                          ? t(
+                              'scope.exclusion.dialog.detected',
+                              'Detected: {kind}, covers {what}',
+                              {
+                                kind: t(`scope.kind.${detected}`, SCOPE_KIND_LABEL[detected]),
+                                what: coversText({ pattern, target_type: detected }, t),
+                              }
+                            )
+                          : t('scope.exclusion.dialog.notRecognized', 'Kind not recognized')
+                        : t(
+                            'scope.exclusion.dialog.whatHint',
+                            'A domain (*.x covers x and every name below it), IP address or range, URL or repository.'
+                          )}
                     </span>
                     {pattern && (
                       <button
@@ -332,7 +370,9 @@ export function ScopeExclusionDialog({
                         className="underline underline-offset-2 hover:text-foreground"
                         onClick={() => setOverride(detected ?? 'domain')}
                       >
-                        {detected ? 'Change' : 'Pick the kind'}
+                        {detected
+                          ? t('scope.exclusion.dialog.change', 'Change')
+                          : t('scope.exclusion.dialog.pickKind', 'Pick the kind')}
                       </button>
                     )}
                   </>
@@ -351,17 +391,23 @@ export function ScopeExclusionDialog({
                   className="mt-0.5"
                 />
                 <Label htmlFor={`${id}-path`} className="flex-col items-start gap-0.5 font-normal">
-                  <span className="block font-medium">Only a path</span>
+                  <span className="block font-medium">
+                    {t('scope.exclusion.dialog.onlyPath', 'Only a path')}
+                  </span>
                   <span className="block text-xs text-muted-foreground">
-                    Block requests under a path (for example /admin or /api/payments) and keep the
-                    rest of the host in scope.
+                    {t(
+                      'scope.exclusion.dialog.onlyPathHint',
+                      'Block requests under a path (for example /admin or /api/payments) and keep the rest of the host in scope.'
+                    )}
                   </span>
                 </Label>
               </div>
               {pathOnly && (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor={`${id}-prefix`}>Path prefix</Label>
+                    <Label htmlFor={`${id}-prefix`}>
+                      {t('scope.exclusion.dialog.pathPrefix', 'Path prefix')}
+                    </Label>
                     <Input
                       id={`${id}-prefix`}
                       value={pathPrefix}
@@ -374,11 +420,16 @@ export function ScopeExclusionDialog({
                       }}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Covers the path and everything below it. * stands for one whole segment.
+                      {t(
+                        'scope.exclusion.dialog.pathPrefixHint',
+                        'Covers the path and everything below it. * stands for one whole segment.'
+                      )}
                     </p>
                   </div>
                   <fieldset className="space-y-2">
-                    <legend className="text-sm font-medium">Methods blocked</legend>
+                    <legend className="text-sm font-medium">
+                      {t('scope.exclusion.dialog.methodsBlocked', 'Methods blocked')}
+                    </legend>
                     <div className="flex flex-wrap gap-x-4 gap-y-2">
                       {HTTP_METHODS.map((m) => (
                         <label key={m} className="flex items-center gap-1.5 text-sm">
@@ -395,20 +446,27 @@ export function ScopeExclusionDialog({
                       ))}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Now: {methodsText(methods)}.{' '}
+                      {t('scope.exclusion.dialog.methodsNow', 'Now: {methods}.', {
+                        methods: methodsText(methods, t),
+                      })}{' '}
                       <button
                         type="button"
                         className="underline underline-offset-2 hover:text-foreground"
                         onClick={() => setMethods(STATE_CHANGING_METHODS)}
                       >
-                        Block only what changes state
+                        {t('scope.exclusion.dialog.blockState', 'Block only what changes state')}
                       </button>{' '}
-                      so read-only checks still run there.
+                      {t(
+                        'scope.exclusion.dialog.blockStateTail',
+                        'so read-only checks still run there.'
+                      )}
                     </p>
                   </fieldset>
                   <p className="text-xs text-muted-foreground">
-                    Testing starts Blocked. An exclusion approver can later allow read-only or full
-                    testing for a limited time.
+                    {t(
+                      'scope.exclusion.dialog.testingNote',
+                      'Testing starts Blocked. An exclusion approver can later allow read-only or full testing for a limited time.'
+                    )}
                   </p>
                 </>
               )}
@@ -442,22 +500,29 @@ export function ScopeExclusionDialog({
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor={`${id}-reason`}>Reason</Label>
+              <Label htmlFor={`${id}-reason`}>{t('scope.exclusion.dialog.reason', 'Reason')}</Label>
               <Textarea
                 id={`${id}-reason`}
                 rows={2}
                 maxLength={1000}
                 value={reason}
-                placeholder="Why must scans never touch it? For example: payment gateway, PCI change freeze."
+                placeholder={t(
+                  'scope.exclusion.dialog.reasonPlaceholder',
+                  'Why must scans never touch it? For example: payment gateway, PCI change freeze.'
+                )}
                 onChange={(e) => {
                   setReason(e.target.value)
                   setError(null)
                 }}
               />
-              <p className="text-xs text-muted-foreground">Required. Kept in the audit log.</p>
+              <p className="text-xs text-muted-foreground">
+                {t('scope.exclusion.dialog.reasonHint', 'Required. Kept in the audit log.')}
+              </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor={`${id}-days`}>Ends after (days, optional)</Label>
+              <Label htmlFor={`${id}-days`}>
+                {t('scope.exclusion.dialog.days', 'Ends after (days, optional)')}
+              </Label>
               <Input
                 id={`${id}-days`}
                 type="number"
@@ -467,7 +532,9 @@ export function ScopeExclusionDialog({
                 onChange={(e) => setDays(e.target.value)}
                 className="w-28"
               />
-              <p className="text-xs text-muted-foreground">Empty: until someone lifts it.</p>
+              <p className="text-xs text-muted-foreground">
+                {t('scope.exclusion.dialog.daysHint', 'Empty: until someone lifts it.')}
+              </p>
             </div>
             <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
               {needsReview
@@ -484,7 +551,7 @@ export function ScopeExclusionDialog({
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
+            {t('common.cancel', 'Cancel')}
           </Button>
           <Button
             type="submit"

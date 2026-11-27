@@ -80,6 +80,39 @@ describe('MetaLine', () => {
   })
 })
 
+describe('MetaLine oneLine', () => {
+  // Owner report 2026-11-19 (/assets at 390 px): a card's type line was made
+  // one line with `flex-nowrap`, so MetaLine's own item wrappers (min-w-0,
+  // break anywhere) shrank: "IP Address" broke as "IP Addres / s", and the
+  // description's `truncate` sat on an inline span, where it does nothing,
+  // so the text ran under the card's Risk score.
+  it('keeps every item but the last whole and cuts the last with an ellipsis', () => {
+    const { container } = render(
+      <MetaLine oneLine items={['IP Address', 'A very long group name that does not fit']} />
+    )
+    const line = container.querySelector('[data-slot=meta-line]')!
+    expect(line).toHaveAttribute('data-one-line', 'true')
+    expect(line.className).toMatch(/\bflex-nowrap\b/)
+    expect(line.className).toMatch(/\boverflow-hidden\b/)
+    const items = container.querySelectorAll('[data-slot=meta-line-item]')
+    expect(items).toHaveLength(2)
+    expect(items[0].className).toMatch(/\bshrink-0\b/)
+    expect(items[0].className).toMatch(/\bwhitespace-nowrap\b/)
+    expect(items[0].className).not.toMatch(/overflow-wrap/)
+    expect(items[1].className).toMatch(/\bmin-w-0\b/)
+    expect(items[1].className).toMatch(/\btruncate\b/)
+    // The cut text is readable in full.
+    expect(items[1]).toHaveAttribute('title', 'A very long group name that does not fit')
+  })
+
+  it('wraps item by item without oneLine', () => {
+    const { container } = render(<MetaLine items={['a', 'b']} />)
+    const line = container.querySelector('[data-slot=meta-line]')!
+    expect(line.className).toMatch(/\bflex-wrap\b/)
+    expect(line).not.toHaveAttribute('data-one-line')
+  })
+})
+
 describe('MetaLine separators', () => {
   it('puts a hidden comma between every pair, none before the first or after the last', () => {
     render(<MetaLine items={['a', 'b', 'c']} />)

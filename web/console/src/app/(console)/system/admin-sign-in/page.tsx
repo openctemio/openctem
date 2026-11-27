@@ -1,9 +1,7 @@
 'use client'
 
-import { Main } from '@/components/layout'
 import { useTranslation } from '@/context/i18n-provider'
-import { Skeleton } from '@/components/ui/skeleton'
-import { ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { SettingsPage } from '@/features/shared'
 import { useAdmin } from '@console/features/admin-console/components/admin-console-shell'
 import { useAdminUsers } from '@console/features/admin-console/api/use-admin-users'
 import { usePlatformIdP } from '@console/features/admin-console/api/use-platform-idp'
@@ -23,15 +21,13 @@ export default function AdminSignInPage() {
   const isSuper = adminHas(me, 'platform.identity.manage')
   const { data, error, isLoading, mutate } = usePlatformIdP(isSuper)
   const { data: admins } = useAdminUsers(1, isSuper)
+  const title = t('admin.nav.adminSignIn', 'Admin sign-in')
 
   if (!isSuper) {
     return (
-      <Main>
-        <PageStack>
-          <PageHeader title={t('admin.nav.adminSignIn', 'Admin sign-in')} />
-          <RoleRequiredNotice needed="super_admin" variant="page" />
-        </PageStack>
-      </Main>
+      <SettingsPage title={title}>
+        <RoleRequiredNotice needed="super_admin" variant="page" />
+      </SettingsPage>
     )
   }
 
@@ -40,31 +36,20 @@ export default function AdminSignInPage() {
   )
 
   return (
-    <Main>
-      <PageStack>
-        <PageHeader
-          title={t('admin.nav.adminSignIn', 'Admin sign-in')}
-          description={t(
-            'admin.systemAdminSignInPage.howAdministratorsSignInTo',
-            'How administrators sign in to this console. Separate from organization sign-in.'
-          )}
-        />
-        <ConsoleMfaPolicyCard />
-        {error ? (
-          <ErrorState
-            title={t('admin.systemAdminSignInPage.adminSignIn', 'admin sign-in')}
-            error={error}
-            onRetry={() => void mutate()}
-          />
-        ) : isLoading || !data ? (
-          <div className="space-y-3">
-            <Skeleton className="h-48 w-full" />
-            <Skeleton className="h-32 w-full" />
-          </div>
-        ) : (
-          <PlatformIdPForm idp={data} hasBreakGlass={hasBreakGlass} onSaved={() => void mutate()} />
-        )}
-      </PageStack>
-    </Main>
+    <SettingsPage
+      title={title}
+      description={t(
+        'admin.systemAdminSignInPage.howAdministratorsSignInTo',
+        'How administrators sign in to this console. Separate from organization sign-in.'
+      )}
+      state={error ? 'error' : isLoading || !data ? 'loading' : 'ready'}
+      error={error}
+      onRetry={() => void mutate()}
+    >
+      <ConsoleMfaPolicyCard />
+      {data && (
+        <PlatformIdPForm idp={data} hasBreakGlass={hasBreakGlass} onSaved={() => void mutate()} />
+      )}
+    </SettingsPage>
   )
 }

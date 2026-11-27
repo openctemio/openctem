@@ -23,6 +23,8 @@ import budget from '../request-budget.json'
  */
 
 const APP_DIR = path.resolve(__dirname, '../../src/app/(dashboard)')
+// The account area (/account/*) lives in its own route group with its own shell.
+const ACCOUNT_DIR = path.resolve(__dirname, '../../src/app/(account)')
 const QUIET_MS = 1200
 const CAP_MS = 20_000
 
@@ -85,6 +87,17 @@ async function apiRequestsOfLoad(page: Page, route: string): Promise<string[]> {
   return seen
 }
 
+/**
+ * A page of the account area, which has its own shell and session: only the
+ * pages that live in the (account) route group. Other /account/* pages (the
+ * settings rail's My account items that read the organization: connected AI
+ * applications, notification preferences, activity) stay in the organization
+ * shell and send the bootstrap like any dashboard page.
+ */
+function isAccountRoute(route: string): boolean {
+  return dashboardRoutes(ACCOUNT_DIR).includes(route)
+}
+
 /** Adds the budget, duplicate and session-read problems of one load. */
 function checkLoad(route: string, max: number, requests: string[], problems: string[]): void {
   // The shell's own reads (request-budget.json, shellRequests) are not a
@@ -99,6 +112,13 @@ function checkLoad(route: string, max: number, requests: string[], problems: str
   for (const [r, n] of counts) if (n > 1) problems.push(`${route}: ${r} sent ${n} times`)
 
   const bootstraps = requests.filter((r) => r.startsWith('GET /api/v1/me/bootstrap')).length
+  if (isAccountRoute(route)) {
+    // The account area runs on the account session, outside any organization:
+    // it never reads the organization bootstrap, and the account's own reads
+    // (/users/me, /users/me/tenants, ownership invitations) are asked directly.
+    if (bootstraps !== 0) problems.push(`${route}: /me/bootstrap sent ${bootstraps} times (want 0)`)
+    return
+  }
   if (bootstraps !== 1) problems.push(`${route}: /me/bootstrap sent ${bootstraps} times (want 1)`)
   const pageUses = (budget.pageUsesSessionEndpoint as Record<string, string[]>)[route] ?? []
   for (const r of requests) {
@@ -152,7 +172,7 @@ for (let part = 0; part < PARTS; part++) {
     { tag: ['@budget'] },
     async ({ page }) => {
       test.setTimeout(8 * 60_000)
-      const all = dashboardRoutes()
+      const all = [...dashboardRoutes(), ...dashboardRoutes(ACCOUNT_DIR)].sort()
       expect(all.length).toBeGreaterThan(50)
       // Budget entries must name real pages, so a removed page does not keep a
       // stale allowance.
@@ -234,6 +254,65 @@ test(
   }
 )
 
+test(
+  'findings, an empty practice: one more stats response for its first run, none on a view switch',
+  { tag: ['@budget'] },
+  async ({ page }) => {
+    // The seed has no runtime findings: the empty list asks once for the
+    // practice's total in every state (its first run or "No findings match").
+    const requests = await apiRequestsOfLoad(page, '/findings?practice=runtime')
+    const stats = requests.filter((r) => r.includes('/api/v1/findings/stats'))
+    expect(stats, requests.join('\n')).toHaveLength(2)
+    expect(
+      stats.filter((r) => r.includes('practice=runtime')),
+      requests.join('\n')
+    ).toHaveLength(1)
+    expect(requests.filter((r) => r.includes('/api/v1/findings/quick-views'))).toHaveLength(1)
+
+    const afterSwitch: string[] = []
+    const listen = (req: Request) => {
+      if (req.url().includes('/api/v1/findings/stats')) afterSwitch.push(req.url())
+    }
+    page.on('request', listen)
+    await page.getByRole('link', { name: /^Closed/ }).click()
+    await expect(page).toHaveURL(/state=closed/)
+    await page.waitForTimeout(QUIET_MS)
+    page.off('request', listen)
+    expect(afterSwitch).toEqual([])
+  }
+)
+
+test(
+  'settings general: the dashboard data section reads its state only when it comes into view',
+  { tag: ['@budget'] },
+  async ({ page }) => {
+    // The section is below the fold: the load stays within the default budget
+    // without its read, and scrolling to it (or a link to it) loads it.
+    await page.setViewportSize({ width: 1280, height: 720 })
+    const dashboardData = (r: string) => r.startsWith('GET /api/v1/dashboard-data')
+    const load = await apiRequestsOfLoad(page, '/settings/general')
+    expect(load.length, load.join('\n')).toBeLessThanOrEqual(budget.defaultMax)
+    expect(load.filter(dashboardData), load.join('\n')).toEqual([])
+
+    const read = page.waitForRequest(
+      (req) => isApi(req) && req.url().includes('/api/v1/dashboard-data')
+    )
+    await page.getByRole('heading', { name: 'Dashboard data' }).scrollIntoViewIfNeeded()
+    await read
+    // Let that read finish (the API answers the path with a redirect) before the next load.
+    await page.waitForTimeout(QUIET_MS)
+
+    // The old tab link lands on the section with its state loaded.
+    const deep = await apiRequestsOfLoad(page, '/settings/general?tab=dashboard-data')
+    // One read of the section's state (the path the page asks for, not the redirect it follows).
+    expect(
+      deep.filter((r) => r === 'GET /api/v1/dashboard-data/'),
+      deep.join('\n')
+    ).toHaveLength(1)
+    await expect(page.getByRole('button', { name: 'Rebuild dashboard data' })).toBeVisible()
+  }
+)
+
 test('findings: Refresh sends each request once', { tag: ['@budget'] }, async ({ page }) => {
   await apiRequestsOfLoad(page, '/findings')
   const seen: string[] = []
@@ -249,3 +328,33 @@ test('findings: Refresh sends each request once', { tag: ['@budget'] }, async ({
   for (const r of seen) counts.set(r, (counts.get(r) ?? 0) + 1)
   expect([...counts].filter(([, n]) => n > 1)).toEqual([])
 })
+
+/**
+ * A list's quick-view sheet opened from its link (`/remediation/tasks?task=<id>`):
+ * the list and the sheet together stay within the entry's budget, and the
+ * sheet's slow panels (a task's timeline and query) wait until expanded.
+ */
+const sheetBudgets = (budget as { sheetRoutes?: Record<string, DynamicBudget> }).sheetRoutes ?? {}
+
+test(
+  'every list quick-view sheet stays within its request budget',
+  { tag: ['@budget'] },
+  async ({ page }) => {
+    test.setTimeout(4 * 60_000)
+    const routes = Object.keys(sheetBudgets)
+    test.skip(routes.length === 0, 'no sheet budget listed')
+    await apiRequestsOfLoad(page, '/')
+    const problems: string[] = []
+    for (const route of routes) {
+      const url = await sampleRoute(page, route, sheetBudgets[route])
+      if (!url) continue
+      const requests = await apiRequestsOfLoad(page, url)
+      if (process.env.E2E_BUDGET_REPORT) console.log(`budget ${route} ${requests.length}`)
+      checkLoad(route, sheetBudgets[route].max, requests, problems)
+      for (const r of requests)
+        if (/\/tasks\/[^/?]+\/(timeline|query)/.test(r))
+          problems.push(`${route}: ${r} loads before it is expanded`)
+    }
+    expect(problems, problems.join('\n')).toEqual([])
+  }
+)

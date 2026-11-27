@@ -136,6 +136,16 @@ describe('AssetTimeline', () => {
     )
   })
 
+  it('phone: the attribute and source selects share one equal-width row', async () => {
+    api.get.mockResolvedValue({ items: [], next_cursor: '' })
+    wrap(<AssetTimeline assetId="a1" />)
+    await screen.findByText('No changes yet')
+    expect(screen.getByTestId('timeline-filters').className).toContain('grid-cols-2')
+    for (const name of ['Attribute', 'Source']) {
+      expect(screen.getByRole('combobox', { name }).className).toContain('w-full')
+    }
+  })
+
   it('fetches nothing without assets:read', () => {
     perms = []
     wrap(<AssetTimeline assetId="a1" />)

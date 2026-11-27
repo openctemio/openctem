@@ -39,6 +39,7 @@ export function ImportMappingListView() {
             'Turn any CSV, JSON, JSON Lines or XML export into findings and assets. Choose a mapping as the format when you import results.'
           )}
         >
+          {/* The create button stays in the header; the empty state only explains. */}
           {newButton}
         </PageHeader>
 
@@ -63,7 +64,6 @@ export function ImportMappingListView() {
                 'importMappings.list.emptyDescription',
                 'Start from a template for a generic CSV, findings JSON or test-results XML, and check it on a sample before saving.'
               )}
-              action={newButton}
             />
           ) : (
             <div className="grid gap-3">
@@ -73,17 +73,16 @@ export function ImportMappingListView() {
                     <div className="min-w-0 flex-1 basis-60">
                       <Link
                         href={`/settings/integrations/import-mappings/${encodeURIComponent(m.id)}`}
-                        className="break-all font-medium hover:underline"
+                        className="break-words font-medium hover:underline"
                       >
                         {m.name}
                       </Link>
                       {m.description && (
-                        <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
+                        <p className="mt-0.5 text-sm text-muted-foreground break-words">
                           {m.description}
                         </p>
                       )}
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <code className="break-all">{`mapping:${m.name}`}</code>
                         <span>
                           {t('importMappings.list.updated', 'Updated')}{' '}
                           <RelativeTime date={m.updated_at} />

@@ -3,7 +3,7 @@
 import React from 'react'
 import { useRouter } from 'next/navigation'
 import useSWR from 'swr'
-import { ArrowRight, Building2, Laptop, Moon, Sun, User } from 'lucide-react'
+import { Building2, Laptop, Moon, Sun, User } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import {
   CommandDialog,
@@ -14,7 +14,6 @@ import {
   CommandList,
   CommandSeparator,
 } from '@/components/ui/command'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { useSearch } from '@/context/search-provider'
 import { useTranslation } from '@/context/i18n-provider'
 import { useSearchQuery } from '@/hooks/use-search-query'
@@ -85,96 +84,92 @@ export function AdminCommandMenu() {
         onValueChange={setQuery}
       />
       <CommandList>
-        <ScrollArea type="hover" className="h-80 pe-1">
-          <CommandEmpty>
-            {orgs.isLoading && orgPath
-              ? t('admin.palette.searching', 'Searching...')
-              : t('admin.palette.empty', 'No results found.')}
-          </CommandEmpty>
-          {orgResults.length > 0 && (
-            <CommandGroup heading={t('admin.nav.organizations', 'Organizations')}>
-              {orgResults.map((org) => (
-                <CommandItem
-                  key={org.id}
-                  // The server already matched name or slug; both are in the
-                  // value so the client filter keeps the row.
-                  value={`${org.name} ${org.slug} ${org.id}`}
-                  keywords={[q]}
-                  onSelect={() => run(() => router.push(`/organizations/${org.id}`))}
-                >
-                  <Building2 className="text-muted-foreground" />
-                  <span className="truncate">{org.name}</span>
-                  <span className="ms-auto truncate text-xs text-muted-foreground">{org.slug}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          )}
-          {userResults.length > 0 && (
-            <CommandGroup heading={t('admin.palette.accounts', 'Accounts')}>
-              {userResults.map((u) => (
-                <CommandItem
-                  key={u.id}
-                  value={`${u.email} ${u.id}`}
-                  keywords={[q]}
-                  onSelect={() => run(() => router.push(`/users/${u.id}`))}
-                >
-                  <User className="text-muted-foreground" />
-                  <span className="truncate">{u.email}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          )}
-          {sections.map((section, i) => (
-            <CommandGroup
-              key={section.title ?? `top-${i}`}
-              heading={
-                !section.i18nKey
-                  ? t('admin.palette.pages', 'Pages')
-                  : section.rail === 'settings'
-                    ? t('admin.nav.settings.heading', 'Settings › {section}', {
-                        section: t(section.i18nKey, section.title),
-                      })
-                    : t(section.i18nKey, section.title)
-              }
-            >
-              {section.items.map((item) => {
-                const label = t(item.i18nKey, item.title)
-                return (
-                  <CommandItem
-                    key={item.url}
-                    value={label}
-                    keywords={[
-                      item.title,
-                      section.title ?? '',
-                      ...(section.rail === 'settings' ? ['settings'] : []),
-                      ...(item.keywords ?? []),
-                    ]}
-                    onSelect={() => run(() => router.push(item.url))}
-                  >
-                    <div className="flex size-4 items-center justify-center">
-                      <ArrowRight className="size-2 text-muted-foreground/80" />
-                    </div>
-                    {label}
-                  </CommandItem>
-                )
-              })}
-            </CommandGroup>
-          ))}
-          <CommandSeparator />
-          <CommandGroup heading={t('admin.palette.theme', 'Theme')}>
-            <CommandItem value="Light theme" onSelect={() => run(() => setTheme('light'))}>
-              <Sun /> <span>{t('admin.palette.light', 'Light')}</span>
-            </CommandItem>
-            <CommandItem value="Dark theme" onSelect={() => run(() => setTheme('dark'))}>
-              <Moon className="scale-90" />
-              <span>{t('admin.palette.dark', 'Dark')}</span>
-            </CommandItem>
-            <CommandItem value="System theme" onSelect={() => run(() => setTheme('system'))}>
-              <Laptop />
-              <span>{t('admin.palette.system', 'System')}</span>
-            </CommandItem>
+        <CommandEmpty>
+          {orgs.isLoading && orgPath
+            ? t('admin.palette.searching', 'Searching...')
+            : t('admin.palette.empty', 'No results found.')}
+        </CommandEmpty>
+        {orgResults.length > 0 && (
+          <CommandGroup heading={t('admin.nav.organizations', 'Organizations')}>
+            {orgResults.map((org) => (
+              <CommandItem
+                key={org.id}
+                // The server already matched name or slug; both are in the
+                // value so the client filter keeps the row.
+                value={`${org.name} ${org.slug} ${org.id}`}
+                keywords={[q]}
+                onSelect={() => run(() => router.push(`/organizations/${org.id}`))}
+              >
+                <Building2 className="text-muted-foreground" />
+                <span className="truncate">{org.name}</span>
+                <span className="ms-auto truncate text-cap text-muted-foreground">{org.slug}</span>
+              </CommandItem>
+            ))}
           </CommandGroup>
-        </ScrollArea>
+        )}
+        {userResults.length > 0 && (
+          <CommandGroup heading={t('admin.palette.accounts', 'Accounts')}>
+            {userResults.map((u) => (
+              <CommandItem
+                key={u.id}
+                value={`${u.email} ${u.id}`}
+                keywords={[q]}
+                onSelect={() => run(() => router.push(`/users/${u.id}`))}
+              >
+                <User className="text-muted-foreground" />
+                <span className="truncate">{u.email}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
+        {sections.map((section, i) => (
+          <CommandGroup
+            key={section.title ?? `top-${i}`}
+            heading={
+              !section.i18nKey
+                ? t('admin.palette.pages', 'Pages')
+                : section.rail === 'settings'
+                  ? t('admin.nav.settings.heading', 'Settings › {section}', {
+                      section: t(section.i18nKey, section.title),
+                    })
+                  : t(section.i18nKey, section.title)
+            }
+          >
+            {section.items.map((item) => {
+              const label = t(item.i18nKey, item.title)
+              return (
+                <CommandItem
+                  key={item.url}
+                  value={label}
+                  keywords={[
+                    item.title,
+                    section.title ?? '',
+                    ...(section.rail === 'settings' ? ['settings'] : []),
+                    ...(item.keywords ?? []),
+                  ]}
+                  onSelect={() => run(() => router.push(item.url))}
+                >
+                  <item.icon aria-hidden />
+                  <span className="truncate">{label}</span>
+                </CommandItem>
+              )
+            })}
+          </CommandGroup>
+        ))}
+        <CommandSeparator />
+        <CommandGroup heading={t('admin.palette.theme', 'Theme')}>
+          <CommandItem value="Light theme" onSelect={() => run(() => setTheme('light'))}>
+            <Sun /> <span>{t('admin.palette.light', 'Light')}</span>
+          </CommandItem>
+          <CommandItem value="Dark theme" onSelect={() => run(() => setTheme('dark'))}>
+            <Moon className="scale-90" />
+            <span>{t('admin.palette.dark', 'Dark')}</span>
+          </CommandItem>
+          <CommandItem value="System theme" onSelect={() => run(() => setTheme('system'))}>
+            <Laptop />
+            <span>{t('admin.palette.system', 'System')}</span>
+          </CommandItem>
+        </CommandGroup>
       </CommandList>
     </CommandDialog>
   )

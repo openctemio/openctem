@@ -60,12 +60,18 @@ async function renderPage() {
       <ProgramPage params={params} />
     </Suspense>
   )
-  return screen.findByRole('button', { name: 'End' })
+  return screen.findByRole('button', { name: 'More actions' })
+}
+
+/** Suspend and End wait behind "More actions" in the header. */
+async function choose(name: string) {
+  await userEvent.click(await renderPage())
+  await userEvent.click(await screen.findByRole('menuitem', { name }))
 }
 
 describe('Program lifecycle actions', () => {
   it('ending a program asks first and names it', async () => {
-    await userEvent.click(await renderPage())
+    await choose('End')
     expect(endProgram).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('End the program "Acme VDP"?')
@@ -78,8 +84,7 @@ describe('Program lifecycle actions', () => {
   })
 
   it('suspending asks first; Cancel suspends nothing', async () => {
-    await renderPage()
-    await userEvent.click(screen.getByRole('button', { name: 'Suspend' }))
+    await choose('Suspend')
     const dialog = await screen.findByRole('alertdialog')
     expect(dialog).toHaveTextContent('Suspend the program "Acme VDP"?')
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))

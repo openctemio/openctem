@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useTranslation } from '@/context/i18n-provider'
+import { usePermissionLabel } from '@/lib/use-permission-label'
 import { useApiKeyPolicy, useCreateApiKey } from '@/features/api-keys/api/use-api-keys'
 import { expiryOptionsFor } from '@/features/api-keys/lib/expiry'
 import type { CreateAPIKeyResponse } from '@/features/api-keys/types/api-key.types'
@@ -36,7 +37,7 @@ import { cn } from '@/lib/utils'
 
 import { ClientSnippets } from './client-snippets'
 import { ConnectionTest } from './connection-test'
-import { CopyButton } from './snippet-block'
+import { CopyButton, SnippetBlock } from './snippet-block'
 
 // A minted MCP key carries exactly the read scopes below, nothing more. The
 // user picks the key's purpose so it maps to what the server's MCP tools and
@@ -73,6 +74,7 @@ export function ConnectPanel({
   canWriteKeys,
 }: ConnectPanelProps) {
   const { t } = useTranslation()
+  const permissionLabel = usePermissionLabel()
   const defaultName = (id: PresetId) =>
     id === 'general'
       ? t('mcp.key.defaultName.general', 'MCP read access')
@@ -151,8 +153,6 @@ export function ConnectPanel({
     }
   }
 
-  const configLabel = t('mcp.connect.configuration', 'Configuration')
-
   return (
     <div className="space-y-5">
       <Card>
@@ -175,7 +175,7 @@ export function ConnectPanel({
           </p>
           <ConnectionTest />
           <Button asChild variant="link" className="h-auto p-0 whitespace-normal text-start">
-            <Link href="/account/connected-apps">
+            <Link href="/settings/me/connected-apps">
               {t('mcp.connect.yourConnections', 'See and disconnect your connected applications')}
               <ArrowRight className="ms-1 h-3.5 w-3.5 shrink-0" aria-hidden />
             </Link>
@@ -229,15 +229,10 @@ export function ConnectPanel({
               </div>
             </div>
           )}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>{t('mcp.connect.clientConfig', 'Client configuration')}</Label>
-              <CopyButton value={keyConfigJson} label={configLabel} />
-            </div>
-            <pre className="bg-muted overflow-x-auto rounded-md p-4 text-xs">
-              <code>{keyConfigJson}</code>
-            </pre>
-          </div>
+          <SnippetBlock
+            label={t('mcp.connect.clientConfig', 'Client configuration')}
+            code={keyConfigJson}
+          />
         </CardContent>
       </Card>
 
@@ -304,7 +299,7 @@ export function ConnectPanel({
               <div className="space-y-2">
                 <Label htmlFor="mcp-key-purpose">{t('mcp.key.purpose', 'Purpose')}</Label>
                 <Select value={preset} onValueChange={(v) => handlePresetChange(v as PresetId)}>
-                  <SelectTrigger id="mcp-key-purpose">
+                  <SelectTrigger id="mcp-key-purpose" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -317,8 +312,8 @@ export function ConnectPanel({
                 </Select>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {activePreset.scopes.map((s) => (
-                    <Badge key={s} variant="outline" className="font-mono text-xs">
-                      {s}
+                    <Badge key={s} variant="outline" className="text-xs">
+                      {permissionLabel(s)}
                     </Badge>
                   ))}
                 </div>
@@ -335,7 +330,7 @@ export function ConnectPanel({
               <div className="space-y-2">
                 <Label htmlFor="mcp-key-expiry">{t('mcp.key.expires', 'Expires')}</Label>
                 <Select value={expiry} onValueChange={setExpiry}>
-                  <SelectTrigger id="mcp-key-expiry">
+                  <SelectTrigger id="mcp-key-expiry" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

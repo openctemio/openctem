@@ -64,6 +64,7 @@ const copy = vi.fn(async (_value: string) => true)
 vi.mock('@/lib/clipboard', () => ({ copyToClipboard: (v: string) => copy(v) }))
 
 import { TeamSwitcher } from '../team-switcher'
+import { SIDEBAR_TRAILING_SLOT_CLASS } from '../sidebar-brand'
 
 const ORG_ID = '7f3c2a1e-0000-4000-8000-000000000001'
 
@@ -122,13 +123,21 @@ describe('TeamSwitcher', () => {
     expect(trigger.getAttribute('aria-label')).toContain('ORG tenant')
   })
 
-  it('opens the card with a single organization, without a chevron', async () => {
+  it('opens the card with a single organization, and its chevron says the row opens it', async () => {
     renderSwitcher()
-    expect(screen.queryByTestId('team-switcher-chevron')).toBeNull()
+    expect(screen.getByTestId('team-switcher-chevron')).toBeInTheDocument()
     const { card } = await openCard()
     expect(within(card).getByText('ORG tenant')).toBeInTheDocument()
     expect(within(card).queryByTestId('org-card-plan')).toBeNull()
     expect(card).not.toHaveTextContent(/\bplan\b|enterprise/i)
+  })
+
+  it('puts the chevron in the same trailing slot as the collapse button', () => {
+    renderSwitcher()
+    const slot = screen.getByTestId('team-switcher-chevron-slot')
+    for (const c of SIDEBAR_TRAILING_SLOT_CLASS.split(' ')) expect(slot.className).toContain(c)
+    expect(slot.className).toContain('-me-1.5')
+    expect(slot).toContainElement(screen.getByTestId('team-switcher-chevron'))
   })
 
   it('shows the role, the member count linking to members, and the signed-in email', async () => {

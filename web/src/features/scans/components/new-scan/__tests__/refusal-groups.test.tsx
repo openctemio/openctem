@@ -199,7 +199,7 @@ describe('RefusalGroups', () => {
         onRecheck={vi.fn()}
       />
     )
-    await user.click(screen.getByRole('button', { name: 'Lower intensity to Active' }))
+    await user.click(screen.getByRole('button', { name: 'Lower intensity to Probing' }))
     expect(onLowerIntensity).toHaveBeenCalledWith(1)
     rerender(
       <RefusalGroups

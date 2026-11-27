@@ -78,12 +78,29 @@ interface ActionProps {
   onDone?: () => void
 }
 
-export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
+interface MarkOutOfScopeProps extends ActionProps {
+  /**
+   * Opened from elsewhere (an item of a menu): the dialog follows `open` and
+   * the component draws no button of its own.
+   */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+}
+
+export function MarkOutOfScopeAction({
+  selected,
+  onDone,
+  open: openProp,
+  onOpenChange,
+}: MarkOutOfScopeProps) {
   const { t } = useTranslation()
   const canExclude = useHasPermission(Permission.ScopeWrite)
   const canReject = useHasPermission(Permission.AssetsWrite)
   const canUndoExclusions = useHasPermission(Permission.ScopeDelete)
-  const [open, setOpen] = useState(false)
+  const [ownOpen, setOwnOpen] = useState(false)
+  const controlled = onOpenChange !== undefined
+  const open = controlled ? !!openProp : ownOpen
+  const setOpen = controlled ? onOpenChange : setOwnOpen
   const [busy, setBusy] = useState(false)
   const [kind, setKind] = useState<ExclusionKind>('not_ours')
   const [duration, setDuration] = useState<Duration>('permanent')
@@ -308,10 +325,12 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
 
   return (
     <>
-      <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
-        <Ban className="me-2 h-4 w-4" aria-hidden />
-        {t('assets.triage.action', 'Mark out of scope')}
-      </Button>
+      {!controlled && (
+        <Button variant="ghost" size="sm" onClick={() => setOpen(true)}>
+          <Ban className="me-2 h-4 w-4" aria-hidden />
+          {t('assets.triage.action', 'Mark out of scope')}
+        </Button>
+      )}
       <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
         <DialogContent size="lg">
           <DialogHeader>
@@ -371,7 +390,7 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
                     </Label>
                     <Input
                       type="date"
-                      className="h-8 w-40"
+                      className="w-40"
                       value={until}
                       min={minUntil}
                       disabled={duration !== 'until'}
@@ -627,14 +646,22 @@ export function MarkOutOfScopeAction({ selected, onDone }: ActionProps) {
   )
 }
 
-/** Archive the selection (hide it from the default list), with Undo. */
-export function ArchiveAssetsAction({ selected, onDone }: ActionProps) {
+/**
+ * Archive the selection (hide it from the default list), with Undo: what the
+ * button below and a menu item ("Archive" under the bulk bar's More) both run.
+ */
+export function useArchiveAssets({ selected, onDone }: ActionProps) {
   const { t } = useTranslation()
-  const canWrite = useHasPermission(Permission.AssetsWrite)
+  const allowed = useHasPermission(Permission.AssetsWrite)
   const [busy, setBusy] = useState(false)
-  if (!canWrite) return null
   const ids = selected.map((a) => a.id)
   const tooMany = ids.length > MAX_BULK_STATUS
+  /** Why it cannot run now, as the user reads it; undefined when it can. */
+  const disabledReason = tooMany
+    ? t('assets.triage.archive.tooMany', 'Select at most {max} at once.', {
+        max: MAX_BULK_STATUS,
+      })
+    : undefined
 
   const run = async () => {
     setBusy(true)
@@ -655,23 +682,23 @@ export function ArchiveAssetsAction({ selected, onDone }: ActionProps) {
       setBusy(false)
     }
   }
+  return { allowed, busy, disabledReason, run, label: t('assets.triage.archive.action', 'Archive') }
+}
 
+/** Archive the selection, as a button. */
+export function ArchiveAssetsAction(props: ActionProps) {
+  const archive = useArchiveAssets(props)
+  if (!archive.allowed) return null
   return (
     <Button
       variant="ghost"
       size="sm"
-      disabled={busy || tooMany}
-      title={
-        tooMany
-          ? t('assets.triage.archive.tooMany', 'Select at most {max} at once.', {
-              max: MAX_BULK_STATUS,
-            })
-          : undefined
-      }
-      onClick={() => void run()}
+      disabled={archive.busy || !!archive.disabledReason}
+      title={archive.disabledReason}
+      onClick={() => void archive.run()}
     >
       <Archive className="me-2 h-4 w-4" aria-hidden />
-      {t('assets.triage.archive.action', 'Archive')}
+      {archive.label}
     </Button>
   )
 }

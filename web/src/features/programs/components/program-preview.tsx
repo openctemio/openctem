@@ -92,7 +92,8 @@ export function ProgramExclusionsTable({ exclusions }: { exclusions: PlannedExcl
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>
+          {/* The long name wraps: on a phone it pushed "Why" past the edge. */}
+          <TableHead className="whitespace-normal">
             {t('programs.preview.excluded', 'Out of scope for program entries')}
           </TableHead>
           <TableHead>{t('programs.preview.why', 'Why')}</TableHead>
@@ -132,7 +133,7 @@ function NotScannable({ items }: { items: ProgramItem[] }) {
       </h4>
       <ul className="text-muted-foreground space-y-0.5 text-xs">
         {items.map((it) => (
-          <li key={`${it.in_scope}:${it.raw}`} className="break-all">
+          <li key={`${it.in_scope}:${it.raw}`} className="break-words">
             <span className="font-mono">{it.raw}</span>
             {it.note && <span> ({it.note})</span>}
           </li>

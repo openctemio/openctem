@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
   TableBody,
@@ -29,7 +30,14 @@ import { useTranslation } from '@/context/i18n-provider'
 import { SCOPE_SECTION_TABS } from '@/config/section-tabs'
 import { ApiClientError } from '@/lib/api/error-handler'
 import { Permission, useHasPermission } from '@/lib/permissions'
-import { EmptyState, ErrorState, GatedSectionTabs, PageHeader, PageStack } from '@/features/shared'
+import {
+  EmptyState,
+  ErrorState,
+  FilePicker,
+  GatedSectionTabs,
+  PageHeader,
+  PageStack,
+} from '@/features/shared'
 import {
   LETTER_PROBLEM_TEXT,
   LETTER_TYPES,
@@ -42,6 +50,7 @@ import {
   type AuthorizationLetter,
 } from '@/features/scope-letters'
 import { confirmName } from '@/lib/confirm-name'
+import { formatDate } from '@/lib/app-locale'
 
 function errorText(err: unknown, fallback: string): string {
   return err instanceof ApiClientError ? err.message : fallback
@@ -82,6 +91,8 @@ function UploadForm({ onDone }: { onDone: () => void }) {
   const [validFrom, setValidFrom] = useState('')
   const [validUntil, setValidUntil] = useState('')
   const [busy, setBusy] = useState(false)
+  // Upload was pressed: what is missing is said under the button.
+  const [tried, setTried] = useState(false)
 
   const problem = useMemo(
     () => letterFormProblem({ file, title, validFrom, validUntil }),
@@ -89,6 +100,7 @@ function UploadForm({ onDone }: { onDone: () => void }) {
   )
 
   const submit = async () => {
+    setTried(true)
     if (!file || problem) return
     setBusy(true)
     try {
@@ -106,11 +118,11 @@ function UploadForm({ onDone }: { onDone: () => void }) {
     <section className="grid gap-4 rounded-md border p-4 sm:grid-cols-2">
       <div className="space-y-2 sm:col-span-2">
         <Label htmlFor={`${id}-file`}>{t('letters.form.file', 'Signed letter')}</Label>
-        <Input
+        <FilePicker
           id={`${id}-file`}
-          type="file"
+          file={file}
           accept={LETTER_TYPES.join(',')}
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          onFile={setFile}
         />
       </div>
       <div className="space-y-2">
@@ -163,7 +175,7 @@ function UploadForm({ onDone }: { onDone: () => void }) {
         />
       </div>
       <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-        <Button onClick={submit} disabled={busy || problem !== null}>
+        <Button onClick={submit} disabled={busy}>
           {busy ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (
@@ -171,8 +183,12 @@ function UploadForm({ onDone }: { onDone: () => void }) {
           )}
           {t('letters.upload', 'Upload letter')}
         </Button>
-        {problem && (file || title || validFrom || validUntil) && (
-          <p className="text-muted-foreground text-xs">
+        {problem && (tried || file || title || validFrom || validUntil) && (
+          <p
+            className={
+              tried ? 'text-cap font-medium text-destructive' : 'text-muted-foreground text-xs'
+            }
+          >
             {t(`letters.problem.${problem}`, LETTER_PROBLEM_TEXT[problem])}
           </p>
         )}
@@ -216,7 +232,7 @@ export default function ScopeLettersPage() {
     <Main>
       <PageStack>
         <PageHeader
-          title={t('letters.title', 'Letters of authorization')}
+          title={t('scope.title', 'Scope')}
           description={t(
             'letters.description',
             'Signed letters that authorize testing systems your organization does not own. A letter authorizes nothing by itself: scope entries that name it need approval and stop when it expires or is revoked.'
@@ -229,7 +245,7 @@ export default function ScopeLettersPage() {
             </Button>
           )}
         </PageHeader>
-        <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label="Scope sections" />
+        <GatedSectionTabs tabs={SCOPE_SECTION_TABS} label={t('scope.sections', 'Scope sections')} />
 
         <>
           {uploading && canUpload && (
@@ -271,6 +287,15 @@ export default function ScopeLettersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
+                {/* Loading: placeholder rows, never headers over an empty body. */}
+                {!data &&
+                  [0, 1, 2].map((i) => (
+                    <TableRow key={`loading-${i}`} aria-hidden>
+                      <TableCell colSpan={6}>
+                        <Skeleton className="h-5 w-full" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 {(data ?? []).map((l) => (
                   <TableRow key={l.id}>
                     <TableCell className="font-medium break-words">
@@ -281,8 +306,7 @@ export default function ScopeLettersPage() {
                     </TableCell>
                     <TableCell className="text-sm">{l.issuer || '-'}</TableCell>
                     <TableCell className="text-xs whitespace-nowrap">
-                      {new Date(l.valid_from).toLocaleDateString()} –{' '}
-                      {new Date(l.valid_until).toLocaleDateString()}
+                      {formatDate(new Date(l.valid_from))} – {formatDate(new Date(l.valid_until))}
                     </TableCell>
                     <TableCell>
                       <LetterStatus letter={l} />
@@ -293,7 +317,7 @@ export default function ScopeLettersPage() {
                     <TableCell className="text-right whitespace-nowrap">
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon-sm"
                         onClick={() => download(l)}
                         aria-label={t('letters.download', 'Download')}
                       >

@@ -31,6 +31,7 @@
   "wordlists.preview.cut": "(chỉ {kept} trên {count} nhãn đầu tiên vừa một lần chạy)",
   "wordlists.preview.description": "Xem một lần khám phá tiêu chuẩn của một tên miền sẽ thử bao nhiêu tên và chúng đến từ đâu. Không gửi gì đi.",
   "wordlists.preview.domain": "Tên miền",
+  "wordlists.preview.domainRequired": "Hãy nhập tên miền trước.",
   "wordlists.preview.failed": "Không thể đếm số nhãn",
   "wordlists.preview.learned": "Học từ tên của bạn, kèm biến thể: {count}",
   "wordlists.preview.loading": "Đang đếm...",

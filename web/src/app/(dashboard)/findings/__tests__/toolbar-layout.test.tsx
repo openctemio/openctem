@@ -147,8 +147,10 @@ describe('Findings toolbar layout', () => {
     expect(follows(lens, refresh)).toBe(true)
     expect(follows(refresh, exportBtn)).toBe(true)
     expect(follows(exportBtn, task)).toBe(true)
-    // The narrow fallback folds the same actions into one named menu.
-    expect(within(primary).getByRole('button', { name: 'More actions' })).toBeInTheDocument()
+    // One More in the title row, shown only narrow (CSS), where the same
+    // actions fold into it with Copy link; wide the row ends with its buttons
+    // and Copy link is in the page header's More ("This view").
+    expect(within(primary).getAllByRole('button', { name: 'More actions' })).toHaveLength(1)
   })
 
   it('joins the filter button and the search field into one control in row 2', () => {
@@ -165,10 +167,17 @@ describe('Findings toolbar layout', () => {
     // One control: the group does not wrap, so the field cannot drop under the
     // button, and the field keeps a usable minimum width.
     expect(group.className).not.toMatch(/flex-wrap/)
-    expect(group.className).toMatch(/min-w-48/)
+    expect(group.className).toMatch(/min-w-(\[|44|48)/)
     // Group and View come after the search, in the same row.
     const groupBy = within(toolbar).getByRole('combobox', { name: 'Group findings' })
     expect(follows(search, groupBy)).toBe(true)
+    // From 768 Add filter is the first token, right after the field (outside
+    // its group: the field stands alone), before the base chips.
+    const add = within(toolbar).getByRole('button', { name: 'Add filter' })
+    expect(group.contains(add)).toBe(false)
+    expect(follows(search, add)).toBe(true)
+    const tokens = toolbar.querySelector('[data-slot="list-toolbar-tokens"]') as HTMLElement
+    expect(tokens.firstElementChild).toBe(add)
   })
 
   it('the table toolbar is a size container, so labels follow the list width', () => {
@@ -184,7 +193,9 @@ describe('Findings toolbar layout', () => {
     renderAt('?group=severity')
     const primary = screen.getByTestId('findings-toolbar-primary')
     expect(within(primary).getByTestId('findings-view-title')).toBeInTheDocument()
-    expect(within(primary).queryByRole('button', { name: 'Export' })).toBeNull()
+    // The page actions act on the filter, grouped or not: they stay (nothing
+    // in the title row disappears when a grouping is chosen).
+    expect(within(primary).getByRole('button', { name: 'Export' })).toBeEnabled()
     const toolbar = screen.getByTestId('data-table-toolbar')
     expect(within(toolbar).getByRole('searchbox', { name: 'Search findings' })).toBeInTheDocument()
   })

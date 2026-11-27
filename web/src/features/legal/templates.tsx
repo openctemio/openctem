@@ -1,5 +1,10 @@
-import type { LegalDoc, LegalValues } from '@/lib/legal'
+import { Fragment } from 'react'
+import { LEGAL_DOCS, type LegalDoc, type LegalValues } from '@/lib/legal'
+import { TextLink } from '@/components/ui/text-link'
+import { TEXT_LINK_CLASS } from '@/components/ui/text-link-class'
+import { safeInternalHref } from '@/lib/safe-href'
 import type { LegalSection } from './components/legal-document'
+import { LegalMail, LegalWeb } from './components/legal-links'
 
 /**
  * The built-in legal templates: Terms of Service, Acceptable Use Policy,
@@ -11,15 +16,50 @@ import type { LegalSection } from './components/legal-document'
 
 const P = ({ children }: { children: React.ReactNode }) => <p>{children}</p>
 
+const SECURITY_TXT = '/.well-known/security.txt'
+
+/**
+ * Prose with references to the other legal pages: "[the title](/path)" marks
+ * a link, named by the page's title. Only the legal pages and security.txt
+ * can be linked (a constant list, never data); any other mark stays text.
+ * A paragraph stays one text, as the documents are written.
+ */
+function Linked({ children }: { children: string }) {
+  const parts = children.split(/(\[[^\]]+\]\([^)]+\))/)
+  return (
+    <>
+      {parts.map((part, i) => {
+        const m = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part)
+        if (!m) return <Fragment key={i}>{part}</Fragment>
+        const [, text, path] = m
+        if (path === SECURITY_TXT)
+          // A file, not a page: a plain link, no client-side navigation.
+          return (
+            <a key={i} href={safeInternalHref(SECURITY_TXT)} className={TEXT_LINK_CLASS.inline}>
+              {text}
+            </a>
+          )
+        const doc = LEGAL_DOCS.find((d) => d.path === path)
+        if (!doc) return <Fragment key={i}>{text}</Fragment>
+        return (
+          <TextLink key={i} href={safeInternalHref(doc.path)} variant="inline">
+            {doc.title}
+          </TextLink>
+        )
+      })}
+    </>
+  )
+}
+
 function terms(v: LegalValues): LegalSection[] {
   return [
     {
       heading: 'Who we are',
       body: (
         <P>
-          {v.service} ({v.website}) is provided by {v.organization}, {v.address}. These terms govern
-          your use of the service. By creating an account or signing in you accept them for yourself
-          and, where you act for an organization, for that organization.
+          {v.service} (<LegalWeb url={v.website} />) is provided by {v.organization}, {v.address}.
+          These terms govern your use of the service. By creating an account or signing in you
+          accept them for yourself and, where you act for an organization, for that organization.
         </P>
       ),
     },
@@ -27,9 +67,10 @@ function terms(v: LegalValues): LegalSection[] {
       heading: 'Your account',
       body: (
         <P>
-          Keep your sign-in details and second factor secure, and tell us at {v.securityEmail} if
-          you suspect someone else has used your account. Organization owners decide who joins their
-          organization and what each member may see and do.
+          Keep your sign-in details and second factor secure, and tell us at{' '}
+          <LegalMail to={v.securityEmail} /> if you suspect someone else has used your account.
+          Organization owners decide who joins their organization and what each member may see and
+          do.
         </P>
       ),
     },
@@ -37,9 +78,11 @@ function terms(v: LegalValues): LegalSection[] {
       heading: 'Acceptable use',
       body: (
         <P>
-          Your use of the service must follow the Acceptable Use Policy (/acceptable-use). In short:
-          scan, test or monitor only what you own or are authorized to assess. We may suspend
-          accounts or organizations that break it.
+          <Linked>
+            {
+              'Your use of the service must follow the [Acceptable use policy](/acceptable-use). In short: scan, test or monitor only what you own or are authorized to assess. We may suspend accounts or organizations that break it.'
+            }
+          </Linked>
         </P>
       ),
     },
@@ -57,9 +100,11 @@ function terms(v: LegalValues): LegalSection[] {
       heading: 'Your data',
       body: (
         <P>
-          You keep ownership of the data you bring. We process it to provide the service, as
-          described in the Privacy Policy (/privacy) and, for organizations, the Data Processing
-          Addendum (/dpa). You can export your data and ask for its deletion.
+          <Linked>
+            {
+              'You keep ownership of the data you bring. We process it to provide the service, as described in the [Privacy policy](/privacy) and, for organizations, the [Data processing addendum](/dpa). You can export your data and ask for its deletion.'
+            }
+          </Linked>
         </P>
       ),
     },
@@ -68,8 +113,8 @@ function terms(v: LegalValues): LegalSection[] {
       body: (
         <P>
           We work to keep the service available and secure but do not guarantee that it is free of
-          interruptions. Documentation lives at {v.docsUrl}. We may change these terms and will
-          announce material changes before they take effect.
+          interruptions. Documentation lives at <LegalWeb url={v.docsUrl} />. We may change these
+          terms and will announce material changes before they take effect.
         </P>
       ),
     },
@@ -86,7 +131,8 @@ function terms(v: LegalValues): LegalSection[] {
       heading: 'Governing law and contact',
       body: (
         <P>
-          These terms are governed by {v.jurisdiction}. Questions: {v.contactEmail}.
+          These terms are governed by {v.jurisdiction}. Questions: <LegalMail to={v.contactEmail} />
+          .
         </P>
       ),
     },
@@ -128,8 +174,12 @@ function acceptableUse(v: LegalValues): LegalSection[] {
       heading: 'Reporting a vulnerability',
       body: (
         <P>
-          Found a security issue in {v.service}? Write to {v.securityEmail}
-          (/.well-known/security.txt). Give us reasonable time to fix it before disclosing it.
+          Found a security issue in {v.service}? Write to <LegalMail to={v.securityEmail} />{' '}
+          <Linked>
+            {
+              '([security.txt](/.well-known/security.txt)). Give us reasonable time to fix it before disclosing it.'
+            }
+          </Linked>
         </P>
       ),
     },
@@ -138,7 +188,7 @@ function acceptableUse(v: LegalValues): LegalSection[] {
       body: (
         <P>
           We may suspend or remove accounts, organizations or scans that break this policy, and
-          report unlawful activity to the authorities. Questions: {v.contactEmail}.
+          report unlawful activity to the authorities. Questions: <LegalMail to={v.contactEmail} />.
         </P>
       ),
     },
@@ -152,8 +202,12 @@ function privacy(v: LegalValues): LegalSection[] {
       body: (
         <P>
           {v.organization}, {v.address}, is responsible for the personal data processed to run{' '}
-          {v.service}. Contact: {v.contactEmail}. For the data organizations bring to the service we
-          act as their processor under the Data Processing Addendum (/dpa).
+          {v.service}. Contact: <LegalMail to={v.contactEmail} />.{' '}
+          <Linked>
+            {
+              'For the data organizations bring to the service we act as their processor under the [Data processing addendum](/dpa).'
+            }
+          </Linked>
         </P>
       ),
     },
@@ -186,8 +240,11 @@ function privacy(v: LegalValues): LegalSection[] {
       heading: 'Sharing',
       body: (
         <P>
-          Data stays within your organization. We share it only with the subprocessors that host and
-          operate the service for us (/subprocessors), under contract, or when the law requires it.
+          <Linked>
+            {
+              'Data stays within your organization. We share it only with the subprocessors that host and operate the service for us ([Subprocessors](/subprocessors)), under contract, or when the law requires it.'
+            }
+          </Linked>
         </P>
       ),
     },
@@ -206,7 +263,8 @@ function privacy(v: LegalValues): LegalSection[] {
       body: (
         <P>
           You can ask to see, correct, export or delete your personal data, and object to its use,
-          by writing to {v.contactEmail}. You may also complain to your data protection authority.
+          by writing to <LegalMail to={v.contactEmail} />. You may also complain to your data
+          protection authority.
         </P>
       ),
     },
@@ -224,8 +282,13 @@ function dpa(v: LegalValues): LegalSection[] {
       body: (
         <P>
           This addendum is between the customer organization (the controller) and {v.organization},{' '}
-          {v.address} (the processor), and forms part of the Terms of Service (/terms). It covers
-          the personal data the customer brings to {v.service}.
+          {v.address}{' '}
+          <Linked>
+            {
+              '(the processor), and forms part of the [Terms of service](/terms). It covers the personal data the customer brings to'
+            }
+          </Linked>{' '}
+          {v.service}.
         </P>
       ),
     },
@@ -260,8 +323,11 @@ function dpa(v: LegalValues): LegalSection[] {
       heading: 'Subprocessors',
       body: (
         <P>
-          The customer authorizes the subprocessors listed at /subprocessors. We announce a new
-          subprocessor before it starts processing customer data; the customer may object.
+          <Linked>
+            {
+              'The customer authorizes the subprocessors listed in [Subprocessors](/subprocessors). We announce a new subprocessor before it starts processing customer data; the customer may object.'
+            }
+          </Linked>
         </P>
       ),
     },
@@ -271,7 +337,7 @@ function dpa(v: LegalValues): LegalSection[] {
         <P>
           We notify the customer without undue delay after becoming aware of a personal data breach,
           help it answer data subject requests and assessments, and make available the information
-          needed to demonstrate compliance. Security contact: {v.securityEmail}.
+          needed to demonstrate compliance. Security contact: <LegalMail to={v.securityEmail} />.
         </P>
       ),
     },
@@ -286,7 +352,12 @@ function dpa(v: LegalValues): LegalSection[] {
     },
     {
       heading: 'Governing law',
-      body: <P>This addendum is governed by {v.jurisdiction}.</P>,
+      body: (
+        <P>
+          This addendum is governed by {v.jurisdiction}. Questions:{' '}
+          <LegalMail to={v.contactEmail} />.
+        </P>
+      ),
     },
   ]
 }
@@ -300,12 +371,13 @@ function subprocessors(v: LegalValues): LegalSection[] {
     {
       heading: 'Who processes customer data for us',
       body: (
-        <>
-          <P>
-            {v.organization} uses these subprocessors to provide {v.service}. We announce changes
-            before they take effect. Questions: {v.contactEmail}.
-          </P>
-          <table className="w-full text-start text-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-start text-dense">
+            {/* The sentence that introduces the list is the table's caption. */}
+            <caption className="caption-top pb-2 text-start text-body/6">
+              {v.organization} uses these subprocessors to provide {v.service}. We announce changes
+              before they take effect. Questions: <LegalMail to={v.contactEmail} />.
+            </caption>
             <thead>
               <tr className="border-b">
                 <th className="py-2 pe-4 text-start font-medium text-foreground">Subprocessor</th>
@@ -323,7 +395,7 @@ function subprocessors(v: LegalValues): LegalSection[] {
               ))}
             </tbody>
           </table>
-        </>
+        </div>
       ),
     },
   ]

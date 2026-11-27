@@ -3,6 +3,7 @@ import { Lock, LockOpen } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import type { TlsCertificate, TlsFacts } from '../../lib/service-facts'
 import { FactChip } from './fact-chip'
+import { formatDate } from '@/lib/app-locale'
 
 /**
  * The expiry chip of a recorded certificate. A certificate recorded without
@@ -20,7 +21,7 @@ export function CertExpiryChip({
   const days = (n: number) =>
     n === 1 ? t('assets.tls.dayOne', '1 day') : t('assets.tls.dayMany', '{n} days', { n })
   const title = cert.notAfter
-    ? t('assets.tls.validUntil', 'Valid until {date}', { date: cert.notAfter.toLocaleDateString() })
+    ? t('assets.tls.validUntil', 'Valid until {date}', { date: formatDate(cert.notAfter) })
     : undefined
   switch (cert.status) {
     case 'expired':

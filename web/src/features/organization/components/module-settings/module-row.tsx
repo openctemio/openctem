@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { isHiddenReleaseStatus } from '@/lib/permissions'
 import type { ModuleHealth, TenantSubModule } from '@/features/organization/api/use-tenant-modules'
 import { useModuleText } from './use-module-text'
+import { formatDate } from '@/lib/app-locale'
 
 /** Why a module cannot be switched here, shown in place of the switch action. */
 export type ModuleLock =
@@ -80,7 +81,7 @@ export function ModuleRow({
   subEnabled = {},
   onToggle,
 }: ModuleRowProps) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const text = useModuleText()
   const formatList = useFormatList()
   const nameId = useId()
@@ -111,7 +112,7 @@ export function ModuleRow({
         return t(
           'settings.modules.lock.readOnly',
           'No longer available for this organization. Its data can be viewed and exported until {date}; changes are turned off.',
-          { date: new Date(l.until).toLocaleDateString(locale) }
+          { date: formatDate(new Date(l.until)) }
         )
       case 'needs_unavailable':
         return t(
@@ -130,10 +131,16 @@ export function ModuleRow({
     : t('settings.modules.state.off', 'Off')
 
   return (
-    <li className={cn('flex gap-4 px-4 py-3', change && 'bg-muted/40')} data-module={id}>
+    <li
+      className={cn(
+        'flex gap-4 border-t border-border-subtle py-3.5',
+        change && '-mx-2 rounded-md bg-muted/40 px-2'
+      )}
+      data-module={id}
+    >
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span id={nameId} className="text-sm font-medium">
+          <span id={nameId} className="text-body font-medium">
             {name}
           </span>
           {beta && <Badge variant="outline">{t('settings.modules.beta', 'Beta')}</Badge>}
@@ -148,25 +155,25 @@ export function ModuleRow({
         </div>
         <div id={detailId} className="mt-0.5 space-y-0.5">
           {description && (
-            <p className="text-sm text-muted-foreground text-pretty">{description}</p>
+            <p className="max-w-[58ch] text-cap text-muted-foreground text-pretty">{description}</p>
           )}
           {requires.length > 0 && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-cap text-muted-foreground">
               {t('settings.modules.requiresNames', 'Requires {names}', { names: names(requires) })}
             </p>
           )}
           {requiredBy.length > 0 && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-cap text-muted-foreground">
               {t('settings.modules.requiredByNames', 'Required by {names}', {
                 names: names(requiredBy),
               })}
             </p>
           )}
           {enabled && health === 'degraded' && healthDetail && (
-            <p className="text-xs text-muted-foreground">{healthDetail}</p>
+            <p className="text-cap text-muted-foreground">{healthDetail}</p>
           )}
           {lock && lock.kind !== 'always_on' && (
-            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+            <p className="flex items-start gap-1.5 text-cap text-muted-foreground">
               <Lock className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
               <span>{lockText}</span>
             </p>
@@ -209,13 +216,13 @@ export function ModuleRow({
       </div>
       <div className="flex shrink-0 items-start gap-2 pt-0.5">
         {lock?.kind === 'always_on' ? (
-          <span className="flex items-center gap-1 text-sm text-muted-foreground">
+          <span className="flex items-center gap-1 text-dense text-muted-foreground">
             <Lock className="h-3.5 w-3.5" aria-hidden />
             {lockText}
           </span>
         ) : (
           <>
-            <span className="min-w-6 text-end text-sm text-muted-foreground" aria-hidden>
+            <span className="min-w-6 text-end text-dense text-muted-foreground" aria-hidden>
               {stateWord}
             </span>
             <Switch
@@ -275,7 +282,7 @@ function SubModuleRow({
   const on = !comingSoon && enabled
   return (
     <li className="flex items-center justify-between gap-3">
-      <span className="flex min-w-0 items-center gap-2 text-sm text-muted-foreground">
+      <span className="flex min-w-0 items-center gap-2 text-dense text-muted-foreground">
         <CornerDownRight className="h-3.5 w-3.5 shrink-0" aria-hidden />
         <span id={nameId}>{text.name(sub.id, sub.name)}</span>
         {sub.release_status === 'beta' && (

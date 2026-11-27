@@ -36,6 +36,7 @@ import {
   useEASMSettings,
   type EASMSettingsInput,
 } from '../hooks/use-easm-settings'
+import { formatDate } from '@/lib/app-locale'
 
 /** Interval choices in hours; 0 is the platform default. */
 export const EASM_INTERVALS = [0, 6, 12, 24, 48, 168]
@@ -354,11 +355,11 @@ export function EASMMonitoringCard() {
         </section>
         <section
           className="space-y-3 md:col-span-2"
-          aria-label={t('networkSeeds.lookups.title', 'Network seed lookups')}
+          aria-label={t('networkSeeds.lookups.title', 'Network lookups')}
         >
           <div className="flex items-center justify-between gap-3">
             <Label htmlFor="easm-network-lookups" className="font-medium">
-              {t('networkSeeds.lookups.title', 'Network seed lookups')}
+              {t('networkSeeds.lookups.title', 'Network lookups')}
             </Label>
             <Switch
               id="easm-network-lookups"
@@ -451,10 +452,10 @@ function DigestSection({
   disabled: boolean
   onSave: (change: Partial<EASMSettingsInput>) => Promise<void>
 }) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const dayName = (d: number) =>
     // 2024-01-01 was a Monday: day d of that week, named in the user's language.
-    new Date(Date.UTC(2024, 0, d)).toLocaleDateString(locale, { weekday: 'long', timeZone: 'UTC' })
+    formatDate(new Date(Date.UTC(2024, 0, d)), { weekday: 'long', timeZone: 'UTC' })
   const enabled = !!settings.weekly_digest_enabled
   return (
     <section
@@ -489,7 +490,7 @@ function DigestSection({
           disabled={disabled || !enabled}
           onValueChange={(v) => void onSave({ digest_weekday: Number(v) })}
         >
-          <SelectTrigger id="easm-digest-day" className="h-8 w-40">
+          <SelectTrigger id="easm-digest-day" className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -531,7 +532,7 @@ function IntervalSelect({
         {t('attackSurface.monitoring.howOften', 'How often')}
       </Label>
       <Select value={String(value)} disabled={disabled} onValueChange={(v) => onChange(Number(v))}>
-        <SelectTrigger id={id} className="h-8 w-40">
+        <SelectTrigger id={id} className="w-40">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

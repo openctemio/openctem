@@ -56,7 +56,6 @@ function table(assets: Asset[], onDeleteAsset = vi.fn()) {
       pageSize={20}
       onPageChange={() => {}}
       onSortChange={() => {}}
-      onSelectionChange={() => {}}
       resetSelectionKey={0}
       hasFilters={false}
       onDeleteAsset={onDeleteAsset}

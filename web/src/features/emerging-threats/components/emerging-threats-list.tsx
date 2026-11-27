@@ -7,6 +7,7 @@
  * why and the actions. Server text (products) is rendered as plain text.
  */
 
+import { ListCount, ListTitleRow } from '@/features/shared/components/list-title-row'
 import { useCallback, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ColumnDef } from '@tanstack/react-table'
@@ -261,6 +262,9 @@ export function EmergingThreatsList() {
           icon: CheckCheck,
           onClick: () => void move(row, 'acknowledged'),
           disabled: busy,
+          disabledReason: busy
+            ? t('emergingThreats.actions.busy', 'Update in progress')
+            : undefined,
           permission: Permission.FindingsTriage,
           separatorBefore: true,
         })
@@ -271,6 +275,9 @@ export function EmergingThreatsList() {
           icon: Wrench,
           onClick: () => void move(row, 'remediating'),
           disabled: busy,
+          disabledReason: busy
+            ? t('emergingThreats.actions.busy', 'Update in progress')
+            : undefined,
           permission: Permission.FindingsTriage,
           separatorBefore: row.state !== 'new',
         })
@@ -281,6 +288,9 @@ export function EmergingThreatsList() {
           icon: RotateCcw,
           onClick: () => void move(row, 'new'),
           disabled: busy,
+          disabledReason: busy
+            ? t('emergingThreats.actions.busy', 'Update in progress')
+            : undefined,
           permission: Permission.FindingsTriage,
           separatorBefore: !open,
         })
@@ -337,6 +347,9 @@ export function EmergingThreatsList() {
       {
         id: 'state',
         header: t('emergingThreats.col.state'),
+        // A 768 screen (frame about 650) keeps the threat, level, exploit
+        // and hosts; the state is in the row menu and on the threat's page.
+        meta: { hideBelow: 680 },
         cell: ({ row }) => <StateBadge state={row.original.state} />,
       },
       {
@@ -354,6 +367,7 @@ export function EmergingThreatsList() {
         cell: ({ row }) => (
           <div onClick={(e) => e.stopPropagation()}>
             <DataTableRowActions
+              title={row.original.vuln_id}
               actions={rowActions(row.original)}
               label={t('emergingThreats.actions.menu', undefined, { vulnId: row.original.vuln_id })}
             />
@@ -383,7 +397,19 @@ export function EmergingThreatsList() {
 
   return (
     <PageStack>
-      <MetricStrip items={strip} loading={isLoading && !data} />
+      <MetricStrip items={strip} loading={isLoading && !data} listFirst />
+      {!neverAny && (
+        <ListTitleRow
+          title={t('emergingThreats.list.viewAll', 'All emerging threats')}
+          count={
+            <ListCount
+              total={data?.total ?? 0}
+              loading={!data}
+              label={t('emergingThreats.count', undefined, { count: data?.total ?? 0 })}
+            />
+          }
+        />
+      )}
 
       {neverAny ? (
         <EmptyState
@@ -430,10 +456,21 @@ export function EmergingThreatsList() {
                   <FilterChipsRow
                     label={t('emergingThreats.filter.active')}
                     chips={chips}
-                    end={t('emergingThreats.count', undefined, { count: data?.total ?? 0 })}
+                    onClearAll={
+                      chips.length > 1
+                        ? () =>
+                            update({
+                              level: undefined,
+                              tier: undefined,
+                              kevOnly: false,
+                              internetOnly: false,
+                            })
+                        : undefined
+                    }
                   />
                 ) : undefined
               }
+              pinActions
               isLoading={isLoading && !data}
               errorState={
                 error ? (

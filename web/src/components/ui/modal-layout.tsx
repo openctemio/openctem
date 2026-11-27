@@ -22,6 +22,12 @@
 import * as React from 'react'
 
 import { cn } from '@/lib/utils'
+import {
+  opensWithTextFocus,
+  redirectOpenFocus,
+  isTextEntry,
+  type TouchTypingSurface,
+} from '@/components/ui/touch-focus'
 
 // ============================================================================
 // Layout context: does this surface have a body part?
@@ -103,12 +109,12 @@ const headerSectionClass =
 
 /**
  * Footer in sections mode. Phones: full-width stacked buttons, primary on top,
- * 44px tall, clear of the home indicator. From `sm`: a right-aligned row.
+ * at the kit's phone size (36, the height of the fields above them), clear of
+ * the home indicator. From `sm`: a right-aligned row.
  */
 const footerSectionClass = cn(
   'flex shrink-0 flex-col-reverse gap-2 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:flex-row sm:justify-end sm:pb-4',
-  SECTION_X,
-  'max-sm:[&_button]:min-h-11'
+  SECTION_X
 )
 
 // ============================================================================
@@ -167,16 +173,17 @@ function useScrollEdges(el: HTMLElement | null) {
 // On-screen keyboard
 // ============================================================================
 
-const TEXT_ENTRY =
-  'input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=range]), textarea, [contenteditable=""], [contenteditable="true"]'
-
 /**
  * Keeps a modal above the on-screen keyboard. A phone keyboard shrinks the
  * visual viewport but not the layout viewport that `position: fixed` and
  * `dvh` follow, so a bottom sheet would sit under it. This writes the covered
  * height to `--modal-kb` on `el` (the surface lifts itself by it and loses it
- * from its max height) and scrolls the focused field back into view inside the
- * body once the body has shrunk. Zero, and so a no-op, on a desktop.
+ * from its max height) and the visible height to `--modal-vvh` (a surface
+ * that must keep its top on screen caps its height to it: iOS Safari pans the
+ * visible part down when the keyboard opens, so `100dvh` less the keyboard
+ * would leave the top above the screen), and scrolls the focused field back
+ * into view inside the body once the body has shrunk. Zero, and so a no-op,
+ * on a desktop.
  */
 function useKeyboardInset(el: HTMLElement | null) {
   React.useEffect(() => {
@@ -187,7 +194,7 @@ function useKeyboardInset(el: HTMLElement | null) {
     let last = 0
     const revealFocused = () => {
       const active = document.activeElement
-      if (active instanceof HTMLElement && el.contains(active) && active.matches(TEXT_ENTRY)) {
+      if (active instanceof HTMLElement && el.contains(active) && isTextEntry(active)) {
         active.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
       }
     }
@@ -200,13 +207,15 @@ function useKeyboardInset(el: HTMLElement | null) {
       return (
         active instanceof HTMLElement &&
         el.contains(active) &&
-        (active.matches(TEXT_ENTRY) || active.tagName === 'SELECT')
+        (isTextEntry(active) || active.tagName === 'SELECT')
       )
     }
     const update = () => {
       const covered = typing()
         ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))
         : 0
+      if (covered > 0) el.style.setProperty('--modal-vvh', `${Math.round(vv.height)}px`)
+      else el.style.removeProperty('--modal-vvh')
       if (covered === last) return
       const grew = covered > last
       last = covered
@@ -240,6 +249,7 @@ function useKeyboardInset(el: HTMLElement | null) {
       el.removeEventListener('focusin', onFocusChange)
       el.removeEventListener('focusout', onFocusChange)
       el.style.removeProperty('--modal-kb')
+      el.style.removeProperty('--modal-vvh')
     }
   }, [el])
 }
@@ -251,26 +261,25 @@ function useKeyboardInset(el: HTMLElement | null) {
 const FIRST_FIELD =
   'input:not([type=hidden]):not([disabled]), textarea:not([disabled]), select:not([disabled])'
 
-function isCoarsePointer() {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(pointer: coarse)').matches
-  )
-}
-
 /**
  * Initial focus of a modal with a body, as its `onOpenAutoFocus` handler.
  * Radix would focus the first focusable element, which is the header's close
  * button. This focuses the body's first form field instead, or the body itself
- * (it has `tabIndex={-1}`) when it has none. With a coarse pointer (a phone)
- * it always focuses the body, so the on-screen keyboard does not open by
- * itself. Escape and focus return are unchanged.
+ * (it has `tabIndex={-1}`) when it has none. On a touch screen it always
+ * focuses the body, so the on-screen keyboard does not open by itself, unless
+ * the dialog is a typing surface (`touch-focus.ts`). Escape and focus return
+ * are unchanged.
  */
-function focusModalBody(event: Event, body: HTMLElement | null) {
+function focusModalBody(
+  event: Event,
+  body: HTMLElement | null,
+  typingSurface?: TouchTypingSurface
+) {
   if (!body) return
   event.preventDefault()
-  const field = isCoarsePointer() ? null : body.querySelector<HTMLElement>(FIRST_FIELD)
+  const field = opensWithTextFocus(typingSurface)
+    ? body.querySelector<HTMLElement>(FIRST_FIELD)
+    : null
   ;(field ?? body).focus({ preventScroll: true })
   // Caret at the end, not the whole value selected: one keystroke must not
   // replace an existing name. When a dropdown item opened the dialog, the
@@ -297,21 +306,24 @@ function focusModalBody(event: Event, body: HTMLElement | null) {
 /**
  * The `onOpenAutoFocus` of a surface's Content: the caller's handler first;
  * if it did not take over, focus the body when there is one (Radix's default
- * otherwise).
+ * otherwise, except that on a touch screen a text field is never the first
+ * focus: the surface takes it).
  */
 function useOpenAutoFocus(
   content: React.RefObject<HTMLElement | null>,
   bodySlot: string,
-  handler: ((event: Event) => void) | undefined
+  handler: ((event: Event) => void) | undefined,
+  typingSurface?: TouchTypingSurface
 ) {
   return React.useCallback(
     (event: Event) => {
       handler?.(event)
       if (event.defaultPrevented) return
       const body = content.current?.querySelector<HTMLElement>(`[data-slot="${bodySlot}"]`)
-      focusModalBody(event, body ?? null)
+      if (body) focusModalBody(event, body, typingSurface)
+      else redirectOpenFocus(event, content.current, typingSurface)
     },
-    [content, bodySlot, handler]
+    [content, bodySlot, handler, typingSurface]
   )
 }
 

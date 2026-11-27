@@ -11,9 +11,8 @@
  */
 
 import { useCallback, useMemo, useState } from 'react'
-import { Download, Info, Play, RefreshCw, ShieldX, Square } from 'lucide-react'
+import { Download, Play, RefreshCw, ShieldX, Square } from 'lucide-react'
 import { toast } from 'sonner'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ConfirmDialog } from '@/components/confirm-dialog'
@@ -24,6 +23,8 @@ import {
   KeyValueList,
   Meter,
   MetricStrip,
+  PageHeader,
+  PageStack,
   RelativeTime,
   TonePill,
   type MetricStripItem,
@@ -47,6 +48,7 @@ import {
   type DiscoveryStageRow,
   type DiscoveryStatus,
 } from '../lib/discovery'
+import { AttackSurfaceSectionTabs } from './attack-surface-section-tabs'
 
 const STATUS_TONE: Record<DiscoveryStatus, PillTone> = {
   idle: 'muted',
@@ -108,6 +110,12 @@ function useStageText() {
   )
 }
 
+/** A capability id with no catalog label reads as plain words, never the raw id. */
+function capabilityFallback(id: string): string {
+  const words = id.replace(/[._]+/g, ' ').trim()
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : id
+}
+
 interface StageCardProps {
   index: number
   row: DiscoveryStageRow
@@ -143,8 +151,8 @@ function StageCard({ index, row, canRun, blockedReason, busy, onRun }: StageCard
   return (
     <Card data-testid={`discovery-stage-${row.stage}`} data-status={row.status}>
       <CardHeader className="gap-2 pb-3">
-        <div className="flex items-start justify-between gap-3">
-          <CardTitle className="flex items-center gap-2 text-base">
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
+          <CardTitle className="flex min-w-0 items-center gap-2 text-base">
             <span
               aria-hidden
               className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold"
@@ -202,33 +210,42 @@ function StageCard({ index, row, canRun, blockedReason, busy, onRun }: StageCard
           <span className="text-xs text-muted-foreground">{unit}</span>
         </div>
         <ul className="flex flex-col gap-1 text-xs">
-          {row.capabilities.map((c) => (
-            <li key={c.capability} className="flex items-center justify-between gap-2">
-              <code className="truncate font-mono">{c.capability}</code>
-              <span className="shrink-0 text-muted-foreground">
-                {t('attackSurface.discovery.capabilityCounts', '{covered} of {pairs} covered', {
-                  covered: c.covered,
-                  pairs: c.pairs,
-                })}
-              </span>
-            </li>
-          ))}
+          {row.capabilities
+            .filter((c) => c.pairs > 0)
+            .map((c) => (
+              <li key={c.capability} className="flex items-center justify-between gap-2">
+                <span className="truncate">
+                  {t(
+                    `attackSurface.discovery.capability.${c.capability}`,
+                    capabilityFallback(c.capability)
+                  )}
+                </span>
+                <span className="shrink-0 text-muted-foreground">
+                  {t('attackSurface.discovery.capabilityCounts', '{covered} of {pairs} covered', {
+                    covered: c.covered,
+                    pairs: c.pairs,
+                  })}
+                </span>
+              </li>
+            ))}
         </ul>
-        <GatedButton
-          allowed={canRun && !blockedReason && !limited}
-          reason={runReason ?? ''}
-          variant="outline"
-          size="sm"
-          className="self-start"
-          disabled={busy}
-          onClick={() => onRun(row.stage)}
-          aria-label={t('attackSurface.discovery.run.stageAria', 'Run {stage}', {
-            stage: text.label(row.stage),
-          })}
-        >
-          <Play className="me-2 h-4 w-4" aria-hidden />
-          {t('attackSurface.discovery.run.stage', 'Run')}
-        </GatedButton>
+        {canRun && !blockedReason && (
+          <GatedButton
+            allowed={!limited}
+            reason={runReason ?? ''}
+            variant="outline"
+            size="sm"
+            className="self-start"
+            disabled={busy}
+            onClick={() => onRun(row.stage)}
+            aria-label={t('attackSurface.discovery.run.stageAria', 'Run {stage}', {
+              stage: text.label(row.stage),
+            })}
+          >
+            <Play className="me-2 h-4 w-4" aria-hidden />
+            {t('attackSurface.discovery.run.stage', 'Run')}
+          </GatedButton>
+        )}
       </CardContent>
     </Card>
   )
@@ -242,6 +259,11 @@ export function EASMDiscovery() {
   const [busy, setBusy] = useState(false)
   const [confirmAbort, setConfirmAbort] = useState(false)
   const canRun = can(Permission.ScansWrite) && can(Permission.ScansExecute)
+  const noRunPermission = t(
+    'attackSurface.discovery.run.noPermission', // anatomy-ok: why Run is absent, one status line beside the page actions; the page itself stays readable
+
+    'Running a stage needs the scan execute permission.'
+  )
   const canAbort = can(Permission.ScansWrite)
 
   const blockedReason = !overview
@@ -391,78 +413,58 @@ export function EASMDiscovery() {
   ]
 
   return (
-    <>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p
-          className="flex items-center gap-2 text-sm text-muted-foreground"
-          data-testid="discovery-freshness"
+    <PageStack>
+      {/* The page header holds it all (no row of its own above the stages):
+          what holds the stages back is the description line under the title
+          (whole, wrapped), the actions sit beside the title. The freshness
+          line is the caption under the stages. */}
+      <PageHeader
+        title={t('attackSurface.title', 'Attack surface')}
+        description={
+          blockedReason || !canRun ? (
+            <span role="status" data-testid="discovery-blocked">
+              {blockedReason ?? noRunPermission}
+            </span>
+          ) : (
+            t(
+              'attackSurface.discovery.pageDescription',
+              'How discovery runs for your organization, stage by stage: what ran last, what runs now, and what holds a stage back.'
+            )
+          )
+        }
+      >
+        {/* An icon on a phone, so Export, Abort all and Run all share one
+          line (Run all never wraps alone); named and titled as before. */}
+        <Button
+          iconOnlyBelow="sm"
+          variant="outline"
+          onClick={exportCsv}
+          disabled={!overview}
+          title={t('attackSurface.discovery.export', 'Export CSV')}
         >
-          {overview ? (
-            <>
-              <span>{t('attackSurface.discovery.updated', 'Updated')}</span>
-              <RelativeTime date={overview.generated_at} />
-            </>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => mutate()}
-            disabled={isValidating}
-            aria-label={t('attackSurface.discovery.refresh', 'Refresh')}
-          >
-            <RefreshCw className="h-4 w-4" aria-hidden />
-          </Button>
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={exportCsv} disabled={!overview}>
-            <Download className="me-2 h-4 w-4" aria-hidden />
+          <Download className="h-4 w-4 sm:me-2" aria-hidden />
+          <span className="sr-only sm:not-sr-only">
             {t('attackSurface.discovery.export', 'Export CSV')}
-          </Button>
-          <GatedButton
-            allowed={canAbort && running}
-            reason={
-              !canAbort
-                ? t(
-                    'attackSurface.discovery.abort.noPermission',
-                    'Aborting runs needs the scan manage permission.'
-                  )
-                : t('attackSurface.discovery.abort.nothing', 'No coverage run is active.')
-            }
-            variant="outline"
-            size="sm"
-            onClick={() => setConfirmAbort(true)}
-          >
+          </span>
+        </Button>
+        {canAbort && running && (
+          <Button variant="outline" onClick={() => setConfirmAbort(true)}>
             <Square className="me-2 h-4 w-4" aria-hidden />
             {t('attackSurface.discovery.abort.button', 'Abort all')}
-          </GatedButton>
-          <GatedButton
-            allowed={canRun && !blockedReason}
-            reason={
-              !canRun
-                ? t(
-                    'attackSurface.discovery.run.noPermission',
-                    'Running a stage needs the scan execute permission.'
-                  )
-                : (blockedReason ?? '')
-            }
-            size="sm"
-            disabled={busy || !overview}
-            onClick={runAll}
-          >
+          </Button>
+        )}
+        {canRun && !blockedReason && (
+          <Button disabled={busy || !overview} onClick={runAll}>
             <Play className="me-2 h-4 w-4" aria-hidden />
             {t('attackSurface.discovery.runAll', 'Run all')}
-          </GatedButton>
-        </div>
-      </div>
-      {blockedReason && (
-        <Alert role="status">
-          <Info className="h-4 w-4" aria-hidden />
-          <AlertDescription>{blockedReason}</AlertDescription>
-        </Alert>
-      )}
+          </Button>
+        )}
+      </PageHeader>
+      <AttackSurfaceSectionTabs />
       <MetricStrip loading={isLoading && !overview} items={metrics} />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* Four across only where a card keeps room for its facts (a 1280 screen
+          with the sidebar open broke "Never" letter by letter in Vietnamese). */}
+      <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
         {(overview?.stages ?? []).map((row, i) => (
           <StageCard
             key={row.stage}
@@ -475,13 +477,34 @@ export function EASMDiscovery() {
           />
         ))}
       </div>
-      <p className="text-xs text-muted-foreground">
-        {t(
-          'attackSurface.discovery.footnote',
-          'Run makes a stage due now; the next coverage pass, within {seconds} seconds, starts it through your scope rules and the daily budget.',
-          { seconds: overview?.pass_every_seconds ?? 60 }
-        )}
-      </p>
+      {/* The caption under the stages: how fresh they are, with Refresh, and
+          what Run does. */}
+      <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1" data-testid="discovery-freshness">
+          {overview ? (
+            <>
+              <span>{t('attackSurface.discovery.updated', 'Updated')}</span>
+              <RelativeTime date={overview.generated_at} />
+            </>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => mutate()}
+            disabled={isValidating}
+            aria-label={t('attackSurface.discovery.refresh', 'Refresh')}
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden />
+          </Button>
+        </span>
+        <p>
+          {t(
+            'attackSurface.discovery.footnote',
+            'Run makes a stage due now; the next coverage pass, within {seconds} seconds, starts it through your scope rules and the daily budget.',
+            { seconds: overview?.pass_every_seconds ?? 60 }
+          )}
+        </p>
+      </div>
       <ConfirmDialog
         open={confirmAbort}
         onOpenChange={setConfirmAbort}
@@ -494,6 +517,6 @@ export function EASMDiscovery() {
         destructive
         handleConfirm={abortAll}
       />
-    </>
+    </PageStack>
   )
 }

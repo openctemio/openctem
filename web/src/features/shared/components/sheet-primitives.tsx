@@ -8,6 +8,7 @@
 'use client'
 
 import * as React from 'react'
+import { useTranslation } from '@/context/i18n-provider'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -40,7 +41,7 @@ export function SheetStatCard({
         <Icon className={cn('h-4 w-4', color)} />
         <span className="text-xs font-medium">{label}</span>
       </div>
-      <p className={cn('text-lg font-bold', color)}>{value}</p>
+      <p className={cn('text-lg font-semibold', color)}>{value}</p>
       {description && <p className="text-xs text-muted-foreground">{description}</p>}
     </div>
   )
@@ -104,19 +105,19 @@ export function SheetPaginationFooter({
   rendered,
   onPageChange,
 }: SheetPaginationFooterProps) {
+  const { t } = useTranslation()
   const start = (page - 1) * pageSize + 1
   const end = (page - 1) * pageSize + rendered
   return (
     <div className="flex items-center justify-between gap-2 border-t pt-3">
       <p className="text-xs text-muted-foreground">
-        {start}–{end} of {total}
+        {t('components.shared.sheet.range', '{start}–{end} of {total}', { start, end, total })}
       </p>
       <div className="flex items-center gap-1">
         <Button
           variant="outline"
           size="icon"
-          className="h-8 w-8"
-          aria-label="Previous page"
+          aria-label={t('components.shared.sheet.previousPage', 'Previous page')}
           onClick={() => onPageChange(Math.max(1, page - 1))}
           disabled={page <= 1}
         >
@@ -129,8 +130,7 @@ export function SheetPaginationFooter({
         <Button
           variant="outline"
           size="icon"
-          className="h-8 w-8"
-          aria-label="Next page"
+          aria-label={t('components.shared.sheet.nextPage', 'Next page')}
           onClick={() => onPageChange(Math.min(totalPages, page + 1))}
           disabled={page >= totalPages}
         >

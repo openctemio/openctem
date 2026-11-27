@@ -22,6 +22,7 @@ import { ErrorState } from '@/features/shared'
 import type { ModuleEntitlement } from '@/lib/api/generated'
 import { deleteModuleDeny, putModuleDeny, useTenantModuleEntitlements } from '../api/use-limits'
 import { AdminConfirmDialog, type AdminConfirmProof } from './admin-confirm-dialog'
+import { formatDate } from '@/lib/app-locale'
 
 /** How a module state reads in the table: [translation key, English]. */
 export const STATE_LABEL: Record<string, [string, string]> = {
@@ -108,14 +109,14 @@ export function OrganizationModulesPanel({ tenantId, canManage }: OrganizationMo
                     {m.expires_at && m.state === 'denied' && (
                       <span className="text-muted-foreground ms-2 text-xs">
                         {t('admin.modules.until', 'until {date}', {
-                          date: new Date(m.expires_at).toLocaleDateString(),
+                          date: formatDate(new Date(m.expires_at)),
                         })}
                       </span>
                     )}
                     {m.read_only_until && (
                       <span className="text-muted-foreground ms-2 text-xs">
                         {t('admin.modules.until', 'until {date}', {
-                          date: new Date(m.read_only_until).toLocaleDateString(),
+                          date: formatDate(new Date(m.read_only_until)),
                         })}
                       </span>
                     )}
@@ -132,7 +133,7 @@ export function OrganizationModulesPanel({ tenantId, canManage }: OrganizationMo
                           m.state === 'grace' ? (
                           <Button
                             variant="ghost"
-                            size="sm"
+                            size="icon-sm"
                             onClick={() => setAction({ module: m, kind: 'allow' })}
                             aria-label={t('admin.modules.allowAria', 'Allow {name} again', {
                               name: m.name ?? '',
@@ -229,6 +230,11 @@ function ModuleActionDialog({
 
   return (
     <AdminConfirmDialog
+      reasonPlaceholder={
+        kind === 'deny'
+          ? t('admin.modules.reasonDeny', 'Not in their contract, ticket 2231')
+          : t('admin.modules.reasonAllow', 'Added to their contract, ticket 2231')
+      }
       open
       onOpenChange={(open) => !open && onClose()}
       title={

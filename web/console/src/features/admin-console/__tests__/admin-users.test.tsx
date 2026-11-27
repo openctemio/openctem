@@ -4,7 +4,10 @@ import userEvent from '@testing-library/user-event'
 
 import { issuePlatformUserResetLink, runPlatformUserAction } from '../api/use-platform-users'
 import { AdminApiError } from '@console/lib/admin-api/client'
-import { PlatformUserActions as Actions } from '../components/platform-user-actions'
+import {
+  PlatformUserActions as Actions,
+  platformUserUnavailableNote,
+} from '../components/platform-user-actions'
 
 /** The user page renders both parts: routine near the name, danger at the end. */
 function PlatformUserActions(props: Omit<Parameters<typeof Actions>[0], 'part'>) {
@@ -15,7 +18,7 @@ function PlatformUserActions(props: Omit<Parameters<typeof Actions>[0], 'part'>)
     </>
   )
 }
-import { PlatformUserBadges } from '../components/platform-user-badges'
+import { PlatformUserBadges, marksThatFit } from '../components/platform-user-badges'
 import type { PlatformUserDetail } from '../types'
 
 vi.mock('../api/use-platform-users', async (orig) => ({
@@ -110,10 +113,16 @@ describe('PlatformUserActions', () => {
     expect(screen.getByText('Blocked: Spam campaign')).toBeInTheDocument()
   })
 
-  it('disables every action for a platform administrator account', () => {
+  it('offers no action for a platform administrator account and says why', () => {
     render(<PlatformUserActions user={account({ is_platform_admin: true })} onDone={vi.fn()} />)
-    for (const b of screen.getAllByRole('button')) expect(b).toBeDisabled()
-    expect(screen.getByText(/manage it in Security > Administrators/)).toBeInTheDocument()
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
+    const t = (_key: string, fallback?: string) => fallback ?? ''
+    expect(
+      platformUserUnavailableNote(t as never, { is_platform_admin: true, erased: false })
+    ).toMatch(/manage it in Security > Administrators/)
+    expect(
+      platformUserUnavailableNote(t as never, { is_platform_admin: false, erased: false })
+    ).toBe(undefined)
   })
 
   it('asks for a reason and sends it with the action', async () => {
@@ -184,7 +193,37 @@ describe('PlatformUserBadges', () => {
     )
     expect(screen.getByText('Locked')).toBeInTheDocument()
     expect(screen.getByText('Email not verified')).toBeInTheDocument()
-    expect(screen.getByText('MFA')).toBeInTheDocument()
+    expect(screen.getByText('Two-factor on')).toBeInTheDocument()
+  })
+
+  it('in a list row shows the state first and names what does not fit in "+n"', () => {
+    render(
+      <PlatformUserBadges
+        oneLine
+        user={account({ locked: true, blocked: true, email_verified: false, mfa_enabled: true })}
+      />
+    )
+    const [phone, desktop] = [...document.querySelectorAll('[data-slot="platform-user-badges"]')]
+    // A phone card's chip: the state and how many more.
+    expect([...phone.children].map((c) => c.textContent)).toEqual([
+      'Blocked',
+      '+3Locked, Email not verified, Two-factor on',
+    ])
+    // A desktop row: the marks that fit, then "+n" naming the others.
+    const shown = [...desktop.children].map((c) => c.textContent)
+    expect(shown[0]).toBe('Blocked')
+    const more = shown[shown.length - 1]!
+    expect(more).toMatch(/^\+\d/)
+    expect(more).toContain('Two-factor on')
+    expect(shown.length).toBeLessThan(5)
+  })
+})
+
+describe('marksThatFit', () => {
+  it('keeps every mark that fits, and room for "+n" when some do not', () => {
+    expect(marksThatFit(['Active', 'MFA'])).toBe(2)
+    expect(marksThatFit(['Locked', 'Blocked', 'Email not verified', 'MFA'])).toBe(2)
+    expect(marksThatFit(['Quản trị viên trang quản trị', 'MFA'])).toBe(1)
   })
 })
 

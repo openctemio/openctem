@@ -28,13 +28,19 @@ vi.mock('@/features/integrations', () => ({
   invalidateNotificationIntegrationsCache: vi.fn(),
 }))
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), back: vi.fn() }) }))
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/settings/integrations/notifications',
+  useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
+}))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: React.ReactNode }) => children,
+  usePermissions: () => ({ can: () => true, permissions: [], isLoading: false }),
+  useHasPermission: () => true,
   Permission: {
     NotificationsWrite: 'notifications:write',
     NotificationsDelete: 'notifications:delete',
+    IntegrationsManage: 'integrations:manage',
   },
 }))
 

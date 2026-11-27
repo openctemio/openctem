@@ -275,11 +275,17 @@ func TestPreview(t *testing.T) {
 		t.Fatalf("identity values %+v", p.Items[0].Identity)
 	}
 	codes := map[string]bool{}
+	params := map[string]map[string]any{}
 	for _, w := range p.Warnings {
 		codes[w.Code] = true
+		params[w.Code] = w.Params
 	}
 	if !codes[WarnIdentityCollision] || !codes[WarnUnmapped] {
 		t.Fatalf("warnings %+v", p.Warnings)
+	}
+	// The counts the English sentences name also travel as typed values.
+	if params[WarnIdentityCollision]["count"] != 2 || params[WarnIdentityCollision]["total"] != 4 || params[WarnUnmapped]["count"] != 1 {
+		t.Fatalf("warning params %+v", params)
 	}
 	if strings.Join(p.Unmapped, ",") != "/extra" || len(p.Fields) != 5 {
 		t.Fatalf("fields %v unmapped %v", p.Fields, p.Unmapped)
@@ -346,4 +352,21 @@ func TestPreviewTimeout(t *testing.T) {
 	if strings.Contains(err.Error(), "secret-row") {
 		t.Fatalf("the refusal quotes the sample: %v", err)
 	}
+}
+
+func TestPreview_NoRecordsWarning(t *testing.T) {
+	svc := NewService(newMemRepo())
+	p, err := svc.PreviewDocument(context.Background(), json.RawMessage(csvDoc), strings.NewReader("title,severity,host,note,extra\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range p.Warnings {
+		if w.Code == WarnNoRecords {
+			if len(w.Params) != 0 {
+				t.Fatalf("params %+v", w.Params)
+			}
+			return
+		}
+	}
+	t.Fatalf("warnings %+v", p.Warnings)
 }

@@ -3,7 +3,10 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { CIRunsView } from '../components/ci-runs-view'
 import { ApiClientError } from '@/lib/api/error-handler'
-import { CITrustSettings } from '../components/ci-trust-settings'
+import { CIConnections } from '../components/ci-connections'
+import { CIGateSettings } from '../components/ci-gate-settings'
+import { CIOverrides } from '../components/ci-overrides'
+import { CISetupEntry } from '../components/ci-setup-wizard'
 import { CIRefusalNotice, recentRefusals } from '../components/ci-refusals'
 import { ciRunsURL } from '../api/use-ci'
 import {
@@ -33,7 +36,6 @@ Element.prototype.scrollIntoView ??= () => {}
 const mockSaveTrust = vi.fn()
 const mockPreview = vi.fn()
 const mockSaveSettings = vi.fn()
-let scmLoading = false
 let ciSettings: { require_oidc: boolean } | undefined = { require_oidc: true }
 let runs: unknown[] = []
 let runDetail: unknown
@@ -44,6 +46,7 @@ let lastRunFilters: unknown
 let gatePolicies: unknown[] = []
 let overrides: unknown[] = []
 let refusals: unknown[] = []
+let pipelines: unknown[] = []
 const mockDeletePolicy = vi.fn()
 const mockDeleteTrust = vi.fn()
 const mockSavePolicy = vi.fn()
@@ -86,7 +89,17 @@ vi.mock('../api/use-ci', async (importOriginal) => ({
   useCreateGateOverride: () => ({ trigger: vi.fn(), isMutating: false }),
   useRevokeGateOverride: () => ({ trigger: mockRevokeOverride, isMutating: false }),
   useTrustRefusals: () => ({ data: { data: refusals }, isLoading: false, mutate: vi.fn() }),
-  useSCMApps: () => ({ data: { data: [], gitlab: [] }, isLoading: scmLoading, mutate: vi.fn() }),
+  useSCMApps: () => ({ data: { data: [], gitlab: [] }, isLoading: false, mutate: vi.fn() }),
+  useCIPipelines: () => ({ data: { data: pipelines }, isLoading: false }),
+}))
+
+// Repository names (one list request in the app): asset id -> name.
+const assetNames: Record<string, string> = { 'repo-9': 'github.com/acme/api' }
+vi.mock('@/features/threat-model/hooks/use-threat-model-refs', () => ({
+  useAssetNameMap: () => ({
+    nameFor: (id?: string) => (id ? (assetNames[id] ?? id) : ''),
+    isLoading: false,
+  }),
 }))
 
 vi.mock('@/context/tenant-provider', () => ({
@@ -356,7 +369,7 @@ describe('CIRunsView', () => {
     perms = ['scans:ci:write']
     render(<CIRunsView />)
     expect(screen.getByText('No CI runs yet')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /connect a pipeline/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /connect a ci provider/i })).toBeInTheDocument()
     perms = []
   })
 
@@ -365,7 +378,7 @@ describe('CIRunsView', () => {
     render(<CIRunsView />)
     expect(screen.getByText('No CI runs you can see')).toBeInTheDocument()
     expect(screen.queryByText('No CI runs yet')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /connect a pipeline/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /connect a ci provider/i })).not.toBeInTheDocument()
   })
 
   it('says no run matches when a verdict filter hides them', () => {
@@ -476,7 +489,9 @@ describe('CIRunsView', () => {
     render(<CIRunsView />)
     await userEvent.click(await screen.findByTestId('ci-run-break-glass'))
     expect(await screen.findByLabelText('Commit')).toHaveValue(judgedRun.commit_sha)
-    expect(screen.getByLabelText('Repository asset ID')).toHaveValue('asset-1')
+    // The run's repository is picked already, by name (the id stays internal).
+    expect(screen.getByTestId('ci-repository-picked')).toHaveTextContent('asset-1')
+    expect(screen.queryByLabelText('Repository asset ID')).not.toBeInTheDocument()
     perms = []
   })
 
@@ -585,7 +600,7 @@ describe('Refused pipelines notice (Pipelines tab)', () => {
     )
     expect(screen.getByRole('link', { name: /see why/i })).toHaveAttribute(
       'href',
-      '/ci-cd?tab=setup&section=refused'
+      '/ci-cd?tab=connections&refused=1'
     )
     refusals = []
   })
@@ -602,93 +617,219 @@ describe('Refused pipelines notice (Pipelines tab)', () => {
   })
 })
 
-describe('CITrustSettings sections', () => {
-  it('shows every section on one page, in setup order, with no section picker', () => {
-    window.history.replaceState({}, '', '/')
-    render(<CITrustSettings />)
-    expect(screen.queryByRole('tablist')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^Section:/ })).not.toBeInTheDocument()
-    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
-      'Trusted pipelines',
-      'Gate policy',
-      'Pull request feedback',
-      'Break-glass',
-    ])
-  })
+const ghTrust = {
+  id: 'old',
+  name: 'GitHub acme',
+  provider: 'github',
+  issuer: 'https://token.actions.githubusercontent.com',
+  audience: 'openctem:tenant:t-123',
+  enabled: true,
+  last_used_at: '2026-10-05T10:00:00Z',
+  rules: { owners: ['acme'] },
+}
 
-  it('waits for the code-host apps above break-glass before it scrolls', () => {
-    const scrolled: string[] = []
-    const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (
-      this: Element
-    ) {
-      scrolled.push(this.id)
-    })
-    window.history.replaceState({}, '', '/?section=break-glass')
-    scmLoading = true
-    const { rerender } = render(<CITrustSettings />)
-    expect(scrolled).toEqual([])
-    scmLoading = false
-    rerender(<CITrustSettings />)
-    expect(scrolled).toEqual(['ci-setup-break-glass'])
-    spy.mockRestore()
-    window.history.replaceState({}, '', '/')
-  })
+/** Opens the full rules form the way a person does: Connect a CI provider, then every rule. */
+async function openEveryRule() {
+  render(<CISetupEntry canWrite />)
+  await userEvent.click(screen.getByRole('button', { name: 'Connect a CI provider' }))
+  await userEvent.click(await screen.findByRole('button', { name: 'Fill in every rule yourself' }))
+  return screen.findByRole('dialog')
+}
 
-  it('scrolls to the section a link names (?section=)', () => {
-    const scrolled: string[] = []
-    const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (
-      this: Element
-    ) {
-      scrolled.push(this.id)
-    })
-    window.history.replaceState({}, '', '/?section=feedback')
-    render(<CITrustSettings />)
-    expect(scrolled).toEqual(['ci-setup-feedback'])
-    spy.mockRestore()
-    window.history.replaceState({}, '', '/')
-  })
-
-  it('shows the latest three refused pipelines to a CI writer, the rest on request', async () => {
+describe('CIConnections (Connections tab)', () => {
+  beforeEach(() => {
+    window.history.replaceState({}, '', '/ci-cd?tab=connections')
+    trust = []
     perms = ['scans:ci:read', 'scans:ci:write']
+    refusals = []
+    ciSettings = { require_oidc: true }
+    mockDeleteTrust.mockReset()
+    mockSaveTrust.mockReset()
+  })
+
+  it('opens with one status line, then one line per configuration, no section headings', () => {
+    trust = [
+      ghTrust,
+      { ...ghTrust, id: 'b', name: 'GitLab platform', provider: 'gitlab', last_used_at: undefined },
+    ]
+    refusals = [
+      {
+        at: new Date().toISOString(),
+        repository: 'acme/x',
+        provider: 'github',
+        reasons: ['owner_not_allowed'],
+      },
+    ]
+    render(<CIConnections />)
+    const status = screen.getByTestId('ci-connections-status')
+    expect(status).toHaveTextContent('1 connection working')
+    expect(status).toHaveTextContent('last accepted job')
+    expect(
+      within(status).getByRole('button', { name: '1 job refused: see why' })
+    ).toBeInTheDocument()
+    expect(screen.getAllByTestId('ci-trust-row')).toHaveLength(2)
+    expect(screen.queryAllByRole('heading', { level: 2 })).toHaveLength(0)
+    // One main action lives in the page header: the tab adds none of its own.
+    expect(screen.queryByRole('button', { name: /add trust/i })).not.toBeInTheDocument()
+    // A row carries no buttons of its own: it opens the sheet.
+    expect(screen.queryByRole('button', { name: 'Pipeline snippet' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the provider icon inline with the name and the refused count on one line', () => {
+    trust = [{ ...ghTrust, name: 'GitHub, a very long configuration name for the mobile team' }]
+    refusals = [
+      {
+        at: new Date().toISOString(),
+        repository: 'acme/x',
+        provider: 'github',
+        reasons: ['owner_not_allowed'],
+      },
+    ]
+    render(<CIConnections />)
+    const title = screen.getByTestId('ci-trust-title')
+    // One flex row: the icon cannot drop onto its own line above a wrapping name.
+    expect(title).toHaveClass('flex', 'items-start')
+    expect(screen.getByTestId('ci-trust-icon')).toHaveClass('shrink-0', 'h-6')
+    expect(screen.getByTestId('ci-trust-name')).toHaveClass('min-w-0')
+    // The count never splits inside itself; the "last accepted" text wraps instead.
+    expect(screen.getByTestId('ci-trust-refused')).toHaveClass('whitespace-nowrap', 'shrink-0')
+  })
+
+  it('opens a configuration in a sheet with Health, Rules, Scope and the snippet', async () => {
+    trust = [ghTrust]
+    render(<CIConnections />)
+    await userEvent.click(screen.getByRole('button', { name: /^GitHub acme/ }))
+    expect(window.location.search).toContain('connection=old')
+    const tabs = screen.getAllByRole('tab').map((t) => t.textContent)
+    expect(tabs).toEqual(['Health', 'Rules', 'Scope', 'Pipeline snippet'])
+    expect(screen.getByTestId('ci-sheet-last-accepted')).toHaveTextContent('Last accepted job')
+    await userEvent.click(screen.getByRole('tab', { name: 'Pipeline snippet' }))
+    expect(screen.getByTestId('ci-snippet')).toHaveTextContent('tenant-id: t-123')
+    await userEvent.click(screen.getByRole('tab', { name: 'Rules' }))
+    expect(screen.getByTestId('ci-trust-rules')).toBeInTheDocument()
+    expect(screen.getByLabelText('Owners')).toHaveValue('acme')
+  })
+
+  it('a fix on a refused job opens Rules with the change filled in, saved only by Save', async () => {
+    trust = [ghTrust]
+    refusals = [
+      {
+        at: new Date().toISOString(),
+        repository: 'acme/web',
+        provider: 'github',
+        ref: 'refs/heads/dev',
+        reasons: ['ref_not_allowed'],
+      },
+    ]
+    render(<CIConnections />)
+    await userEvent.click(screen.getByRole('button', { name: /^GitHub acme/ }))
+    const fixes = within(screen.getByTestId('ci-health-refusals')).getAllByRole('button')
+    await userEvent.click(fixes[0])
+    expect(screen.getByRole('tab', { name: 'Rules', selected: true })).toBeInTheDocument()
+    expect(screen.getByTestId('ci-fix-note')).toBeInTheDocument()
+    expect(mockSaveTrust).not.toHaveBeenCalled()
+  })
+
+  it('"see why" lists every recent refused job in a sheet', async () => {
+    trust = [ghTrust]
     refusals = Array.from({ length: 5 }, (_, i) => ({
-      at: `2026-10-0${i + 1}T00:00:00Z`,
+      at: new Date(Date.now() - i * 60_000).toISOString(),
       repository: `acme/r${i}`,
       provider: 'github',
       reasons: ['owner_not_allowed'],
     }))
-    render(<CITrustSettings />)
-    expect(screen.getAllByTestId('ci-refusal')).toHaveLength(3)
-    await userEvent.click(screen.getByRole('button', { name: 'Show all 5' }))
-    expect(screen.getAllByTestId('ci-refusal')).toHaveLength(5)
-    refusals = []
-    perms = []
+    render(<CIConnections />)
+    await userEvent.click(screen.getByRole('button', { name: '5 jobs refused: see why' }))
+    expect(window.location.search).toContain('refused=1')
+    expect(await screen.findAllByTestId('ci-refusal')).toHaveLength(5)
   })
 
-  it('shows the OIDC requirement as one quiet line while it is on', () => {
+  it('deleting a configuration from its sheet asks for its name first', async () => {
+    trust = [ghTrust]
+    mockDeleteTrust.mockResolvedValue(undefined)
+    render(<CIConnections />)
+    await userEvent.click(screen.getByRole('button', { name: /^GitHub acme/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Delete GitHub acme' }))
+    expect(mockDeleteTrust).not.toHaveBeenCalled()
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog).toHaveTextContent('Delete the CI trust "GitHub acme"?')
+    const confirm = within(dialog).getByRole('button', { name: 'Delete CI trust' })
+    expect(confirm).toBeDisabled()
+    await userEvent.type(within(dialog).getByRole('textbox'), 'GitHub acme')
+    await userEvent.click(confirm)
+    expect(mockDeleteTrust).toHaveBeenCalledWith('old')
+  })
+
+  it('a reader sees the rules as text, with no editor and no delete', async () => {
+    perms = ['scans:ci:read']
+    trust = [ghTrust]
+    render(<CIConnections />)
+    expect(screen.queryByTestId('ci-connections-see-why')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /^GitHub acme/ }))
+    expect(screen.queryByRole('button', { name: 'More actions' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Rules' }))
+    expect(screen.queryByTestId('ci-trust-rules')).not.toBeInTheDocument()
+    expect(screen.getByText('owners acme')).toBeInTheDocument()
+  })
+
+  it('says when pipelines may still use the old audience, and until when (Health)', async () => {
+    trust = [
+      {
+        ...ghTrust,
+        legacy_audience: 'https://openctem.example.com',
+        legacy_audience_until: '2027-01-12T00:00:00Z',
+      },
+    ]
+    render(<CIConnections />)
+    await userEvent.click(screen.getByRole('button', { name: /^GitHub acme/ }))
+    const text = screen.getByTestId('ci-legacy-audience').textContent ?? ''
+    expect(text).toContain('https://openctem.example.com')
+    expect(text).toContain('Jan 12, 2027')
+    expect(text.match(/until/gi)).toBeNull()
+  })
+
+  it('folds Require OIDC under Organization rules, its state in the summary', async () => {
     ciSettings = { require_oidc: true }
-    render(<CITrustSettings />)
+    render(<CIConnections />)
+    const fold = screen.getByRole('button', { name: /organization rules/i })
+    expect(fold).toHaveTextContent('(Require OIDC for CI results: on)')
+    expect(screen.queryByTestId('ci-require-oidc-on')).not.toBeInTheDocument()
+    await userEvent.click(fold)
     expect(screen.getByTestId('ci-require-oidc-on')).toHaveTextContent(
       'CI jobs must use their OIDC identity'
     )
-    expect(screen.queryByTestId('ci-require-oidc-banner')).not.toBeInTheDocument()
+  })
+
+  it('lets an administrator require OIDC from the fold while CI sensor keys are accepted', async () => {
+    ciSettings = { require_oidc: false }
+    mockSaveSettings.mockResolvedValue({ require_oidc: true })
+    render(<CIConnections />)
+    await userEvent.click(screen.getByRole('button', { name: /organization rules/i }))
+    expect(screen.getByTestId('ci-require-oidc-banner')).toHaveTextContent(/still accepted/i)
+    await userEvent.click(screen.getByLabelText('Require OIDC for CI'))
+    expect(mockSaveSettings).toHaveBeenCalledWith({ require_oidc: true })
+    ciSettings = { require_oidc: true }
+  })
+
+  it('a member cannot change Require OIDC', async () => {
+    perms = ['scans:ci:read']
+    render(<CIConnections />)
+    await userEvent.click(screen.getByRole('button', { name: /organization rules/i }))
+    expect(screen.getByLabelText('Require OIDC for CI')).toBeDisabled()
   })
 })
 
-describe('CITrustSettings', () => {
+describe('CIGateSettings (Gate tab)', () => {
   beforeEach(() => {
-    window.history.replaceState({}, '', '/')
-    trust = []
-    perms = []
+    perms = ['scans:ci:read', 'scans:ci:policy']
     gatePolicies = []
-    overrides = []
-    mockSaveTrust.mockReset()
+    pipelines = []
     mockDeletePolicy.mockReset()
-    mockDeleteTrust.mockReset()
-    mockRevokeOverride.mockReset()
+    mockSavePolicy.mockReset()
   })
 
   it('a policy can block dependency vulnerabilities only when a fix exists', async () => {
-    perms = ['scans:ci:read', 'scans:ci:policy']
     gatePolicies = [
       {
         id: 'gp1',
@@ -698,9 +839,8 @@ describe('CITrustSettings', () => {
         fixable_only: true,
       },
     ]
-    mockSavePolicy.mockReset()
     mockSavePolicy.mockResolvedValue(undefined)
-    render(<CITrustSettings />)
+    render(<CIGateSettings />)
     expect(
       screen.getByText('Vulnerabilities without a fix: listed, not blocking (KEV still fails)')
     ).toBeInTheDocument()
@@ -716,76 +856,85 @@ describe('CITrustSettings', () => {
       expect.objectContaining({
         body: expect.objectContaining({
           fixable_only: false,
-          // Locks and the baseline settings travel with every write.
           locked_fields: [],
           baseline_secrets_block: true,
         }),
       })
     )
-    // The dialog is large (a lock per field): role queries are slow on a busy runner.
   }, 15_000)
 
-  it('deleting a repository gate policy asks first', async () => {
-    perms = ['scans:ci:read', 'scans:ci:policy']
+  it('names a repository policy by the repository, never its id, and asks before deleting', async () => {
     gatePolicies = [{ id: 'gp1', scope_type: 'repository', scope_id: 'repo-9', mode: 'enforce' }]
     mockDeletePolicy.mockResolvedValue(undefined)
-    render(<CITrustSettings />)
+    render(<CIGateSettings />)
+    expect(screen.getByText('Repository github.com/acme/api')).toBeInTheDocument()
+    expect(screen.queryByText(/repo-9/)).not.toBeInTheDocument()
     await userEvent.click(
-      screen.getByRole('button', { name: 'Delete the policy for Repository repo-9' })
+      screen.getByRole('button', { name: 'Delete the policy for Repository github.com/acme/api' })
     )
-    expect(mockDeletePolicy).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
-    expect(dialog).toHaveTextContent('Delete the gate policy for Repository repo-9?')
     const confirm = within(dialog).getByRole('button', { name: 'Delete gate policy' })
     expect(confirm).toBeDisabled()
     await userEvent.type(
-      within(dialog).getByLabelText(/Type Repository repo-9 to confirm/),
-      'Repository repo-9'
+      within(dialog).getByLabelText(/Type Repository github.com\/acme\/api to confirm/),
+      'Repository github.com/acme/api'
     )
     await userEvent.click(confirm)
     expect(mockDeletePolicy).toHaveBeenCalledWith({ id: 'gp1', reason: '' })
   })
 
-  it('deleting a CI trust asks for its name first', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
-    trust = [
-      {
-        id: 'old',
-        name: 'GitHub acme',
-        provider: 'github',
-        issuer: 'https://token.actions.githubusercontent.com',
-        audience: 'openctem:tenant:t-123',
-        enabled: true,
-        rules: { owners: ['acme'] },
-      },
+  it('picks the repository of a new policy by name and sends its id', async () => {
+    pipelines = [
+      { id: 'p1', repository: 'github.com/acme/api', repository_asset_id: 'repo-9' },
+      { id: 'p2', repository: 'github.com/acme/api', repository_asset_id: 'repo-9' },
     ]
-    mockDeleteTrust.mockResolvedValue(undefined)
-    render(<CITrustSettings />)
-    await userEvent.click(screen.getByRole('button', { name: 'Delete GitHub acme' }))
-    expect(mockDeleteTrust).not.toHaveBeenCalled()
-    const dialog = await screen.findByRole('alertdialog')
-    expect(dialog).toHaveTextContent('Delete the CI trust "GitHub acme"?')
-    const confirm = within(dialog).getByRole('button', { name: 'Delete CI trust' })
-    expect(confirm).toBeDisabled()
-    await userEvent.type(within(dialog).getByRole('textbox'), 'GitHub acme')
-    await userEvent.click(confirm)
-    expect(mockDeleteTrust).toHaveBeenCalledWith('old')
+    mockSavePolicy.mockResolvedValue(undefined)
+    render(<CIGateSettings />)
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Add a business unit or repository policy' })
+    )
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByLabelText(/asset id/i)).not.toBeInTheDocument()
+    await userEvent.type(within(dialog).getByLabelText('Repository'), 'acme')
+    const choices = await within(dialog).findByTestId(
+      'ci-repository-choices',
+      {},
+      { timeout: 2000 }
+    )
+    // One entry per repository, however many pipelines it runs.
+    expect(within(choices).getAllByRole('button')).toHaveLength(1)
+    await userEvent.click(within(choices).getByRole('button', { name: 'github.com/acme/api' }))
+    expect(within(dialog).getByTestId('ci-repository-picked')).toHaveTextContent(
+      'github.com/acme/api'
+    )
+  })
+})
+
+describe('CIOverrides (break-glass on Runs)', () => {
+  beforeEach(() => {
+    window.history.replaceState({}, '', '/ci-cd?view=runs')
+    overrides = []
+    mockRevokeOverride.mockReset()
   })
 
-  it('revoking a break-glass override asks first', async () => {
+  const active = {
+    id: 'ov1',
+    commit_sha: 'abcdef1234567890',
+    active: true,
+    reason: 'hotfix',
+    repository_asset_id: 'repo-9',
+    expires_at: '2026-12-01T00:00:00Z',
+  }
+
+  it('revoking an override asks first, and names the repository', async () => {
     perms = ['scans:ci:read', 'scans:ci:override']
-    overrides = [
-      {
-        id: 'ov1',
-        commit_sha: 'abcdef1234567890',
-        active: true,
-        reason: 'hotfix',
-        repository_asset_id: 'repo-9',
-        expires_at: '2026-12-01T00:00:00Z',
-      },
-    ]
+    overrides = [active]
     mockRevokeOverride.mockResolvedValue(undefined)
-    render(<CITrustSettings />)
+    render(<CIOverrides canOverride />)
+    // The Runs tab reads only its runs on load: the overrides come on request.
+    await userEvent.click(screen.getByRole('button', { name: 'Show overrides' }))
+    expect(screen.getByTestId('ci-overrides')).toHaveTextContent('github.com/acme/api, until')
+    expect(screen.getByTestId('ci-overrides')).not.toHaveTextContent('repo-9')
     await userEvent.click(screen.getByRole('button', { name: 'Revoke' }))
     expect(mockRevokeOverride).not.toHaveBeenCalled()
     const dialog = await screen.findByRole('alertdialog')
@@ -794,58 +943,51 @@ describe('CITrustSettings', () => {
     expect(mockRevokeOverride).toHaveBeenCalledWith('ov1')
   })
 
-  it('says when pipelines may still use the old audience, and until when', () => {
-    trust = [
-      {
-        id: 'old',
-        name: 'GitHub acme',
-        provider: 'github',
-        issuer: 'https://token.actions.githubusercontent.com',
-        audience: 'openctem:tenant:t-123',
-        legacy_audience: 'https://openctem.example.com',
-        legacy_audience_until: '2027-01-12T00:00:00Z',
-        enabled: true,
-        rules: { owners: ['acme'] },
-      },
-    ]
-    render(<CITrustSettings />)
-    expect(screen.getByTestId('ci-legacy-audience')).toHaveTextContent(
-      'https://openctem.example.com'
-    )
-    // One "until"-style date, formatted in the console language (Jan 12, 2027), not twice.
-    const text = screen.getByTestId('ci-legacy-audience').textContent ?? ''
-    expect(text).toContain('Jan 12, 2027')
-    expect(text.match(/until/gi)).toBeNull()
+  it('folds past overrides behind one button', async () => {
+    overrides = [{ ...active, id: 'ov2', active: false, revoked_at: '2026-10-01T00:00:00Z' }]
+    render(<CIOverrides canOverride />)
+    await userEvent.click(screen.getByRole('button', { name: 'Show overrides' }))
+    expect(screen.getByTestId('ci-overrides-none-active')).toBeInTheDocument()
+    expect(screen.queryByTestId('ci-overrides')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Show 1 past overrides' }))
+    expect(screen.getByTestId('ci-overrides')).toHaveTextContent('Revoked')
   })
 
-  it('a member cannot add trust or break-glass', async () => {
-    perms = ['scans:ci:read']
-    render(<CITrustSettings />)
-    expect(screen.getByRole('button', { name: /add trust/i })).toBeDisabled()
+  it('a member cannot override a commit', () => {
+    render(<CIOverrides canOverride={false} />)
     expect(screen.getByRole('button', { name: 'Override a commit' })).toBeDisabled()
   })
 
-  it('every list field says it takes several values', async () => {
+  it('scrolls to itself for an old ?section=break-glass link', () => {
+    const scrolled: string[] = []
+    const spy = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(function (
+      this: Element
+    ) {
+      scrolled.push(this.id)
+    })
+    window.history.replaceState({}, '', '/ci-cd?view=runs&section=break-glass')
+    render(<CIOverrides canOverride />)
+    expect(scrolled).toEqual(['ci-setup-break-glass'])
+    // The link opens the overrides at once.
+    expect(screen.queryByRole('button', { name: 'Show overrides' })).not.toBeInTheDocument()
+    spy.mockRestore()
+  })
+})
+
+describe('Every rule (the full form, from Connect a CI provider)', () => {
+  beforeEach(() => {
+    window.history.replaceState({}, '', '/')
+    trust = []
     perms = ['scans:ci:read', 'scans:ci:write']
-    render(<CITrustSettings />)
-    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
-    const several = 'Several values: separate them with commas.'
-    for (const label of ['Owners', 'Repositories', 'Branches and tags', 'Environments', 'Events']) {
-      const hint = screen.getByLabelText(label).parentElement?.querySelector('p')
-      expect(hint?.textContent, label).toContain(several)
-    }
-    expect(screen.getByLabelText('Owners')).toHaveAttribute('placeholder', 'acme, acme-labs')
-    expect(screen.getByLabelText('Pipeline definitions').parentElement).toHaveTextContent(several)
+    mockSaveTrust.mockReset()
   })
 
-  it('refuses a configuration that names no owner or repository', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
-    render(<CITrustSettings />)
-    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
-    await userEvent.type(screen.getByLabelText('Name'), 'GitHub org')
-    const add = screen.getByRole('button', { name: /^add$/i })
+  it('refuses a configuration that names no owner or repository, then shows the snippet', async () => {
+    const dialog = await openEveryRule()
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'GitHub org')
+    const add = within(dialog).getByRole('button', { name: /^add$/i })
     expect(add).toBeDisabled()
-    await userEvent.type(screen.getByLabelText('Owners'), 'acme')
+    await userEvent.type(within(dialog).getByLabelText('Owners'), 'acme')
     expect(add).toBeEnabled()
     mockSaveTrust.mockResolvedValue({
       id: 'c1',
@@ -862,53 +1004,36 @@ describe('CITrustSettings', () => {
         rules: expect.objectContaining({ owners: ['acme'], allow_fork_pull_requests: false }),
       }),
     })
-    // The snippet opens after a new configuration is added.
     expect(await screen.findByTestId('ci-snippet')).toHaveTextContent('tenant-id: t-123')
   })
 
-  it('warns while CI sensor keys are accepted and lets an administrator require OIDC', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
-    ciSettings = { require_oidc: false }
-    mockSaveSettings.mockResolvedValue({ require_oidc: true })
-    render(<CITrustSettings />)
-    expect(screen.getByTestId('ci-require-oidc-banner')).toHaveTextContent(/still accepted/i)
-    await userEvent.click(screen.getByLabelText('Require OIDC for CI'))
-    expect(mockSaveSettings).toHaveBeenCalledWith({ require_oidc: true })
-    ciSettings = { require_oidc: true }
-  })
-
-  it('shows no banner when OIDC is required, and a member cannot change it', () => {
-    perms = ['scans:ci:read']
-    ciSettings = { require_oidc: true }
-    render(<CITrustSettings />)
-    expect(screen.queryByTestId('ci-require-oidc-banner')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Require OIDC for CI')).toBeDisabled()
+  it('every list field says it takes several values', async () => {
+    await openEveryRule()
+    await userEvent.click(screen.getByRole('button', { name: /more rules/i }))
+    const several = 'Several values: separate them with commas.'
+    for (const label of ['Owners', 'Repositories', 'Branches and tags', 'Environments', 'Events']) {
+      const hint = screen.getByLabelText(label).parentElement?.querySelector('p')
+      expect(hint?.textContent, label).toContain(several)
+    }
+    expect(screen.getByLabelText('Owners')).toHaveAttribute('placeholder', 'acme, acme-labs')
   })
 
   it('warns before admitting fork pull requests', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
-    render(<CITrustSettings />)
-    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    await openEveryRule()
+    await userEvent.click(screen.getByRole('button', { name: /more rules/i }))
     await userEvent.click(screen.getByLabelText('Admit fork pull requests'))
     expect(screen.getByText(/fork code would act/i)).toBeInTheDocument()
   })
 
   it('saves a GitHub Enterprise Server issuer, and leaves github.com as the default', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
-    render(<CITrustSettings />)
-    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    await openEveryRule()
     await userEvent.type(screen.getByLabelText('Name'), 'GHES')
     await userEvent.type(screen.getByLabelText('Owners'), 'acme')
     await userEvent.type(
       screen.getByLabelText(/github enterprise issuer/i),
       'https://github.example.com/_services/token'
     )
-    mockSaveTrust.mockResolvedValue({
-      id: 'c9',
-      name: 'GHES',
-      provider: 'github',
-      audience: 'openctem:tenant:t-123',
-    })
+    mockSaveTrust.mockResolvedValue({ id: 'c9', name: 'GHES', provider: 'github' })
     await userEvent.click(screen.getByRole('button', { name: /^add$/i }))
     expect(mockSaveTrust).toHaveBeenCalledWith({
       id: undefined,
@@ -917,9 +1042,7 @@ describe('CITrustSettings', () => {
   })
 
   it('saves pasted signing keys, and refuses to save a document with a private key', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
-    render(<CITrustSettings />)
-    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    await openEveryRule()
     await userEvent.type(screen.getByLabelText('Name'), 'Self-managed')
     await userEvent.type(screen.getByLabelText('Owners'), 'acme')
     const add = screen.getByRole('button', { name: /^add$/i })
@@ -956,8 +1079,7 @@ describe('CITrustSettings', () => {
     })
   })
 
-  it('shows the pasted kids and the last used key on the trust list', () => {
-    perms = ['scans:ci:read']
+  it('shows the pasted kids and the last used key on the connection health', async () => {
     trust = [
       {
         id: 'c11',
@@ -971,22 +1093,23 @@ describe('CITrustSettings', () => {
         last_key_id: 'gitlab-k1',
       },
     ]
-    render(<CITrustSettings />)
+    render(<CIConnections />)
+    await userEvent.click(screen.getByRole('button', { name: /Self-managed/ }))
     const summary = screen.getByTestId('ci-signing-keys-summary')
     expect(summary).toHaveTextContent('gitlab-k1 (RS256)')
     expect(summary).toHaveTextContent('Last used key gitlab-k1')
   })
 
   it('admits only the central workflow when pipeline definitions are listed', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
-    render(<CITrustSettings />)
-    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    await openEveryRule()
     await userEvent.type(screen.getByLabelText('Name'), 'GitHub org')
     await userEvent.type(screen.getByLabelText('Owners'), 'acme')
+    await userEvent.click(screen.getByRole('button', { name: /more rules/i }))
     await userEvent.type(
-      screen.getByLabelText('Pipeline definitions'),
+      screen.getByLabelText(/paste the value shown in a refusal/i),
       'acme/security/.github/workflows/scan.yml@refs/heads/main'
     )
+    await userEvent.click(screen.getByRole('button', { name: /^add value$/i }))
     mockSaveTrust.mockResolvedValue({
       id: 'c3',
       name: 'GitHub org',
@@ -1006,26 +1129,22 @@ describe('CITrustSettings', () => {
         }),
       }),
     })
-    // The snippet says where the steps belong.
     expect(await screen.findByTestId('ci-snippet-workflow-refs')).toHaveTextContent(
       'acme/security/.github/workflows/scan.yml@refs/heads/main'
     )
   })
 
   it('offers pipeline definitions only where the token names them', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
-    render(<CITrustSettings />)
-    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
-    expect(screen.getByLabelText('Pipeline definitions')).toBeInTheDocument()
+    await openEveryRule()
+    await userEvent.click(screen.getByRole('button', { name: /more rules/i }))
+    expect(screen.getByTestId('ci-pipeline-definitions')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('combobox', { name: /provider/i }))
     await userEvent.click(await screen.findByRole('option', { name: 'Jenkins' }))
-    expect(screen.queryByLabelText('Pipeline definitions')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('ci-pipeline-definitions')).not.toBeInTheDocument()
   })
 
   it('guides a Bitbucket trust: workspace, its UUID, repositories by UUID', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
-    render(<CITrustSettings />)
-    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    await openEveryRule()
     await userEvent.click(screen.getByRole('combobox', { name: /provider/i }))
     await userEvent.click(await screen.findByRole('option', { name: 'Bitbucket Pipelines' }))
     expect(screen.queryByLabelText('Events')).not.toBeInTheDocument()
@@ -1034,12 +1153,7 @@ describe('CITrustSettings', () => {
     await userEvent.type(screen.getByLabelText('Workspace'), 'acme')
     await userEvent.type(screen.getByLabelText('Workspace UUID'), 'ws-uuid')
     await userEvent.type(screen.getByLabelText('Owners'), 'acme')
-    mockSaveTrust.mockResolvedValue({
-      id: 'c2',
-      name: 'BB',
-      provider: 'bitbucket',
-      audience: 'openctem:tenant:t-123',
-    })
+    mockSaveTrust.mockResolvedValue({ id: 'c2', name: 'BB', provider: 'bitbucket' })
     await userEvent.click(screen.getByRole('button', { name: /^add$/i }))
     expect(mockSaveTrust).toHaveBeenCalledWith({
       id: undefined,
@@ -1052,21 +1166,18 @@ describe('CITrustSettings', () => {
   })
 
   it('shows the fixed Azure audience and refuses pull request builds by default', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
-    render(<CITrustSettings />)
-    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    await openEveryRule()
     await userEvent.click(screen.getByRole('combobox', { name: /provider/i }))
     await userEvent.click(await screen.findByRole('option', { name: 'Azure Pipelines' }))
+    await userEvent.click(screen.getByRole('button', { name: /more rules/i }))
     expect(screen.getByTestId('ci-fixed-audience')).toHaveTextContent('api://AzureADTokenExchange')
     expect(screen.queryByLabelText('Audience')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Protected branches and tags only')).not.toBeInTheDocument()
     expect(screen.getByText(/cannot tell a fork/i)).toBeInTheDocument()
-    // No organization id yet: nothing to check a sample against, nothing to save.
     expect(screen.queryByTestId('ci-trust-preview')).not.toBeInTheDocument()
   })
 
   it('checks a sample token against the draft and shows the outcome', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
     mockPreview.mockResolvedValue({
       verified: true,
       expired: true,
@@ -1075,8 +1186,7 @@ describe('CITrustSettings', () => {
       normalized: { repository: 'acme/web', ref: 'refs/heads/main', commit_verified: true },
       claims: { iss: 'https://token.actions.githubusercontent.com' },
     })
-    render(<CITrustSettings />)
-    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    await openEveryRule()
     await userEvent.type(screen.getByLabelText('Owners'), 'acme')
     await userEvent.type(screen.getByLabelText('Check a sample token'), 'a.b.c')
     await userEvent.click(screen.getByRole('button', { name: /check token/i }))
@@ -1097,11 +1207,15 @@ describe('CITrustSettings', () => {
   })
 
   it('explains that GitHub proves protected refs with deployment environments', async () => {
-    perms = ['scans:ci:read', 'scans:ci:write']
-    render(<CITrustSettings />)
-    await userEvent.click(screen.getByRole('button', { name: /add trust/i }))
+    await openEveryRule()
     expect(screen.queryByText(/deployment branch rules/i)).not.toBeInTheDocument()
     await userEvent.click(screen.getByLabelText('Protected branches and tags only'))
     expect(screen.getByText(/deployment branch rules/i)).toBeInTheDocument()
+  })
+
+  it('a member has no way to add a configuration', () => {
+    perms = ['scans:ci:read']
+    render(<CISetupEntry canWrite={false} />)
+    expect(screen.queryByRole('button', { name: 'Connect a CI provider' })).not.toBeInTheDocument()
   })
 })

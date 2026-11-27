@@ -1,0 +1,14 @@
+{
+  "legal.doc.acceptable-use": "Acceptable use policy",
+  "legal.doc.dpa": "Data processing addendum",
+  "legal.doc.privacy": "Privacy policy",
+  "legal.doc.subprocessors": "Subprocessors",
+  "legal.doc.terms": "Terms of service",
+  "legal.frame.documents": "Legal documents",
+  "legal.frame.effective": "Effective {date}",
+  "legal.frame.onThisPage": "On this page",
+  "legal.frame.print": "Print or save as PDF",
+  "legal.frame.publishedInEnglish": "This document is published in English.",
+  "legal.frame.signIn": "Sign in",
+  "legal.frame.skip": "Skip to the document"
+}

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { SectionTabs, fitTabs, stripIconsAllowed } from '../section-tabs'
+import { SectionTabs, iconsFit, stripIconsAllowed } from '../section-tabs'
 import { Shield, User, Clock } from 'lucide-react'
 import { ASSETS_SECTION_TABS } from '@/config/section-tabs'
 
@@ -21,8 +21,11 @@ describe('SectionTabs', () => {
   it('renders route tabs as a labelled navigation with the shared strip', () => {
     render(<SectionTabs tabs={tabs} label="Account sections" />)
     const nav = screen.getByRole('navigation', { name: 'Account sections' })
-    // Never scrolls: tabs that do not fit go to a More menu instead.
-    expect(nav).toHaveClass('overflow-hidden')
+    // One swipe row: tabs that do not fit scroll sideways with an edge fade,
+    // never wrap and never fold into a More menu.
+    expect(nav).toHaveClass('overflow-x-auto')
+    expect(nav).toHaveAttribute('data-tab-strip')
+    expect(screen.queryByText('More')).toBeNull()
     expect(nav).toHaveAttribute('data-slot', 'page-tabs')
     expect(screen.getAllByRole('link')).toHaveLength(3)
   })
@@ -55,6 +58,22 @@ describe('SectionTabs', () => {
     expect(screen.getByRole('link', { name: 'Inventory' })).not.toHaveAttribute('aria-current')
   })
 
+  it('reads the count unit after the visible label and number, with no aria-label', () => {
+    const units = { '/account/security': 'sessions open' }
+    const { rerender } = render(
+      <SectionTabs tabs={tabs} counts={{ '/account/security': 3 }} countUnits={units} />
+    )
+    // Label in name: the visible text ("Security 3") is the start of the name.
+    const link = screen.getByRole('link', { name: /^Security\s*3\s*sessions open$/ })
+    expect(link).not.toHaveAttribute('aria-label')
+    expect(link.querySelector('[data-slot=tabs-count]')).toHaveTextContent('3')
+    expect(link.querySelector('.sr-only')).toHaveTextContent('sessions open')
+    rerender(<SectionTabs tabs={tabs} counts={{ '/account/security': 0 }} countUnits={units} />)
+    const plain = screen.getByRole('link', { name: 'Security' })
+    expect(plain.querySelector('[data-slot=tabs-count]')).toBeNull()
+    expect(plain.querySelector('.sr-only')).toBeNull()
+  })
+
   it('draws icons only when every tab has its own', () => {
     const iconTabs = [
       { label: 'Profile', href: '/account', icon: User },
@@ -72,39 +91,16 @@ describe('SectionTabs', () => {
   })
 })
 
-describe('fitTabs', () => {
+describe('iconsFit', () => {
   // Four tabs of 60px, 24px gaps: 312px with no icons, 400px with icons.
   const w = [60, 60, 60, 60]
-  it('shows every tab with icons when they fit', () => {
-    expect(fitTabs(w, 400, 70, 0, true)).toEqual({
-      icons: true,
-      visible: [0, 1, 2, 3],
-      overflow: [],
-    })
+  it('draws the icons when every tab fits with its icon', () => {
+    expect(iconsFit(w, 400, 24, true)).toBe(true)
   })
-  it('drops the icons before moving a tab to More', () => {
-    expect(fitTabs(w, 320, 70, 0, true)).toEqual({
-      icons: false,
-      visible: [0, 1, 2, 3],
-      overflow: [],
-    })
+  it('drops the icons when they do not fit (the strip then swipes)', () => {
+    expect(iconsFit(w, 399, 24, true)).toBe(false)
   })
-  it('moves the last tabs to More and keeps labels whole', () => {
-    // room = 250 - 70 - 24 = 156: two tabs (144px).
-    expect(fitTabs(w, 250, 70, 0, true)).toEqual({
-      icons: false,
-      visible: [0, 1],
-      overflow: [2, 3],
-    })
-  })
-  it('keeps the current tab in the strip when it would fall into More', () => {
-    expect(fitTabs(w, 250, 70, 3, false)).toEqual({
-      icons: false,
-      visible: [0, 3],
-      overflow: [1, 2],
-    })
-  })
-  it('always shows at least the current tab', () => {
-    expect(fitTabs([300, 300], 200, 70, 1, false).visible).toEqual([1])
+  it('never draws icons the strip does not allow', () => {
+    expect(iconsFit(w, 1000, 24, false)).toBe(false)
   })
 })

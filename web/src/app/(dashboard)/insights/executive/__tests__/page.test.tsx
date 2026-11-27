@@ -85,11 +85,11 @@ describe('ExecutiveSummaryPage', () => {
     }
     render(<ExecutiveSummaryPage />)
     const card = screen
-      .getByText('MTTR by severity')
+      .getByText('Average time to fix by severity')
       .closest('[data-slot="card"], div.rounded-xl, div')!
     const sev = card.parentElement!.parentElement!
     expect(sev.textContent).toMatch(/critical/i)
-    const prio = screen.getByText('MTTR by priority class').closest('div')!.parentElement!
+    const prio = screen.getByText('Average time to fix by priority').closest('div')!.parentElement!
       .parentElement!
     const order = within(prio)
       .getAllByText(/^P[0-3]$/)
@@ -124,7 +124,7 @@ describe('ExecutiveSummaryPage', () => {
     const retry = vi.fn()
     summary = { ...idle, error: new Error('boom: upstream timeout'), mutate: retry }
     render(<ExecutiveSummaryPage />)
-    expect(screen.getByText(/Failed to load headline figures/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load headline figures/i)).toBeInTheDocument()
     expect(screen.getByText(/Report this problem/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /retry/i }))
     expect(retry).toHaveBeenCalledTimes(1)
@@ -134,7 +134,7 @@ describe('ExecutiveSummaryPage', () => {
     const retry = vi.fn()
     process = { ...idle, error: new Error('boom: upstream timeout'), mutate: retry }
     render(<ExecutiveSummaryPage />)
-    expect(screen.getByText(/Failed to load process health/i)).toBeInTheDocument()
+    expect(screen.getByText(/Couldn't load process health/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /retry/i }))
     expect(retry).toHaveBeenCalledTimes(1)
   })

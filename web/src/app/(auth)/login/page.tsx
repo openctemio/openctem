@@ -2,7 +2,9 @@ import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { legalConfig } from '@/lib/legal'
 import { legalSettings } from '@/lib/legal-settings'
-import { Card, CardContent, CardFooter } from '@/components/ui/card'
+import { authProvidersSettings } from '@/lib/auth-providers-settings'
+import { AuthProvidersFallback } from '@/features/auth/components/auth-providers-fallback'
+import { EntryCard, EntryLine, EntryNote } from '@/components/entry'
 import { env } from '@/lib/env'
 import { validateRedirectUrl } from '@/lib/redirect'
 import { hasSessionCookie } from '@/lib/middleware/auth'
@@ -11,6 +13,7 @@ import { hasSessionCookie } from '@/lib/middleware/auth'
 import { LoginForm } from '@/features/auth/components/login-form'
 import { LoginHeader } from '@/features/auth/components/login-header'
 import { LegalNotice } from '@/features/auth/components/legal-notice'
+import { SignUpPrompt } from '@/features/auth/components/sign-up-prompt'
 import { isInvitationReturnTo } from '@/features/auth/lib/self-register'
 
 interface LoginPageProps {
@@ -36,7 +39,10 @@ interface LoginPageProps {
 }
 
 export default async function SignIn({ searchParams }: LoginPageProps) {
-  const legal = legalConfig(await legalSettings())
+  // The sign-in options as the server has them (read with the legal settings):
+  // the card renders its final state (provider buttons, sign-up line) on first paint.
+  const [legalRec, providers] = await Promise.all([legalSettings(), authProvidersSettings()])
+  const legal = legalConfig(legalRec)
   const params = await searchParams
   const returnTo = params.returnTo || params.next || params.redirect
   const redirectTo = validateRedirectUrl(returnTo, '/')
@@ -79,14 +85,21 @@ export default async function SignIn({ searchParams }: LoginPageProps) {
   }
 
   return (
-    <Card className="gap-4">
-      <LoginHeader returnTo={returnTo} email={params.email} />
-      <CardContent>
+    <AuthProvidersFallback providers={providers}>
+      {/* While a second step shows (two-factor), the step's title is the page's. */}
+      <EntryCard className="has-[[data-entry-step]]:[&>[data-slot=entry-header]]:hidden has-[[data-entry-step]]:[&>[data-slot=entry-note]]:hidden has-[[data-entry-step]]:[&>[data-slot=entry-line]]:hidden">
+        <LoginHeader />
         <LoginForm redirectTo={redirectTo} orgSlug={params.org} reauth={params.reauth === '1'} />
-      </CardContent>
-      <CardFooter className="justify-center empty:hidden">
-        <LegalNotice kind="signIn" termsUrl={legal.termsUrl} privacyUrl={legal.privacyUrl} />
-      </CardFooter>
-    </Card>
+        <EntryNote>
+          <LegalNotice kind="signIn" termsUrl={legal.termsUrl} privacyUrl={legal.privacyUrl} />
+        </EntryNote>
+        {/* Sign-up is offered only when the server allows it, or when the visitor
+          came from an invitation (accounts are otherwise created by an
+          administrator). */}
+        <EntryLine>
+          <SignUpPrompt returnTo={returnTo} email={params.email} />
+        </EntryLine>
+      </EntryCard>
+    </AuthProvidersFallback>
   )
 }

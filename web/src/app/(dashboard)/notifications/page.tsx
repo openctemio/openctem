@@ -107,7 +107,7 @@ export default function NotificationsPage() {
             </>
           )}
           <Button variant="outline" size="sm" asChild>
-            <Link href="/account/notifications">
+            <Link href="/settings/me/notifications">
               <Settings className="h-4 w-4 me-1.5" />
               {t('notifications.settings', 'Settings')}
             </Link>
@@ -118,7 +118,7 @@ export default function NotificationsPage() {
         <div className="flex flex-wrap items-center gap-3">
           <Select value={severityFilter} onValueChange={handleSeverityChange}>
             <SelectTrigger
-              className="h-8 w-auto min-w-[8rem] text-xs"
+              className="w-auto min-w-[8rem] text-xs"
               aria-label={t('notifications.filters.severity', 'Filter by severity')}
             >
               <SelectValue
@@ -138,13 +138,15 @@ export default function NotificationsPage() {
           </Select>
           <Select value={readFilter} onValueChange={handleReadFilterChange}>
             <SelectTrigger
-              className="h-8 w-auto min-w-[8rem] text-xs"
+              className="w-auto min-w-[8rem] text-xs"
               aria-label={t('notifications.filters.status', 'Filter by read status')}
             >
               <SelectValue placeholder={t('notifications.filters.statusPlaceholder', 'Status')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">{t('notifications.filters.statusAll', 'All')}</SelectItem>
+              <SelectItem value="all">
+                {t('notifications.filters.statusAll', 'All statuses')}
+              </SelectItem>
               <SelectItem value="unread">
                 {t('notifications.filters.statusUnread', 'Unread')}
               </SelectItem>

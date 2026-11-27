@@ -7,7 +7,6 @@ import {
   Trash2,
   RefreshCw,
   ExternalLink,
-  Loader2,
   Clock,
   Download,
   Settings,
@@ -18,13 +17,7 @@ import { connectionProblem } from '@/features/integrations/lib/connection-status
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { ActionMenu } from '@/components/ui/action-menu'
 import { confirmName } from '@/lib/confirm-name'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -42,6 +35,7 @@ import {
   invalidateSCMIntegrationsCache,
 } from '@/features/integrations'
 import { useTranslation } from '@/context/i18n-provider'
+import { formatDate, formatDateTime } from '@/lib/app-locale'
 
 interface SCMConnectionCardProps {
   connection: Integration
@@ -71,11 +65,18 @@ export function SCMConnectionCard({
   const handleDelete = async () => {
     try {
       await deleteConnection()
-      toast.success(`Connection "${connection.name}" deleted`)
+      toast.success(
+        t('scmIntegration.toast.deleted', 'Connection "{name}" deleted', { name: connection.name })
+      )
       await invalidateSCMIntegrationsCache()
       setDeleteDialogOpen(false)
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete connection'))
+      toast.error(
+        getErrorMessage(
+          error,
+          t('scmIntegration.toast.deleteFailed', 'Failed to delete connection')
+        )
+      )
     }
   }
 
@@ -86,7 +87,11 @@ export function SCMConnectionCard({
 
       // Check if the test actually succeeded by looking at the returned status
       if (result && result.status === 'connected') {
-        toast.success(`Connection "${connection.name}" validated successfully`)
+        toast.success(
+          t('scmConnections.card.validated', 'Connection "{name}" validated.', {
+            name: connection.name,
+          })
+        )
       } else if (result && result.status === 'error') {
         toast.error(
           connectionProblem(
@@ -98,10 +103,17 @@ export function SCMConnectionCard({
           ).message
         )
       } else {
-        toast.warning(`Connection "${connection.name}" status: ${result?.status || 'unknown'}`)
+        toast.warning(
+          t('scmConnections.card.status', 'Connection "{name}" status: {status}', {
+            name: connection.name,
+            status: result?.status || t('scmConnections.card.statusUnknown', 'unknown'),
+          })
+        )
       }
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Validation failed'))
+      toast.error(
+        getErrorMessage(error, t('scmConnections.card.validationFailed', 'Validation failed'))
+      )
     }
   }
 
@@ -136,65 +148,80 @@ export function SCMConnectionCard({
                 </CardDescription>
               </div>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+            <ActionMenu
+              title={connection.name}
+              label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                name: connection.name,
+              })}
+              items={[
+                {
+                  id: 'test',
+                  label: t('scmIntegration.actions.test', 'Test connection'),
+                  icon: RefreshCw,
+                  disabledReason: isValidating
+                    ? t('scmIntegration.actions.testing', 'Testing...')
+                    : undefined,
+                  onSelect: () => void handleValidate(),
+                },
+                {
+                  id: 'sync',
+                  label: t('scmIntegration.actions.sync', 'Sync repositories'),
+                  icon: Download,
+                  onSelect: () => setSyncDialogOpen(true),
+                },
+                {
+                  id: 'edit',
+                  label: t('scmIntegration.actions.editConnection', 'Edit connection'),
+                  icon: Settings,
+                  onSelect: () => setEditDialogOpen(true),
+                },
+                ...(connection.base_url
+                  ? [
+                      {
+                        id: 'open',
+                        label: t('scmIntegration.actions.openInBrowser', 'Open in browser'),
+                        icon: ExternalLink,
+                        onSelect: () => {
+                          // Build the URL to open - include organization if available
+                          let url = connection.base_url
+                          const org = connection.scm_extension?.scm_organization
+                          if (org) {
+                            // Every provider's URL structure is base/organization.
+                            if (
+                              connection.provider === 'github' ||
+                              connection.provider === 'gitlab' ||
+                              connection.provider === 'bitbucket' ||
+                              connection.provider === 'azure_devops'
+                            ) {
+                              url = `${connection.base_url}/${org}`
+                            }
+                          }
+                          if (url)
+                            window.open(sanitizeExternalUrl(url), '_blank', 'noopener,noreferrer')
+                        },
+                      },
+                    ]
+                  : []),
+                {
+                  id: 'delete',
+                  label: t('confirm.delete', 'Delete'),
+                  icon: Trash2,
+                  destructive: true,
+                  onSelect: () => setDeleteDialogOpen(true),
+                },
+              ]}
+              trigger={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('common.rowActions.actionsFor', 'Actions for {name}', {
+                    name: connection.name,
+                  })}
+                >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                <DropdownMenuItem onClick={handleValidate} disabled={isValidating}>
-                  {isValidating ? (
-                    <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="me-2 h-4 w-4" />
-                  )}
-                  Test Connection
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setSyncDialogOpen(true)}>
-                  <Download className="me-2 h-4 w-4" />
-                  Sync Repositories
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setEditDialogOpen(true)}>
-                  <Settings className="me-2 h-4 w-4" />
-                  Edit Connection
-                </DropdownMenuItem>
-                {connection.base_url && (
-                  <DropdownMenuItem
-                    onClick={() => {
-                      // Build the URL to open - include organization if available
-                      let url = connection.base_url
-                      const org = connection.scm_extension?.scm_organization
-                      if (org) {
-                        // Handle different provider URL structures
-                        if (connection.provider === 'github') {
-                          url = `${connection.base_url}/${org}`
-                        } else if (connection.provider === 'gitlab') {
-                          url = `${connection.base_url}/${org}`
-                        } else if (connection.provider === 'bitbucket') {
-                          url = `${connection.base_url}/${org}`
-                        } else if (connection.provider === 'azure_devops') {
-                          url = `${connection.base_url}/${org}`
-                        }
-                      }
-                      if (url)
-                        window.open(sanitizeExternalUrl(url), '_blank', 'noopener,noreferrer')
-                    }}
-                  >
-                    <ExternalLink className="me-2 h-4 w-4" />
-                    Open in Browser
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive"
-                  onClick={() => setDeleteDialogOpen(true)}
-                >
-                  <Trash2 className="me-2 h-4 w-4" />
-                  {t('confirm.delete', 'Delete')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+              }
+            />
           </div>
         </CardHeader>
         <CardContent className="pt-2">
@@ -227,7 +254,9 @@ export function SCMConnectionCard({
                 </Tooltip>
               </TooltipProvider>
               <Badge variant="secondary" className="text-xs">
-                {repositoryCount} repos
+                {t('scmIntegration.repoCount', '{count, plural, one {# repo} other {# repos}}', {
+                  count: repositoryCount,
+                })}
               </Badge>
             </div>
             {connection.last_sync_at && (
@@ -236,11 +265,13 @@ export function SCMConnectionCard({
                   <TooltipTrigger asChild>
                     <span className="flex items-center gap-1 text-xs text-muted-foreground">
                       <Clock className="h-3 w-3" />
-                      {new Date(connection.last_sync_at).toLocaleDateString()}
+                      {formatDate(new Date(connection.last_sync_at))}
                     </span>
                   </TooltipTrigger>
                   <TooltipContent>
-                    Last validated: {new Date(connection.last_sync_at).toLocaleString()}
+                    {t('scmConnections.card.lastValidated', 'Last validated: {date}', {
+                      date: formatDateTime(new Date(connection.last_sync_at)),
+                    })}
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>

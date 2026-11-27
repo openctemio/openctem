@@ -32,6 +32,7 @@ import vi_automations from './vi/automations.json'
 import vi_common from './vi/common.json'
 import vi_errors from './vi/errors.json'
 import vi_labels from './vi/labels.json'
+import vi_legal from './vi/legal.json'
 import vi_repositories from './vi/repositories.json'
 import vi_dashboardMetrics from './vi/dashboardMetrics.json'
 import vi_dashboardKit from './vi/dashboardKit.json'
@@ -53,6 +54,7 @@ import vi_licensePolicy from './vi/licensePolicy.json'
 import vi_notificationTypes from './vi/notificationTypes.json'
 import vi_notifications from './vi/notifications.json'
 import vi_notificationChannels from './vi/notificationChannels.json'
+import vi_scmConnections from './vi/scmConnections.json'
 import vi_scmIntegration from './vi/scmIntegration.json'
 import vi_notificationPresets from './vi/notificationPresets.json'
 import vi_lookalikes from './vi/lookalikes.json'
@@ -90,6 +92,7 @@ import vi_settings from './vi/settings.json'
 import vi_securityOverview from './vi/securityOverview.json'
 import vi_supportAccess from './vi/supportAccess.json'
 import vi_riskScore from './vi/riskScore.json'
+import vi_serverText from './vi/serverText.json'
 import vi_severity from './vi/severity.json'
 import vi_userMenu from './vi/userMenu.json'
 import vi_validation from './vi/validation.json'
@@ -99,7 +102,9 @@ import vi_workflowStages from './vi/workflowStages.json'
 import vi_remediationHub from './vi/remediationHub.json'
 import vi_remediationClaim from './vi/remediationClaim.json'
 import vi_remediationCampaigns from './vi/remediationCampaigns.json'
+import vi_queryFields from './vi/queryFields.json'
 import vi_queryInput from './vi/queryInput.json'
+import vi_queue from './vi/queue.json'
 import vi_remediationQuery from './vi/remediationQuery.json'
 import vi_myWork from './vi/myWork.json'
 import vi_threatModel from './vi/threatModel.json'
@@ -138,6 +143,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   common: vi_common,
   errors: vi_errors,
   labels: vi_labels,
+  legal: vi_legal,
   repositories: vi_repositories,
   dashboardMetrics: vi_dashboardMetrics,
   dashboardKit: vi_dashboardKit,
@@ -159,6 +165,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   notificationTypes: vi_notificationTypes,
   notifications: vi_notifications,
   notificationChannels: vi_notificationChannels,
+  scmConnections: vi_scmConnections,
   scmIntegration: vi_scmIntegration,
   notificationPresets: vi_notificationPresets,
   lookalikes: vi_lookalikes,
@@ -196,6 +203,7 @@ export const viNamespaces: Record<string, Dictionary> = {
   settings: vi_settings,
   securityOverview: vi_securityOverview,
   supportAccess: vi_supportAccess,
+  serverText: vi_serverText,
   severity: vi_severity,
   userMenu: vi_userMenu,
   validation: vi_validation,
@@ -205,7 +213,9 @@ export const viNamespaces: Record<string, Dictionary> = {
   remediationHub: vi_remediationHub,
   remediationClaim: vi_remediationClaim,
   remediationCampaigns: vi_remediationCampaigns,
+  queryFields: vi_queryFields,
   queryInput: vi_queryInput,
+  queue: vi_queue,
   remediationQuery: vi_remediationQuery,
   myWork: vi_myWork,
   threatModel: vi_threatModel,

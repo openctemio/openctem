@@ -30,6 +30,7 @@ import { formatEpssPercentile, formatEpssScore } from '@/lib/epss'
 import { CRITICALITY_BADGE_LIGHT, type CriticalityLevel } from '@/lib/criticality-colors'
 import { CRITICALITY_LABELS, normalizeCriticality } from '@/lib/criticality'
 import type { ExposureEvent } from '@/lib/api/exposure-types'
+import { formatDate } from '@/lib/app-locale'
 
 /**
  * Narrow the free-form API string to a known, RATED criticality key, or null.
@@ -93,7 +94,7 @@ export function ExposureThreatPills({ exposure, className }: ExposureThreatPills
               {exposure.kev_due_date && (
                 <p>
                   {t('exposures.enrich.remediateBy', 'Remediate by {date}', {
-                    date: new Date(exposure.kev_due_date).toLocaleDateString(),
+                    date: formatDate(new Date(exposure.kev_due_date)),
                   })}
                 </p>
               )}
@@ -234,7 +235,7 @@ export function ExposureSecurityContext({ exposure, className }: ExposureSecurit
               {exposure.kev_due_date && (
                 <span className="text-xs text-muted-foreground">
                   {t('exposures.enrich.due', 'due {date}', {
-                    date: new Date(exposure.kev_due_date).toLocaleDateString(),
+                    date: formatDate(new Date(exposure.kev_due_date)),
                   })}
                 </span>
               )}

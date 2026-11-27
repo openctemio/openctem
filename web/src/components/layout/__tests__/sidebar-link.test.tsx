@@ -26,6 +26,28 @@ describe('SidebarLink', () => {
     pending = false
   })
 
+  it('brings the page to its top when the link is the page already open', () => {
+    const scroller = document.createElement('main')
+    scroller.id = 'content'
+    scroller.scrollTo = vi.fn()
+    document.body.appendChild(scroller)
+    window.history.replaceState(null, '', '/assets?lens=external_surface')
+    render(
+      <>
+        <SidebarLink href="/assets?lens=external_surface">External surface</SidebarLink>
+        <SidebarLink href="/assets">All assets</SidebarLink>
+      </>
+    )
+    fireEvent.click(screen.getByRole('link', { name: 'All assets' }))
+    expect(scroller.scrollTo).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('link', { name: 'External surface' }), { ctrlKey: true })
+    expect(scroller.scrollTo).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('link', { name: 'External surface' }))
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 0 })
+    scroller.remove()
+    window.history.replaceState(null, '', '/')
+  })
+
   it('does not prefetch until the user shows intent', () => {
     render(<SidebarLink href="/findings">Findings</SidebarLink>)
     expect(lastPrefetch()).toBe(false)

@@ -79,7 +79,7 @@ export function TransformEditor({
   const valueInput = (value: string, onChange: (v: string) => void, id: string) =>
     allowed.length > 0 ? (
       <Select value={value || NONE} onValueChange={(v) => onChange(v === NONE ? '' : v)}>
-        <SelectTrigger id={id} className="h-8">
+        <SelectTrigger id={id}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -92,13 +92,7 @@ export function TransformEditor({
         </SelectContent>
       </Select>
     ) : (
-      <Input
-        id={id}
-        className="h-8"
-        value={value}
-        maxLength={255}
-        onChange={(e) => onChange(e.target.value)}
-      />
+      <Input id={id} value={value} maxLength={255} onChange={(e) => onChange(e.target.value)} />
     )
 
   return (

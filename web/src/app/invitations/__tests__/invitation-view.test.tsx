@@ -83,6 +83,12 @@ function expectTokenNeverInAUrl(fetchFn: ReturnType<typeof vi.fn>) {
  * transition is still pending for a moment and the button is disabled until
  * it settles; a click before then is, rightly, ignored.
  */
+async function clickWhenEnabled(name: string | RegExp) {
+  const button = screen.getByRole('button', { name })
+  await waitFor(() => expect(button).toBeEnabled())
+  fireEvent.click(button)
+}
+
 async function clickOpenAcme() {
   const open = screen.getByRole('button', { name: 'Open Acme' })
   await waitFor(() => expect(open).toBeEnabled())
@@ -241,8 +247,11 @@ describe('InvitationView', () => {
 
   it('names the inviter when the lookup carries a name', async () => {
     render(<InvitationView hasSession />)
-    expect(await screen.findByText('Alice')).toBeInTheDocument()
-    expect(screen.queryByText('A team member')).toBeNull()
+    // Named once, in the line under the title.
+    expect(await screen.findByText(/^Alice invited you to join/)).toBeInTheDocument()
+    expect(screen.queryByText(/A team member/)).toBeNull()
+    // The address invited sits under the organization's name.
+    expect(screen.getByText('For new.person@co.com')).toBeInTheDocument()
   })
 
   it.each([undefined, '', '  '])(
@@ -254,7 +263,7 @@ describe('InvitationView', () => {
         vi.fn(async () => new Response(JSON.stringify(unnamed), { status: 200 }))
       )
       render(<InvitationView hasSession />)
-      expect(await screen.findByText('A team member')).toBeInTheDocument()
+      expect(await screen.findByText(/^A team member invited you to join/)).toBeInTheDocument()
     }
   )
 
@@ -334,7 +343,7 @@ describe('InvitationView', () => {
       expect(screen.queryByRole('button', { name: /^open /i })).not.toBeInTheDocument()
       expect(screen.queryByText(/SERVER SENTENCE/)).not.toBeInTheDocument()
 
-      fireEvent.click(screen.getByRole('button', { name: action }))
+      await clickWhenEnabled(action)
       await waitFor(() => expect(localLogoutAction).toHaveBeenCalledWith(href))
       expectTokenNeverInAUrl(fetchFn)
     })
@@ -605,7 +614,7 @@ describe('InvitationView', () => {
       render(<InvitationView hasSession />)
       expect(await screen.findByText('Invitation already accepted')).toBeInTheDocument()
       expect(screen.queryByRole('button', { name: /go to sign in/i })).toBeNull()
-      fireEvent.click(screen.getByRole('button', { name: 'Open Acme' }))
+      await clickWhenEnabled('Open Acme')
       await waitFor(() => expect(selectTenantAction).toHaveBeenCalledWith('t1'))
       await waitFor(() =>
         expect(navigate).toHaveBeenCalledWith('/', {
@@ -617,7 +626,10 @@ describe('InvitationView', () => {
 
     it('signed out: offers sign in, not "Open"', async () => {
       render(<InvitationView hasSession={false} />)
-      expect(await screen.findByRole('button', { name: /go to sign in/i })).toBeInTheDocument()
+      expect(await screen.findByRole('link', { name: /back to sign in/i })).toHaveAttribute(
+        'href',
+        '/login'
+      )
       expect(screen.queryByRole('button', { name: /^open /i })).toBeNull()
     })
 

@@ -7,6 +7,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import en from '@/lib/i18n/dictionaries/en/myWork.json'
 import enFindings from '@/lib/i18n/dictionaries/en/findings.json'
@@ -17,6 +18,7 @@ const replace = vi.fn()
 const push = vi.fn()
 const perms = new Set<string>()
 let locale = 'en'
+let phone = false
 
 const VIEWS = [
   { key: 'needs_triage', count: 9, params: 'status=new&informational=false' },
@@ -68,24 +70,27 @@ vi.mock('@/components/link', () => ({
     </a>
   ),
 }))
-vi.mock('@/context/i18n-provider', () => ({
-  useTranslation: () => ({
-    locale,
-    t: (k: string, fb?: string, vars?: Record<string, string | number>) => {
-      const dict = {
-        ...(enFindings as Record<string, string>),
-        ...((locale === 'vi' ? viDict : en) as Record<string, string>),
-      }
-      let s = dict[k] ?? (typeof fb === 'string' ? fb : k)
-      for (const [n, v] of Object.entries(vars ?? {})) s = s.replace(`{${n}}`, String(v))
-      return s
-    },
-  }),
-}))
+vi.mock('@/context/i18n-provider', async () => {
+  // The app's translator (plurals included) over the real catalogs.
+  const { translate } = await vi.importActual<typeof import('@/lib/i18n')>('@/lib/i18n')
+  return {
+    useTranslation: () => ({
+      locale,
+      t: (k: string, fb?: string, vars?: Record<string, string | number>) => {
+        const dict = {
+          ...(enFindings as Record<string, string>),
+          ...((locale === 'vi' ? viDict : en) as Record<string, string>),
+        }
+        return translate(dict, k, typeof fb === 'string' ? fb : undefined, vars, locale)
+      },
+    }),
+  }
+})
 vi.mock('@/context/permission-provider', () => ({
   usePermissions: () => ({ hasPermission: (p: string) => perms.has(p) }),
 }))
 vi.mock('@/context/tenant-provider', () => ({ useTenant: () => ({ currentTenant: { id: 't' } }) }))
+vi.mock('@/hooks/use-mobile', () => ({ useIsMobile: () => phone }))
 vi.mock('@/hooks/use-display-user', () => ({ useDisplayUser: () => ({ id: 'me' }) }))
 vi.mock('@/hooks/use-dynamic-badges', () => ({ refreshPendingApprovalCount: vi.fn() }))
 vi.mock('@/features/findings/api/use-quick-views', () => ({
@@ -114,9 +119,13 @@ vi.mock('@/features/remediation-hub/components/my-tasks-queue', () => ({
   useMyTaskCount: (enabled: boolean) => (enabled ? 5 : undefined),
 }))
 vi.mock('@/features/findings/components/priority-class-badge', () => ({
-  PriorityClassBadge: ({ priorityClass }: { priorityClass: string }) => (
-    <span>{priorityClass}</span>
-  ),
+  PriorityClassBadge: ({
+    priorityClass,
+    showWord,
+  }: {
+    priorityClass: string
+    showWord?: boolean
+  }) => <span data-testid="priority">{showWord ? `${priorityClass} word` : priorityClass}</span>,
 }))
 vi.mock('@/features/findings/components/approval-finding-summary', () => ({
   ApprovalFindingSummary: ({ findingTitle }: { findingTitle?: string }) => <p>{findingTitle}</p>,
@@ -208,7 +217,52 @@ describe('My Work page', () => {
     expect(params).toBe('state=open&related_to=me&sla_deadline_lte=P3D&informational=false')
   })
 
-  it('opens My team with its own view and links View all to the same list', () => {
+  it('names the due-soon filter in full on a phone too, not as a bare timer and count', () => {
+    phone = true
+    try {
+      renderPage()
+      const chip = screen.getByRole('button', { name: /SLA due in 72 hours\s*4/ })
+      expect(chip.textContent).toContain('SLA due in 72 hours')
+    } finally {
+      phone = false
+    }
+  })
+
+  it('shows the priority class alone in the table, so the Status column is never cut at tablet width', () => {
+    const empty = {
+      data: { data: [] as unknown[], total: 0 },
+      error: undefined,
+      isLoading: false,
+      mutate: vi.fn(),
+    }
+    findingQueue.mockReturnValue({
+      data: {
+        data: [
+          {
+            id: 'f1',
+            title: 'Open redirect',
+            priority_class: 'P2',
+            severity: 'high',
+            status: 'new',
+          },
+        ],
+        total: 1,
+      },
+      error: undefined,
+      isLoading: false,
+      mutate: vi.fn(),
+    })
+    try {
+      renderPage()
+      const cells = screen.queryAllByTestId('priority')
+      expect(cells.length).toBeGreaterThan(0)
+      expect(cells.every((c) => c.textContent === 'P2')).toBe(true)
+    } finally {
+      findingQueue.mockReturnValue(empty)
+    }
+  })
+
+  it('opens My team with its own view and links View all to the same list', async () => {
     search.value = 'tab=team'
     findingQueue.mockReturnValue({
       data: {
@@ -223,11 +277,26 @@ describe('My Work page', () => {
     expect(findingQueue.mock.calls.at(-1)![0]).toBe(
       'state=open&related_to=my_team&informational=false'
     )
-    expect(screen.getByRole('link', { name: /View all/ })).toHaveAttribute(
-      'href',
-      '/findings?state=open&related_to=my_team'
-    )
-    expect(screen.getByText('Top 1 of 23')).toBeInTheDocument()
+    // View all is the queue's one secondary action: a named icon button at
+    // the toolbar's end (the More menu with its only item).
+    await userEvent.click(screen.getByRole('button', { name: 'More for this queue' }))
+    const viewAll = await screen.findByRole('menuitem', { name: 'View all' })
+    await userEvent.click(viewAll)
+    const href = viewAll.getAttribute('href')
+    if (href) expect(href).toBe('/findings?state=open&related_to=my_team')
+    else expect(push).toHaveBeenCalledWith('/findings?state=open&related_to=my_team')
+    // The count shows once, on the selected tab. Nothing sits on a title row
+    // of its own: the hint is an info mark in the toolbar, and Refresh with
+    // the read time is the caption under the list.
+    expect(screen.queryByTestId('my-work-title-row')).toBeNull()
+    expect(document.querySelector('[data-slot="list-count"]')).toBeNull()
+    expect(screen.getByRole('tab', { name: /My team/ })).toHaveTextContent('My team23')
+    expect(screen.queryByText('My groups')).toBeNull()
+    expect(document.querySelector('[data-slot="locked-chip"]')).toBeNull()
+    const caption = screen.getByTestId('my-work-caption')
+    expect(within(caption).getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
+    expect(within(caption).getByText('Top 1 of 23')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'About this list' })).toBeInTheDocument()
   })
 
   it('lists requests awaiting my review with what changed, decided in place', async () => {
@@ -239,14 +308,41 @@ describe('My Work page', () => {
     expect(within(row).getByText('Changed since the request: now in CISA KEV')).toBeInTheDocument()
     expect(within(row).getByText('90 days')).toBeInTheDocument()
     expect(within(row).getByText('edge-proxy')).toBeInTheDocument()
+    // The short label beside it never breaks over two lines ("Tài sản" did).
+    expect(within(row).getByText('Asset')).toHaveClass('whitespace-nowrap', 'shrink-0')
     expect(within(row).getByText('Requested by Linh')).toBeInTheDocument()
     expect(screen.getByText(/Four-eyes/)).toBeInTheDocument()
 
-    fireEvent.click(within(row).getByRole('button', { name: /Approve/ }))
+    // The shared queue decision: outline buttons named with their finding, the
+    // sign-in step said on Approve; no filled button in the row.
+    const approve = within(row).getByRole('button', {
+      name: 'Approve Remote code execution in edge proxy',
+    })
+    expect(approve).toHaveAttribute('data-variant', 'outline')
+    expect(approve).toHaveAccessibleDescription(
+      'You confirm your sign-in before the approval is saved.'
+    )
+    expect(
+      within(row).getByRole('button', { name: 'Reject Remote code execution in edge proxy' })
+    ).toBeVisible()
+    expect(row.querySelector('[data-slot=button][data-variant=default]')).toBeNull()
+    fireEvent.click(approve)
     const dialog = await screen.findByRole('alertdialog')
     approveTrigger.mockResolvedValue({ status: 'approved' })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Approve' }))
     await vi.waitFor(() => expect(approveTrigger).toHaveBeenCalledTimes(1))
+  })
+
+  it('Enter on Approve is the button, not the row: it never opens the finding', async () => {
+    search.value = 'tab=review'
+    approvalRows = [request()]
+    push.mockClear()
+    renderPage()
+    const row = screen.getByRole('listitem', { name: /Risk acceptance: Remote code execution/ })
+    fireEvent.keyDown(within(row).getByRole('button', { name: /^Approve / }), { key: 'Enter' })
+    expect(push).not.toHaveBeenCalled()
+    fireEvent.keyDown(row, { key: 'Enter' })
+    expect(push).toHaveBeenCalledWith('/findings/f1')
   })
 
   it('never offers a decision on my own request', () => {
@@ -255,7 +351,7 @@ describe('My Work page', () => {
     renderPage()
     const row = screen.getByRole('listitem')
     expect(within(row).queryByRole('button', { name: /Approve/ })).toBeNull()
-    expect(within(row).getByText('Your request: another person decides')).toBeInTheDocument()
+    expect(within(row).getByText(/Your request: another person decides/)).toBeInTheDocument()
   })
 
   it('moves with j and k and rejects with r, asking for a reason', async () => {
@@ -289,15 +385,45 @@ describe('My Work page', () => {
     expect(replace).toHaveBeenCalledWith('/my-work?due=72h', { scroll: false })
   })
 
-  it('enters triage mode on the Needs triage view', () => {
+  it('enters triage mode on the Needs triage view', async () => {
     renderPage()
-    fireEvent.click(screen.getByRole('button', { name: /^Triage\s*9$/ }))
+    // One main action per screen: the queue's Triage these is filled; there is no page-level Triage.
+    expect(screen.getByRole('button', { name: 'Triage these' })).toHaveAttribute(
+      'data-variant',
+      'default'
+    )
+    // The page has no second triage button: everything new is under More.
+    expect(screen.queryByRole('button', { name: /^Triage\s*9$/ })).toBeNull()
+    expect(
+      screen
+        .getAllByRole('button')
+        .filter((b) => b.getAttribute('data-variant') === 'default')
+        .map((b) => b.textContent)
+    ).toEqual(['Triage these'])
+    await userEvent.click(screen.getByRole('button', { name: 'More for this queue' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Triage 9 new findings' }))
     expect(startSession).toHaveBeenCalledWith(
       'status=new&informational=false',
       '/findings?status=new&state=all',
       'needs_triage'
     )
     expect(push).toHaveBeenCalledWith(expect.stringMatching(/^\/findings\/triage\?status=new/))
+  })
+
+  it('keeps the header, the tabs and the toolbar in place while the counts load', () => {
+    const loaded = quickViews.data
+    quickViews.data = undefined
+    try {
+      renderPage()
+      // Each finding tab holds its count's place; the loaded ones show theirs.
+      expect(screen.getByRole('tab', { name: /Assigned to me/ })).toHaveTextContent(
+        'Assigned to me…'
+      )
+      expect(screen.getByRole('tab', { name: /My tasks/ })).toHaveTextContent('My tasks5')
+      expect(screen.getByRole('button', { name: 'More for this queue' })).toBeDisabled()
+    } finally {
+      quickViews.data = loaded
+    }
   })
 
   it('hides triage without findings:status', () => {

@@ -13,18 +13,9 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from '@/context/i18n-provider'
 import Link from '@/components/link'
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { FormDialog, FormField, FormStack } from '@/features/shared/components/forms'
 import { toast } from 'sonner'
 import { CheckCircle2, Loader2, Save, Zap } from 'lucide-react'
 import { getErrorMessage } from '@/lib/api/error-handler'
@@ -89,6 +80,11 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
   const [started, setStarted] = useState<QuickScanResponse | null>(null)
   const [saveName, setSaveName] = useState('')
   const [savedName, setSavedName] = useState<string | null>(null)
+  // What stopped the last press of Start: the button stays enabled, the dialog says why.
+  const [problem, setProblem] = useState<{
+    field: 'targets' | 'scanner' | 'fix'
+    text: string
+  } | null>(null)
 
   const { trigger: quickScan } = useQuickScan()
   const { trigger: saveQuickScan, isMutating: isSaving } = useSaveQuickScan(
@@ -144,7 +140,25 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
     }
   }
 
+  const startPressed = () => {
+    const invalid =
+      targetList.length === 0
+        ? { field: 'targets' as const, text: t('scans.quick.needTarget') }
+        : pasted.invalid.length > 0 || readiness?.state === 'blocked'
+          ? { field: 'fix' as const, text: t('scans.quick.fixFirst') }
+          : !scannerName
+            ? { field: 'scanner' as const, text: t('scans.err.scanner') }
+            : null
+    setProblem(invalid)
+    if (invalid) {
+      if (invalid.field === 'scanner') document.getElementById('quick-scanner')?.focus()
+      return
+    }
+    void handleSubmit()
+  }
+
   const handleClose = () => {
+    setProblem(null)
     setRefused([])
     setTargets([])
     setScannerName('')
@@ -155,140 +169,156 @@ export function QuickScanDialog({ open, onOpenChange, onSuccess }: QuickScanDial
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent size="md">
-        <DialogHeader>
-          <DialogTitle>{t('scans.quick.title')}</DialogTitle>
-          <DialogDescription>{t('scans.quick.description')}</DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      open={open}
+      onOpenChange={(o) => !o && handleClose()}
+      size="lg"
+      title={t('scans.quick.title')}
+      description={t('scans.quick.description')}
+      data-testid="quick-scan-dialog"
+      {...(started
+        ? {
+            // The run has started: the one action closes; saving it is optional.
+            onSubmit: handleClose,
+            submitLabel: t('scans.quick.done'),
+            cancelLabel: null,
+          }
+        : {
+            onSubmit: startPressed,
+            submitting: isSubmitting,
+            error: problem && problem.field !== 'scanner' ? problem.text : null,
+            submitLabel: isSubmitting ? (
+              t('scans.common.starting')
+            ) : (
+              <>
+                <Zap aria-hidden />
+                {t('scans.quick.start')}
+              </>
+            ),
+          })}
+    >
+      {started ? (
+        <FormStack>
+          <div className="flex items-start gap-3 rounded-lg border p-3">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden />
+            <div className="space-y-1 text-sm">
+              <p className="font-medium">
+                {t('scans.quick.startedOn', undefined, { count: started.target_count })}
+              </p>
+              <p className="text-muted-foreground">{t('scans.quick.followRuns')}</p>
+            </div>
+          </div>
 
-        {started ? (
-          <>
-            <DialogBody className="space-y-4">
-              <div className="flex items-start gap-3 rounded-lg border p-3">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-                <div className="space-y-1 text-sm">
-                  <p className="font-medium">
-                    {t('scans.quick.startedOn', undefined, { count: started.target_count })}
-                  </p>
-                  <p className="text-muted-foreground">{t('scans.quick.followRuns')}</p>
-                </div>
-              </div>
-
-              {savedName ? (
-                <p className="text-sm">
-                  {t('scans.quick.savedAsPrefix')}{' '}
-                  <Link href={`/scans/${started.scan_id}`} className="font-medium underline">
-                    {savedName}
-                  </Link>
-                  . {t('scans.quick.savedAsSuffix')}
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  <Label htmlFor="quick-save-name">{t('scans.quick.saveAsScan')}</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="quick-save-name"
-                      value={saveName}
-                      onChange={(e) => setSaveName(e.target.value)}
-                      maxLength={200}
-                    />
-                    <Button
-                      variant="outline"
-                      onClick={handleSave}
-                      disabled={isSaving || !saveName.trim()}
-                    >
-                      {isSaving ? (
-                        <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Save className="me-2 h-4 w-4" />
-                      )}
-                      {t('scans.quick.save')}
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">{t('scans.quick.saveHint')}</p>
+          {savedName ? (
+            <p className="text-sm">
+              {t('scans.quick.savedAsPrefix')}{' '}
+              <Link href={`/scans/${started.scan_id}`} className="font-medium underline">
+                {savedName}
+              </Link>
+              . {t('scans.quick.savedAsSuffix')}
+            </p>
+          ) : (
+            <FormField
+              id="quick-save-name"
+              label={t('scans.quick.saveAsScan')}
+              required={false}
+              hint={t('scans.quick.saveHint')}
+            >
+              {(control) => (
+                <div className="flex gap-2">
+                  <Input
+                    {...control}
+                    value={saveName}
+                    onChange={(e) => setSaveName(e.target.value)}
+                    maxLength={200}
+                    onKeyDown={(e) => {
+                      // Enter here saves; it must not reach the dialog's Done.
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        if (!isSaving && saveName.trim()) void handleSave()
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleSave}
+                    disabled={isSaving || !saveName.trim()}
+                  >
+                    {isSaving ? (
+                      <Loader2 className="animate-spin" aria-hidden />
+                    ) : (
+                      <Save aria-hidden />
+                    )}
+                    {t('scans.quick.save')}
+                  </Button>
                 </div>
               )}
-            </DialogBody>
-            <DialogFooter>
-              <Button onClick={handleClose}>{t('scans.quick.done')}</Button>
-            </DialogFooter>
-          </>
-        ) : (
-          <>
-            <DialogBody className="space-y-4">
-              {/* Targets: the same paste source and summary as New Scan */}
-              <PasteSource value={targets} onChange={setTargets} />
+            </FormField>
+          )}
+        </FormStack>
+      ) : (
+        <FormStack>
+          {/* Targets: the same paste source and summary as New Scan */}
+          <PasteSource
+            value={targets}
+            onChange={(v) => {
+              setTargets(v)
+              setProblem(null)
+            }}
+          />
 
-              {/* Scanner: the tool registry's active scanners */}
-              <div className="space-y-2">
-                <Label htmlFor="quick-scanner">{t('scans.basic.scanner')}</Label>
-                <ScannerSelect id="quick-scanner" value={scannerName} onChange={setScannerName} />
-              </div>
+          {/* Scanner: the tool registry's active scanners */}
+          <FormField
+            id="quick-scanner"
+            label={t('scans.basic.scanner')}
+            error={problem?.field === 'scanner' ? problem.text : undefined}
+          >
+            {(control) => (
+              <ScannerSelect
+                {...control}
+                value={scannerName}
+                onChange={(v) => {
+                  setScannerName(v)
+                  setProblem(null)
+                }}
+              />
+            )}
+          </FormField>
 
-              {refused.length > 0 ? (
-                <ScopeRefusalPanel refused={refused} />
-              ) : (
-                <SelectionSummary
+          {refused.length > 0 ? (
+            <ScopeRefusalPanel refused={refused} />
+          ) : (
+            <SelectionSummary
+              targets={targetList}
+              chips={targetList.map((target) => ({
+                key: target,
+                label: target,
+                kind: 'typed' as const,
+                onRemove: () =>
+                  setTargets([
+                    ...targetList.filter((x) => x !== target),
+                    ...pasted.invalid.map((bad) => bad.input),
+                  ]),
+              }))}
+              groupCount={0}
+              invalidCount={pasted.invalid.length}
+              scannerName={scannerName}
+              onReadinessChange={setReadiness}
+              review={
+                <QuickScanPreviewPanel
                   targets={targetList}
-                  chips={targetList.map((target) => ({
-                    key: target,
-                    label: target,
-                    kind: 'typed' as const,
-                    onRemove: () =>
-                      setTargets([
-                        ...targetList.filter((x) => x !== target),
-                        ...pasted.invalid.map((bad) => bad.input),
-                      ]),
-                  }))}
-                  groupCount={0}
-                  invalidCount={pasted.invalid.length}
                   scannerName={scannerName}
-                  onReadinessChange={setReadiness}
-                  review={
-                    <QuickScanPreviewPanel
-                      targets={targetList}
-                      scannerName={scannerName}
-                      discovering={isSubmitting}
-                      onDiscover={(tool, root) => {
-                        void handleSubmit({ targets: [root], scanner: tool })
-                      }}
-                    />
-                  }
+                  discovering={isSubmitting}
+                  onDiscover={(tool, root) => {
+                    void handleSubmit({ targets: [root], scanner: tool })
+                  }}
                 />
-              )}
-            </DialogBody>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={handleClose} disabled={isSubmitting}>
-                {t('common.cancel')}
-              </Button>
-              <Button
-                onClick={() => void handleSubmit()}
-                disabled={
-                  isSubmitting ||
-                  targetList.length === 0 ||
-                  pasted.invalid.length > 0 ||
-                  !scannerName ||
-                  readiness?.state === 'blocked'
-                }
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="me-2 h-4 w-4 animate-spin" />
-                    {t('scans.common.starting')}
-                  </>
-                ) : (
-                  <>
-                    <Zap className="me-2 h-4 w-4" />
-                    {t('scans.quick.start')}
-                  </>
-                )}
-              </Button>
-            </DialogFooter>
-          </>
-        )}
-      </DialogContent>
-    </Dialog>
+              }
+            />
+          )}
+        </FormStack>
+      )}
+    </FormDialog>
   )
 }

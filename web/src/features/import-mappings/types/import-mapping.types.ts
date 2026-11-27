@@ -141,7 +141,12 @@ export interface PreviewResult {
     skipped: number
     truncated: boolean
   }
-  warnings: { code: PreviewWarningCode | string; message: string }[]
+  warnings: {
+    code: PreviewWarningCode | string
+    message: string
+    /** The counts the message names; with `code` they word it in any language. */
+    params?: Record<string, unknown>
+  }[]
   issues: { record: number; rule: number; message: string }[]
   fields: string[]
   unmapped: string[]

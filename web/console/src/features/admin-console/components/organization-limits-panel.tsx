@@ -36,6 +36,7 @@ import {
 import { ErrorState } from '@/features/shared'
 import type { AdminLimitsResponse, EffectiveLimit } from '@/lib/api/generated'
 import { deleteTenantLimit, putTenantLimit, useTenantLimits } from '../api/use-limits'
+import { formatDate } from '@/lib/app-locale'
 
 const MAX_REASON = 500
 
@@ -76,7 +77,7 @@ export interface OrganizationLimitsPanelProps {
  * A lower limit never removes anything: new additions over it are refused.
  */
 export function OrganizationLimitsPanel({ tenantId, canManage }: OrganizationLimitsPanelProps) {
-  const { t, locale } = useTranslation()
+  const { t } = useTranslation()
   const keyLabel = useLimitKeyLabel()
   const { data, error, isLoading, mutate } = useTenantLimits(tenantId)
   const [editing, setEditing] = useState<LimitKey | null>(null)
@@ -125,7 +126,7 @@ export function OrganizationLimitsPanel({ tenantId, canManage }: OrganizationLim
         {who}
         {row.expires_at
           ? ` ${t('limits.until', 'until {date}', {
-              date: new Date(row.expires_at).toLocaleDateString(locale),
+              date: formatDate(new Date(row.expires_at)),
             })}`
           : ''}
         {row.reason ? `: ${row.reason}` : ''}
@@ -161,7 +162,7 @@ export function OrganizationLimitsPanel({ tenantId, canManage }: OrganizationLim
                     <div className="flex justify-end gap-1">
                       <Button
                         variant="ghost"
-                        size="sm"
+                        size="icon-sm"
                         onClick={() => setEditing(row.key)}
                         aria-label={t('limits.console.org.editAria', 'Set the {limit} limit', {
                           limit: keyLabel(row.key),
@@ -172,7 +173,7 @@ export function OrganizationLimitsPanel({ tenantId, canManage }: OrganizationLim
                       {row.origin === 'operator' && (
                         <Button
                           variant="ghost"
-                          size="sm"
+                          size="icon-sm"
                           onClick={() => setPendingRemove(row.key)}
                           aria-label={t(
                             'limits.console.org.removeAria',

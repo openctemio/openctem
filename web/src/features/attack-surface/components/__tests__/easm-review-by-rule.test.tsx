@@ -85,7 +85,7 @@ describe('suggested rules', () => {
   it('a failing suggestions read shows an error with a retry, not nothing', async () => {
     api.get.mockRejectedValueOnce(new Error('boom')).mockResolvedValue(suggestions)
     wrap(<EASMRuleSuggestions onApplied={() => {}} />)
-    expect(await screen.findByText('Failed to load suggested rules')).toBeInTheDocument()
+    expect(await screen.findByText("Couldn't load suggested rules")).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(await screen.findByText('*.dev.example.com.au')).toBeInTheDocument()
   })
@@ -110,7 +110,7 @@ describe('suggested rules', () => {
     expect(
       within(card).getByText('Covers dev.example.com.au and every name below it')
     ).toBeInTheDocument()
-    expect(within(card).getByText('Strong')).toBeInTheDocument()
+    expect(within(card).getByText('High confidence')).toBeInTheDocument()
     expect(
       within(card).getByText(/1 stay out: old\.dev\.example\.com\.au \(Marked not ours\)/)
     ).toBeInTheDocument()

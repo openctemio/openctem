@@ -11,6 +11,7 @@ import { useTranslation } from '@/context/i18n-provider'
 import { purgeOrganization, setOrganizationSuspended } from '../api/use-admin-organizations'
 import { AdminConfirmDialog } from './admin-confirm-dialog'
 import type { AdminOrganization } from '../types'
+import { formatDateTime } from '@/lib/app-locale'
 
 /**
  * "Suspended" or "Deletion scheduled" next to an organization's name: the
@@ -111,6 +112,11 @@ export function OrganizationSuspensionAction({
       </Button>
       {open && (
         <AdminConfirmDialog
+          reasonPlaceholder={
+            suspended
+              ? t('admin.org.suspension.reasonLift', 'Invoice paid, ticket 2231')
+              : t('admin.org.suspension.reasonSuspend', 'Abuse report confirmed, ticket 2231')
+          }
           open
           onOpenChange={setOpen}
           title={label}
@@ -165,6 +171,10 @@ export function OrganizationPurgeAction({
       </Button>
       {open && (
         <AdminConfirmDialog
+          reasonPlaceholder={t(
+            'admin.org.deletion.reasonPurge',
+            'The contract ended and the customer asked for deletion, ticket 2231'
+          )}
           open
           onOpenChange={setOpen}
           title={t('admin.org.deletion.purgeTitle', 'Delete {name} now?', { name: org.name })}
@@ -212,7 +222,7 @@ export function OrganizationSuspendedNotice({ org }: { org: AdminOrganization })
           {org.deletion_due_at && (
             <p className="mt-1 text-xs">
               {t('admin.org.deletion.due', 'Deleted on {date}', {
-                date: new Date(org.deletion_due_at).toLocaleString(),
+                date: formatDateTime(new Date(org.deletion_due_at)),
               })}
             </p>
           )}

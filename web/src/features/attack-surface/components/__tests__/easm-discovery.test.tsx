@@ -22,6 +22,7 @@ vi.mock('@/lib/permissions', async (orig) => {
     }),
   }
 })
+vi.mock('../attack-surface-section-tabs', () => ({ AttackSurfaceSectionTabs: () => null }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }))
 
 const { EASMDiscovery } = await import('../easm-discovery')
@@ -195,21 +196,32 @@ describe('EASMDiscovery', () => {
     )
   })
 
-  it('explains and disables running while automatic coverage is off', async () => {
+  it('explains and hides running while automatic coverage is off', async () => {
     api.get.mockResolvedValue(overview({ coverage_enabled: false }))
     wrap(<EASMDiscovery />)
     expect(
       await screen.findByText(/Automatic coverage is off for your organization/)
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Run all' })).toBeDisabled()
+    expect(screen.getByTestId('discovery-blocked')).toHaveTextContent(/Automatic coverage is off/)
+    expect(screen.queryByRole('button', { name: 'Run all' })).not.toBeInTheDocument()
   })
 
-  it('disables the actions without the scan permissions', async () => {
+  it('keeps the reason and Export in the page header, not in a row of their own', async () => {
+    api.get.mockResolvedValue(overview({ coverage_enabled: false }))
+    wrap(<EASMDiscovery />)
+    const reason = await screen.findByTestId('discovery-blocked')
+    const header = reason.closest('[data-slot="page-header"]') as HTMLElement
+    expect(header).not.toBeNull()
+    expect(within(header).getByRole('button', { name: 'Export CSV' })).toBeInTheDocument()
+  })
+
+  it('hides the actions and says why without the scan permissions', async () => {
     perms.run = false
     wrap(<EASMDiscovery />)
     await screen.findAllByTestId(/^discovery-stage-/)
-    expect(screen.getByRole('button', { name: 'Run all' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Abort all' })).toBeDisabled()
+    expect(screen.getByTestId('discovery-blocked')).toHaveTextContent(/scan execute permission/)
+    expect(screen.queryByRole('button', { name: 'Run all' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Abort all' })).not.toBeInTheDocument()
   })
 
   it('fetches nothing without scans:read', () => {

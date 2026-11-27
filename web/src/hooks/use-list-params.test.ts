@@ -47,6 +47,9 @@ describe('useListParams', () => {
     ['?page=2.5', 'page', 1],
     ['?page=0x10', 'page', 1],
     ['?per_page=1000', 'perPage', 25],
+    ['?per_page=125', 'perPage', 25],
+    // A step of a phone's "Show more", though the list offers 25, 50 and 100.
+    ['?per_page=75', 'perPage', 75],
     ['?sort=password', 'sort', '-created_at'],
     ['?sort=created_at,started_at', 'sort', '-created_at'],
   ])('%s falls back for %s', (search, key, want) => {

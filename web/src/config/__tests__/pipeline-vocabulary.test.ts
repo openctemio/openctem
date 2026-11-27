@@ -38,6 +38,10 @@ const ALLOWED: { path: RegExp; why: string }[] = [
   },
   { path: /^src\/features\/sensors\//, why: 'runner-mode sensors run inside a CI pipeline' },
   {
+    path: /^src\/features\/shared\/components\/data-table\/__tests__\/column-kind-debt\.json$/,
+    why: 'file paths of the CI pipelines lists (column-kind ratchet baseline)',
+  },
+  {
     path: /^src\/features\/scope\/(api\/scope-api\.types\.ts|components\/scope-(entries-table|settings-form)\.tsx)$/,
     why: 'CI trust scope entries: evidence from a verified CI pipeline run',
   },

@@ -66,21 +66,37 @@ export interface QuerySchemaField {
   operators: string[]
   enum?: string[]
   group_by?: boolean
+  /** Other names a query may use for the path, shortest first ("kev"). */
+  aliases?: string[]
+  /**
+   * Where the editor lists the path: "common", a relation ("asset"), "more"
+   * or "identifier". The schema lists fields in that order already.
+   */
+  group?: string
 }
 
 export const queryApi = {
   parse: (body: ParseRequest) => post<ParseResult>('/api/v1/query/parse', body),
-  values: (entity: QueryEntity, field: string, prefix: string, fq: string) =>
+  values: (entity: QueryEntity, field: string, prefix: string, fq: string, signal?: AbortSignal) =>
     get<ValuesResult>(
-      `/api/v1/query/values?${new URLSearchParams({ entity, field, prefix, fq }).toString()}`
+      `/api/v1/query/values?${new URLSearchParams({ entity, field, prefix, fq }).toString()}`,
+      signal ? { signal } : undefined
     ),
 }
 
-/** The fields the caller may use on an entity (for completion). */
+/**
+ * The fields the caller may use on an entity (for completion): read once per
+ * entity and kept for the session, so typing never asks the server.
+ */
 export function useQuerySchema(entity: QueryEntity, enabled = true) {
   return useSWR<{ fields?: QuerySchemaField[] }>(
     enabled ? `/api/v1/query/schema?entity=${entity}` : null,
     get,
-    { revalidateOnFocus: false }
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      revalidateIfStale: false,
+      dedupingInterval: 30 * 60_000,
+    }
   )
 }

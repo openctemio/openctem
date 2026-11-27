@@ -2,7 +2,7 @@
 // Test-impact selection for the Playwright suite (research/295).
 //
 //   node web/e2e/ci/select.mjs plan --changed <file|-> [--event E] [--full] [--impact]
-//        [--timings f.json] [--target-seconds 240] [--max-shards 4]
+//        [--timings f.json] [--target-seconds 600] [--max-shards 7]
 //        prints the plan as JSON: which specs run and how they are sharded
 //   node web/e2e/ci/select.mjs timings <report.json>
 //        prints { "<spec file>": seconds } from a merged Playwright JSON report
@@ -67,6 +67,18 @@ export function parseMap(text) {
   return out
 }
 
+// Estimates for specs the recorded durations do not know yet (a new or split
+// spec): measured once, used until a green run records the spec's own time,
+// which always wins. Without one a spec costs the heaviest recorded spec.
+export const ESTIMATES_FILE = path.join(here, 'spec-estimates.json')
+export function loadEstimates(file = ESTIMATES_FILE) {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'))
+  } catch {
+    return {}
+  }
+}
+
 export function loadMap(file = MAP_FILE) {
   return parseMap(readFileSync(file, 'utf8'))
 }
@@ -119,10 +131,36 @@ export function listSpecs(dir = SPEC_DIR) {
   return readdirSync(dir)
     .filter((f) => f.endsWith('.spec.ts'))
     .sort()
-    .map((f) => ({
-      file: `${SPEC_PREFIX}${f}`,
-      tags: specTags(readFileSync(path.join(dir, f), 'utf8')),
-    }))
+    .map((f) => {
+      const source = readFileSync(path.join(dir, f), 'utf8')
+      return { file: `${SPEC_PREFIX}${f}`, tags: specTags(source), helpers: specHelpers(source) }
+    })
+}
+
+// The e2e helpers a spec imports, as timing keys (`e2e/specs/helpers/<name>.ts`).
+export function specHelpers(source) {
+  const out = new Set()
+  for (const m of source.matchAll(/from\s+['"]\.\.\/helpers\/([A-Za-z0-9._-]+)['"]/g))
+    out.add(`${SPEC_PREFIX}helpers/${m[1].replace(/\.ts$/, '')}.ts`)
+  return [...out].sort()
+}
+
+// Durations recorded before a test counted for the spec that ran it were
+// filed under the helper that declares the tests. A spec with no duration of
+// its own takes an equal part of such a helper's duration, so those specs are
+// not costed at the median and packed into one shard past its timeout.
+export function withHelperCosts(timings, specs) {
+  const out = { ...timings }
+  const has = (f) => Number.isFinite(timings[f]) && timings[f] > 0
+  const users = {}
+  for (const s of specs) {
+    if (has(s.file)) continue
+    for (const h of s.helpers ?? []) if (has(h)) (users[h] ??= []).push(s.file)
+  }
+  for (const [h, files] of Object.entries(users)) {
+    for (const f of files) out[f] = Math.max(out[f] ?? 0, timings[h] / files.length)
+  }
+  return out
 }
 
 const matchesAny = (globs, changed) => !!globs && changed.some((f) => matches(globs, f))
@@ -211,14 +249,19 @@ const median = (xs) => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2
 }
 
-// Greedy longest-first: each spec goes to the lightest shard so far.
+// Greedy longest-first: each spec goes to the lightest shard so far. A spec
+// without a recorded duration costs the heaviest recorded one.
 export function shard(
   files,
   timings,
-  { targetSeconds = 240, maxShards = 4, fallbackSeconds = 60 } = {}
+  { targetSeconds = 600, maxShards = 7, fallbackSeconds = 60 } = {}
 ) {
   const known = files.map((f) => timings[f]).filter((v) => Number.isFinite(v) && v > 0)
-  const dflt = median(known) || fallbackSeconds
+  // A spec with no recorded duration is new or has grown since the last green
+  // run: cost it as the heaviest known spec, never as the median, so a spec the
+  // history knows nothing about cannot be packed with others into one shard
+  // past its timeout (one spec did with the layout check, 2026-11).
+  const dflt = known.length ? Math.max(...known) : fallbackSeconds
   const cost = (f) => (Number.isFinite(timings[f]) && timings[f] > 0 ? timings[f] : dflt)
   const total = files.reduce((n, f) => n + cost(f), 0)
   const count = files.length
@@ -240,7 +283,7 @@ export function plan(changed, map, specs, timings, opts = {}) {
   const isBudget = (f) => specs.find((s) => s.file === f)?.tags.includes('@budget')
   const budgetFiles = sel.files.filter(isBudget)
   const main = sel.files.filter((f) => !isBudget(f))
-  const bins = shard(main, timings, opts)
+  const bins = shard(main, withHelperCosts(timings, specs), opts)
   const include = bins.map((b, i) => ({
     id: i + 1,
     name: `shard ${i + 1}/${bins.length}`,
@@ -263,20 +306,23 @@ export function plan(changed, map, specs, timings, opts = {}) {
 
 // ---- timings from a Playwright JSON report ----------------------------------
 
+// A test counts for the spec file Playwright ran (the top-level suite's file),
+// not the file that declares it: tests a helper declares for a spec (the list
+// toolbar stability checks) would otherwise cost their spec nothing.
 export function timingsFromReport(report) {
   const out = {}
-  const walk = (suite) => {
+  const walk = (suite, root) => {
     for (const sp of suite.specs ?? []) {
-      const file = `${SPEC_PREFIX}${String(sp.file).replace(/^specs\//, '')}`
+      const file = `${SPEC_PREFIX}${String(root ?? sp.file).replace(/^specs\//, '')}`
       for (const t of sp.tests ?? []) {
         const last = (t.results ?? []).at(-1)
         if (last && Number.isFinite(last.duration))
           out[file] = (out[file] ?? 0) + last.duration / 1000
       }
     }
-    for (const s of suite.suites ?? []) walk(s)
+    for (const s of suite.suites ?? []) walk(s, root)
   }
-  for (const s of report.suites ?? []) walk(s)
+  for (const s of report.suites ?? []) walk(s, s.file)
   for (const k of Object.keys(out)) out[k] = Math.round(out[k] * 10) / 10
   return out
 }
@@ -385,6 +431,7 @@ function main(argv) {
         console.error('select: no usable timings, using the default duration')
       }
     }
+    timings = { ...loadEstimates(), ...timings }
     const specs = listSpecs()
     let result
     try {
@@ -393,8 +440,8 @@ function main(argv) {
         event,
         full,
         impact,
-        targetSeconds: Number(arg(argv, '--target-seconds', 240)),
-        maxShards: Number(arg(argv, '--max-shards', 4)),
+        targetSeconds: Number(arg(argv, '--target-seconds', 600)),
+        maxShards: Number(arg(argv, '--max-shards', 7)),
       })
     } catch (e) {
       console.error(`select: ${e.message}; running everything`)

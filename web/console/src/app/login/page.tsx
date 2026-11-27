@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useId, useState, type FormEvent } from 'react'
+import { useEffect, useId, useState, useSyncExternalStore, type FormEvent } from 'react'
 import { Loader2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -27,6 +27,10 @@ import type { AdminIdPInfo, AdminLoginResult } from '@console/features/admin-con
  *   (never an organization's): the browser goes to the IdP and comes back to
  *   /login/callback.
  */
+
+/** No store to watch: useSyncExternalStore here only tells server from client. */
+const noopSubscribe = () => () => {}
+
 export default function AdminSignInPage() {
   const { t } = useTranslation()
   const emailId = useId()
@@ -41,6 +45,15 @@ export default function AdminSignInPage() {
   // After repeated failed sign-ins the API asks for a security check
   // (CAPTCHA_REQUIRED); it is then shown and its token sent along.
   const [captchaRequired, setCaptchaRequired] = useState(false)
+  // Continue was pressed with a field empty.
+  const [missing, setMissing] = useState(false)
+  // Continue is live only once React runs the form: before that a click would
+  // submit the server-rendered form natively and lose what was typed.
+  const live = useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false
+  )
   const [captchaToken, setCaptchaToken] = useState('')
   const [captchaReset, setCaptchaReset] = useState(0)
   const { data: authProviders } = useAuthProviders(undefined, captchaRequired)
@@ -59,7 +72,13 @@ export default function AdminSignInPage() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!email.trim() || !password) return
+    // Continue stays enabled: a missing field is said under it and focused.
+    if (!email.trim() || !password) {
+      setMissing(true)
+      document.getElementById(!email.trim() ? emailId : passwordId)?.focus()
+      return
+    }
+    setMissing(false)
     setBusy(true)
     setError(null)
     try {
@@ -156,7 +175,14 @@ export default function AdminSignInPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   autoFocus={!idp}
+                  aria-invalid={missing && !email.trim() ? true : undefined}
+                  aria-describedby={missing && !email.trim() ? `${emailId}-error` : undefined}
                 />
+                {missing && !email.trim() && (
+                  <p id={`${emailId}-error`} className="text-cap font-medium text-destructive">
+                    {t('admin.login.emailRequired', 'Enter your email.')}
+                  </p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor={passwordId}>{t('admin.login.password', 'Password')}</Label>
@@ -167,7 +193,14 @@ export default function AdminSignInPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  aria-invalid={missing && !password ? true : undefined}
+                  aria-describedby={missing && !password ? `${passwordId}-error` : undefined}
                 />
+                {missing && !password && (
+                  <p id={`${passwordId}-error`} className="text-cap font-medium text-destructive">
+                    {t('admin.login.passwordRequired', 'Enter your password.')}
+                  </p>
+                )}
               </div>
               {captchaRequired && authProviders?.captcha_site_key && (
                 <TurnstileWidget
@@ -184,11 +217,7 @@ export default function AdminSignInPage() {
               {idpRequired && idp && (
                 <IdPSignInButton displayName={idp.display_name} next={nextFromLocation()} />
               )}
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={busy || !email.trim() || !password}
-              >
+              <Button type="submit" className="w-full" disabled={busy || !live}>
                 {busy && <Loader2 className="me-2 size-4 animate-spin" />}
                 {t('admin.login.submit', 'Continue')}
               </Button>
@@ -197,7 +226,7 @@ export default function AdminSignInPage() {
               <p className="text-xs text-muted-foreground">
                 {t(
                   'admin.login.breakGlassNote',
-                  'Password sign-in is for break-glass (emergency) accounts when the identity provider is required.'
+                  'Password sign-in is for emergency access accounts when the identity provider is required.'
                 )}
               </p>
             )}

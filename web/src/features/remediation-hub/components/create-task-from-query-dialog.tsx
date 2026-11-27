@@ -10,7 +10,7 @@
  * them, with a reason, out of a task they may change.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Loader2 } from 'lucide-react'
@@ -46,12 +46,24 @@ import {
 } from '../api/use-task-query'
 import { claimConflicts } from '../lib/claim-conflicts'
 import { ClaimConflictStep } from './claim-conflict-step'
-import { QueryInput } from '@/features/query/components/query-input'
-import type { ParseResult } from '@/features/query/api/query-api'
+import { Skeleton } from '@/components/ui/skeleton'
+import { queryApi, type ParseResult } from '@/features/query/api/query-api'
 import { QueryPreviewPanel } from './query-preview-panel'
 import { apiMessage } from './suggestions-inbox'
 
+// The query editor (completion, field descriptions) loads when the dialog
+// opens, not with the pages that offer the dialog.
+const QueryInput = lazy(() =>
+  import('@/features/query/components/query-input').then((m) => ({ default: m.QueryInput }))
+)
+
 const NONE = '__none__'
+
+/** The text a task stores: the long form the server printed for a short one. */
+function taskTextOf(parsed: ParseResult, typed: string): string {
+  return parsed.valid && parsed.form === 'short' && parsed.query ? parsed.query : typed
+}
+
 export const DEFAULT_TASK_QUERY = 'findings where severity in (critical, high)'
 
 export function CreateTaskFromQueryDialog({
@@ -78,7 +90,10 @@ export function CreateTaskFromQueryDialog({
   // The box takes the short form too; tasks store the long form the
   // server printed for it.
   const [parsed, setParsed] = useState<ParseResult | null>(null)
-  const taskText = parsed?.valid && parsed.form === 'short' && parsed.query ? parsed.query : query
+  const taskText = parsed ? taskTextOf(parsed, query) : query
+  // The server's refusal of the text Preview checked, shown under the box
+  // until the text changes.
+  const [checked, setChecked] = useState<ParseResult | null>(null)
   const [preview, setPreview] = useState<QueryTaskPreview | null>(null)
   const [previewedText, setPreviewedText] = useState('')
   const [title, setTitle] = useState('')
@@ -95,6 +110,8 @@ export function CreateTaskFromQueryDialog({
   useEffect(() => {
     if (!open) return
     setQuery(initialQuery?.trim() || DEFAULT_TASK_QUERY)
+    setParsed(null)
+    setChecked(null)
     setPreview(null)
     setPreviewedText('')
     setTitle(initialTitle?.trim() ?? '')
@@ -110,26 +127,38 @@ export function CreateTaskFromQueryDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  const runPreview = useCallback(async () => {
-    setBusy('preview')
-    setError(null)
-    try {
-      const p = await taskQueryApi.preview(taskText)
-      setPreview(p)
-      setPreviewedText(query)
-      setMove(new Set())
-      setReason('')
-      if (!title.trim()) setTitle(t('remediationQuery.create.defaultTitle'))
-      const s = p.suggested_assignee
-      if (s?.user_id && user === NONE) setUser(s.user_id)
-      else if (s?.group_id && group === NONE) setGroup(s.group_id)
-    } catch (err) {
-      setPreview(null)
-      setError(apiMessage(err, t('remediationQuery.create.previewFailed')))
-    } finally {
-      setBusy(null)
-    }
-  }, [group, query, taskText, t, title, user])
+  // Nothing reaches the server while the person types: Preview (or
+  // Ctrl/Cmd+Enter in the box) checks the text once, then previews it.
+  const runPreview = useCallback(
+    async (checkedText?: ParseResult) => {
+      setBusy('preview')
+      setError(null)
+      try {
+        const res = checkedText ?? (await queryApi.parse({ entity: 'findings', text: query }))
+        if (!res.valid) {
+          setChecked(res)
+          setPreview(null)
+          return
+        }
+        setParsed(res)
+        const p = await taskQueryApi.preview(taskTextOf(res, query))
+        setPreview(p)
+        setPreviewedText(query)
+        setMove(new Set())
+        setReason('')
+        if (!title.trim()) setTitle(t('remediationQuery.create.defaultTitle'))
+        const s = p.suggested_assignee
+        if (s?.user_id && user === NONE) setUser(s.user_id)
+        else if (s?.group_id && group === NONE) setGroup(s.group_id)
+      } catch (err) {
+        setPreview(null)
+        setError(apiMessage(err, t('remediationQuery.create.previewFailed')))
+      } finally {
+        setBusy(null)
+      }
+    },
+    [group, query, t, title, user]
+  )
 
   const stale = preview !== null && previewedText !== query
   const capN = Number(cap)
@@ -225,15 +254,20 @@ export function CreateTaskFromQueryDialog({
         <DialogBody className="space-y-5">
           <div className="space-y-1.5">
             <Label htmlFor="task-query">{t('remediationQuery.create.queryLabel')}</Label>
-            <QueryInput
-              entity="findings"
-              id="task-query"
-              value={query}
-              onChange={setQuery}
-              onParsed={setParsed}
-              multiline
-              autoFocus
-            />
+            <Suspense fallback={<Skeleton className="h-20 w-full" />}>
+              <QueryInput
+                entity="findings"
+                id="task-query"
+                value={query}
+                onChange={(text) => {
+                  setQuery(text)
+                  setChecked(null)
+                }}
+                onSubmit={(res) => void runPreview(res)}
+                checked={checked}
+                multiline
+              />
+            </Suspense>
             {ignoredFilters && ignoredFilters.length > 0 && (
               <p className="text-xs text-warning">
                 {t('remediationQuery.create.ignoredFilters', undefined, {
@@ -246,7 +280,7 @@ export function CreateTaskFromQueryDialog({
                 type="button"
                 variant="secondary"
                 size="sm"
-                onClick={runPreview}
+                onClick={() => void runPreview()}
                 disabled={busy !== null || query.trim().length === 0}
               >
                 {busy === 'preview' && (
@@ -383,7 +417,7 @@ export function CreateTaskFromQueryDialog({
                         min={1}
                         max={MAX_QUERY_TASK_FINDINGS}
                         value={cap}
-                        className="h-8 w-28"
+                        className="w-28"
                         aria-invalid={!capValid}
                         onChange={(e) => setCap(e.target.value)}
                       />

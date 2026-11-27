@@ -36,6 +36,9 @@ const EXEMPT = new Set([
  */
 const RENDERS_BODY = new Set(['ScanWorkflowForm', 'WizardFooter', 'RepairFlow'])
 
+/** Fixed parts of the shared wizard frame, between its Header and its Body. */
+const FRAME_PARTS = new Set(['WizardSteps'])
+
 /**
  * Files not migrated yet, moved onto the frame by area. The migrations leave
  * this list alone (so they do not conflict with each other); the last one
@@ -99,6 +102,7 @@ function looseContent(el: ts.JsxElement, P: string): boolean {
       (c) =>
         ![`${P}Header`, `${P}Footer`, `${P}Body`].includes(tagOf(c) ?? '') &&
         !RENDERS_BODY.has(tagOf(c) ?? '') &&
+        !FRAME_PARTS.has(tagOf(c) ?? '') &&
         // The submit error sits between the body and the footer.
         tagOf(c) !== 'DialogSubmitError' &&
         !(ts.isJsxExpression(c) && (hasTag(c, `${P}Body`) || hasTag(c, `${P}Footer`)))

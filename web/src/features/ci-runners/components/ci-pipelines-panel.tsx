@@ -45,7 +45,6 @@ import { GateLabel, PipelineStatusBadge } from './ci-pipeline-cells'
 import { CIPipelineSheet } from './ci-pipeline-sheet'
 import { CICoverageView } from './ci-coverage-view'
 import { CIRunsView } from './ci-runs-view'
-import { CISetupEntry } from './ci-setup-wizard'
 import { CIRefusalNotice } from './ci-refusals'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { useTranslation } from '@/context/i18n-provider'
@@ -134,7 +133,7 @@ export function CIPipelinesPanel() {
   const [overridesParam, setOverridesParam] = useUrlFilter('overrides', '')
   const hasOverrides = overridesParam === '1'
   const [openId, setOpenId] = useUrlFilter('pipeline', '')
-  const { pagination, setPagination, setPage } = useListParams({ defaultPageSize: 20 })
+  const { pagination, setPagination, setPage } = useListParams()
 
   useEffect(() => {
     if (debouncedSearch !== q) {
@@ -264,7 +263,8 @@ export function CIPipelinesPanel() {
                     'A pipeline appears after its first run, and you see the pipelines of repositories you have access to. Ask an administrator to connect a pipeline or to give you access to a repository.'
                   )
             }
-            action={canWrite ? <CISetupEntry canWrite /> : undefined}
+            // No action here: "Connect a CI provider" is the page header's one
+            // main action.
           />
         </>
       ) : (

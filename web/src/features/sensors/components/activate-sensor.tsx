@@ -69,14 +69,13 @@ export function ActivateSensor() {
 
   return (
     <PageStack>
-      <PageHeader
-        title={t('sensors.activate.title')}
-        description={t('sensors.activate.description')}
-      />
+      <PageHeader title={t('sensors.activate.title')} />
       <Card className="w-full max-w-2xl gap-0 py-0" data-testid="activate-sensor">
         <CardContent className="p-4 sm:p-6">
           {!canPair ? (
-            <p className="text-sm text-muted-foreground">{t('sensors.activate.needsPermission')}</p>
+            <p className="text-body text-muted-foreground">
+              {t('sensors.activate.needsPermission')}
+            </p>
           ) : approved ? (
             <ActivateDone view={approved} />
           ) : code === undefined ? (
@@ -107,20 +106,20 @@ function ActivateDone({ view }: { view: SensorPairingView }) {
     <div className="space-y-4" aria-live="polite" data-testid="activate-done">
       <div className="flex items-start gap-3">
         {online ? (
-          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-success" aria-hidden />
+          <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-success" aria-hidden />
         ) : (
           <Loader2
-            className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-primary motion-reduce:animate-none"
+            className="mt-0.5 size-5 shrink-0 animate-spin text-primary motion-reduce:animate-none"
             aria-hidden
           />
         )}
         <div className="min-w-0 space-y-1">
-          <p className="font-medium">
+          <p className="text-body font-medium">
             {online
               ? t('sensors.onboard.online', undefined, { name: sensor?.name ?? '' })
               : t('sensors.activate.approved')}
           </p>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-dense text-muted-foreground">
             {online ? t('sensors.activate.onlineNext') : t('sensors.activate.approvedNext')}
           </p>
         </div>

@@ -42,14 +42,32 @@ const SAFE_CALLS = new Set([
   // Route builders: each returns a fixed same-origin prefix, or a fixed
   // https://attack.mitre.org prefix, with the data only in the path/query.
   'assetDetailHref',
+  // features/asset-groups/lib/group-link.ts: /assets/groups/ with the id
+  // URI-encoded as one path segment.
+  'assetGroupHref',
+  // app/(dashboard)/settings/roles/page.tsx: `/settings/roles?role=` with the id URI-encoded in the query.
+  'roleHref',
+  // app/(dashboard)/settings/sla-policies/page.tsx: `/settings/sla-policies?policy=` with the id URI-encoded in the query.
+  'policyHref',
+  // features/access-control/components/teams-section.tsx and assignment-rules-section.tsx:
+  // `/settings/teams?team=` and `/settings/teams?tab=assignment-rules&rule=` with the id
+  // URI-encoded in the query.
+  'teamHref',
+  'ruleHref',
   // features/assets/components/service-cells/issues-chip.tsx: `/findings?…`
   // with the asset id and fixed statuses in the query.
   'assetFindingsHref',
   'campaignHref',
+  // features/components/lib/links.ts: `/components/` with the id URI-encoded
+  // as one path segment.
+  'componentHref',
   // features/vulnerabilities/lib/vuln-page.ts: `/findings?cve_id=…` with the
   // filters as URLSearchParams values.
   'cveFindingsHref',
   'findingsHrefForSources',
+  // features/findings/lib/finding-link.ts: `/findings/` with the id URI-encoded
+  // as one path segment.
+  'findingDetailHref',
   // features/exploration/lib/leads.ts: `/exploration` with the asset and lead
   // ids only as URLSearchParams values.
   'explorationHref',
@@ -58,6 +76,9 @@ const SAFE_CALLS = new Set([
   // filter (from the API) only in the query.
   'quickViewHref',
   'registerHref',
+  // features/scans/lib/scan-link.ts: `/scans/` with the id URI-encoded as one
+  // path segment.
+  'scanDetailHref',
   // features/findings/api/receipts-api.ts: `/findings?` with one fixed
   // "seen by" param name and the value as URLSearchParams.
   'seenByFindingsHref',
@@ -78,9 +99,10 @@ const REVIEWED = new Set([
   // Step detail: href is linkHref() (features/exploration/lib/leads.ts), a fixed same-origin prefix
   // (/assets via assetDetailHref, /findings/, /scans/runs?run=) with the id URI-encoded.
   'features/exploration/components/lead-detail-sheet.tsx|Link|href={href}',
-  // Account space links: NAV and ACCOUNT_LINKS are constant same-origin paths in the same file.
-  'features/account/components/account-shell.tsx|Link|href={item.href}',
-  'features/account/components/welcome-hub.tsx|Link|href={item.href}',
+  // Account area navigation: ACCOUNT_NAV (config/account-nav.ts) holds literal same-origin paths;
+  // the brand link picks between ACCOUNT_HOME_PATH (a literal in lib/middleware/config.ts) and a literal.
+  'features/account/components/account-shell.tsx|Link|href={item.url}',
+  "features/account/components/account-shell.tsx|Link|href={organizationName === undefined ? ACCOUNT_HOME_PATH : '/account'}",
   // Exception batch source link: batchSourceHref() is a fixed same-origin path (/vulnerabilities or
   // /remediation/tasks) with the id or CVE ids passed through encodeURIComponent.
   'features/findings/components/group-exceptions-panel.tsx|Link|href={batchSourceHref(row.original)}',
@@ -91,12 +113,8 @@ const REVIEWED = new Set([
   'app/(dashboard)/(scoping)/attack-surface/page.tsx|Link|href={typeHref(item.type)}',
   // StatsCard href only receives the callers' own constant routes (attack surface tiles).
   'features/shared/components/stats-card.tsx|Link|href={href}',
-  // LEGAL_DOCS paths are constants in src/lib/legal.ts (/terms, /privacy, ...).
-  'features/legal/components/legal-document.tsx|Link|href={d.path}',
   // EDGE_FIX_HREFS is a build-time table of same-origin settings routes (features/scans/lib/edge-gap.ts).
   'features/scans/components/edge-gap-fixes.tsx|Link|href={EDGE_FIX_HREFS[fix]}',
-  // Fix plan rows: href is built in the same file as /remediation/tasks/{id} or /remediation/suggestions.
-  'features/remediation-hub/components/fix-plan.tsx|Link|href={r.href}',
   // SLA compliance links: /findings?<fixed filter keys> built by findingsHref from the SLA filter
   // constants and one SEVERITY_ORDER value (no API text reaches the href).
   "app/(dashboard)/(mobilization)/sla/page.tsx|Link|href={findingsHref(tileFilter('pastDue'), { severity: sev })}",
@@ -107,9 +125,8 @@ const REVIEWED = new Set([
   'app/(dashboard)/settings/page.tsx|Link|href={item.url}',
   'app/(dashboard)/settings/page.tsx|Link|href={r.href}',
   // integrationManageHref returns one of the constant settings paths only.
-  'app/(dashboard)/settings/integrations/page.tsx|Link|href={integrationManageHref(row.original)}',
+  'app/(dashboard)/settings/integrations/page.tsx|Link|href={integrationManageHref(i)}',
   'app/(dashboard)/settings/integrations/page.tsx|LinkCard|href={category.href}',
-  'components/profile-dropdown.tsx|Link|href={item.url}',
   'components/layout/grouped-nav.tsx|SidebarLink|href={item.url}',
   'components/layout/nav-group.tsx|SidebarLink|href={item.url}',
   'components/layout/nav-group.tsx|SidebarLink|href={url}',
@@ -122,6 +139,8 @@ const REVIEWED = new Set([
   'components/layout/sidebar-nav-view.tsx|SidebarLink|href={href}',
   'components/layout/sidebar-brand.tsx|Link|href={href}',
   'components/layout/module-gate.tsx|Link|href={backUrl}',
+  // Create menu: openFormHref() of the constant CREATE_ACTION_DEFS paths.
+  'components/layout/header-create-menu.tsx|Link|href={a.href}',
   'components/layout/org-card.tsx|Link|href={membersLink.url}',
   'components/layout/org-card.tsx|Link|href={apiKeysLink.url}',
   'features/shared/components/section-tabs.tsx|Link|href={tab.href}',

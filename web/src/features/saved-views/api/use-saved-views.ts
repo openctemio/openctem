@@ -54,6 +54,8 @@ export interface SaveViewInput {
   columns?: string[]
   /** The row density the list showed (saved with the view). */
   density?: string
+  /** The page's own params beside the filter, e.g. the search mode (`mode=query`). */
+  page_params?: Record<string, string>
 }
 
 export const savedViewsKey = (page: SavedViewPage) => `/api/v1/views?page=${page}`
@@ -71,13 +73,27 @@ export function useSavedViews(page: SavedViewPage, enabled = true) {
   return { views: data?.data ?? [], error, isLoading, mutate }
 }
 
+/**
+ * Page params that equal what a page does without them (Basic mode is the
+ * list's default). They are never sent: a view without `page_params` opens
+ * with the defaults, and a server that does not know the field keeps working.
+ */
+const DEFAULT_PAGE_PARAMS: Readonly<Record<string, string>> = { mode: 'basic' }
+
+/** The request body of a save: `page_params` only when it holds a non-default value. */
+export function savedViewBody(input: SaveViewInput): SaveViewInput {
+  const { page_params: params, ...rest } = input
+  const kept = Object.entries(params ?? {}).filter(([k, v]) => DEFAULT_PAGE_PARAMS[k] !== v)
+  return kept.length > 0 ? { ...rest, page_params: Object.fromEntries(kept) } : rest
+}
+
 export function createSavedView(input: SaveViewInput): Promise<SavedView> {
-  return post<SavedView>('/api/v1/views', input)
+  return post<SavedView>('/api/v1/views', savedViewBody(input))
 }
 
 /** Replaces a view the caller owns (the API keeps its page and owner). */
 export function updateSavedView(id: string, input: SaveViewInput): Promise<SavedView> {
-  return put<SavedView>(`/api/v1/views/${encodeURIComponent(id)}`, input)
+  return put<SavedView>(`/api/v1/views/${encodeURIComponent(id)}`, savedViewBody(input))
 }
 
 export function deleteSavedView(id: string): Promise<void> {
@@ -96,7 +112,17 @@ export function savedViewId(viewParam: string | null | undefined): string | unde
 }
 
 /** The page params that are not part of a view's filter. */
-const PAGE_ONLY = new Set(['page', 'per_page', 'group', 'tab', 'density', 'columns'])
+const PAGE_ONLY = new Set([
+  'page',
+  'per_page',
+  'group',
+  'tab',
+  'density',
+  'columns',
+  'mode',
+  // The view a list was derived from: the URL holds the whole filter then.
+  'from_view',
+])
 
 /**
  * The filter part of a page query string, to save as a view: the API's own

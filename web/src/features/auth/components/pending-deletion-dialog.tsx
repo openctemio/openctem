@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { useTranslation } from '@/context/i18n-provider'
 import { cancelOrganizationDeletionAction, type LoginTenant } from '../actions/local-auth-actions'
+import { formatDateTime } from '@/lib/app-locale'
 
 /**
  * Shown at sign-in to an owner of an organization that is scheduled for
@@ -75,7 +76,7 @@ export function PendingDeletionDialog({
                   {org.deletion_due_at && (
                     <div className="text-sm text-muted-foreground">
                       {t('auth.pendingDeletion.due', 'Deleted on {date}', {
-                        date: new Date(org.deletion_due_at).toLocaleString(),
+                        date: formatDateTime(new Date(org.deletion_due_at)),
                       })}
                     </div>
                   )}

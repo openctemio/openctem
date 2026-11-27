@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/features/shared'
+import { useTranslation } from '@/context/i18n-provider'
 
 import { AddConnectionDialog } from './add-connection-dialog'
 import { SCMConnectionCard } from './scm-connection-card'
@@ -23,6 +24,7 @@ export function SCMConnectionsSection({
   onConnectionSelect,
   selectedConnectionId,
 }: SCMConnectionsSectionProps) {
+  const { t } = useTranslation()
   const [isOpen, setIsOpen] = useState(false) // Collapsed by default
   const [addDialogOpen, setAddDialogOpen] = useState(false)
 
@@ -44,14 +46,17 @@ export function SCMConnectionsSection({
       <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4">
         <div className="flex items-center gap-2 text-destructive">
           <AlertCircle className="h-4 w-4" />
-          <span className="text-sm font-medium">Failed to load SCM connections</span>
+          <span className="text-sm font-medium">
+            {t('scmConnections.section.loadFailed', 'Failed to load source control connections')}
+          </span>
         </div>
         <p className="text-sm text-muted-foreground mt-1">
-          {error.message || 'An unexpected error occurred'}
+          {error.message ||
+            t('scmConnections.section.unexpectedError', 'An unexpected error occurred')}
         </p>
         <Button variant="outline" size="sm" className="mt-2" onClick={handleRefresh}>
           <RefreshCw className="me-2 h-4 w-4" />
-          Retry
+          {t('common.retry', 'Retry')}
         </Button>
       </div>
     )
@@ -62,27 +67,41 @@ export function SCMConnectionsSection({
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <div className="flex items-center justify-between mb-3">
           <CollapsibleTrigger asChild>
-            <Button variant="ghost" className="gap-2 -ms-2 h-8">
+            <Button variant="ghost" className="gap-2 -ms-2">
               <ChevronRight
                 className={`h-4 w-4 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`}
               />
               <Link2 className="h-4 w-4" />
-              <span className="font-medium">SCM Connections</span>
+              <span className="font-medium">
+                {t('scmIntegration.page.title', 'Source control connections')}
+              </span>
               {!isLoading && connections && (
                 <div className="flex items-center gap-1.5">
                   <Badge variant="secondary" className="h-5 px-1.5 text-xs">
                     {connections.length}
                   </Badge>
                   {connectedCount > 0 && (
-                    <HealthStatus state="ok" label={`${connectedCount} active`} />
+                    <HealthStatus
+                      state="ok"
+                      label={t('scmConnections.section.active', '{count} active', {
+                        count: connectedCount,
+                      })}
+                    />
                   )}
-                  {errorCount > 0 && <HealthStatus state="down" label={`${errorCount} error`} />}
+                  {errorCount > 0 && (
+                    <HealthStatus
+                      state="down"
+                      label={t('scmConnections.section.errorCount', '{count} error', {
+                        count: errorCount,
+                      })}
+                    />
+                  )}
                 </div>
               )}
             </Button>
           </CollapsibleTrigger>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={handleRefresh} disabled={isLoading}>
+            <Button variant="ghost" size="icon-sm" onClick={handleRefresh} disabled={isLoading}>
               {isLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
@@ -91,7 +110,7 @@ export function SCMConnectionsSection({
             </Button>
             <Button size="sm" onClick={() => setAddDialogOpen(true)}>
               <Plus className="me-2 h-4 w-4" />
-              Add Connection
+              {t('scmIntegration.page.addConnection', 'Add connection')}
             </Button>
           </div>
         </div>
@@ -135,14 +154,11 @@ export function SCMConnectionsSection({
             <EmptyState
               card={false}
               icon={Link2}
-              title="No SCM Connections"
-              description="Connect your GitHub, GitLab, or Bitbucket account to import repositories"
-              action={
-                <Button onClick={() => setAddDialogOpen(true)}>
-                  <Plus className="me-2 h-4 w-4" />
-                  Add Your First Connection
-                </Button>
-              }
+              title={t('scmIntegration.page.emptyTitle', 'No source control connections')}
+              description={t(
+                'scmConnections.section.emptyDescription',
+                'Connect your GitHub, GitLab, or Bitbucket account to import repositories'
+              )}
             />
           )}
         </CollapsibleContent>

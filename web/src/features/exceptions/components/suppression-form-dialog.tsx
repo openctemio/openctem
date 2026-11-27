@@ -35,6 +35,11 @@ interface SuppressionFormDialogProps {
   onOpenChange: (open: boolean) => void
   /** When set, the dialog edits this rule; otherwise it creates a new one. */
   rule?: SuppressionRule | null
+  /**
+   * Starting values for a new rule (e.g. the tool rule a bulk Dismiss found
+   * the selected findings share). Ignored when editing.
+   */
+  defaults?: Partial<Pick<SuppressionRule, 'tool_name' | 'rule_id' | 'suppression_type'>>
   onSuccess?: () => void
 }
 
@@ -82,6 +87,7 @@ export function SuppressionFormDialog({
   open,
   onOpenChange,
   rule,
+  defaults,
   onSuccess,
 }: SuppressionFormDialogProps) {
   const { t } = useTranslation()
@@ -104,15 +110,18 @@ export function SuppressionFormDialog({
     if (!open) return
     setName(rule?.name ?? '')
     setDescription(rule?.description ?? '')
-    setSuppressionType(rule?.suppression_type ?? 'false_positive')
-    setToolName(rule?.tool_name ?? '')
-    setRuleId(rule?.rule_id ?? '')
+    const start = rule ?? defaults
+    setSuppressionType(start?.suppression_type ?? 'false_positive')
+    setToolName(start?.tool_name ?? '')
+    setRuleId(start?.rule_id ?? '')
     setPathPattern(rule?.path_pattern ?? '')
     setExpiresAt(
       toLocalInput(
         rule?.expires_at ?? new Date(Date.now() + DEFAULT_RULE_DAYS * DAY_MS).toISOString()
       )
     )
+    // defaults are read when the dialog opens, not on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, rule])
 
   // Backend requires at least one of rule_id / path_pattern / asset_id.

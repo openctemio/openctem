@@ -152,6 +152,7 @@ function AddressHistoryDialog({
       {
         id: 'address',
         header: t('assetAddresses.col.address', 'Address'),
+        meta: { kind: 'id' },
         cell: ({ row }) => (
           <span className="font-mono text-sm break-all">{row.original.address}</span>
         ),
@@ -159,6 +160,7 @@ function AddressHistoryDialog({
       {
         id: 'provider',
         header: t('assetAddresses.col.provider', 'Provider'),
+        meta: { kind: 'text' },
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">{row.original.provider ?? ''}</span>
         ),
@@ -166,6 +168,7 @@ function AddressHistoryDialog({
       {
         id: 'firstSeen',
         header: t('assetAddresses.col.firstSeen', 'First seen'),
+        meta: { kind: 'datetime-recent' },
         cell: ({ row }) => (
           <RelativeTime date={row.original.first_seen} className="text-sm text-muted-foreground" />
         ),
@@ -173,6 +176,7 @@ function AddressHistoryDialog({
       {
         id: 'lastSeen',
         header: t('assetAddresses.col.lastSeen', 'Last seen'),
+        meta: { kind: 'datetime-recent' },
         cell: ({ row }) => (
           <RelativeTime date={row.original.last_seen} className="text-sm text-muted-foreground" />
         ),
@@ -180,6 +184,7 @@ function AddressHistoryDialog({
       {
         id: 'state',
         header: t('assetAddresses.col.state', 'Now'),
+        meta: { kind: 'status' },
         cell: ({ row }) =>
           row.original.current ? (
             <span className="text-sm">{t('assetAddresses.current', 'Current')}</span>
@@ -217,9 +222,11 @@ function AddressHistoryDialog({
           />
           {truncated > 0 && (
             <p className="mt-2 text-sm text-muted-foreground" role="status">
-              {t('assetAddresses.truncated', '{count} older addresses are not listed.', {
-                count: truncated.toLocaleString(),
-              })}
+              {t(
+                'assetAddresses.truncated',
+                '{count, plural, one {# older address is not listed.} other {# older addresses are not listed.}}',
+                { count: truncated }
+              )}
             </p>
           )}
         </DialogBody>

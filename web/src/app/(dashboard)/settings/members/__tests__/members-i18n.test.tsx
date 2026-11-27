@@ -25,6 +25,11 @@ vi.mock('@/lib/permissions', () => ({
   Can: ({ children }: { children: ReactNode }) => <>{children}</>,
   Permission: { MembersInvite: 'members:invite', MembersManage: 'members:manage' },
   usePermissions: () => ({
+    // The row menu hides route-gated items by these (an owner passes).
+    permissions: ['team:roles:assign', 'team:members:write'],
+    can: () => true,
+    isLoading: false,
+    tenantRole: 'owner',
     isOwner: () => true,
     isAtLeast: () => true,
     canAny: () => permState.canInvite,
@@ -42,6 +47,10 @@ vi.mock('@/features/organization/api/use-tenant-settings', () => ({
 }))
 vi.mock('@/features/organization/api/use-ownership-transfer', () => ({
   usePendingOwnershipTransfer: () => ({ transfer: undefined, mutate: vi.fn() }),
+}))
+// The page reads the join requests for its tab count (the card's own read, shared).
+vi.mock('@/features/organization/api/use-domain-signup', () => ({
+  useJoinRequests: () => ({ requests: [] }),
 }))
 vi.mock('@/features/organization/components/join-requests-card', () => ({
   JoinRequestsCard: () => null,
@@ -93,7 +102,7 @@ globalThis.ResizeObserver ??= class {
 }
 
 describe('Members page (vi)', () => {
-  it('renders Vietnamese copy, a translated pagination noun and labelled filters', () => {
+  it('renders Vietnamese copy and labelled filters (one member: no pager)', () => {
     render(
       <I18nProvider locale="vi">
         <UsersPage />
@@ -103,7 +112,7 @@ describe('Members page (vi)', () => {
     expect(screen.getByText('Mời người dùng')).toBeInTheDocument()
     expect(screen.getByText('Thêm người dùng')).toBeInTheDocument()
     expect(screen.getByText('Hoạt động gần nhất')).toBeInTheDocument()
-    expect(screen.getByText(/trên 1 thành viên/)).toBeInTheDocument()
+    expect(screen.queryByText(/trên 1 thành viên/)).toBeNull()
     // The filters are filter tokens: "Status: Current members", whole.
     expect(
       screen.getByRole('button', { name: 'Trạng thái: Thành viên hiện tại' })

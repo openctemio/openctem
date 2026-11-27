@@ -342,7 +342,20 @@ export interface AuditLog {
  */
 const ACTION_LABEL_OVERRIDES: Record<string, string> = {
   'auth.failed': 'Authentication failed',
+  'asset.provider_addresses_moved': 'Provider shared addresses folded into names',
+  'asset.provider_addresses_restored': 'Provider shared addresses restored',
+  'auth.refresh_grace': 'Refresh token accepted again within the grace period',
+  'ci_trust_config.new_repositories_decided': 'CI trust new repositories decided',
+  'scope_target.provider_kept': 'Provider shared addresses kept in scope',
+  'scope_target.provider_moved': 'Provider shared addresses moved out of scope',
   'finding.bulk_updated': 'Findings bulk updated',
+  'campaign.group_added': 'Campaign group added',
+  'campaign.group_removed': 'Campaign group removed',
+  'campaign.group_role_changed': 'Campaign group role changed',
+  'finding.bulk_dismissed': 'Findings dismissed in bulk',
+  'finding.bulk_dismiss_undone': 'Bulk dismissal undone',
+  'finding_approval.batch_member_rejected': 'Finding left out of an approval batch',
+  'finding_approval.batch_self_approved': 'Finding approval batch approved by its requester',
   'finding.duplicate_marked': 'Finding marked duplicate',
   'finding.location_changed': 'Finding service location changed',
   'finding.issue_unlinked': 'Finding taken out of a same-issue group',
@@ -388,11 +401,18 @@ const ACTION_LABEL_OVERRIDES: Record<string, string> = {
 /**
  * Display label for an audit action, the one used wherever an action is
  * shown (audit log, account activity, sensor activity). A sensor event
- * written before the sensor rename reads the same as a new one.
+ * written before the sensor rename reads the same as a new one. Pass `t` where
+ * the label is shown, so it reads in the reader's language.
  */
-export function getActionLabel(action: AuditAction | string): string {
+export function getActionLabel(
+  action: AuditAction | string,
+  t?: (key: string, fallback: string) => string
+): string {
   const canonical = canonicalAuditAction(action)
-  return ACTION_LABEL_OVERRIDES[canonical] ?? humanizeIdentifier(canonical)
+  const english = ACTION_LABEL_OVERRIDES[canonical] ?? humanizeIdentifier(canonical)
+  // Every known action has an `auditLog.action.<action>` key in en and vi;
+  // an action the console does not know yet reads in English.
+  return t ? t(`auditLog.action.${canonical}`, english) : english
 }
 
 /**

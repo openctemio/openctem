@@ -1,5 +1,6 @@
 'use client'
 
+import { DEFAULT_TABLE_PAGE_SIZE, TABLE_PAGE_SIZES, isPhonePageSize } from '@/lib/page-size-options'
 import { useCallback, useMemo } from 'react'
 import type { SortingState } from '@tanstack/react-table'
 import { replaceUrlSearch, useUrlParams } from './use-url-param'
@@ -61,7 +62,8 @@ export interface ListParams<F extends string> {
   apiParams: Record<string, string | number>
 }
 
-export const DEFAULT_PAGE_SIZES = [10, 20, 50, 100] as const
+/** The sizes every list offers (25, 50, 100). */
+export const DEFAULT_PAGE_SIZES = TABLE_PAGE_SIZES
 
 /**
  * Back to page 1 of the route's list: for a switch outside the list that
@@ -90,7 +92,7 @@ export function useListParams<F extends string = never>(
 ): ListParams<F> {
   const {
     pageSizes = DEFAULT_PAGE_SIZES,
-    defaultPageSize = 20,
+    defaultPageSize = DEFAULT_TABLE_PAGE_SIZE,
     sortFields,
     defaultSort = '',
     filters: filterDefaults = {} as Record<F, string>,
@@ -100,7 +102,14 @@ export function useListParams<F extends string = never>(
   const rawPage = params.get('page')
   const page = rawPage && DIGITS.test(rawPage) && Number(rawPage) > 0 ? Number(rawPage) : 1
   const rawSize = Number(params.get('per_page'))
-  const perPage = pageSizes.includes(rawSize) ? rawSize : defaultPageSize
+  // A size the list offers, one a page still accepts from older links, or a
+  // step of a phone's "Show more" (75).
+  const perPage =
+    (TABLE_PAGE_SIZES as readonly number[]).includes(rawSize) ||
+    pageSizes.includes(rawSize) ||
+    isPhonePageSize(rawSize)
+      ? rawSize
+      : defaultPageSize
   const sort = (sortFields && parseListSort(params.get('sort'), sortFields)) || defaultSort
   const q = params.get('q') ?? ''
   const { term: searchTerm, pending: searchPending } = useSearchQuery(q, options.search)

@@ -132,7 +132,8 @@ describe('FindingGroupsTable', () => {
     expect(screen.getByText(/Host, Owner Ann, 3 findings/)).toBeInTheDocument()
     expect(screen.getByText('0% verified')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Mark a1' })).toBeInTheDocument()
-    expect(document.body.textContent).toContain('of 1 groups')
+    // One group fits one page: no pager.
+    expect(document.body.textContent).not.toContain('of 1 groups')
   })
 
   it('offers "Show 20 more" when a group has more rows, and loads them', async () => {

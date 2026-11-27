@@ -697,9 +697,14 @@ export interface Finding {
 
   // Timestamps
   discoveredAt: string
+  /** When it was closed (any closed status, not only resolved). */
   resolvedAt?: string
+  /** When an accepted risk ends and the finding reopens (accepted only). */
+  acceptanceExpiresAt?: string
   /** Why it is closed (lib/closure.ts); absent while open. */
   closureReason?: string
+  /** What the person who closed it wrote (the closure note); absent while open. */
+  closeNote?: string
   /** The organization's sub-status inside the status; absent: the status itself. */
   subStatusId?: string
   /** Longest risk acceptance for this finding's priority, in days (server rule). */
@@ -1309,6 +1314,22 @@ export interface ApiApproval {
    * requests only.
    */
   changed_since_request?: string[]
+  /**
+   * Why the request waits: the stable reason codes of the policy evaluation
+   * stored on it (`fp_level`, `requester_owns_asset`, ...); empty when none.
+   */
+  policy_reasons?: string[]
+  /**
+   * How many people could sign the request off when it was made; null on a
+   * request made before the count was kept.
+   */
+  eligible_approver_count?: number | null
+  /**
+   * The caller made this pending request (not part of a group) and is the
+   * organization's only active person and its owner: they may approve it
+   * themselves (POST /approvals/{id}/self-approve re-checks everything).
+   */
+  self_approval_available?: boolean
 }
 
 /** What an approver weighs at a glance (approval queue rows). */

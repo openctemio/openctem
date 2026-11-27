@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2, Settings, Eye, EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
+import { useTranslation } from '@/context/i18n-provider'
 import { z } from 'zod'
 
 import { Button } from '@/components/ui/button'
@@ -77,6 +78,7 @@ export function EditConnectionDialog({
   connection,
   onSuccess,
 }: EditConnectionDialogProps) {
+  const { t } = useTranslation()
   const [showToken, setShowToken] = useState(false)
 
   const initialScmOrganization = getScmOrganization(connection)
@@ -130,7 +132,7 @@ export function EditConnectionDialog({
 
       // Only call API if there are changes
       if (Object.keys(updateData).length === 0) {
-        toast.info('No changes to save')
+        toast.info(t('scmConnections.edit.noChanges', 'No changes to save'))
         onOpenChange(false)
         return
       }
@@ -139,28 +141,48 @@ export function EditConnectionDialog({
 
       // If token was updated, test the connection
       if (updateData.credentials) {
-        toast.info('Testing updated credentials...')
+        toast.info(t('scmConnections.edit.testing', 'Testing updated credentials...'))
         try {
           const result = await validateConnection()
           if (result?.status === 'connected') {
-            toast.success(`Connection "${data.name}" updated and verified successfully`)
+            toast.success(
+              t('scmConnections.edit.verified', 'Connection "{name}" updated and verified.', {
+                name: data.name,
+              })
+            )
           } else {
             toast.warning(
-              `Connection updated but verification failed: ${result?.status_message || 'Unknown error'}`
+              t(
+                'scmConnections.edit.verifyFailedReason',
+                'Connection updated but verification failed: {reason}',
+                {
+                  reason:
+                    result?.status_message ||
+                    t('scmConnections.edit.unknownError', 'Unknown error'),
+                }
+              )
             )
           }
         } catch {
-          toast.warning('Connection updated but verification failed')
+          toast.warning(
+            t('scmConnections.edit.verifyFailed', 'Connection updated but verification failed')
+          )
         }
       } else {
-        toast.success(`Connection "${data.name}" updated successfully`)
+        toast.success(
+          t('scmConnections.edit.updated', 'Connection "{name}" updated.', {
+            name: data.name,
+          })
+        )
       }
 
       await invalidateSCMIntegrationsCache()
       onOpenChange(false)
       onSuccess?.()
     } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to update connection'))
+      toast.error(
+        getErrorMessage(error, t('scmConnections.edit.updateFailed', 'Failed to update connection'))
+      )
     }
   }
 
@@ -178,7 +200,7 @@ export function EditConnectionDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            Edit Connection
+            {t('scmIntegration.actions.editConnection', 'Edit connection')}
           </DialogTitle>
           <DialogDescription className="flex items-center gap-2">
             <ProviderIcon provider={connection.provider} className="h-4 w-4" />
@@ -196,11 +218,22 @@ export function EditConnectionDialog({
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Connection Name</FormLabel>
+                    <FormLabel>{t('scmConnections.field.name', 'Connection name')}</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., My GitHub Enterprise" {...field} />
+                      <Input
+                        placeholder={t(
+                          'scmConnections.field.namePlaceholder',
+                          'e.g., My GitHub Enterprise'
+                        )}
+                        {...field}
+                      />
                     </FormControl>
-                    <FormDescription>A friendly name to identify this connection</FormDescription>
+                    <FormDescription>
+                      {t(
+                        'scmConnections.field.nameHelp',
+                        'A friendly name to identify this connection'
+                      )}
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -212,12 +245,23 @@ export function EditConnectionDialog({
                 name="scmOrganization"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Organization / Group (Optional)</FormLabel>
+                    <FormLabel>
+                      {t('scmConnections.field.organization', 'Organization or group (optional)')}
+                    </FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., my-org" {...field} />
+                      <Input
+                        placeholder={t(
+                          'scmConnections.field.organizationPlaceholder',
+                          'e.g., my-org'
+                        )}
+                        {...field}
+                      />
                     </FormControl>
                     <FormDescription>
-                      Limit repositories to a specific organization or group
+                      {t(
+                        'scmConnections.field.organizationHelp',
+                        'Limit repositories to a specific organization or group'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -230,20 +274,25 @@ export function EditConnectionDialog({
                 name="accessToken"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Personal Access Token</FormLabel>
+                    <FormLabel>
+                      {t('scmConnections.field.token', 'Personal access token')}
+                    </FormLabel>
                     <FormControl>
                       <div className="relative">
                         <Input
                           type={showToken ? 'text' : 'password'}
-                          placeholder="Leave empty to keep current token"
+                          placeholder={t(
+                            'scmConnections.edit.tokenPlaceholder',
+                            'Leave empty to keep current token'
+                          )}
                           className="pe-10"
                           {...field}
                         />
                         <Button
                           type="button"
                           variant="ghost"
-                          size="sm"
-                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          size="icon-sm"
+                          className="absolute right-0 top-1/2 -translate-y-1/2 px-3 py-2 hover:bg-transparent"
                           onClick={() => setShowToken(!showToken)}
                         >
                           {showToken ? (
@@ -255,7 +304,10 @@ export function EditConnectionDialog({
                       </div>
                     </FormControl>
                     <FormDescription>
-                      Enter a new token to update credentials, or leave empty to keep current
+                      {t(
+                        'scmConnections.edit.tokenHelp',
+                        'Enter a new token to update credentials, or leave empty to keep current'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -265,11 +317,11 @@ export function EditConnectionDialog({
 
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleClose} disabled={isSaving}>
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </Button>
               <Button type="submit" disabled={isSaving}>
                 {isSaving ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : null}
-                Save Changes
+                {t('scmConnections.edit.save', 'Save changes')}
               </Button>
             </DialogFooter>
           </DialogForm>

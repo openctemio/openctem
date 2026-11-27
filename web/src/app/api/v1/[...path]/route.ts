@@ -485,9 +485,9 @@ async function proxyRequest(
       return NextResponse.json({ error: 'Request body too large' }, { status: 413 })
     }
     devLog.error('[Proxy] Connection error:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    // The detail stays in the server log; the browser gets a fixed message.
     return NextResponse.json(
-      { error: 'PROXY_ERROR', message: `Failed to connect to backend: ${errorMessage}` },
+      { error: 'PROXY_ERROR', message: 'Failed to connect to backend' },
       { status: 502 }
     )
   }

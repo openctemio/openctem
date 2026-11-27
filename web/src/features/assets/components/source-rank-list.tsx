@@ -134,13 +134,15 @@ function SourceRow({
           aria-label={t('assetSources.dragHandle', 'Reorder {name}', { name: label })}
           onKeyDown={(e) => onHandleKeyDown(e, index)}
           onBlur={onHandleBlur}
-          className="hidden cursor-grab touch-none rounded p-1 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex pointer-coarse:hidden"
+          className="hidden h-control w-control cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:inline-flex pointer-coarse:hidden"
         >
           <GripVertical className="h-4 w-4" />
         </button>
       )}
       <Icon className="h-4 w-4 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
+      {/* At least 10rem for the source's name: on a phone its controls wrap
+          under it rather than cut it to "Conn…". */}
+      <span className="min-w-0 flex-1 basis-40 font-medium break-words">{label}</span>
       <span className="text-xs text-muted-foreground">
         {lastSeen
           ? t('assetSources.lastSeen', 'Last seen {when}', { when: formatRelative(lastSeen) })
@@ -151,7 +153,7 @@ function SourceRow({
           type="number"
           min={0}
           max={MAX_TTL_DAYS}
-          className={cn('h-7 w-20', !ttlOk && 'border-destructive')}
+          className={cn('w-20', !ttlOk && 'border-destructive')}
           disabled={!canEdit}
           aria-invalid={!ttlOk}
           aria-label={t('assetSources.ttlFor', 'Days {name} counts', { name: label })}
@@ -177,7 +179,7 @@ function SourceRow({
             type="button"
             size="icon"
             variant="ghost"
-            className="h-7 w-7"
+
             disabled={index === 0}
             aria-label={t('assetSources.moveUp', 'Move {name} up', { name: label })}
             onClick={() => onMove(index, index - 1)}
@@ -188,7 +190,7 @@ function SourceRow({
             type="button"
             size="icon"
             variant="ghost"
-            className="h-7 w-7"
+
             disabled={index === total - 1}
             aria-label={t('assetSources.moveDown', 'Move {name} down', { name: label })}
             onClick={() => onMove(index, index + 1)}
@@ -202,7 +204,7 @@ function SourceRow({
           type="button"
           size="icon"
           variant="ghost"
-          className="h-7 w-7"
+
           aria-label={t('assetSources.remove', 'Stop ranking {name} separately', { name: label })}
           onClick={onRemove}
         >

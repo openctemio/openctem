@@ -456,7 +456,7 @@ const coreAdminNav: AdminNavSection[] = [
     rail: 'settings',
     items: [
       {
-        title: 'E-mail',
+        title: 'Email',
         i18nKey: 'admin.nav.email',
         url: '/system/email',
         icon: Mail,
