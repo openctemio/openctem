@@ -10,7 +10,8 @@ import { useFindingTypeStats } from '@/features/exposures/hooks'
 import {
   ChartCard,
   OverviewSkeleton,
-  OVERVIEW_CHARTS_GRID,
+  OVERVIEW_CHARTS_WITH_TREND_GRID,
+  OVERVIEW_TREND_CELL,
   SeverityDonut,
   SeverityTrend,
   StatusBars,
@@ -80,7 +81,7 @@ function OverviewTab() {
 
   return (
     <PageStack>
-      <div className={OVERVIEW_CHARTS_GRID}>
+      <div className={OVERVIEW_CHARTS_WITH_TREND_GRID}>
         <ChartCard
           title={t('exposures.type.severityDistribution', 'Severity distribution')}
           description={t(
@@ -100,10 +101,10 @@ function OverviewTab() {
         >
           <StatusBars byStatus={typeStats.byStatus} />
         </ChartCard>
-      </div>
 
-      <ChartCard
-        title={t('exposures.type.findingTrend', 'Finding trend')}
+        <ChartCard
+          className={OVERVIEW_TREND_CELL}
+          title={t('exposures.type.findingTrend', 'Finding trend')}
         description={t(
           'exposures.type.trendDescription',
           'Severity over time across all findings (a per-type trend is not available yet)'
@@ -118,6 +119,7 @@ function OverviewTab() {
           )}
         />
       </ChartCard>
+      </div>
     </PageStack>
   )
 }

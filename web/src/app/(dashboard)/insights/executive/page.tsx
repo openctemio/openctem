@@ -43,6 +43,7 @@ import {
   type ExecTopRisk,
 } from '@/features/dashboard/hooks/use-ctem-dashboard'
 import { formatHours } from '@/features/dashboard/lib/format-hours'
+import { MetricRowList } from '@/features/dashboard/components/metric-row-list'
 import {
   PERIOD_OPTIONS,
   formatPct,
@@ -72,17 +73,21 @@ function useTopRiskColumns(): ColumnDef<TopRiskRow>[] {
         accessorKey: 'title',
         enableSorting: false,
         header: t('insights.executive.colTitle', 'Title'),
+        // The row's name: as wide as the room left, cut by CSS with the full
+        // title in its tooltip, never at a fixed width.
+        meta: { kind: 'name', label: t('insights.executive.colTitle', 'Title') },
         // A top risk opens its finding.
         cell: ({ row }) =>
           row.original.finding_id ? (
             <Link
               href={`/findings/${encodeURIComponent(row.original.finding_id)}`}
-              className="block max-w-md truncate text-sm font-medium hover:underline focus-visible:underline"
+              title={row.original.title}
+              className="block truncate text-sm font-medium hover:underline focus-visible:underline"
             >
               {row.original.title}
             </Link>
           ) : (
-            <span className="block max-w-md truncate text-sm font-medium">
+            <span title={row.original.title} className="block truncate text-sm font-medium">
               {row.original.title}
             </span>
           ),
@@ -179,6 +184,7 @@ export default function ExecutiveSummaryPage() {
   )
 
   const window90 = t('insights.executive.last90', 'Last {days} days', { days: MTTR_WINDOW_DAYS })
+  const notMeasuredLabel = t('insights.status.pending', 'Not measured')
   const riskChange = summary?.risk_score_change ?? 0
   const headline = summary
     ? [
@@ -330,26 +336,25 @@ export default function ExecutiveSummaryPage() {
               ) : !mttr && mttrError ? (
                 <WidgetError onRetry={() => void retryMttr()} className="h-40" />
               ) : mttr && Object.keys(mttr.by_severity).length > 0 ? (
-                <div className="divide-y">
-                  {Object.entries(mttr.by_severity)
-                    .sort(([a], [b]) => compareSeverity(a, b))
-                    .map(([severity, hours]) => (
-                      <div key={severity} className="flex items-center justify-between py-2.5">
-                        <SeverityBadge severity={severity.toLowerCase() as Severity} />
-                        <span className="text-sm font-medium tabular-nums">
-                          {formatHours(hours)}
-                        </span>
-                      </div>
-                    ))}
-                  <div className="flex items-center justify-between py-2.5">
-                    <span className="text-sm font-medium">
-                      {t('insights.executive.overall', 'Overall')}
-                    </span>
-                    <span className="text-sm font-semibold tabular-nums">
-                      {formatHours(mttr.overall_hours)}
-                    </span>
-                  </div>
-                </div>
+                <MetricRowList
+                  framed={false}
+                  rows={[
+                    ...Object.entries(mttr.by_severity)
+                      .sort(([a], [b]) => compareSeverity(a, b))
+                      .map(([severity, hours]) => ({
+                        key: severity,
+                        label: <SeverityBadge severity={severity.toLowerCase() as Severity} />,
+                        value: formatHours(hours),
+                        notMeasuredLabel,
+                      })),
+                    {
+                      key: 'overall',
+                      label: t('insights.executive.overall', 'Overall'),
+                      value: formatHours(mttr.overall_hours),
+                      notMeasuredLabel,
+                    },
+                  ]}
+                />
               ) : (
                 <EmptyState
                   card={false}
@@ -384,18 +389,17 @@ export default function ExecutiveSummaryPage() {
               ) : !mttr && mttrError ? (
                 <WidgetError onRetry={() => void retryMttr()} className="h-40" />
               ) : mttr && Object.keys(mttr.by_priority_class).length > 0 ? (
-                <div className="divide-y">
-                  {Object.entries(mttr.by_priority_class)
+                <MetricRowList
+                  framed={false}
+                  rows={Object.entries(mttr.by_priority_class)
                     .sort(([a], [b]) => PRIORITY_CLASSES.indexOf(a) - PRIORITY_CLASSES.indexOf(b))
-                    .map(([priority, hours]) => (
-                      <div key={priority} className="flex items-center justify-between py-2.5">
-                        <PriorityChip value={priority} />
-                        <span className="text-sm font-medium tabular-nums">
-                          {formatHours(hours)}
-                        </span>
-                      </div>
-                    ))}
-                </div>
+                    .map(([priority, hours]) => ({
+                      key: priority,
+                      label: <PriorityChip value={priority} />,
+                      value: formatHours(hours),
+                      notMeasuredLabel,
+                    }))}
+                />
               ) : (
                 <EmptyState
                   card={false}
@@ -427,18 +431,17 @@ export default function ExecutiveSummaryPage() {
               onRetry={() => void retryProcess()}
             />
           ) : processMetrics ? (
-            <Card>
-              <CardContent className="py-0">
-                <dl className="divide-y">
-                  {[
+            <MetricRowList
+              rows={[
                     {
                       key: 'approval',
+                      notMeasuredLabel,
                       label: t('insights.executive.approvalAvg', 'Average approval time'),
                       value:
                         processMetrics.approval_count > 0
                           ? formatHours(processMetrics.approval_avg_hours)
-                          : '—',
-                      hint:
+                          : null,
+                      caption:
                         processMetrics.approval_count > 0
                           ? t('insights.executive.approvalsTracked', '{count} approvals tracked', {
                               count: formatCount(processMetrics.approval_count, locale),
@@ -447,39 +450,32 @@ export default function ExecutiveSummaryPage() {
                     },
                     {
                       key: 'stale',
+                      notMeasuredLabel,
                       label: t('insights.executive.stale', 'Stale assets'),
                       value: formatCount(processMetrics.stale_assets, locale),
-                      hint: t('insights.executive.ofInventory', '{pct} of inventory', {
+                      caption: t('insights.executive.ofInventory', '{pct} of inventory', {
                         pct: formatPct(processMetrics.stale_assets_pct, { locale }),
                       }),
                     },
                     {
                       key: 'no-owner',
+                      notMeasuredLabel,
                       label: t('insights.executive.noOwner', 'Findings without owner'),
                       value: formatCount(processMetrics.findings_without_owner, locale),
-                      hint: t('insights.executive.needTriage', 'Need triage assignment'),
+                      caption: t('insights.executive.needTriage', 'Need triage assignment'),
                     },
                     {
                       key: 'assign',
+                      notMeasuredLabel,
                       label: t('insights.executive.timeToAssign', 'Average time to assign'),
                       value: formatHours(processMetrics.avg_time_to_assign_hours),
-                      hint: t(
+                      caption: t(
                         'insights.executive.timeToAssignHint',
                         'From finding creation to owner assignment'
                       ),
                     },
-                  ].map((row) => (
-                    <div key={row.key} className="flex items-baseline justify-between gap-4 py-2.5">
-                      <div className="min-w-0">
-                        <dt className="text-sm font-medium">{row.label}</dt>
-                        <dd className="text-xs text-muted-foreground">{row.hint}</dd>
-                      </div>
-                      <span className="text-sm font-semibold tabular-nums">{row.value}</span>
-                    </div>
-                  ))}
-                </dl>
-              </CardContent>
-            </Card>
+                  ]}
+            />
           ) : (
             <EmptyState
               icon={Users}

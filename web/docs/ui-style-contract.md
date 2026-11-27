@@ -424,6 +424,21 @@ reference.
 8. A file field is an outline button in the page's language ("Choose a
    file") with the chosen file's name beside it, never the browser's bare
    file input, and the card's title is not repeated as its label.
+9. **Wide screens.** The grid (`DETAIL_GRID` in `detail-grid.ts`) caps the
+   panel at 90rem (1440 px) from a 1920 px screen and keeps the rail right
+   after it (24rem there, 21rem from 1280 px); what is left stays to the
+   right of the rail. The tab strip and a full-width panel
+   (`DETAIL_PANEL_FULL`, a wide table) span the whole width. A panel never
+   adds its own `max-w-*` cap. A page whose body is a main part beside a
+   side card (a vulnerability's summary and "Who found it") uses
+   `DETAIL_SPLIT`, the same rule. Inside the panel:
+   - a section's title row (`DetailSectionBlock`, `DetailSection`) is at
+     most 40rem wide, so its controls (Checklist, Retest now, Add check, a
+     link to the plan) sit near the title, never a page width away;
+   - a code or output block (`UntrustedTextBlock`) is as wide as its
+     longest line, up to the column, never stretched around five short
+     lines;
+   - a proportional bar (a status or severity strip) is at most 40rem wide.
 
 ## 2. Headline numbers
 
@@ -1006,10 +1021,43 @@ Every settings page is built from the same parts (`@/features/shared`):
   with no figure), so a preview is as tall as the widget will be. Its height
   control places a widget: "Span one more row" / "Span one row fewer"
   (Shift+Down / Shift+Up) set how many rows it spans beside its neighbours.
+- **Wide screens use the width for more widgets.** Once the dashboard is
+  100rem wide (a 1920 px screen with the sidebar) the view lays widgets on a
+  12-column grid and packs each run of side-by-side widgets three to a row,
+  four to a row from 136rem (a 2560 px screen) (`widePackSpans` in
+  `features/dashboards/layout.ts`). A run is a series of neighbours with the
+  same stored width that sit fewer to a row than that; a full-width widget
+  ends a run and stays full width; a run splits into rows as evenly as it goes
+  (four widgets three to a row are two rows of two), so no row has an empty
+  cell, and the order never changes. A packed widget is one row tall. Tiles
+  already four to a row keep their place. The editor keeps the stored
+  arrangement. A bar chart's bars are at most 48 px wide.
 - **A shorter widget stretched by its row fills its card.** A chart's plot
   grows with the card (at least 180 px, 220 px from 640 px), and a state
   message or empty state centres in it; no blank band is left under the
   content.
+
+### Card grids
+
+A list of cards (dashboard templates, SCM connections, capabilities, pentest
+templates, asset categories) is a `CardGrid` (or `CARD_GRID` with the page's
+gap) from `@/features/shared`: as many columns as fit, each at least 22rem.
+One card on a phone, two or three at 1280 and 1440, four or five at 2560.
+Never a fixed `sm:grid-cols-2 lg:grid-cols-3` for a list: it stretches three
+cards across a wide screen. A chart row with a trend uses
+`OVERVIEW_CHARTS_WITH_TREND_GRID`: two charts, then the trend on its own row,
+and all three on one row from a 2048 px screen.
+
+### Label and figure rows
+
+Rows of a label (with a caption) and a figure at the far end (process
+health, time to fix by severity, how well fixes hold) are a
+`MetricRowList` (`features/dashboard/components/metric-row-list.tsx`;
+`framed={false}` inside a card of its own). The rows flow into columns as
+the list widens: one on a phone, two from 48rem, three (three rows) or four
+from 75rem / 100rem of list width, so a label and its figure are never a
+page width apart. A row that is not measured says so in muted text, never
+a dash at figure size.
 
 ## 5. Typography
 

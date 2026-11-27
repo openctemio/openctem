@@ -62,6 +62,14 @@ const LEGEND_PROPS = {
 /** Grid of four headline cards, then the chart sections. */
 export const OVERVIEW_STATS_GRID = 'grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4'
 export const OVERVIEW_CHARTS_GRID = 'grid grid-cols-1 gap-4 lg:grid-cols-2'
+/**
+ * Two chart cards and the trend: the trend takes its own row (two columns
+ * wide) up to a 2048 px screen, then all three share one row (the trend two
+ * of four columns), so no chart card is stretched over half a wide page.
+ */
+export const OVERVIEW_CHARTS_WITH_TREND_GRID =
+  'grid grid-cols-1 gap-4 lg:grid-cols-2 min-[2048px]:grid-cols-4'
+export const OVERVIEW_TREND_CELL = 'lg:col-span-2'
 
 /** `in_progress` → `In progress`. */
 export function humanize(value: string): string {
@@ -148,13 +156,15 @@ export function ChartCard({
   title,
   description,
   children,
+  className,
 }: {
   title: string
   description?: ReactNode
   children: ReactNode
+  className?: string
 }) {
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         {description && <CardDescription>{description}</CardDescription>}

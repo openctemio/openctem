@@ -22,6 +22,9 @@ import {
   widgetSpanClass,
   normalizeColumns,
   widgetRowSpan,
+  widePackSpans,
+  WIDE_GRID_CLASS,
+  WIDE_WIDGET_CLASS,
 } from '../layout'
 import { specOf, widgetModel } from '../api/widget-adapter'
 import { WidgetView } from './widget-view'
@@ -118,8 +121,19 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
       </div>
     )
   }
+  // On a wide screen runs of side-by-side widgets sit three, then four, to a row.
+  const wide3 = widePackSpans(
+    shown.map(({ w }) => w),
+    cols,
+    3
+  )
+  const wide4 = widePackSpans(
+    shown.map(({ w }) => w),
+    cols,
+    4
+  )
   return (
-    <div className="flex flex-col gap-4">
+    <div className="@container flex flex-col gap-4">
       <div
         id={moreId}
         // Rows are as tall as their content at every width. A widget's stored
@@ -128,7 +142,7 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
         // (the plots are 180/220 px), so a 128 px row floor only left an empty
         // card: the CTEM loop stored two rows tall stood 120 px above its
         // tiles. Widgets of one row share its height. One 16px gap.
-        className={cn('grid gap-4', columnsClass(cols))}
+        className={cn('grid gap-4', columnsClass(cols), cols > 1 && WIDE_GRID_CLASS)}
         data-columns={cols}
       >
         {shown.map(({ w, i }, pos) => {
@@ -148,11 +162,16 @@ export function DashboardView({ dashboard, data, loading, failed, onRetry }: Das
                   '--span-sm': gridColumnSpan(Math.min(2, colSpanFor(w.w, cols))),
                   '--span-xs': phoneSpan(w.w, rows, cols),
                   '--row-span': widgetRowSpan(rows),
+                  '--span-wide': wide3[pos].column,
+                  '--span-wider': wide4[pos].column,
+                  '--row-span-wide': wide3[pos].packed ? 'auto' : widgetRowSpan(rows),
+                  '--row-span-wider': wide4[pos].packed ? 'auto' : widgetRowSpan(rows),
                 } as React.CSSProperties
               }
               className={cn(
                 'flex min-w-0 flex-col sm:[grid-row:var(--row-span)]',
                 widgetSpanClass(cols),
+                cols > 1 && WIDE_WIDGET_CLASS,
                 !allOnPhone && pos >= PHONE_VISIBLE_WIDGETS && 'max-sm:hidden'
               )}
               data-widget-index={i}
