@@ -36,6 +36,7 @@ import { scanRunEndpoints } from '@/lib/api/endpoints'
 import type { ScanRun } from '@/lib/api/scan-types'
 import { copyToClipboard } from '@/lib/clipboard'
 import { toDisplayText } from '@/lib/untrusted-text'
+import { runMessage } from '@/features/scans/lib/scan-status'
 import { formatScanDuration } from '@/features/scans/lib/format'
 import {
   elapsedMs,
@@ -106,7 +107,7 @@ export function runOutcomeCallout(
  * excluded targets, zone routing, targets not scanned and why).
  */
 export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const {
     data: run,
     error,
@@ -267,7 +268,7 @@ export function RunDetailSheet({ runId, onOpenChange }: RunDetailSheetProps) {
                 {/* Sensor and tool output can shape this text: control and
                   direction characters are shown as escapes, never applied. */}
                 <span dir="auto" className="break-words [unicode-bidi:isolate]">
-                  {toDisplayText(run.error_message)}
+                  {runMessage(run, t, locale)}
                 </span>
                 {run.refusal_code && (
                   <span className="mt-1 block font-mono text-meta text-muted-foreground">

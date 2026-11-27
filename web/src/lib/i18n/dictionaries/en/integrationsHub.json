@@ -33,6 +33,8 @@
   "integrationsHub.metrics.attention": "Needs attention",
   "integrationsHub.metrics.connected": "Connected",
   "integrationsHub.metrics.pending": "Pending",
+  "integrationsHub.note.disabled": "Turned off by a member",
+  "integrationsHub.note.disabledAt": "Turned off on {date}",
   "integrationsHub.searchPlaceholder": "Search integrations…",
   "integrationsHub.status.connected": "Connected",
   "integrationsHub.status.disabled": "Disabled",

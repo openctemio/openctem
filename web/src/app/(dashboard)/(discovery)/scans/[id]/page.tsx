@@ -65,7 +65,7 @@ import {
   runTriggerTypeLabel,
   scanRunCounts,
 } from '@/features/scans/lib/run-display'
-import { isManagedScan } from '@/features/scans/lib/scan-status'
+import { isManagedScan, runMessage } from '@/features/scans/lib/scan-status'
 import { ManagedScanBanner } from '@/features/scans/components/managed-scan-banner'
 import { useUrlFilter } from '@/hooks/use-url-param'
 import { useListParams } from '@/hooks/use-list-params'
@@ -115,7 +115,7 @@ export default function ScanDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false)
   const [stoppingRunId, setStoppingRunId] = useState<string | null>(null)
   const [pendingStop, setPendingStop] = useState<ScanRun | null>(null)
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const [openRunId, setOpenRunId] = useState<string | null>(null)
 
   const { data: config, isLoading, error, mutate: refetchConfig } = useScanConfig(scanId)
@@ -256,9 +256,9 @@ export default function ScanDetailPage() {
       cell: ({ row }) => (
         <div className="space-y-0.5">
           <RunStatusBadge status={row.original.status} note={runTargetNote(row.original, t)} />
-          {row.original.error_message && (
+          {runMessage(row.original, t, locale) && (
             <TruncatedText
-              value={row.original.error_message}
+              value={runMessage(row.original, t, locale) ?? ''}
               label={t('scanDetail.runs.message')}
               className="max-w-[240px] text-xs text-muted-foreground"
             />
