@@ -89,10 +89,15 @@ function TabsContent({ className, ...props }: React.ComponentProps<typeof TabsPr
   return (
     <TabsPrimitive.Content
       data-slot="tabs-content"
-      // The panel takes focus from the keyboard (Tab after the strip): it shows
-      // the ring every other focus stop shows.
+      // A panel that holds controls (a toolbar, a table) is not a keyboard
+      // stop itself: its controls are. Focused by a click or by script it
+      // draws no ring, so a list never shows a frame around the whole panel
+      // at rest. A panel of plain text passes `tabIndex={0}` and then shows
+      // the ring on keyboard focus only.
+      tabIndex={-1}
       className={cn(
-        'flex-1 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        'flex-1 rounded-sm outline-none',
+        props.tabIndex === 0 && 'focus-visible:ring-2 focus-visible:ring-ring',
         className
       )}
       {...props}

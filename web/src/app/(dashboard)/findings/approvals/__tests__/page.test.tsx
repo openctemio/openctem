@@ -425,6 +425,10 @@ describe('ApprovalsPage', () => {
       const counts = container.querySelectorAll('[data-slot="list-count"]')
       expect(counts).toHaveLength(1)
       expect(counts[0]).toHaveTextContent('3 requests')
+      // The count never stands alone on its line: the view's name is drawn beside it.
+      const heading = screen.getByRole('heading', { name: 'All requests' })
+      expect(heading).not.toHaveClass('sr-only')
+      expect(heading.parentElement).toContainElement(counts[0] as HTMLElement)
       listState.status = ''
     })
 
@@ -1221,6 +1225,22 @@ describe('ApprovalsPage gates', () => {
     ).toBeTruthy()
     const card = render(<div>{captured.mobileRow?.(aiRow)}</div>).container
     expect(card.querySelector('[data-testid="ai-badge"]')).toBeTruthy()
+  })
+
+  it('a long justification ends in an ellipsis in the row and keeps its whole text as the title', () => {
+    const long = 'The requested URL was returned an error for this finding, '.repeat(6)
+    page(false, [{ ...otherRow, justification: long }])
+    const text = cell('justification', {
+      ...otherRow,
+      justification: long,
+    }).container.querySelector('[data-cut-tooltip]')
+    // One line with text-overflow: ellipsis (truncate), never a bare clip.
+    expect(text).toHaveClass('truncate')
+    expect(text).not.toHaveClass('line-clamp-2')
+    expect(text).toHaveAttribute('title', expect.stringContaining('The requested URL was returned'))
+    // A phone card has room for two lines.
+    const card = render(<div>{captured.mobileRow?.({ ...otherRow, justification: long })}</div>)
+    expect(card.container.querySelector('.line-clamp-2')).not.toBeNull()
   })
 
   it('decide-by is a date, and says Overdue once it has passed', () => {
