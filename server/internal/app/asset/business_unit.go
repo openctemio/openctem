@@ -267,13 +267,15 @@ func (s *BusinessUnitService) writableUnit(ctx context.Context, tid, bid shared.
 	return bu, scope, nil
 }
 
-// present prepares units for the caller's response, in memory only. The
-// stored rollup counters cover every asset of the unit, so a scoped caller
-// gets counts over the assets they may see (a restricted reader would
-// otherwise learn how many assets and findings sit outside their scope),
-// and a restricted caller never gets the owner email (personal data).
+// present prepares units for the caller's response, in memory only. Every
+// caller gets counts computed now (the stored rollup counters change only
+// when an asset joins or leaves the unit, so they miss every finding opened
+// or fixed since); a scoped caller's cover only the assets they may see (a
+// restricted reader would otherwise learn how many assets and findings sit
+// outside their scope), and a restricted caller never gets the owner email
+// (personal data).
 func (s *BusinessUnitService) present(ctx context.Context, tid shared.ID, scope *shared.DataScope, units ...*businessunitdom.BusinessUnit) error {
-	if scope == nil || len(units) == 0 {
+	if len(units) == 0 {
 		return nil
 	}
 	ids := make([]shared.ID, len(units))
@@ -286,7 +288,7 @@ func (s *BusinessUnitService) present(ctx context.Context, tid shared.ID, scope 
 	}
 	for _, u := range units {
 		u.ShowStats(stats[u.ID()])
-		if scope.Restricted() {
+		if scope != nil && scope.Restricted() {
 			u.HideOwnerEmail()
 		}
 	}

@@ -19,7 +19,6 @@
   "easmReview.hint.seed": "Thuộc điểm khởi đầu {value} của bạn",
   "easmReview.hint.verifiedDomain": "Thuộc {value}, tên miền bạn đã xác minh",
   "easmReview.overview.allExposures": "Tất cả phơi nhiễm",
-  "easmReview.overview.allOpen": "Tất cả {n} đang mở",
   "easmReview.overview.ctFailingN": "{n} lỗi",
   "easmReview.overview.ctOldest": "Lần kiểm tra CT cũ nhất",
   "easmReview.overview.ctWatched": "Tên miền được theo dõi trong nhật ký CT",

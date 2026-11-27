@@ -93,7 +93,6 @@ export function EASMTopRisks() {
   const { summary, isLoading, error, mutate } = useEASMSummary()
   useSettleSignal(isLoading)
   const risks = summary?.top_risks ?? []
-  const open = summary?.exposures?.open ?? 0
 
   return (
     <Card className="lg:col-span-2" data-testid="easm-fix-first">
@@ -105,11 +104,9 @@ export function EASMTopRisks() {
         </CardTitle>
         <CardAction className="row-span-1">
           <Button size="sm" variant="outline" asChild>
-            <Link href="/exposures">
-              {open > 0
-                ? t('easmReview.overview.allOpen', 'All {n} open', { n: open })
-                : t('easmReview.overview.allExposures', 'All exposures')}
-            </Link>
+            {/* No count here: the list it opens holds every exposure, not only
+                the external ones this card counts, so a number would disagree. */}
+            <Link href="/exposures">{t('easmReview.overview.allExposures', 'All exposures')}</Link>
           </Button>
         </CardAction>
         <CardDescription className="col-span-2">

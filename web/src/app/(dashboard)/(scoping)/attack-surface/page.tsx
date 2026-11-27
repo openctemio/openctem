@@ -245,7 +245,7 @@ export default function AttackSurfacePage() {
               {
                 key: 'open',
                 href: EXPOSURES_HREF,
-                label: t('attackSurface.overview.openExposures', 'Open exposures'),
+                label: t('attackSurface.overview.openExposures', 'Open external exposures'),
                 value: summary?.exposures?.open ?? 0,
               },
               {

@@ -116,6 +116,7 @@
   "prioritization.businessImpact.crown.open": "Mở tài sản trọng yếu",
   "prioritization.businessImpact.crown.title": "Tài sản trọng yếu",
   "prioritization.businessImpact.description": "Nơi lỗ hổng ảnh hưởng đến kinh doanh nặng nhất, theo mức độ quan trọng của tài sản, tài sản trọng yếu và đơn vị kinh doanh.",
+  "prioritization.businessImpact.noAssets": "Chưa gán tài sản nào",
   "prioritization.businessImpact.stat.assets": "Tài sản",
   "prioritization.businessImpact.stat.critical": "Phát hiện mức nghiêm trọng",
   "prioritization.businessImpact.stat.criticalAssets": "Tài sản mức nghiêm trọng",

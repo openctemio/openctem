@@ -236,7 +236,7 @@
   "exposures.list.subject": "the exposures list",
   "exposures.list.total": "{count, plural, one {# exposure} other {# exposures}}",
   "exposures.metrics.closed": "Closed",
-  "exposures.metrics.total": "Total exposures",
+  "exposures.metrics.total": "All exposures, any state",
   "exposures.misconfigurations.assetsByType": "Assets by type",
   "exposures.misconfigurations.assetsDescription": "Your asset mix across {count, plural, one {# asset} other {# assets}}",
   "exposures.misconfigurations.assetsEmpty": "No asset type data yet",

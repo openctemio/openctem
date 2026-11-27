@@ -2191,6 +2191,7 @@ type AssetStatsResponse struct {
 // @Param        types         query     string  false  "Filter by types (comma-separated)"
 // @Param        lenses        query     string  false  "Filter by registry lenses (comma-separated)"
 // @Param        tags          query     string  false  "Filter by tags (comma-separated, overlap)"
+// @Param        attribution   query     string  false  "Attribution filter, the same values as the list (comma-separated; none = every state)"
 // @Success      200  {object}  AssetStatsResponse
 // @Failure      401  {object}  map[string]string
 // @Failure      500  {object}  map[string]string
@@ -2203,13 +2204,14 @@ func (h *AssetHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	lensesFilter := parseQueryArray(query.Get("lenses"))
 	tagsFilter := parseQueryArray(query.Get("tags"))
 	subTypeFilter := query.Get("sub_type")
+	attributionFilter := parseQueryArray(query.Get("attribution"))
 
 	// Property keys to count values of (e.g. ?count_by=is_virtual,os_name).
 	countByFields := statsCountByFields(parseQueryArray(query.Get("count_by")))
 
 	// Use service method with SQL aggregation for efficient stats
 	aggStats, err := h.service.GetAssetStats(r.Context(), tenantID,
-		middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()), typesFilter, lensesFilter, tagsFilter, subTypeFilter, countByFields...)
+		middleware.GetUserID(r.Context()), middleware.IsAdmin(r.Context()), typesFilter, lensesFilter, tagsFilter, subTypeFilter, attributionFilter, countByFields...)
 	if err != nil {
 		h.handleServiceError(w, err)
 		return

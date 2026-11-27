@@ -2638,7 +2638,7 @@ func (r *AssetRepository) GetAverageRiskScore(ctx context.Context, tenantID shar
 // types, lenses, tags, sub-type and the caller's data scope (the same predicate as
 // List, so a scoped user's totals and breakdowns count only the assets they
 // can list).
-func aggregateStatsWhere(tenantID shared.ID, access asset.AccessScope, types, lenses, tags []string, subType string) (string, []any) {
+func aggregateStatsWhere(tenantID shared.ID, access asset.AccessScope, types, lenses, tags []string, subType string, attributionValues []string) (string, []any, error) {
 	filterClause := " WHERE a.deleted_at IS NULL AND a.tenant_id = $1"
 	args := []any{tenantID.String()}
 	idx := 2
@@ -2662,11 +2662,22 @@ func aggregateStatsWhere(tenantID shared.ID, access asset.AccessScope, types, le
 		args = append(args, subType)
 		idx++
 	}
+	// The list's own attribution field (assetlist.AttributionInSQL), so
+	// "All assets" in the sidebar counts the assets the list shows.
+	cond, states, ok, err := assetlist.AttributionInSQL(attributionValues, idx)
+	if err != nil {
+		return "", nil, fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+	}
+	if ok {
+		filterClause += " AND " + cond
+		args = append(args, pq.Array(states))
+		idx++
+	}
 	if cond, scopeArgs := dataScopeCondition(access, tenantID.String(), idx); cond != "" {
 		filterClause += " AND " + cond
 		args = append(args, scopeArgs...)
 	}
-	return filterClause, args
+	return filterClause, args, nil
 }
 
 // GetAggregateStats computes all asset statistics in a SINGLE round-trip.
@@ -2676,7 +2687,7 @@ func aggregateStatsWhere(tenantID shared.ID, access asset.AccessScope, types, le
 // This version collapses everything into one query using a CTE + UNION ALL,
 // trading slightly more complex SQL for an 83% reduction in DB round-trips.
 // PostgreSQL plans a single scan of the filtered CTE for all aggregates.
-func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, access asset.AccessScope, types, lenses, tags []string, subType string, countByFields ...string) (*asset.AggregateStats, error) {
+func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared.ID, access asset.AccessScope, types, lenses, tags []string, subType string, attributionValues []string, countByFields ...string) (*asset.AggregateStats, error) {
 	stats := &asset.AggregateStats{
 		ByType:               make(map[string]int),
 		BySubType:            make(map[string]int),
@@ -2696,7 +2707,10 @@ func (r *AssetRepository) GetAggregateStats(ctx context.Context, tenantID shared
 	}
 
 	// Build the WHERE clause once.
-	filterClause, args := aggregateStatsWhere(tenantID, access, types, lenses, tags, subType)
+	filterClause, args, err := aggregateStatsWhere(tenantID, access, types, lenses, tags, subType, attributionValues)
+	if err != nil {
+		return nil, err
+	}
 
 	// One query, three columns:
 	//   category — which aggregate this row belongs to

@@ -432,7 +432,7 @@ export default function ExposuresPage() {
   const metrics: MetricStripItem[] = [
     {
       key: 'total',
-      label: t('exposures.metrics.total', 'Total exposures'),
+      label: t('exposures.metrics.total', 'All exposures, any state'),
       value: stats?.total ?? 0,
       onClick: () => setView('all'),
       active: activeView === 'all',

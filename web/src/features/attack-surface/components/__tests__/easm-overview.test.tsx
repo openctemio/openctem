@@ -65,7 +65,13 @@ describe('EASMOverview', () => {
       'href',
       '/assets/0198f0e2-3333-7000-8000-000000000003'
     )
-    expect(screen.getByRole('link', { name: 'All 7 open' })).toHaveAttribute('href', '/exposures')
+    // The list holds every exposure, not only the 7 external ones: no count
+    // on the link, so the two numbers never disagree.
+    expect(screen.getByRole('link', { name: 'All exposures' })).toHaveAttribute(
+      'href',
+      '/exposures'
+    )
+    expect(screen.queryByRole('link', { name: /All 7 open/ })).toBeNull()
   })
 
   it('shows whether discovery keeps up, with the decisions as the next step', async () => {
