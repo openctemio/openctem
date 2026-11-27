@@ -33,6 +33,8 @@
   "integrationsHub.metrics.attention": "Cần chú ý",
   "integrationsHub.metrics.connected": "Đã kết nối",
   "integrationsHub.metrics.pending": "Đang chờ",
+  "integrationsHub.note.disabled": "Đã được một thành viên tắt",
+  "integrationsHub.note.disabledAt": "Đã tắt lúc {date}",
   "integrationsHub.searchPlaceholder": "Tìm kiếm tích hợp…",
   "integrationsHub.status.connected": "Đã kết nối",
   "integrationsHub.status.disabled": "Đã tắt",

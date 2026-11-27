@@ -35,7 +35,7 @@ export function SupportAccessBanner() {
 
   return (
     <div
-      className="space-y-2 px-4 pt-2"
+      className="space-y-1.5 px-3 pt-1.5 sm:space-y-2 sm:px-4 sm:pt-2"
       role="region"
       aria-label={t('supportAccess.banner.region', 'Platform support access')}
     >
@@ -53,13 +53,13 @@ export function SupportAccessBanner() {
             data-testid="support-access-banner"
             data-viewing={g.open_session ? 'true' : 'false'}
             className={cn(
-              'flex flex-col gap-2 rounded-md border px-3 py-2 text-sm sm:flex-row sm:items-start',
+              'flex items-start gap-2 rounded-md border px-3 py-1.5 text-sm sm:py-2',
               g.open_session
                 ? 'border-destructive/50 bg-destructive/10 font-medium'
                 : 'border-warning/40 bg-warning/10'
             )}
           >
-            <div className="flex min-w-0 flex-1 items-start gap-3">
+            <div className="flex min-w-0 flex-1 items-start gap-2 sm:gap-3">
               <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               <p className="min-w-0 max-w-none flex-1 break-words">
                 {g.open_session
@@ -73,19 +73,30 @@ export function SupportAccessBanner() {
                       'Platform support ({name}) can view your {scopes}, read-only, until {time}.',
                       vars
                     )}
-                {g.case_ref
-                  ? ` ${t('supportAccess.banner.case', '(case {ref})', { ref: g.case_ref })}`
-                  : ''}
+                {g.case_ref && (
+                  <>
+                    {' '}
+                    {/* The case reference never breaks at its hyphen. */}
+                    <span className="whitespace-nowrap" data-testid="support-case-ref">
+                      {t('supportAccess.banner.case', '(case {ref})', { ref: g.case_ref })}
+                    </span>
+                  </>
+                )}
+                {canManage && (
+                  // One link: after the sentence on a phone (no row of its own), at the
+                  // end of the box from 640 px.
+                  <>
+                    {' '}
+                    <Link
+                      href={SUPPORT_ACCESS_SETTINGS_HREF}
+                      className="whitespace-nowrap font-medium underline underline-offset-2 sm:float-end sm:ms-4"
+                    >
+                      {t('supportAccess.banner.manage', 'Manage support access')}
+                    </Link>
+                  </>
+                )}
               </p>
             </div>
-            {canManage && (
-              <Link
-                href={SUPPORT_ACCESS_SETTINGS_HREF}
-                className="shrink-0 ps-7 text-sm font-medium underline underline-offset-2 sm:ps-0"
-              >
-                {t('supportAccess.banner.manage', 'Manage support access')}
-              </Link>
-            )}
           </div>
         )
       })}

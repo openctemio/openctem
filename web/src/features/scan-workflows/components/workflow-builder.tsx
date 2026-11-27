@@ -1,5 +1,6 @@
 'use client'
 
+import { capabilityLabel } from '@/lib/capability-label'
 import { isTempStepId } from '@/lib/utils'
 import { useCallback, useMemo, useEffect, useState, useRef } from 'react'
 import {
@@ -443,7 +444,7 @@ function WorkflowBuilderInner({
             availableSteps: availableStepsForThis,
             // The catalog's names are English: the dictionary names them.
             capabilityName: capability
-              ? t(`assetCoverage.capability.${capability.key}`, capability.name)
+              ? capabilityLabel(capability.key, t, capability.name)
               : undefined,
             capabilityTier: capability?.tier,
             inPorts: capability?.inPorts,

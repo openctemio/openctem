@@ -1,6 +1,7 @@
 'use client'
 
 import { IntegrationHealth } from '@/features/integrations/components/integration-health'
+import { ConnectionNote } from '@/features/integrations/components/connection-note'
 import { useState, useMemo, useCallback } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { csrfFetch, del } from '@/lib/api/client'
@@ -225,11 +226,14 @@ export default function SCMConnectionsPage() {
           return (
             <>
               <IntegrationHealth status={connection.status} />
-              {connection.errorMessage && connection.status === 'error' && (
-                <p className="mt-1 max-w-[200px] truncate text-xs text-destructive">
-                  {connection.errorMessage}
-                </p>
-              )}
+              <ConnectionNote
+                integration={{
+                  status: connection.status,
+                  status_code: connection.errorCode,
+                  status_message: connection.errorMessage,
+                }}
+                className="mt-1"
+              />
             </>
           )
         },

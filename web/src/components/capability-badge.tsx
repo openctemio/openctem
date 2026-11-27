@@ -26,6 +26,7 @@
 
 'use client'
 
+import { capabilityLabel } from '@/lib/capability-label'
 import { memo } from 'react'
 import { Tag } from '@/components/ui/tag'
 import { Counter } from '@/components/ui/counter'
@@ -97,7 +98,7 @@ function CapabilityBadgeComponent({
 
   // A capability contract the workflow catalog names in both languages
   // ("discover.subdomains"), else the registry's name, else the key in words.
-  const displayName = t(`workflowStages.capability.${name}`, getDisplayName(name))
+  const displayName = capabilityLabel(name, t, getDisplayName(name))
   const color = getColor(name)
   const iconName = getIcon(name)
 

@@ -9,6 +9,7 @@ import {
   scanTypeLabel,
   scheduleOn,
 } from '../scan-status'
+import { getDictionary, translate } from '@/lib/i18n'
 
 describe('hasSchedule / scheduleOn', () => {
   it('a manual scan has no schedule to switch', () => {
@@ -109,5 +110,38 @@ describe('managed scans', () => {
   it('names what it carries', () => {
     expect(managedScanLabel({ managed_by: 'coverage' })).toBe('Automatic coverage')
     expect(managedScanLabel({ managed_by: 'enrichment' })).toBe('Automatic enrichment')
+  })
+})
+
+describe('lastRunReason in Vietnamese', () => {
+  const viT = (key: string, fallback?: string, vars?: Record<string, string | number>) =>
+    translate(getDictionary('vi'), key, fallback, vars)
+  const blocked = {
+    id: 'r',
+    status: 'blocked' as const,
+    created_at: '',
+    refusal_code: 'NO_RUNNABLE_STEPS',
+    error_message:
+      'No step of workflow "Web" can run here, so nothing was started. Missing: Probe (no tool).',
+  }
+
+  it('words a known refusal from the catalog, without the English server sentence', () => {
+    const reason = lastRunReason(blocked, viT, 'vi')
+    expect(reason).toBe('Không bước nào của quy trình chạy được ở đây')
+    expect(reason).not.toMatch(/No step|nothing was started/)
+  })
+
+  it('keeps the English detail for an English reader', () => {
+    expect(lastRunReason(blocked, undefined, 'en')).toMatch(/Missing: Probe/)
+  })
+
+  it('shows a message with no known code as sent (a sensor or tool text)', () => {
+    expect(
+      lastRunReason(
+        { id: 'r', status: 'failed', created_at: '', error_message: 'exit 2' },
+        viT,
+        'vi'
+      )
+    ).toBe('exit 2')
   })
 })
