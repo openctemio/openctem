@@ -194,7 +194,7 @@ func (h *AdminConsoleHandler) WebAuthnLogin(w http.ResponseWriter, r *http.Reque
 		h.writeFactorError(w, err, "login")
 		return
 	}
-	h.writeSignedIn(w, token, a)
+	h.writeSignedIn(w, r, token, a)
 }
 
 // RecoveryLogin handles POST /api/v1/admin/auth/recovery.
@@ -218,7 +218,7 @@ func (h *AdminConsoleHandler) RecoveryLogin(w http.ResponseWriter, r *http.Reque
 		h.writeFactorError(w, err, "recovery login")
 		return
 	}
-	h.writeSignedIn(w, token, a)
+	h.writeSignedIn(w, r, token, a)
 }
 
 // Factors handles GET /api/v1/admin/auth/factors.
@@ -484,17 +484,46 @@ func (h *AdminConsoleHandler) PutMFAPolicy(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, AdminMFAPolicyResponse{RequireWebAuthn: req.RequireWebAuthn, GraceUntil: stored.GraceUntil, Version: v, WebAuthnEnabled: h.svc.WebAuthnEnabled()})
 }
 
-// writeSignedIn finishes a second-factor sign-in: it sets the session and CSRF
-// cookies and returns the CSRF token in the body, as the password sign-in
-// does, so the console keeps it in memory.
-func (h *AdminConsoleHandler) writeSignedIn(w http.ResponseWriter, token string, a *admin.AdminUser) {
+// writeSignedIn finishes a second-factor sign-in (TOTP, security key,
+// recovery code): it sets the session and CSRF cookies and returns the CSRF
+// token in the body, as the password sign-in does, so the console keeps it in
+// memory. The gates the new session is under (temporary password, factor
+// enrollment) are read from the session itself, as the admin auth middleware
+// and Validate read them, so the console goes to the step the API will
+// require instead of pages that all answer 403.
+func (h *AdminConsoleHandler) writeSignedIn(w http.ResponseWriter, r *http.Request, token string, a *admin.AdminUser) {
 	csrf, err := h.issueSessionCookies(w, token)
 	if err != nil {
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	writeJSON(w, http.StatusOK, ValidateResponse{
+	resp := ValidateResponse{
 		ID: a.ID().String(), Email: a.Email(), Name: a.Name(), Role: string(a.Role()), IsBreakGlass: a.IsBreakGlass(),
 		CSRFToken: csrf,
-	})
+	}
+	var sess *admin.Session
+	if h.svc != nil {
+		if _, s, err := h.svc.AuthenticateSession(r.Context(), token); err == nil {
+			sess = s
+		} else {
+			h.logger.Warn("admin sign-in: read the new session", "error", err)
+		}
+	}
+	applySessionGates(&resp, a, sess)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// applySessionGates fills the session's auth method and the gates it is
+// under. Without the session (it could not be read back) a temporary
+// password is reported as required: the console then shows the
+// change-password step, which is never less than what the gate demands of a
+// password session.
+func applySessionGates(resp *ValidateResponse, a *admin.AdminUser, sess *admin.Session) {
+	if sess == nil {
+		resp.PasswordChangeRequired = a.PasswordChangeRequired()
+		return
+	}
+	resp.AuthMethod = sess.AuthMethod
+	resp.PasswordChangeRequired = a.PasswordChangeRequired() && sess.AuthMethod == admin.AuthMethodPassword
+	resp.FactorEnrollmentRequired = sess.EnrollmentRequired
 }
