@@ -146,8 +146,12 @@ const (
 	// MaxExpensiveLeaves caps the pattern and contains leaves of one filter
 	// (Field.Expensive): more is refused with a reason, not run slowly.
 	MaxExpensiveLeaves = 2
-	MaxErrorDetails    = 20
-	DefaultMaxOffset   = 10000
+	// MaxInetValues caps the address and range values of one filter, over
+	// all its inet leaves: each value is one index range scan ORed into the
+	// query, and a document of many leaves could otherwise bind hundreds.
+	MaxInetValues    = 50
+	MaxErrorDetails  = 20
+	DefaultMaxOffset = 10000
 )
 
 // Field is one filterable (and optionally sortable) field of a resource.

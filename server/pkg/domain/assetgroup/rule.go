@@ -11,6 +11,7 @@ import (
 	"golang.org/x/net/idna"
 
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/filterspec"
 )
 
 // A group rule decides which assets belong to a group by themselves. It is
@@ -213,6 +214,20 @@ func (r *Rule) Normalize() error {
 	}
 	if r.Empty() {
 		return ruleErr("a rule needs at least one condition")
+	}
+	return nil
+}
+
+// CheckInputBounds holds a rule given by a person (saved or previewed) to
+// the bounds of the assets list filter it mirrors: an in_cidr range is at
+// most a /8 of IPv4 or a /32 of IPv6 (filterspec.CheckInetFilterWidth). It
+// is not part of Normalize, so a rule stored before the bound still loads
+// and evaluates.
+func (r *Rule) CheckInputBounds() error {
+	for _, c := range r.Filter.InCIDR {
+		if err := filterspec.CheckInetFilterWidth(c); err != nil {
+			return ruleErr("in_cidr %q: %s", shortText(c), err.Error())
+		}
 	}
 	return nil
 }

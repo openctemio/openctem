@@ -330,8 +330,17 @@ func (s *AssetGroupService) collectRelated(ctx context.Context, tenantID shared.
 	return nil
 }
 
+// parseRuleInput parses a rule a person sent (to save or preview) and holds
+// it to the input bounds; a stored rule is read with ParseRule alone.
 func parseRuleInput(raw []byte) (*assetgroupdom.Rule, error) {
-	return assetgroupdom.ParseRule(raw)
+	rule, err := assetgroupdom.ParseRule(raw)
+	if err != nil {
+		return nil, err
+	}
+	if err := rule.CheckInputBounds(); err != nil {
+		return nil, err
+	}
+	return rule, nil
 }
 
 // callerRuleScope resolves what the request's caller sees: their data scope

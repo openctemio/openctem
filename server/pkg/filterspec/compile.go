@@ -149,6 +149,9 @@ func compileWith(spec *Spec, reg *Registry, actor Actor, first int) (*Where, *co
 		if c.expensive > MaxExpensiveLeaves {
 			c.e.param("filter", "too many pattern, contains or related-asset filters (max "+strconv.Itoa(MaxExpensiveLeaves)+"); narrow the filter", "", true)
 		}
+		if c.inetValues > MaxInetValues {
+			c.e.param("filter", "too many IP addresses or ranges (max "+strconv.Itoa(MaxInetValues)+" in one filter); narrow the filter", "", true)
+		}
 	}
 	if spec.Q != "" && reg.Search != nil {
 		parts = append(parts, "("+c.search(spec.Q)+")")
@@ -310,6 +313,8 @@ type compiler struct {
 	// expensive counts the leaves of Field.Expensive fields and contains
 	// leaves (MaxExpensiveLeaves).
 	expensive int
+	// inetValues counts the values of inet leaves (MaxInetValues).
+	inetValues int
 }
 
 // render substitutes the template tokens: ArgToken with argPH, TenantToken
@@ -545,6 +550,7 @@ func (c *compiler) template(f *Field, l *Leaf, tpl string) string {
 		return "(" + c.render(tpl, "") + ")"
 	}
 	if f.Type == TypeInet {
+		c.inetValues += len(l.Values)
 		// One index range scan per value (an array would hide the range
 		// from the planner): an OR of the template, each value bound once.
 		parts := make([]string, 0, len(l.Values))

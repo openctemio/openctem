@@ -72,12 +72,56 @@ func parseScalar(f *Field, raw string, now time.Time, endOfDay bool) (any, error
 	case TypeTime:
 		return parseTime(strings.TrimSpace(raw), now, endOfDay)
 	case TypeInet:
-		return ParseInet(raw)
+		v, err := ParseInet(raw)
+		if err != nil {
+			return nil, err
+		}
+		if err := CheckInetFilterWidth(v); err != nil {
+			return nil, err
+		}
+		return v, nil
 	}
 	return nil, errors.New("unsupported type")
 }
 
 var errInet = errors.New("must be an IP address or a CIDR range, e.g. 10.0.0.0/8")
+
+// MinInetFilterBits4 and MinInetFilterBits6 bound how wide an address range
+// filter may be: a /8 of IPv4 or a /32 of IPv6, the same bounds as a pasted
+// asset-group range. A wider range (0.0.0.0/0, ::/0) selects nothing a
+// narrower filter could not and only makes the database walk every address
+// of the organization.
+const (
+	MinInetFilterBits4 = 8
+	MinInetFilterBits6 = 32
+)
+
+var errInetTooWide = fmt.Errorf("a range is at most /%d (IPv4) or /%d (IPv6) wide", MinInetFilterBits4, MinInetFilterBits6)
+
+// CheckInetFilterWidth refuses a range wider than MinInetFilterBits4 /
+// MinInetFilterBits6. A single address (no "/") always passes, and so does
+// text that is not a range (ParseInet reports that).
+func CheckInetFilterWidth(raw string) error {
+	s := strings.TrimSpace(raw)
+	if !strings.Contains(s, "/") {
+		return nil
+	}
+	p, err := netip.ParsePrefix(s)
+	if err != nil {
+		return nil //nolint:nilerr // not a range: ParseInet reports it
+	}
+	minBits := MinInetFilterBits6
+	if p.Addr().Unmap().Is4() {
+		minBits = MinInetFilterBits4
+		if p.Addr().Is4In6() {
+			minBits += 96
+		}
+	}
+	if p.Bits() < minBits {
+		return errInetTooWide
+	}
+	return nil
+}
 
 // ParseInet parses an IP address or a CIDR range and returns its canonical
 // text: an address as net/netip prints it (IPv4-mapped IPv6 unmapped, no
