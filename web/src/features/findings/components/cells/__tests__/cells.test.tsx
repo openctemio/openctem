@@ -47,14 +47,17 @@ describe('EpssBar', () => {
 })
 
 describe('ExploitSignals cell variant', () => {
-  it('always shows the EPSS bar first, then KEV and Ransomware', () => {
+  it('always shows the EPSS bar first, then KEV, then Ransomware folded into "+1"', () => {
     const { container } = render(
       <ExploitSignals variant="cell" isInKev kevRansomware epssScore={0.05} />
     )
     const slots = [...container.querySelectorAll('[data-slot]')]
       .map((e) => e.getAttribute('data-slot'))
-      .filter((s) => s === 'epss-bar' || s === 'kev-badge' || s === 'ransomware-chip')
-    expect(slots).toEqual(['epss-bar', 'kev-badge', 'ransomware-chip'])
+      .filter(
+        (s) =>
+          s === 'epss-bar' || s === 'kev-badge' || s === 'ransomware-chip' || s === 'signals-more'
+      )
+    expect(slots).toEqual(['epss-bar', 'kev-badge', 'signals-more'])
     // No EPSS chip next to the bar.
     expect(container.querySelector('[data-slot="epss-chip"]')).toBeNull()
   })

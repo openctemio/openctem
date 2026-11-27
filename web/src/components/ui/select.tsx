@@ -103,6 +103,30 @@ const SELECT_ICON_ONLY_BELOW = {
 export const SELECT_TRIGGER_CLASS =
   "border-input data-[placeholder]:text-muted-foreground [&_svg:not([class*='text-'])]:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 dark:hover:bg-input/50 flex w-fit items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-1 text-start text-body shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 data-[size=default]:min-h-control-field data-[size=sm]:min-h-control-dense max-md:data-[size=default]:min-h-control-touch max-md:data-[size=default]:text-base max-md:data-[size=sm]:min-h-control-touch-dense *:data-[slot=select-value]:flex *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:overflow-hidden **:data-[slot=select-text]:min-w-0 **:data-[slot=select-text]:break-words *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4" // design-ok: text-base (16px) on phone fields keeps phones from zooming, as Input
 
+/**
+ * Whether the last input was the keyboard. Radix Select gives the focus back
+ * to its trigger by script when it closes; after a pointer choice Chrome
+ * still matches `:focus-visible` there (the trigger never took the pointer's
+ * focus: Radix cancels its pointerdown), so a mouse user saw the keyboard
+ * ring at rest. The trigger marks a focus that did not follow a key
+ * (`data-pointer-focus`) and draws no ring for it; Tab and the arrow keys
+ * still show it.
+ */
+let lastInputKeyboard = false
+let modalityListening = false
+function listenForInputModality() {
+  if (modalityListening || typeof window === 'undefined') return
+  modalityListening = true
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (!e.metaKey && !e.ctrlKey && !e.altKey) lastInputKeyboard = true
+    },
+    true
+  )
+  window.addEventListener('pointerdown', () => (lastInputKeyboard = false), true)
+}
+
 function SelectTrigger({
   className,
   size = 'default',
@@ -117,6 +141,8 @@ function SelectTrigger({
 }) {
   const iconOnly = iconOnlyBelow ? SELECT_ICON_ONLY_BELOW[iconOnlyBelow] : undefined
   const record = useFloatingAnchorSetter()
+  React.useEffect(listenForInputModality, [])
+  const { onFocus } = props
   const triggerRef = React.useCallback(
     (node: HTMLButtonElement | null) => {
       if (typeof ref === 'function') ref(node)
@@ -130,8 +156,17 @@ function SelectTrigger({
       ref={triggerRef}
       data-slot="select-trigger"
       data-size={size}
-      className={cn(SELECT_TRIGGER_CLASS, iconOnly?.trigger, className)}
+      className={cn(
+        SELECT_TRIGGER_CLASS,
+        'data-[pointer-focus]:focus-visible:border-input data-[pointer-focus]:focus-visible:ring-0',
+        iconOnly?.trigger,
+        className
+      )}
       {...props}
+      onFocus={(e) => {
+        e.currentTarget.toggleAttribute('data-pointer-focus', !lastInputKeyboard)
+        onFocus?.(e)
+      }}
     >
       {children}
       <SelectPrimitive.Icon asChild>
