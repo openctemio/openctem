@@ -59,19 +59,30 @@ type Version struct {
 // NewProfile validates and builds a profile.
 func NewProfile(tenantID, integrationID shared.ID, kind ObjectKind, projectID, projectKey, issueTypeID, issueType, name string, by *shared.ID) (*Profile, error) {
 	if !kind.Valid() {
-		return nil, fmt.Errorf("%w: object_kind must be finding or task", shared.ErrValidation)
+		return nil, FieldInvalid("object_kind", "it must be finding or task")
 	}
 	projectID, projectKey = strings.TrimSpace(projectID), strings.ToUpper(strings.TrimSpace(projectKey))
 	issueTypeID, issueType = strings.TrimSpace(issueTypeID), strings.TrimSpace(issueType)
-	if projectKey == "" || len(projectKey) > 32 || issueTypeID == "" || len(issueTypeID) > 64 || len(projectID) > 64 || len(issueType) > 128 {
-		return nil, fmt.Errorf("%w: a project key and an issue type are required", shared.ErrValidation)
+	switch {
+	case projectKey == "":
+		return nil, FieldInvalid("project_key", "it is required (the key of the Jira project, for example SEC)")
+	case len(projectKey) > 32:
+		return nil, FieldInvalid("project_key", "it is at most 32 characters")
+	case issueTypeID == "":
+		return nil, FieldInvalid("issue_type_id", "it is required (the id of the issue type in the project, from the issue types of the integration)")
+	case len(issueTypeID) > 64:
+		return nil, FieldInvalid("issue_type_id", "it is at most 64 characters")
+	case len(projectID) > 64:
+		return nil, FieldInvalid("project_id", "it is at most 64 characters")
+	case len(issueType) > 128:
+		return nil, FieldInvalid("issue_type", "it is at most 128 characters")
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = fmt.Sprintf("%s / %s", projectKey, issueType)
 	}
 	if len([]rune(name)) > 120 {
-		return nil, fmt.Errorf("%w: name is at most 120 characters", shared.ErrValidation)
+		return nil, FieldInvalid("name", "it is at most 120 characters")
 	}
 	now := time.Now().UTC()
 	return &Profile{
