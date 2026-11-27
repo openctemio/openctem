@@ -571,3 +571,51 @@ func TestEnforcer_ViewerScope(t *testing.T) {
 		t.Fatalf("owner = %v, %v, %v; want unrestricted", scope, orgWide, err)
 	}
 }
+
+// A row with no asset (an exposure, a leaked credential) follows the list
+// rule: visible to a caller whose scope is not restricted, also when private
+// program assets are hidden from them, never to a restricted member; a
+// lookup error denies. A row with an asset is AssertAsset.
+func TestEnforcer_AssertOptionalAsset(t *testing.T) {
+	tenant, admin, member := shared.NewID(), shared.NewID(), shared.NewID()
+	hidden, inScope, outScope := shared.NewID(), shared.NewID(), shared.NewID()
+	repo := &fakeRepo{
+		rows:   map[shared.ID]map[shared.ID]bool{member: {inScope: true}},
+		hidden: map[shared.ID]map[shared.ID]bool{admin: {hidden: true}},
+	}
+	var caller Caller
+	e := New(repo, func(context.Context) Caller { return caller }, nil)
+	ctx := context.Background()
+	zero := shared.ID{}
+	cases := []struct {
+		name    string
+		caller  Caller
+		asset   *shared.ID
+		wantErr bool
+	}{
+		{"owner, no asset", Caller{UserID: shared.NewID().String(), IsAdmin: true, IsOwner: true}, nil, false},
+		{"internal, no asset", Caller{}, nil, false},
+		{"admin with hidden assets, no asset", Caller{UserID: admin.String(), IsAdmin: true}, nil, false},
+		{"admin with hidden assets, zero asset", Caller{UserID: admin.String(), IsAdmin: true}, &zero, false},
+		{"admin with hidden assets, hidden asset", Caller{UserID: admin.String(), IsAdmin: true}, &hidden, true},
+		{"admin with hidden assets, other asset", Caller{UserID: admin.String(), IsAdmin: true}, &outScope, false},
+		{"restricted member, no asset", Caller{UserID: member.String()}, nil, true},
+		{"restricted member, in scope", Caller{UserID: member.String()}, &inScope, false},
+		{"restricted member, out of scope", Caller{UserID: member.String()}, &outScope, true},
+		{"API key without user, no asset", Caller{APIKey: true}, nil, true},
+	}
+	for _, tc := range cases {
+		caller = tc.caller
+		err := e.AssertOptionalAsset(ctx, tenant, tc.asset)
+		if (err != nil) != tc.wantErr {
+			t.Errorf("%s: err=%v, wantErr=%v", tc.name, err, tc.wantErr)
+		} else if err != nil && !errors.Is(err, shared.ErrNotFound) {
+			t.Errorf("%s: must deny with ErrNotFound, got %v", tc.name, err)
+		}
+	}
+	repo.err = errors.New("db down")
+	caller = Caller{UserID: admin.String(), IsAdmin: true}
+	if err := e.AssertOptionalAsset(ctx, tenant, nil); !errors.Is(err, shared.ErrNotFound) {
+		t.Fatalf("lookup error admitted an asset-less row: %v", err)
+	}
+}

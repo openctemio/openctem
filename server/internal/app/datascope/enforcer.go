@@ -432,6 +432,29 @@ func (e *Enforcer) AssertAsset(ctx context.Context, tenantID, assetID shared.ID)
 	})
 }
 
+// AssertOptionalAsset is AssertAsset for a row whose asset is optional (an
+// exposure, a leaked credential), with the rule the list queries apply to
+// such a row (filterspec.ScopeSQL on a NULL asset column): a row with no
+// asset is in no one's asset scope, so a restricted member never sees it,
+// and it is on no hidden asset, so a caller whose scope is not restricted
+// (an owner, an administrator or a full-data role, also when private
+// program assets are hidden from them) does. A row with an asset is
+// AssertAsset. Any error while resolving the scope denies (fail closed).
+func (e *Enforcer) AssertOptionalAsset(ctx context.Context, tenantID shared.ID, assetID *shared.ID) error {
+	if assetID != nil && !assetID.IsZero() {
+		return e.AssertAsset(ctx, tenantID, *assetID)
+	}
+	scope, err := e.Resolve(ctx, tenantID)
+	if err != nil {
+		e.logger.Warn("data scope check failed", "error", err)
+		return shared.ErrNotFound
+	}
+	if scope.Restricted() {
+		return shared.ErrNotFound
+	}
+	return nil
+}
+
 // AssertAssetRef is the check for an asset id a caller supplies to be
 // written onto a row (a finding, a component link, ...). It returns
 // shared.ErrNotFound unless the asset is a live asset of the tenant AND the
