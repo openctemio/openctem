@@ -140,7 +140,7 @@ func (h *AISettingsHandler) UpdateAutonomy(w http.ResponseWriter, r *http.Reques
 	v, err := store.SaveAutonomy(r.Context(), tenantID,
 		tenantai.AutonomyInput{Paused: req.Paused, PerHour: req.PerHour.v, PerDay: req.PerDay.v}, h.actx(r))
 	if err != nil {
-		if middleware.WriteStepUpError(w, err, authapp.StepUpWindow) {
+		if middleware.WriteStepUpError(w, aiStepUpErr(err), authapp.StepUpWindow) {
 			return
 		}
 		if errors.Is(err, tenantai.ErrNoActor) {
@@ -155,4 +155,13 @@ func (h *AISettingsHandler) UpdateAutonomy(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, http.StatusOK, toAIAutonomyResponse(v))
+}
+
+// aiStepUpErr maps the AI settings service's fail-closed step-up refusal (no
+// re-authentication check wired) to the shared STEP_UP_UNAVAILABLE answer.
+func aiStepUpErr(err error) error {
+	if errors.Is(err, tenantai.ErrStepUpUnavailable) {
+		return middleware.ErrStepUpUnavailable
+	}
+	return err
 }
