@@ -200,7 +200,12 @@ export function MetricStrip({
         className={cn(
           'grid grid-cols-6 overflow-hidden',
           embedded ? '-mx-3 sm:-mx-4' : 'rounded-lg border bg-card',
-          'sm:grid-cols-[repeat(var(--metric-cols-sm),minmax(0,1fr))] @3xl:grid-cols-[repeat(var(--metric-cols),minmax(0,1fr))]'
+          'sm:grid-cols-[repeat(var(--metric-cols-sm),minmax(0,1fr))] @3xl:grid-cols-[repeat(var(--metric-cols),minmax(0,1fr))]',
+          // A tile holds one number: on a wide screen two tiles stretched
+          // over 2,000 px leave each number alone in 1,000 px. From a 96rem
+          // strip each tile stops at 28rem and the strip ends after its last
+          // tile.
+          '@min-[96rem]:max-w-[calc(var(--metric-cols)*28rem)]'
         )}
         style={
           {
