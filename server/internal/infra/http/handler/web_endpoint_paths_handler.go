@@ -1,14 +1,17 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 
+	webendpointapp "github.com/openctemio/openctem/server/internal/app/webendpoint"
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/webendpoint"
 )
@@ -129,7 +132,7 @@ func (h *WebEndpointHandler) Paths(w http.ResponseWriter, r *http.Request) {
 		apierror.BadRequest("Invalid path tree query").WriteJSON(w)
 		return
 	}
-	lvl, err := h.svc.Paths(r.Context(), tenantID, assetID, q)
+	lvl, err := h.svc.Paths(r.Context(), tenantID, assetID, q, pathViewer(r.Context()))
 	switch {
 	case err == nil:
 	case shared.IsNotFound(err):
@@ -156,4 +159,22 @@ func (h *WebEndpointHandler) Paths(w http.ResponseWriter, r *http.Request) {
 			FindingCount: e.Findings, TopSeverity: e.TopSeverity}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// pathViewer is the caller as a reader of a path tree's findings: an
+// administrator sees every finding; a member needs findings:read and reads
+// under the findings list's member visibility rule. A member without a user
+// (an API key) gets the rule with a user that matches no campaign.
+func pathViewer(ctx context.Context) webendpointapp.PathViewer {
+	if middleware.IsAdmin(ctx) {
+		return webendpointapp.PathViewer{ReadFindings: true}
+	}
+	user := middleware.GetUserID(ctx)
+	if _, err := shared.IDFromString(user); err != nil {
+		user = shared.ID{}.String()
+	}
+	return webendpointapp.PathViewer{
+		ReadFindings: middleware.HasPermission(ctx, permission.FindingsRead.String()),
+		Findings:     webendpoint.FindingViewer{MemberUserID: user},
+	}
 }
