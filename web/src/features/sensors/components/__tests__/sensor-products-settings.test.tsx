@@ -69,9 +69,12 @@ describe('SensorProductsSettings', () => {
       expect(screen.getByRole('table', { hidden: true }).closest('.rounded-md.border')).toHaveClass(
         'hidden'
       )
+      // The first text column is the card's subtitle (its value, no label);
+      // the next one is a labelled field.
       expect(
-        screen.getByText(en['sensors.customProducts.latest'], { selector: 'dt' })
+        screen.getByText(en['sensors.customProducts.min'], { selector: 'dt' })
       ).toBeInTheDocument()
+      expect(document.querySelector('[data-slot="mobile-card"]')).toHaveTextContent('v1.4.0')
     } finally {
       Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
     }

@@ -47,9 +47,29 @@ export function actionColumns(src: string): string[] {
 
 /** The text of an element body with `sr-only` pieces (hidden at every width) left out. */
 function visibleText(body: string): string[] {
-  const shown = body.replace(/<(\w+)[^>]*className="sr-only"[^>]*>[\s\S]*?<\/\1>/g, '')
-  // Split on tags instead of stripping them, so no half-removed tag can remain.
-  return shown.split(/<[^>]*>/)
+  const pieces: string[] = []
+  // Walk the tags and the text between them in order; nothing is stripped, so
+  // no half-removed tag can remain. Text inside an sr-only element is skipped.
+  let hiddenTag = ''
+  let depth = 0
+  for (const token of body.split(/(<[^>]*>)/)) {
+    const tag = /^<(\/?)(\w+)/.exec(token)
+    if (!tag) {
+      if (!hiddenTag) pieces.push(token)
+      continue
+    }
+    const closing = tag[1] === '/'
+    const selfClosing = token.endsWith('/>')
+    if (hiddenTag) {
+      if (tag[2] !== hiddenTag || selfClosing) continue
+      depth += closing ? -1 : 1
+      if (depth === 0) hiddenTag = ''
+    } else if (!closing && !selfClosing && /className="sr-only"/.test(token)) {
+      hiddenTag = tag[2]
+      depth = 1
+    }
+  }
+  return pieces
 }
 
 function hasLabel(pieces: string[]): boolean {

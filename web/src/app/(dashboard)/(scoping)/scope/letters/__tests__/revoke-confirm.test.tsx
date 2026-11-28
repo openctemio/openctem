@@ -49,7 +49,10 @@ describe('Authorization letters on a phone', () => {
       expect(screen.getByRole('table', { hidden: true }).closest('.rounded-md.border')).toHaveClass(
         'hidden'
       )
-      expect(screen.getByText('Issued by', { selector: 'dt' })).toBeInTheDocument()
+      // The issuer is the card's subtitle (its value, no label); the validity
+      // period is a labelled field.
+      expect(screen.getByText('Valid', { selector: 'dt' })).toBeInTheDocument()
+      expect(document.querySelector('[data-slot="mobile-card-subtitle"]')).toHaveTextContent('Acme')
       // The state stays on the card (its title line), not dropped.
       expect(screen.getAllByText(/In effect|Ends in|Expired/).length).toBeGreaterThan(0)
     } finally {
