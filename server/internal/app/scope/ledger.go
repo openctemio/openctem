@@ -470,12 +470,19 @@ func (s *Service) SyncLedger(ctx context.Context) error {
 // divergedLedgerMessage words the warning for scope the database has in
 // effect but the signer's ledger does not hold, by what the signer does with
 // jobs for it: in audit mode it signs them and logs each one, so nothing is
-// refused yet; in enforce mode it refuses them.
+// refused yet; in enforce mode it refuses them. The API cannot tell scope
+// that was in effect before the ledger existed (an upgraded installation
+// whose bootstrap was not run) from scope written past the hook, so the
+// warning names both ways to resolve it. Saving an entry unchanged does not
+// send it to the ledger; taking it out of effect and back does.
 func divergedLedgerMessage(mode string) string {
+	const fix = "; scope from before the ledger existed needs the ledger bootstrap (export, review, import with -replace), " +
+		"any other entry must be taken out of effect and approved again"
 	if mode == jobsign.LedgerAudit {
-		return "scope in effect that the job signer's ledger does not hold (audit mode: jobs for it are signed and logged; they will be refused under SIGNER_LEDGER=enforce until the scope is approved again)"
+		return "scope in effect that the job signer's ledger does not hold (audit mode: jobs for it are signed and logged; " +
+			"they will be refused under SIGNER_LEDGER=enforce" + fix + ")"
 	}
-	return "scope in effect that the job signer's ledger does not hold (jobs for it are refused until it is approved again)"
+	return "scope in effect that the job signer's ledger does not hold (jobs for it are refused" + fix + ")"
 }
 
 // letterBound bounds e (t's ledger form) by the letter t names, if any
