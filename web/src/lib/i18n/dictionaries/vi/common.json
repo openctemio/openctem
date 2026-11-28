@@ -210,6 +210,7 @@
   "common.oneTimeLink.handOver": "Hãy đưa liên kết này cho người đó qua kênh bạn tin cậy. Ai mở được liên kết đều có thể dùng nó.",
   "common.oneTimeLink.notShownAgain": "Liên kết sẽ không hiển thị lại; hãy sao chép liên kết mới nếu bị mất.",
   "common.oneTimeLink.shownOnce": "Chỉ hiển thị một lần",
+  "common.openAllInAssetList": "Mở tất cả {total} mục trong danh sách tài sản",
   "common.openFullPage": "Mở trang đầy đủ",
   "common.opensNewTab": "(mở trong thẻ mới)",
   "common.pageNotFound.description": "Trang bạn tìm không tồn tại hoặc đã được chuyển đi.",

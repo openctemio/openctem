@@ -86,7 +86,7 @@ describe('attack surface overview', () => {
       'href',
       '/attack-surface/changes'
     )
-    expect(screen.getByRole('link', { name: /^Open exposures/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^Open external exposures/ })).toHaveAttribute(
       'href',
       '/exposures'
     )

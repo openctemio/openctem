@@ -84,7 +84,7 @@ export function EASMPosture() {
     return [
       {
         key: 'assets',
-        label: t('attackSurface.posture.strip.assets', 'Surface assets'),
+        label: t('attackSurface.posture.strip.assets', 'External assets measured'),
         value: posture.score.assets,
         href: '/attack-surface/external',
       },

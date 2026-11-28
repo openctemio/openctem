@@ -95,6 +95,23 @@ describe('crown jewels page', () => {
     expect(reload).toHaveBeenCalled()
   })
 
+  it('counts the register total in the tile, not the rows loaded, and links past the cap', () => {
+    // 340 crown jewels, 100 rows loaded (the register stopped at its cap).
+    const rows = Array.from({ length: 100 }, (_, i) => ({
+      ...asset,
+      id: `a${i}`,
+      name: `Jewel ${i}`,
+    }))
+    hookState = { data: { data: rows, total: 340 }, isLoading: false }
+    render(<CrownJewelsPage />)
+    const tile = screen.getByRole('button', { name: /crown jewels/i, pressed: true })
+    expect(tile).toHaveTextContent('340')
+    expect(screen.getByRole('link', { name: /open all 340/i })).toHaveAttribute(
+      'href',
+      '/assets?is_crown_jewel=true'
+    )
+  })
+
   it('keeps the designate picker idle until the dialog opens', async () => {
     const user = userEvent.setup()
     render(<CrownJewelsPage />)

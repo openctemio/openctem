@@ -1018,6 +1018,9 @@ export async function bulkDeleteAssets(assetIds: string[]): Promise<void> {
  * mirror the List endpoint semantics so the stats card always reflects
  * whatever the user has filtered to in the table (e.g. type=host AND
  * tag=production). `countBy` names property keys to count the values of.
+ * `attribution` takes the list's ?attribution= values (the server applies the
+ * list's own field), so a count equals the total of the list it opens; pass
+ * INVENTORY_ATTRIBUTION for "the inventory" as the asset list shows it.
  */
 export interface AssetStatsQuery {
   types?: string[]
@@ -1025,9 +1028,17 @@ export interface AssetStatsQuery {
   tags?: string[]
   subType?: string
   countBy?: string[]
+  attribution?: string[]
 }
 
-export function useAssetStats({ types, lenses, tags, subType, countBy }: AssetStatsQuery = {}) {
+export function useAssetStats({
+  types,
+  lenses,
+  tags,
+  subType,
+  countBy,
+  attribution,
+}: AssetStatsQuery = {}) {
   const { currentTenant } = useTenant()
   const { can } = usePermissions()
   const canReadAssets = can(Permission.AssetsRead)
@@ -1041,6 +1052,7 @@ export function useAssetStats({ types, lenses, tags, subType, countBy }: AssetSt
   if (tags && tags.length > 0) params.set('tags', tags.join(','))
   if (subType) params.set('sub_type', subType)
   if (countBy && countBy.length > 0) params.set('count_by', countBy.join(','))
+  if (attribution && attribution.length > 0) params.set('attribution', attribution.join(','))
   const queryString = params.toString()
   const querySuffix = queryString ? `?${queryString}` : ''
   // Keyed by the endpoint URL (shared with every reader, and the dashboard

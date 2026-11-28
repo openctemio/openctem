@@ -19,7 +19,6 @@
   "easmReview.hint.seed": "Under your seed {value}",
   "easmReview.hint.verifiedDomain": "Under {value}, a domain you verified",
   "easmReview.overview.allExposures": "All exposures",
-  "easmReview.overview.allOpen": "All {n} open",
   "easmReview.overview.ctFailingN": "{n} failing",
   "easmReview.overview.ctOldest": "Oldest CT check",
   "easmReview.overview.ctWatched": "Domains watched in CT logs",

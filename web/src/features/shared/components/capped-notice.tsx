@@ -2,9 +2,23 @@
 
 import { useTranslation } from '@/context/i18n-provider'
 import { formatNumber } from '@/lib/app-locale'
+import Link from '@/components/link'
+import { safeHref } from '@/lib/safe-href'
 
-/** One line shown when a register hit its row cap: "Showing the first N of M". */
-export function CappedNotice({ loaded, total }: { loaded: number; total: number }) {
+/**
+ * One line shown when a register hit its row cap: "Showing the first N of M".
+ * `allHref` is a paginated list of the same rows (the asset inventory), so the
+ * rows past the cap are one click away instead of out of reach.
+ */
+export function CappedNotice({
+  loaded,
+  total,
+  allHref,
+}: {
+  loaded: number
+  total: number
+  allHref?: string
+}) {
   const { t } = useTranslation()
   if (total <= loaded) return null
   return (
@@ -13,6 +27,19 @@ export function CappedNotice({ loaded, total }: { loaded: number; total: number 
         loaded: formatNumber(loaded),
         total: formatNumber(total),
       })}
+      {allHref ? (
+        <>
+          {' '}
+          <Link
+            href={safeHref(allHref) ?? '/assets'}
+            className="font-medium text-foreground underline underline-offset-4"
+          >
+            {t('common.openAllInAssetList', 'Open all {total} in the asset list', {
+              total: formatNumber(total),
+            })}
+          </Link>
+        </>
+      ) : null}
     </p>
   )
 }

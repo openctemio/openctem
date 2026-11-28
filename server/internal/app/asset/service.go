@@ -1840,8 +1840,9 @@ func (s *AssetService) GetInventoryOverview(ctx context.Context, tenantID, actin
 // GetAssetStats returns aggregated asset statistics using SQL aggregation,
 // counted only over the assets the acting user may list.
 // Filters: types (asset_type ANY), lenses (asset_lens ANY), tags (overlap,
-// matches List semantics).
-func (s *AssetService) GetAssetStats(ctx context.Context, tenantID, actingUserID string, isAdmin bool, types, lenses, tags []string, subType string, countByFields ...string) (*assetdom.AggregateStats, error) {
+// matches List semantics) and attribution (the list's ?attribution= values,
+// parsed and applied exactly as List does; none = every attribution state).
+func (s *AssetService) GetAssetStats(ctx context.Context, tenantID, actingUserID string, isAdmin bool, types, lenses, tags []string, subType string, attributionValues []string, countByFields ...string) (*assetdom.AggregateStats, error) {
 	parsedTenantID, err := shared.IDFromString(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tenant id format", shared.ErrValidation)
@@ -1855,7 +1856,7 @@ func (s *AssetService) GetAssetStats(ctx context.Context, tenantID, actingUserID
 			return nil, fmt.Errorf("%w: unknown lens %q", shared.ErrValidation, l)
 		}
 	}
-	return s.repo.GetAggregateStats(ctx, parsedTenantID, access, types, lenses, tags, subType, countByFields...)
+	return s.repo.GetAggregateStats(ctx, parsedTenantID, access, types, lenses, tags, subType, attributionValues, countByFields...)
 }
 
 // ListTags returns the tags of the tenant's assets the caller may list, most

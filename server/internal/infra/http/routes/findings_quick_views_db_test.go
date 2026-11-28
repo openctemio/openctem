@@ -25,7 +25,12 @@ type qvResponse struct {
 
 func (h *gsHarness) quickViews(t *testing.T, c flCaller) (qvResponse, http.Header) {
 	t.Helper()
-	status, hdr, body := h.listFindingsPath(t, c, "/api/v1/findings/quick-views")
+	return h.quickViewsAt(t, c, "/api/v1/findings/quick-views")
+}
+
+func (h *gsHarness) quickViewsAt(t *testing.T, c flCaller, path string) (qvResponse, http.Header) {
+	t.Helper()
+	status, hdr, body := h.listFindingsPath(t, c, path)
 	if status != http.StatusOK {
 		t.Fatalf("%s GET /findings/quick-views = %d: %.300s", c.name, status, body)
 	}
@@ -127,6 +132,59 @@ func TestFindingQuickViews_CountsEqualTheirListsInScope(t *testing.T) {
 				t.Errorf("%s %s = %d, want %d (all: %v)", who, k, got[who][k], n, got[who])
 			}
 		}
+	}
+}
+
+// The list opens on its Vulnerabilities view (every finding but compliance
+// checks), as every dashboard counts; the quick views count under the same
+// practice view, so the sidebar's "Active" equals the list's total (it said
+// 9,368 against the list's 9,359: the 9 compliance checks). ?practice= names
+// another view; another tenant's compliance findings never count.
+func TestFindingQuickViews_CountUnderThePracticeTheListShows(t *testing.T) {
+	h := newGroupScopeHarness(t)
+	h.seedQuickViewFindings(t)
+	tid := h.tenant.String()
+	for i := 0; i < 3; i++ {
+		id := shared.NewID()
+		h.exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status, practice)
+			VALUES ($1::uuid, $2, $3, 'sast', 'qv-bench', 'benchmark check', 'medium', $1::text, 'new', 'compliance')`,
+			id.String(), tid, h.assetA.String())
+	}
+	admin := flCaller{"owner", h.owner, true}
+	activeOf := func(qv qvResponse) (int64, string) {
+		for _, v := range qv.Views {
+			if v.Key == "active" {
+				return v.Count, v.Params
+			}
+		}
+		t.Fatal("no active view")
+		return 0, ""
+	}
+
+	cases := []struct {
+		path, listPractice string
+		want               int64
+	}{
+		{"/api/v1/findings/quick-views", "practice_not=compliance", 10},
+		{"/api/v1/findings/quick-views?practice=vulnerabilities", "practice_not=compliance", 10},
+		{"/api/v1/findings/quick-views?practice=all", "", 13},
+		{"/api/v1/findings/quick-views?practice=compliance", "practice=compliance", 3},
+	}
+	for _, c := range cases {
+		qv, _ := h.quickViewsAt(t, admin, c.path)
+		n, params := activeOf(qv)
+		q := params
+		if c.listPractice != "" {
+			q += "&" + c.listPractice
+		}
+		_, total, _ := h.listIDs(t, admin, q)
+		if n != total || n != c.want {
+			t.Errorf("%s: active = %d, GET /findings?%s = %d, want %d", c.path, n, q, total, c.want)
+		}
+	}
+
+	if status, _, _ := h.listFindingsPath(t, admin, "/api/v1/findings/quick-views?practice=nope"); status != http.StatusBadRequest {
+		t.Errorf("unknown practice = %d, want 400", status)
 	}
 }
 
