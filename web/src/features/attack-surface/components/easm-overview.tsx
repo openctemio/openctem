@@ -14,6 +14,7 @@ import Link from '@/components/link'
 import { Settings2, ShieldCheck } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
+import { safeHref } from '@/lib/safe-href'
 import {
   Card,
   CardAction,
@@ -165,7 +166,7 @@ export function EASMTopRisks() {
                         open in the exposure list, narrowed to this issue. */}
                     {(r.assets ?? 0) > 1 && (
                       <Link
-                        href={riskGroupHref(r.title)}
+                        href={safeHref(riskGroupHref(r.title)) ?? '/exposures'}
                         className="shrink-0 text-primary hover:underline"
                         data-testid="easm-risk-more"
                       >

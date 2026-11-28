@@ -198,13 +198,7 @@ function ChangeRow({
           <div className="col-start-2 col-end-4 row-start-4">
             {/* The same change on one asset many times is this one row;
                 every one of them opens over the page. */}
-            <Button
-              variant="link"
-              size="sm"
-              className="h-auto p-0 text-xs"
-              onClick={onShowGroup}
-              data-testid="change-group-open"
-            >
+            <Button variant="link" size="sm" onClick={onShowGroup} data-testid="change-group-open">
               {t('attackSurface.changes.groupShowAll', 'Show all {count} changes', { count })}
             </Button>
           </div>
