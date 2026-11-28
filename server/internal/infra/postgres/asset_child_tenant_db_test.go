@@ -70,7 +70,7 @@ func TestAssetChildReads_PinnedToTenant_DB(t *testing.T) {
 		t.Error("risk_score_pending is true from another tenant's queue row")
 	}
 
-	stats, err := repo.GetAggregateStats(ctx, tenantA, asset.AccessScope{}, nil, nil, nil, "")
+	stats, err := repo.GetAggregateStats(ctx, tenantA, asset.AccessScope{}, nil, nil, nil, "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
