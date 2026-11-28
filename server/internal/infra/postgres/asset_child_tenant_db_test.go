@@ -12,7 +12,7 @@ import (
 )
 
 // The asset reads of child tables keyed by asset id are pinned to the
-// asset's tenant too (defence in depth): a row of another tenant that names
+// asset's tenant too (defense in depth): a row of another tenant that names
 // this asset's id (planted with constraints off, as a bug or a restore
 // could leave it) changes nothing the asset's own tenant reads, neither the
 // "rescore pending" mark nor the open findings the statistics count.
