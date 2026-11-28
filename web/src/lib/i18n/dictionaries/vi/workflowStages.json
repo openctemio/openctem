@@ -27,8 +27,6 @@
   "workflowStages.builder.saving": "Đang lưu",
   "workflowStages.builder.systemTemplate": "Mẫu hệ thống",
   "workflowStages.builder.unsaved": "Chưa lưu",
-  "workflowStages.capability.discover.subdomains": "Khám phá tên miền phụ",
-  "workflowStages.capability.resolve.dns": "Phân giải DNS",
   "workflowStages.cycle": "Các bước này chờ nhau thành vòng lặp: {steps}.",
   "workflowStages.draftChanged": "Bản nháp có thay đổi chưa xuất bản: các lần chạy dùng phiên bản đã xuất bản.",
   "workflowStages.edge.intrusive": "không nhận: xâm nhập",

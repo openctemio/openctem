@@ -176,6 +176,10 @@ type MemberWithUser struct {
 	// organization and its DNS proof lapsed (RFC-058): nobody vouches for
 	// the address any more.
 	DomainLapsed bool
+	// ServiceAccount: the member is an organization-owned service account
+	// (users.kind = 'service'), not a person. Filled by
+	// SearchMembersWithUserInfo only.
+	ServiceAccount bool
 }
 
 // MemberStats contains statistics about tenant members.
@@ -208,6 +212,10 @@ type MemberSearchFilters struct {
 	Role string
 	// Kind filters on internal or external members (RFC-058); empty = any.
 	Kind string
+	// Account filters on who the member is: MemberAccountPerson (people) or
+	// MemberAccountService (service accounts); empty = both. The member
+	// directory lists people; service accounts have their own page.
+	Account string
 	// UserIDs restricts the list to these users (still only members of the
 	// tenant being listed). The people chip resolves the ids on the screen
 	// with it instead of paging the whole directory. Empty = any.
@@ -217,6 +225,12 @@ type MemberSearchFilters struct {
 // Member status filter values for MemberSearchFilters.Status.
 const (
 	MemberFilterAll = "all"
+)
+
+// Account filter values for MemberSearchFilters.Account (users.kind).
+const (
+	MemberAccountPerson  = "person"
+	MemberAccountService = "service"
 )
 
 // MemberSearchResult contains the search results and total count.

@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select'
 import { CapabilityBadgeList } from '@/components/capability-badge'
 import { PortChips, TypedHandle } from '@/components/flow/typed-handle'
+import { capabilityLabel } from '@/lib/capability-label'
 
 // =============================================================================
 // UTILITIES
@@ -317,12 +318,7 @@ function ScannerNodeComponent({ data, selected }: NodeProps<ScannerNode>) {
         {data.capabilityName ? (
           <div className="space-y-1 rounded-md border border-dashed px-1.5 py-1">
             <div className="flex items-center gap-1 text-xs font-medium">
-              <span className="truncate">
-                {t(
-                  `workflowStages.capability.${data.capabilityName}`,
-                  data.capabilityName.replace(/[._]+/g, ' ').replace(/^./, (c) => c.toUpperCase())
-                )}
-              </span>
+              <span className="truncate">{capabilityLabel(data.capabilityName, t)}</span>
             </div>
             <PortChips
               label={t('workflowStages.node.takesLower')}

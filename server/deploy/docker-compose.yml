@@ -387,6 +387,9 @@ services:
       OPENCTEM_HTTPSEC_FEED_PROXY: ${OPENCTEM_HTTPSEC_FEED_PROXY:-}
       OPENCTEM_HTTPSEC_FEED_NO_PROXY: ${OPENCTEM_HTTPSEC_FEED_NO_PROXY:-}
       OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS: ${OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS:-}
+      # Platform services outbound calls never reach (besides the database,
+      # cache, web, gateway and the API itself, which the API finds alone).
+      OPENCTEM_HTTPSEC_PLATFORM_HOSTS: ${OPENCTEM_HTTPSEC_PLATFORM_HOSTS:-console}
       AUTH_COOKIE_SECURE: "true"
       DB_HOST: ${DB_HOST:-postgres}
       DB_PORT: ${DB_PORT:-5432}

@@ -28,6 +28,7 @@ connection goes through.
 |---|---|
 | Decision at dial time | The dialer resolves the host once, checks every answer, and connects to a checked address itself. It never hands the host name to the system dialer, so a second DNS answer (rebinding, TTL 0) cannot change the destination. Every connection is checked, including each redirect hop and every new connection of a pooled client. |
 | Blocked ranges | Always: loopback, link-local and cloud metadata (IPv4 and IPv6), CGNAT, `0.0.0.0/8` and `::`, multicast, reserved and broadcast, IPv4-compatible and IPv4-mapped forms, and the NAT64, 6to4 and Teredo carriers that embed an IPv4 address. Private ranges (RFC 1918, ULA) unless the installation opened them ("Private network destinations" below). The table agrees with the sensors' deny list (`ctis/addrscope`); the security lint fails when they drift. |
+| Platform services | Never, whatever range is opened and with `PrivateAllowedHTTPClient` too: the addresses of the platform's own services. At start-up, and again every minute, the server resolves its database and cache hosts (`DB_HOST`, `REDIS_HOST`), the web and gateway health URLs (`SYSTEM_WEB_HEALTH_URL`, `SYSTEM_GATEWAY_HEALTH_URL`), the hosts in `OPENCTEM_HTTPSEC_PLATFORM_HOSTS` and the addresses of its own network interfaces, and adds them to the never-reachable list (`httpsec.SetPlatformServiceAddrs`, reason `platform_service`). An address seen once stays on the list, and a failed lookup keeps the previous list, so a service that moves or a DNS failure never unblocks one. Without it, a private range opened for one organization's GitLab that also holds the platform's container network (for example `172.16.0.0/12`) would let every organization's webhooks reach the database. On a single-host install the host's own address is on the list: a self-hosted service on the same machine as the API is not reachable by outbound calls. |
 | Blocked names | `localhost` and the metadata aliases, in any case and with a trailing dot, before any lookup. |
 | Schemes | http and https only. Rule sources: https only, and go-git has no ssh, `git://` or `file://` transport registered. |
 | Proxies | No guarded client takes a proxy from the environment (`HTTP_PROXY`, `HTTPS_PROXY`): the check would then vet the proxy instead of the destination. The one exception is the opt-in platform feed proxy below, used by `FeedHTTPClient` only. |
@@ -43,8 +44,9 @@ Clients:
   private hosts per organization (rule sources); no connection reuse across
   requests.
 - `PrivateAllowedHTTPClient`: every private range, for a destination a platform
-  administrator set (the platform AI endpoint). Never for an organization's
-  value.
+  administrator set (the platform AI endpoint). The never-reachable list
+  (hard-blocked ranges and platform services) still applies. Never for an
+  organization's value.
 - `SafeDialContext` and `ResolveSafeHost`: the same checks for transports that
   are not plain HTTP (SMTP, a custom TLS client).
 
