@@ -508,6 +508,32 @@ func (h *LocalAuthHandler) writeLoggedOut(w http.ResponseWriter) {
 // + X-CSRF-Token header), like every other cookie-authenticated write. On a
 // failed check it writes the 403 and returns ok=false. An empty token with
 // ok=true means the request carried none.
+// RefreshClientBindingHeader carries the browser's refresh client binding:
+// a random secret the web server keeps per browser in its own HttpOnly cookie
+// and forwards on /auth/refresh and /auth/token. The rotation grace requires
+// it (auth.refreshClientFingerprint), so a copied refresh token is not enough
+// to collect a successor inside the grace.
+const RefreshClientBindingHeader = "X-Refresh-Client-Binding"
+
+// refreshClientBinding returns the client binding header when it is a
+// well-formed binding (32 to 128 characters of [A-Za-z0-9_-]), else "" (no
+// grace). Anything else is ignored rather than refused: the binding only
+// widens what a client may do, it never authenticates on its own.
+func refreshClientBinding(r *http.Request) string {
+	v := r.Header.Get(RefreshClientBindingHeader)
+	if len(v) < 32 || len(v) > 128 {
+		return ""
+	}
+	for i := 0; i < len(v); i++ {
+		switch c := v[i]; {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '-', c == '_':
+		default:
+			return ""
+		}
+	}
+	return v
+}
+
 func (h *LocalAuthHandler) refreshTokenFrom(w http.ResponseWriter, r *http.Request, bodyToken string) (string, bool) {
 	if bodyToken != "" {
 		return bodyToken, true
@@ -572,9 +598,10 @@ func (h *LocalAuthHandler) ExchangeToken(w http.ResponseWriter, r *http.Request)
 	}
 
 	result, err := h.authService.ExchangeToken(r.Context(), auth.ExchangeTokenInput{
-		RefreshToken: refreshToken,
-		TenantID:     req.TenantID,
-		UserAgent:    r.UserAgent(),
+		RefreshToken:  refreshToken,
+		TenantID:      req.TenantID,
+		UserAgent:     r.UserAgent(),
+		ClientBinding: refreshClientBinding(r),
 	})
 	if err != nil {
 		h.handleAuthError(w, err)
@@ -662,10 +689,11 @@ func (h *LocalAuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) 
 	userAgent := r.UserAgent()
 
 	result, err := h.authService.RefreshToken(r.Context(), auth.RefreshTokenInput{
-		RefreshToken: refreshToken,
-		TenantID:     req.TenantID,
-		IPAddress:    ipAddress,
-		UserAgent:    userAgent,
+		RefreshToken:  refreshToken,
+		TenantID:      req.TenantID,
+		IPAddress:     ipAddress,
+		UserAgent:     userAgent,
+		ClientBinding: refreshClientBinding(r),
 	})
 	if err != nil {
 		h.handleAuthError(w, err)

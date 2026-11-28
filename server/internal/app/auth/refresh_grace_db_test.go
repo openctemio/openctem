@@ -113,8 +113,14 @@ func TestRefreshRotationGrace_DB(t *testing.T) {
 		return sid, rt
 	}
 
+	// The browser's binding secret (X-Refresh-Client-Binding); refreshAs and
+	// exchangeAs present another one, or none.
+	const binding = "b1nd1ngb1nd1ngb1nd1ngb1nd1ngb1nd1ngb1nd1ng"
+	refreshAs := func(svc *AuthService, rt, tenantID, ua, bind string) (*RefreshTokenResult, error) {
+		return svc.RefreshToken(ctx, RefreshTokenInput{RefreshToken: rt, TenantID: tenantID, UserAgent: ua, ClientBinding: bind})
+	}
 	refresh := func(svc *AuthService, rt, tenantID, ua string) (*RefreshTokenResult, error) {
-		return svc.RefreshToken(ctx, RefreshTokenInput{RefreshToken: rt, TenantID: tenantID, UserAgent: ua})
+		return refreshAs(svc, rt, tenantID, ua, binding)
 	}
 	sessionActive := func(t *testing.T, sid shared.ID) bool {
 		t.Helper()
@@ -243,6 +249,40 @@ func TestRefreshRotationGrace_DB(t *testing.T) {
 		}
 	})
 
+	// A copied refresh token replayed with the browser's user agent (anyone
+	// can guess it) but without the browser's binding secret is a reuse.
+	for _, bind := range []string{"", "0therb1nd1ng0therb1nd1ng0therb1nd1ng0ther"} {
+		t.Run("same user agent without the binding ends the session ("+map[bool]string{true: "none", false: "other"}[bind == ""]+")", func(t *testing.T) {
+			svc := newService(30 * time.Second)
+			u, tid := newMember(t)
+			sid, rt := signIn(t, svc, u)
+			if _, err := refresh(svc, rt, tid, ua); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := refreshAs(svc, rt, tid, ua, bind); !errors.Is(err, sessiondom.ErrRefreshTokenUsed) {
+				t.Fatalf("want ErrRefreshTokenUsed, got %v", err)
+			}
+			if sessionActive(t, sid) || reuseAudits(t, sid) != 1 {
+				t.Fatal("a replay without the binding must end the session and be audited")
+			}
+		})
+	}
+
+	t.Run("a rotation without a binding gives no grace", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		u, tid := newMember(t)
+		sid, rt := signIn(t, svc, u)
+		if _, err := refreshAs(svc, rt, tid, ua, ""); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := refreshAs(svc, rt, tid, ua, ""); !errors.Is(err, sessiondom.ErrRefreshTokenUsed) {
+			t.Fatalf("want ErrRefreshTokenUsed, got %v", err)
+		}
+		if sessionActive(t, sid) {
+			t.Fatal("without a binding every re-presented token ends the session")
+		}
+	})
+
 	t.Run("a successor of another session never qualifies", func(t *testing.T) {
 		svc := newService(30 * time.Second)
 		u, tid := newMember(t)
@@ -325,8 +365,11 @@ func TestRefreshRotationGrace_DB(t *testing.T) {
 
 	// /auth/token (ExchangeToken) has the same grace: two tabs of one browser
 	// opening two organizations at once, or a tab that missed a rotation.
+	exchangeAs := func(svc *AuthService, rt, tenantID, ua, bind string) (*ExchangeTokenResult, error) {
+		return svc.ExchangeToken(ctx, ExchangeTokenInput{RefreshToken: rt, TenantID: tenantID, UserAgent: ua, ClientBinding: bind})
+	}
 	exchange := func(svc *AuthService, rt, tenantID, ua string) (*ExchangeTokenResult, error) {
-		return svc.ExchangeToken(ctx, ExchangeTokenInput{RefreshToken: rt, TenantID: tenantID, UserAgent: ua})
+		return exchangeAs(svc, rt, tenantID, ua, binding)
 	}
 	isReuse := func(err error) bool {
 		return errors.Is(err, sessiondom.ErrRefreshTokenUsed) || errors.Is(err, sessiondom.ErrRefreshTokenRevoked)
@@ -444,6 +487,41 @@ func TestRefreshRotationGrace_DB(t *testing.T) {
 		}
 		if sessionActive(t, sid) || reuseAudits(t, sid) != 1 {
 			t.Fatal("a different client must end the session and be audited")
+		}
+	})
+
+	t.Run("exchange: same user agent without the binding ends the session", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		u, tid := newMember(t)
+		sid, rt := signIn(t, svc, u)
+		if _, err := exchange(svc, rt, tid, ua); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := exchangeAs(svc, rt, tid, ua, ""); !isReuse(err) {
+			t.Fatalf("want a reuse refusal, got %v", err)
+		}
+		if sessionActive(t, sid) || reuseAudits(t, sid) != 1 {
+			t.Fatal("a replay without the binding must end the session and be audited")
+		}
+	})
+
+	t.Run("exchange: the grace is at most ExchangeReuseGraceMax even when refresh allows more", func(t *testing.T) {
+		svc := newService(30 * time.Second)
+		u, tid := newMember(t)
+		sid, rt := signIn(t, svc, u)
+		if _, err := exchange(svc, rt, tid, ua); err != nil {
+			t.Fatal(err)
+		}
+		// Inside the 30 s refresh grace, outside the exchange window.
+		if _, err := sqlDB.ExecContext(ctx, `UPDATE refresh_tokens SET used_at = NOW() - make_interval(secs => $2)
+			WHERE session_id = $1 AND used_at IS NOT NULL`, sid.String(), (ExchangeReuseGraceMax + 2*time.Second).Seconds()); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := exchange(svc, rt, tid, ua); !isReuse(err) {
+			t.Fatalf("want a reuse refusal, got %v", err)
+		}
+		if sessionActive(t, sid) || reuseAudits(t, sid) != 1 {
+			t.Fatal("an exchange after its window must end the session and be audited")
 		}
 	})
 
