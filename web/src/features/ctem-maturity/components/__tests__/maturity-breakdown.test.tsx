@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { MaturityBreakdownCard, scoreTone } from '../maturity-breakdown'
 import type { MaturityBreakdown } from '../../api/use-ctem-maturity'
+import { I18nProvider } from '@/context/i18n-provider'
 
 const breakdown: MaturityBreakdown = {
   score: 72.5,
@@ -35,6 +36,7 @@ const breakdown: MaturityBreakdown = {
       weight: 0.25,
       contribution: 22.5,
       detail: 'findings_resolved / findings_opened this cycle',
+      detail_code: 'resolution_ratio',
     },
   ],
 }
@@ -55,8 +57,16 @@ describe('MaturityBreakdownCard', () => {
     // contribution rendered with a leading +
     expect(screen.getByText('+24')).toBeInTheDocument()
     expect(screen.getByText('+22.5')).toBeInTheDocument()
-    // the transparent detail string is shown
-    expect(screen.getByText('findings_resolved / findings_opened this cycle')).toBeInTheDocument()
+    // the detail reads from its code in plain words, never as metric keys
+    expect(
+      screen.getByText('Findings resolved this cycle compared with findings opened')
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/findings_resolved/)).toBeNull()
+    // a detail without a code keeps the server's sentence
+    expect(
+      screen.getByText('share of closed findings with validation evidence (%)')
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/Σ/)).toBeNull()
   })
 
   it('does not throw when components is null (no cycles analyzed)', () => {
@@ -69,6 +79,18 @@ describe('MaturityBreakdownCard', () => {
     render(<MaturityBreakdownCard maturity={{ ...breakdown, cycles_analyzed: 1 }} />)
     expect(screen.queryByText('+24')).toBeNull()
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(4)
+  })
+
+  it('words the details and the subtitle in Vietnamese', () => {
+    render(
+      <I18nProvider locale="vi">
+        <MaturityBreakdownCard maturity={breakdown} />
+      </I18nProvider>
+    )
+    expect(
+      screen.getByText('Số phát hiện đã xử lý trong chu kỳ so với số phát hiện mới mở')
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/this cycle|Σ/)).toBeNull()
   })
 
   it('scoreTone maps score bands to accents', () => {
