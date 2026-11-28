@@ -27,6 +27,7 @@ import { getErrorMessage } from '@/lib/api/error-handler'
 import { apiErrorFields, apiFieldMessage } from '@/lib/api/error-message'
 import { useCanMutate, usePermissions } from '@/lib/permissions'
 import { safeImageSrc } from '@/lib/safe-href'
+import { PrefixedInput } from '@/features/shared/components/prefixed-input'
 import { OrganizationRegion } from '@/features/tenant/components/region-note'
 import {
   useTenantSettings,
@@ -426,6 +427,8 @@ export function GeneralSettings() {
             </SettingsField>
             <SettingsField
               id="org-slug"
+              // The address prefix and the name need a whole row.
+              className="col-span-full"
               label={t('org.general.slug', 'URL slug')}
               error={fieldErrors.slug}
               lock={owner ? undefined : t('org.general.ownerOnly', 'Owner only')}
@@ -442,34 +445,18 @@ export function GeneralSettings() {
                 !canUpdateTenant || !owner ? (
                   <SettingsValue {...control} mono value={`${appHost}/${orgInfo.slug}`} />
                 ) : (
-                  <div className="flex min-w-0">
-                    <span
-                      data-testid="slug-host-prefix"
-                      className="inline-flex max-w-[50%] min-w-0 shrink-0 items-center rounded-s-md border border-e-0 bg-muted px-3 text-code text-muted-foreground"
-                      title={`${appHost}/`}
-                    >
-                      {/* The host keeps its width (the slug field shrinks
-                          first); only a host longer than half the field ends
-                          in an ellipsis, whole in the title. The ellipsis
-                          needs a block box: text directly in a flex box is
-                          cut without one. */}
-                      <span data-cut-tooltip className="truncate">
-                        {appHost}/
-                      </span>
-                    </span>
-                    <Input
-                      {...control}
-                      value={orgInfo.slug}
-                      onChange={(e) => {
-                        clearFieldError('slug')
-                        setOrgInfo((p) => ({
-                          ...p,
-                          slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
-                        }))
-                      }}
-                      className="rounded-s-none"
-                    />
-                  </div>
+                  <PrefixedInput
+                    prefix={`${appHost}/`}
+                    {...control}
+                    value={orgInfo.slug}
+                    onChange={(e) => {
+                      clearFieldError('slug')
+                      setOrgInfo((p) => ({
+                        ...p,
+                        slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                      }))
+                    }}
+                  />
                 )
               }
             </SettingsField>

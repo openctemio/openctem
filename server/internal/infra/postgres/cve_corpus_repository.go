@@ -64,31 +64,51 @@ func (r *CVECorpusRepository) Counts(ctx context.Context) (records, ranges int, 
 	return records, ranges, nil
 }
 
+// FreshnessDays is how many 24-hour windows FreshnessStats counts: the two
+// the volume check judges and the 8 weeks of same-weekday windows it compares
+// them with.
+const FreshnessDays = 58
+
 // CorpusFreshness is what the freshness watch reads from the corpus.
 type CorpusFreshness struct {
 	// NewestPublished: the newest publication date not after now (nil:
 	// empty corpus).
 	NewestPublished *time.Time
-	// Published24h: CVEs published in the 24 hours before now;
-	// PublishedPrior30d: in the 30 days before those.
-	Published24h      int
-	PublishedPrior30d int
+	// Daily[k] is the number of CVEs published in the 24-hour window that
+	// ended k days before now (Daily[0]: the last 24 hours). Always
+	// FreshnessDays long.
+	Daily []int
 }
 
 // FreshnessStats reads the corpus freshness at now. Both parts are index
 // range scans on published_at (idx_cve_records_published): the newest row,
-// and the about 31 days of rows (some 9,000) the counts need.
+// and the about 58 days of rows (some 25,000) the daily counts need.
 func (r *CVECorpusRepository) FreshnessStats(ctx context.Context, now time.Time) (CorpusFreshness, error) {
-	var out CorpusFreshness
+	out := CorpusFreshness{Daily: make([]int, FreshnessDays)}
 	var newest sql.NullTime
-	err := r.db.QueryRowContext(ctx, `
-		SELECT (SELECT max(published_at) FROM cve_records WHERE published_at <= $1),
-			count(*) FILTER (WHERE published_at > $1 - interval '24 hours'),
-			count(*) FILTER (WHERE published_at <= $1 - interval '24 hours')
+	if err := r.db.QueryRowContext(ctx,
+		`SELECT max(published_at) FROM cve_records WHERE published_at <= $1`, now.UTC()).Scan(&newest); err != nil {
+		return CorpusFreshness{}, fmt.Errorf("corpus freshness: %w", err)
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT floor(extract(epoch FROM ($1::timestamptz - published_at)) / 86400)::int AS k, count(*)
 		FROM cve_records
-		WHERE published_at > $1 - interval '31 days' AND published_at <= $1`, now.UTC()).
-		Scan(&newest, &out.Published24h, &out.PublishedPrior30d)
+		WHERE published_at > $1::timestamptz - make_interval(days => $2) AND published_at <= $1
+		GROUP BY k`, now.UTC(), FreshnessDays)
 	if err != nil {
+		return CorpusFreshness{}, fmt.Errorf("corpus freshness: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var k, n int
+		if err := rows.Scan(&k, &n); err != nil {
+			return CorpusFreshness{}, fmt.Errorf("corpus freshness: %w", err)
+		}
+		if k >= 0 && k < FreshnessDays {
+			out.Daily[k] = n
+		}
+	}
+	if err := rows.Err(); err != nil {
 		return CorpusFreshness{}, fmt.Errorf("corpus freshness: %w", err)
 	}
 	if newest.Valid {

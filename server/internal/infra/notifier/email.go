@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/server/pkg/notifymsg"
+	"github.com/openctemio/openctem/server/pkg/safetext"
 
 	emailpkg "github.com/openctemio/openctem/server/pkg/email"
 )
@@ -94,6 +95,7 @@ func (e buildError) Unwrap() error { return e.err }
 
 // deliver renders the notification and sends it through the shared sender.
 func (c *EmailClient) deliver(ctx context.Context, msg Message) error {
+	msg = defangEmailMessage(msg)
 	htmlBody, err := c.buildHTMLEmail(msg)
 	if err != nil {
 		return buildError{err}
@@ -180,6 +182,29 @@ func (c *EmailClient) sender() emailpkg.Sender {
 		ResolveHost: relayResolver,
 		Dial:        relayDialer,
 	})
+}
+
+// defangEmailMessage makes the URLs in the message's untrusted text
+// non-clickable (safetext.Defang): titles, bodies, field values and card text
+// come from scan targets, scanner output and AI summaries, and mail clients
+// turn a bare URL or address in either alternative into a link. The
+// message's own links (URL, the card's action) and the configured footer stay
+// as they are: they are the only links a notification carries.
+func defangEmailMessage(msg Message) Message {
+	msg.Title = safetext.Defang(msg.Title)
+	msg.Body = safetext.Defang(msg.Body)
+	if msg.Fields != nil {
+		fields := make(map[string]string, len(msg.Fields))
+		for k, v := range msg.Fields {
+			fields[safetext.Defang(k)] = safetext.Defang(v)
+		}
+		msg.Fields = fields
+	}
+	if msg.Card != nil {
+		card := msg.Card.Map(safetext.Defang)
+		msg.Card = &card
+	}
+	return msg
 }
 
 // buildTextEmail builds the text/plain alternative of the notification.

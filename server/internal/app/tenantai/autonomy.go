@@ -23,7 +23,6 @@ import (
 	aidom "github.com/openctemio/openctem/server/pkg/domain/aianalysis"
 	"github.com/openctemio/openctem/server/pkg/domain/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
-	"github.com/openctemio/openctem/server/pkg/domain/stepup"
 	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
@@ -110,10 +109,8 @@ func (s *Service) SaveAutonomy(ctx context.Context, tenantID string, in Autonomy
 		if actx.ActorID == "" {
 			return AutonomyView{}, ErrNoActor
 		}
-		if s.stepUp != nil {
-			if err := stepup.Require(ctx, s.stepUp, actx.ActorID, stepup.TierSensitive); err != nil {
-				return AutonomyView{}, err
-			}
+		if err := s.requireLooseningStepUp(ctx, actx.ActorID); err != nil {
+			return AutonomyView{}, err
 		}
 	}
 	now := s.stamp()

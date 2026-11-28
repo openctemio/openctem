@@ -73,6 +73,16 @@ func TestAIAutoTriageHandler(t *testing.T) {
 		t.Fatalf("step-up refusal code: %s", rec.Body)
 	}
 
+	// No step-up check wired in the service: refused 403 STEP_UP_UNAVAILABLE.
+	store.saveErr = tenantai.ErrStepUpUnavailable
+	rec = httptest.NewRecorder()
+	h.UpdateAutoTriage(rec, aiReq(http.MethodPut, `{"enabled":true,"severities":["critical"]}`))
+	body = map[string]any{}
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if rec.Code != http.StatusForbidden || fmt.Sprint(body["code"]) != string(middleware.CodeStepUpUnavailable) {
+		t.Fatalf("unwired step-up: %d %s", rec.Code, rec.Body)
+	}
+
 	store.saveErr, store.calls = nil, 0
 	for _, bad := range []string{`{"severities":["urgent"]}`, `{"delay_seconds":-1}`, `{"delay_seconds":3601}`, `not json`} {
 		rec = httptest.NewRecorder()

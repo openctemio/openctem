@@ -556,7 +556,7 @@ func (h *MCPOAuthHandler) consentError(w http.ResponseWriter, err error) {
 	case errors.Is(err, mcpoauthapp.ErrConsentUnavailable):
 		apierror.NotFound("Authorization request").WriteJSON(w)
 	default:
-		h.log.Error("mcp oauth consent", "error", err.Error())
+		h.log.Error("mcp oauth consent", "error", logger.SanitizeError(err))
 		apierror.InternalServerError("Could not complete the request").WriteJSON(w)
 	}
 }
