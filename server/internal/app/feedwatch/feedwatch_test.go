@@ -15,6 +15,30 @@ import (
 
 var t0 = time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
 
+// flat is 58 daily windows of n CVEs.
+func flat(n int) []int {
+	d := make([]int, 58)
+	for i := range d {
+		d[i] = n
+	}
+	return d
+}
+
+// withRecent sets the last two windows.
+func withRecent(d []int, last, before int) []int {
+	d[0], d[1] = last, before
+	return d
+}
+
+// weekly is 8 weeks of a weekly rhythm: weekday[k%7] CVEs in window k.
+func weekly(weekday [7]int) []int {
+	d := make([]int, 58)
+	for i := range d {
+		d[i] = weekday[i%7]
+	}
+	return d
+}
+
 func ptr(t time.Time) *time.Time { return &t }
 
 // bundleView is an enabled bundle feed that applied a bundle created at
@@ -49,7 +73,7 @@ func TestEvaluate(t *testing.T) {
 	now := t0
 	first := now.Add(-24 * time.Hour)
 	fresh := []feedstatus.View{bundleView(now.Add(-time.Hour), now.Add(-10*time.Minute)), kevView(now.Add(-time.Hour))}
-	healthy := &CorpusStats{NewestPublished: ptr(now.Add(-2 * time.Hour)), Published24h: 250, PublishedPrior30d: 30 * 280}
+	healthy := &CorpusStats{NewestPublished: ptr(now.Add(-2 * time.Hour)), Daily: flat(280)}
 
 	refused := bundleView(now.Add(-3*time.Hour), now.Add(-3*time.Hour))
 	refused.State, refused.LastSyncStatus, refused.ErrorCode = feedstatus.StateRefused, "failed", feedstatus.CodeExpired
@@ -86,9 +110,9 @@ func TestEvaluate(t *testing.T) {
 		{"KEV 7h is inside the bundle limit", []feedstatus.View{kevView(now.Add(-7 * time.Hour))}, nil, first, nil},
 		{"KEV 13h without a success", []feedstatus.View{kevView(now.Add(-13 * time.Hour))}, nil, first, []string{"data_stale:kev"}},
 		{"bundle 20h old under a 48h limit", []feedstatus.View{withLimit(bundleView(now.Add(-20*time.Hour), now.Add(-5*time.Minute)), 48*time.Hour)},
-			&CorpusStats{NewestPublished: ptr(now.Add(-20 * time.Hour)), Published24h: 250, PublishedPrior30d: 8400}, first, nil},
+			&CorpusStats{NewestPublished: ptr(now.Add(-20 * time.Hour)), Daily: flat(280)}, first, nil},
 		{"bundle 50h old under a 48h limit", []feedstatus.View{withLimit(bundleView(now.Add(-50*time.Hour), now.Add(-5*time.Minute)), 48*time.Hour)},
-			&CorpusStats{NewestPublished: ptr(now.Add(-50 * time.Hour)), Published24h: 250, PublishedPrior30d: 8400}, first,
+			&CorpusStats{NewestPublished: ptr(now.Add(-50 * time.Hour)), Daily: flat(280)}, first,
 			[]string{"data_stale:vulnfeed", "newest_record_old"}},
 		{"switched off", []feedstatus.View{off}, nil, first, nil},
 		{"never loaded, inside the grace", []feedstatus.View{never}, nil, now.Add(-time.Hour), nil},
@@ -98,11 +122,11 @@ func TestEvaluate(t *testing.T) {
 		{"failing two runs", []feedstatus.View{failingLong}, nil, first, []string{"import_failing:vulnfeed"}},
 		{"stale and failing (the silent case)", []feedstatus.View{staleFailing}, nil, first,
 			[]string{"data_stale:vulnfeed", "import_failing:vulnfeed"}},
-		{"newest record 13h old", fresh, &CorpusStats{NewestPublished: ptr(now.Add(-13 * time.Hour)), Published24h: 250, PublishedPrior30d: 8400}, first,
+		{"newest record 13h old", fresh, &CorpusStats{NewestPublished: ptr(now.Add(-13 * time.Hour)), Daily: flat(280)}, first,
 			[]string{"newest_record_old"}},
-		{"daily volume collapsed", fresh, &CorpusStats{NewestPublished: ptr(now.Add(-time.Hour)), Published24h: 40, PublishedPrior30d: 8400}, first,
+		{"daily volume collapsed", fresh, &CorpusStats{NewestPublished: ptr(now.Add(-time.Hour)), Daily: withRecent(flat(280), 40, 60)}, first,
 			[]string{"volume_low"}},
-		{"small corpus has no volume check", fresh, &CorpusStats{NewestPublished: ptr(now.Add(-time.Hour)), Published24h: 0, PublishedPrior30d: 300}, first, nil},
+		{"small corpus has no volume check", fresh, &CorpusStats{NewestPublished: ptr(now.Add(-time.Hour)), Daily: withRecent(flat(10), 0, 0)}, first, nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -121,7 +145,7 @@ func TestEvaluateBannerFlag(t *testing.T) {
 	refused := bundleView(now.Add(-time.Hour), now.Add(-time.Hour))
 	refused.State = feedstatus.StateRefused
 	cs := Evaluate([]feedstatus.View{refused, kevView(now.Add(-13 * time.Hour))},
-		&CorpusStats{NewestPublished: ptr(now.Add(-20 * time.Hour)), Published24h: 10, PublishedPrior30d: 8400}, now.Add(-time.Hour*24), now)
+		&CorpusStats{NewestPublished: ptr(now.Add(-20 * time.Hour)), Daily: withRecent(flat(280), 10, 10)}, now.Add(-time.Hour*24), now)
 	want := map[string]bool{"import_refused:vulnfeed": false, "data_stale:kev": true, "newest_record_old": true, "volume_low": false}
 	for _, c := range cs {
 		if b, ok := want[c.Key]; !ok || b != c.Banner {
@@ -202,7 +226,7 @@ func TestCheckRefusedFeedIsLoudAndRecovers(t *testing.T) {
 		// its data gets.
 		return v
 	}
-	f.corpus.stats = CorpusStats{NewestPublished: ptr(applied), Published24h: 280, PublishedPrior30d: 8400}
+	f.corpus.stats = CorpusStats{NewestPublished: ptr(applied), Daily: flat(280)}
 
 	f.feeds.views = []feedstatus.View{refused()}
 	f.tick(t, 0)
@@ -345,5 +369,75 @@ func TestEvaluateStartUpRefusalAlertsAtOnce(t *testing.T) {
 	v.ErrorParams = nil
 	if got := keys(Evaluate([]feedstatus.View{v}, nil, now, now)); len(got) != 0 {
 		t.Fatalf("a run-time failure alerted after one minute: %v", got)
+	}
+}
+
+// The volume check follows the weekly rhythm: quiet weekends and public
+// holidays are not gaps, a persistent real shortfall is.
+func TestVolumeLow(t *testing.T) {
+	// Window k=0 is "now"; weeks repeat every 7 windows. Usual counts for
+	// the 7 windows back from now.
+	usual := [7]int{450, 450, 250, 150, 480, 520, 480}
+	cases := []struct {
+		name string
+		mod  func(d []int)
+		want bool
+	}{
+		{"usual day", func(d []int) {}, false},
+		{"weekend dip, the day before was normal", func(d []int) { d[0], d[1] = 140, 450 }, false},
+		{"US holiday, 32% of usual then a normal day", func(d []int) { d[0], d[1] = 144, 480 }, false},
+		{"one terrible day is not a gap yet", func(d []int) { d[0] = 5 }, false},
+		{"last day fine after a bad one (recovery)", func(d []int) { d[0], d[1] = 440, 20 }, false},
+		{"two low days (real outage)", func(d []int) { d[0], d[1] = 60, 70 }, true},
+		{"nothing for 48h", func(d []int) { d[0], d[1] = 0, 0 }, true},
+		{"holiday week after holidays in the history", func(d []int) {
+			d[7], d[14] = 100, 100 // two earlier holidays do not move the median
+			d[0], d[1] = 60, 70
+		}, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			d := weekly(usual)
+			c.mod(d)
+			if _, _, got := volumeLow(d); got != c.want {
+				t.Fatalf("got %v, want %v (%v)", got, c.want, d[:3])
+			}
+		})
+	}
+	t.Run("a short history does not judge", func(t *testing.T) {
+		d := weekly(usual)[:20]
+		d[0], d[1] = 0, 0
+		if _, _, got := volumeLow(d); got {
+			t.Fatal("alerted on 2 weeks of history")
+		}
+	})
+	t.Run("a small corpus does not judge", func(t *testing.T) {
+		d := flat(20)
+		d[0], d[1] = 0, 0
+		if _, _, got := volumeLow(d); got {
+			t.Fatal("alerted on a small corpus")
+		}
+	})
+}
+
+// The volume alert opens after two low windows, and its "resolved" message
+// states the state now, not the alarm that opened it.
+func TestVolumeLowResolvedSaysBackToNormal(t *testing.T) {
+	f := newFixture(t)
+	f.feeds.views = []feedstatus.View{bundleView(f.now.Add(-time.Hour), f.now.Add(-5*time.Minute))}
+	f.corpus.stats = CorpusStats{NewestPublished: ptr(f.now.Add(-time.Hour)), Daily: withRecent(flat(386), 91, 100)}
+	f.tick(t, 0)
+	if f.n.Count() != 1 || !strings.Contains(f.n.Bodies[0], "Only 91 CVEs") {
+		t.Fatalf("open: %v", f.n.Bodies)
+	}
+	f.corpus.stats.Daily = withRecent(flat(386), 372, 91)
+	f.tick(t, CheckEvery)
+	if f.n.Count() != 2 {
+		t.Fatalf("sent %d", f.n.Count())
+	}
+	body, subject := f.n.Bodies[1], f.n.Subjects[1]
+	if !strings.Contains(body, "Back to normal: 372 CVEs in the last 24 hours (it was 91 against a usual 386).") ||
+		strings.Contains(body, "Only 91") || !strings.Contains(subject, "resolved") {
+		t.Fatalf("resolved message: %q %q", subject, body)
 	}
 }

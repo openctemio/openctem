@@ -161,3 +161,104 @@ func TestMemberSearch_UserIDsFilter(t *testing.T) {
 		}
 	}
 }
+
+// TestMemberSearch_AccountFilter backs the settings Members page, which listed
+// an organization's service accounts as people (a synthetic
+// svc-…@service-accounts.invalid address, no roles). The directory asks for
+// account=person; service accounts are listed only with account=service, each
+// marked, and never another organization's.
+func TestMemberSearch_AccountFilter(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+	ctx := context.Background()
+
+	tenantA := createTestTenant(t, db, "member-account-a")
+	tenantB := createTestTenant(t, db, "member-account-b")
+	defer cleanupTestData(db, tenantA, tenantB)
+
+	stamp := time.Now().UnixNano()
+	tag := fmt.Sprintf("acct-%d", stamp)
+	var users []shared.ID
+	defer func() {
+		for _, id := range users {
+			_, _ = db.ExecContext(ctx, "DELETE FROM tenant_members WHERE user_id = $1", id.String())
+			_, _ = db.ExecContext(ctx, "DELETE FROM users WHERE id = $1", id.String())
+		}
+	}()
+	person := createTestUser(t, db, tag+"-person@example.com", tag+" person")
+	users = append(users, person)
+	createTestMembership(t, db, tenantA, person, "member")
+
+	service := func(tenantID shared.ID, name string) shared.ID {
+		t.Helper()
+		id := shared.NewID()
+		if _, err := db.ExecContext(ctx, `INSERT INTO users (id, email, name, kind, service_tenant_id, service_owner_id)
+			VALUES ($1, $2, $3, 'service', $4, $5)`,
+			id.String(), "svc-"+id.String()+"@service-accounts.invalid", name, tenantID.String(), person.String()); err != nil {
+			t.Fatalf("seed service account: %v", err)
+		}
+		users = append(users, id)
+		createTestMembership(t, db, tenantID, id, "member")
+		return id
+	}
+	svcA := service(tenantA, tag+" ci bot")
+	svcB := service(tenantB, tag+" other org bot")
+
+	repo := postgres.NewTenantRepository(&postgres.DB{DB: db})
+	search := func(account string) *tenant.MemberSearchResult {
+		t.Helper()
+		r, err := repo.SearchMembersWithUserInfo(ctx, tenantA, tenant.MemberSearchFilters{Search: tag, Limit: 10, Account: account})
+		if err != nil {
+			t.Fatalf("search account=%q: %v", account, err)
+		}
+		return r
+	}
+	ids := func(r *tenant.MemberSearchResult) map[shared.ID]bool {
+		out := map[shared.ID]bool{}
+		for _, m := range r.Members {
+			out[m.UserID] = true
+		}
+		return out
+	}
+
+	t.Run("people only", func(t *testing.T) {
+		r := search(tenant.MemberAccountPerson)
+		if r.Total != 1 || !ids(r)[person] {
+			t.Fatalf("account=person: total %d, members %v; want only the person", r.Total, ids(r))
+		}
+		if r.Members[0].ServiceAccount {
+			t.Errorf("a person is marked as a service account")
+		}
+	})
+
+	t.Run("service accounts only, marked, never another organization's", func(t *testing.T) {
+		r := search(tenant.MemberAccountService)
+		got := ids(r)
+		if r.Total != 1 || !got[svcA] {
+			t.Fatalf("account=service: total %d, members %v; want only this organization's service account", r.Total, got)
+		}
+		if got[svcB] {
+			t.Fatalf("another organization's service account listed")
+		}
+		if !r.Members[0].ServiceAccount {
+			t.Errorf("service account not marked")
+		}
+	})
+
+	t.Run("the directory figures count people only", func(t *testing.T) {
+		stats, err := repo.GetMemberStats(ctx, tenantA)
+		if err != nil {
+			t.Fatalf("stats: %v", err)
+		}
+		if stats.TotalMembers != 1 {
+			t.Errorf("total members = %d, want 1 (the person, not the service account)", stats.TotalMembers)
+		}
+	})
+
+	t.Run("no filter lists both, still tenant scoped", func(t *testing.T) {
+		got := ids(search(""))
+		if !got[person] || !got[svcA] || got[svcB] {
+			t.Fatalf("no account filter: %v", got)
+		}
+	})
+}

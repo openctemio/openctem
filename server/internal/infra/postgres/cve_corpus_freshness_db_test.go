@@ -18,7 +18,7 @@ func TestCVECorpusFreshnessStats(t *testing.T) {
 	rows := []time.Duration{
 		-time.Hour, -5 * time.Hour, // last 24 h
 		-30 * time.Hour, -10 * 24 * time.Hour, -29 * 24 * time.Hour, // prior 30 days
-		-40 * 24 * time.Hour, // outside both windows
+		-40 * 24 * time.Hour, // window 40
 		2 * time.Hour,        // in the future: ignored
 	}
 	ids := make([]string, 0, len(rows))
@@ -38,7 +38,15 @@ func TestCVECorpusFreshnessStats(t *testing.T) {
 	if got.NewestPublished == nil || !got.NewestPublished.Equal(now.Add(-time.Hour)) {
 		t.Fatalf("newest: %v", got.NewestPublished)
 	}
-	if got.Published24h != 2 || got.PublishedPrior30d != 3 {
-		t.Fatalf("counts: %+v", got)
+	// -1h and -5h: window 0; -30h: window 1; -10d and -29d: windows 10 and
+	// 29; -40d: window 40; the future row is ignored.
+	want := map[int]int{0: 2, 1: 1, 10: 1, 29: 1, 40: 1}
+	if len(got.Daily) != FreshnessDays {
+		t.Fatalf("daily length: %d", len(got.Daily))
+	}
+	for k, n := range got.Daily {
+		if n != want[k] {
+			t.Fatalf("window %d: got %d, want %d (%v)", k, n, want[k], got.Daily)
+		}
 	}
 }
