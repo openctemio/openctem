@@ -226,7 +226,11 @@ function FrameworkCard({
             </p>
           ) : (
             <>
-              <div className="text-2xl font-semibold tabular-nums">{formatPercent(score)}</div>
+              <div
+                className="text-2xl font-semibold tabular-nums" // anatomy-ok: existing framework score; only its number format changes
+              >
+                {formatPercent(score)}
+              </div>
               <p className="text-xs text-muted-foreground">
                 {t('scoping.compliance.card.compliant', 'compliant')}
               </p>
