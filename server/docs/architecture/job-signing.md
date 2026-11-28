@@ -841,7 +841,17 @@ default to `enforce`.
 ### Bootstrap and restore (the ceremony)
 
 An upgraded installation starts in `audit` with an empty ledger: every job
-is still signed, and each one outside the ledger is recorded. To enforce:
+is still signed, and each one outside the ledger is recorded. Scope changes
+made after the upgrade reach the ledger through the hook, but scope that was
+in effect before it never does (a sync only narrows). Once an organization
+has any entry in the ledger, the periodic sync logs the rest as `diverged`
+("scope in effect that the job signer's ledger does not hold"): on an
+upgraded installation that warning means the bootstrap below is due, and
+under `enforce` jobs for that scope would be refused. An organization with
+nothing in the ledger is not synced and logs no such warning; the signer's
+per-job `ledger_audit` lines show its jobs. Saving an entry unchanged does
+not send it to the ledger; taking it out of effect and approving it again
+does, which suits a few entries, not a whole install. To enforce:
 
 1. Export the scope in effect from the database (a new file, 0600; never
    overwritten). Its SHA-256 is printed:
@@ -863,9 +873,12 @@ is still signed, and each one outside the ledger is recorded. To enforce:
    ```
 
    The import refuses while the signer runs (it holds `ledger.lock`) and,
-   into a ledger that already holds scope, unless `-replace` is given:
-   `-replace` is for restoring after the signer's state was lost, and it can
-   widen the ledger, so it belongs to the same two-person review.
+   into a ledger that already holds scope, unless `-replace` is given.
+   A ledger that recorded changes while in `audit` already holds scope, so
+   the bootstrap of such an installation passes `-replace` too; so does a
+   restore after the signer's state was lost. `-replace` can widen the
+   ledger (to the exported file, which is the database's scope in effect),
+   so it belongs to the same two-person review.
 4. The default mode is now `enforce` (unless `SIGNER_LEDGER` says
    otherwise). Watch `openctem_signer_refusals_total` and the
    `SignerOutOfLedger` alert.
