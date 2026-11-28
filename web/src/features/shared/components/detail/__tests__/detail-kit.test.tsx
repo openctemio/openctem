@@ -12,6 +12,7 @@ import {
   PropertyGroup,
   PropertyList,
   PropertyRow,
+  IdValue,
 } from '..'
 
 describe('DetailPageHeader', () => {
@@ -203,7 +204,7 @@ describe('PropertyList', () => {
     expect(text.className).toContain('max-md:py-1.5')
   })
 
-  it('puts a value that does not fit beside its label under it, never cut', () => {
+  it('keeps a long value beside its label, wrapping in the value column, never cut', () => {
     const { container } = render(
       <PropertyList label="Properties">
         <PropertyGroup>
@@ -212,12 +213,31 @@ describe('PropertyList', () => {
       </PropertyList>
     )
     const row = container.querySelector<HTMLElement>('[data-slot=property-row]')!
-    // From 768 px: a wrapping row, the label a fixed column, the value the
-    // rest of the line at its own width (it wraps to a line of its own).
-    expect(row.className).toContain('md:flex-wrap')
-    expect(row.querySelector('dt')!.className).toContain('md:w-[6.75rem]')
-    expect(row.querySelector('dd')!.className).toContain('md:flex-[1_1_auto]')
+    // From 768 px: two columns, the label in 6.75rem and the value in the
+    // rest, so a long value (or tags) wraps in its own column and never
+    // drops under the label.
+    expect(row.className).toContain('md:grid-cols-[6.75rem_minmax(0,1fr)]')
+    expect(row.className).not.toContain('flex-wrap')
+    expect(row.querySelector('dd')!.className).toContain('break-words')
     expect(row.querySelector('dd')!.className).not.toContain('truncate')
+  })
+
+  it('shows an identifier as its value with a copy button, not a lone action', async () => {
+    const id = '01a21c3e-9a56-74bd-80f5-f0e6efe46200'
+    render(
+      <PropertyList label="Properties">
+        <PropertyGroup>
+          <PropertyRow label="ID">
+            <IdValue value={id} />
+          </PropertyRow>
+        </PropertyGroup>
+      </PropertyList>
+    )
+    const code = screen.getByText('01a21c3e')
+    expect(code.tagName).toBe('CODE')
+    expect(code).toHaveAttribute('title', id)
+    expect(screen.getByRole('button', { name: `Copy ${id}` })).toBeInTheDocument()
+    expect(screen.queryByText('Copy ID')).toBeNull()
   })
 
   it('renders no row for an empty value', () => {
