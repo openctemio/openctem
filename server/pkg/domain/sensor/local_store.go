@@ -302,8 +302,13 @@ func sanitizeStoreReason(s string) string {
 // window is longer than the checkpoint period; a change of stop_claiming or
 // of a level is written at once (HeartbeatStateDigest).
 func localStoreFreshFor(interval time.Duration) time.Duration {
-	return max(3*ClampHeartbeatInterval(interval), LivenessCheckpointPeriod+5*time.Minute)
+	return max(3*ClampHeartbeatInterval(interval), LocalStoreFreshFloor())
 }
+
+// LocalStoreFreshFloor is the least time a stored local store report
+// describes the sensor, whatever its heartbeat interval (the SQL mirror of
+// localStoreFreshFor reads it).
+func LocalStoreFreshFloor() time.Duration { return LivenessCheckpointPeriod + 5*time.Minute }
 
 // CurrentLocalStore is the stored local store report while it still
 // describes the sensor (reported with its latest heartbeats), else nil.

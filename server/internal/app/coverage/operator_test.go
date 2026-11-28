@@ -46,11 +46,11 @@ func TestOperatorPass(t *testing.T) {
 	ctx := context.Background()
 
 	s.operatorPass(ctx)
-	if len(n.subjects) != 1 || !strings.Contains(n.subjects[0], "vuln.templates cannot run on 42 assets") {
+	if len(n.subjects) != 1 || !strings.Contains(n.subjects[0], "vuln.templates cannot run on 42 assets (platform or sensor side)") {
 		t.Fatalf("first pass sent %v", n.subjects)
 	}
 	if b := n.bodies[0]; !strings.Contains(b, "not_dispatched: 40") || !strings.Contains(b, "at least 3 organizations") ||
-		!strings.Contains(b, "says nothing about the assets") {
+		!strings.Contains(b, "says nothing about the assets") || !strings.Contains(b, "never on the platform itself") {
 		t.Fatalf("body %q", b)
 	}
 

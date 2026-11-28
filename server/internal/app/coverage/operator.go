@@ -110,7 +110,7 @@ func (s *Service) operatorPass(ctx context.Context) {
 		}
 		o.sent[capability] = operatorSent{pairs: pairs, at: now}
 		subject, body := operatorMessage(capability, list, pairs)
-		s.logger.Warn("coverage cannot run on the platform side", "alert", "coverage_platform_failures",
+		s.logger.Warn("coverage keeps failing on the platform or sensor side", "alert", "coverage_platform_failures",
 			"capability", capability, "pairs", pairs)
 		if o.notifier == nil {
 			continue
@@ -135,11 +135,12 @@ func operatorMessage(capability string, list []covdom.PlatformFailureCount, pair
 		tenants = max(tenants, c.Tenants)
 		parts = append(parts, fmt.Sprintf("<li>%s: %d</li>", html.EscapeString(c.Outcome), c.Pairs))
 	}
-	subject := fmt.Sprintf("[WARNING] Coverage %s cannot run on %d assets (platform side)", capability, pairs)
+	subject := fmt.Sprintf("[WARNING] Coverage %s cannot run on %d assets (platform or sensor side)", capability, pairs)
 	body := fmt.Sprintf("<p>Automatic coverage of <strong>%s</strong> failed %d or more times in a row on the platform "+
 		"or sensor side for %d assets (at least %d organizations). The platform or a sensor could not complete the check (no task was planned, the run stalled, the task failed or the tool broke); the outcomes below say which. A target that does not answer or a name no task carried is not counted here: the organization sees those as coverage gaps. This says nothing about "+
 		"the assets, and the organizations are not told their assets are failing.</p><ul>%s</ul>"+
-		"<p>Check the sensor fleet, proxy health and scan runs in the platform console.</p>",
+		"<p>Every check runs on a sensor, never on the platform itself. Check the sensor fleet, proxy health and scan runs in the platform console: "+
+		"a run nobody picked up says why in its error (for example a sensor that stopped taking new work because its disk is low).</p>",
 		html.EscapeString(capability), covdom.PlatformFailingStreak, pairs, tenants, strings.Join(parts, ""))
 	return subject, body
 }
