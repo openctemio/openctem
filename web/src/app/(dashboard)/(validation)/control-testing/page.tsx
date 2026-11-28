@@ -104,13 +104,18 @@ function FrameworkCard({ stats }: { stats: FrameworkStats }) {
     <Card>
       <CardHeader className="pb-2">
         <CardDescription>{stats.framework}</CardDescription>
-        <CardTitle
-          className="text-2xl font-semibold tabular-nums" // anatomy-ok: existing figure; only its text is translated
-        >
-          {noneTested
-            ? '—'
-            : t('validation.controlTesting.passing', '{pct}% passing', { pct: passRate })}
-        </CardTitle>
+        {noneTested ? (
+          // Nothing tested yet: say so in words, never a big dash as the headline.
+          <CardTitle className="text-base font-medium text-muted-foreground">
+            {t('validation.controlTesting.notTestedYet', 'Not tested yet')}
+          </CardTitle>
+        ) : (
+          <CardTitle
+            className="text-2xl font-semibold tabular-nums" // anatomy-ok: existing figure; only its text is translated
+          >
+            {t('validation.controlTesting.passing', '{pct}% passing', { pct: passRate })}
+          </CardTitle>
+        )}
       </CardHeader>
       <CardContent>
         <Progress value={passRate} className="mb-2 h-2" />
@@ -349,6 +354,9 @@ function getControlColumns(t: TFn): ColumnDef<ControlTest>[] {
       id: 'actions',
       enableSorting: false,
       enableHiding: false,
+      // A labelled button: the column is as wide as it ("Record result" was
+      // cut past the table's edge in the 48 px icon column).
+      meta: { kind: 'decisions' },
       cell: ({ row }) => <RecordResultAction ct={row.original} />,
     },
   ]
@@ -594,7 +602,7 @@ function CreateControlTestDialog({ open, onOpenChange, onSuccess }: CreateContro
 
         <DialogForm onSubmit={handleSubmit}>
           <DialogBody className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="col-span-2 space-y-2">
                 <Label htmlFor="ct-name">
                   {t('validation.controlTesting.field.name', 'Name *')}

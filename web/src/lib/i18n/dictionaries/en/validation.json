@@ -100,6 +100,7 @@
   "validation.controlTesting.mitreDesc": "Detection and prevention rates per technique, from simulations.",
   "validation.controlTesting.mitreTitle": "MITRE ATT&CK coverage",
   "validation.controlTesting.never": "Never",
+  "validation.controlTesting.notTestedYet": "Not tested yet",
   "validation.controlTesting.passCount": "{count} pass",
   "validation.controlTesting.passing": "{pct}% passing",
   "validation.controlTesting.recordAria": "Record a test result for {name}",
