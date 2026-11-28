@@ -947,6 +947,22 @@ and no page rebuilds:
   nested card.
 - Section headings outside cards: `text-base font-semibold`, sentence case.
 
+### Index pages
+
+An index page is an overview of links in groups (the settings overview, a
+section's overview). It is not a form, so it never sits in the reading
+column: `SettingsPage wide` (or the page's full width), the groups in
+`IndexGroups` and each group's links in `IndexLinkList`
+(`@/features/shared`, `index-grid.tsx`):
+
+- the groups one under the other, and two side by side once the content is
+  80rem wide (a 1920 px screen with the sidebar), each as tall as its own
+  links;
+- a group's links in as many columns as fit, at least 14rem each: 1 on a
+  phone, 2 to 3 at 1280 and 1440, 3 to 4 per group at 1920 and up, never
+  three narrow columns beside an empty half of the page;
+- search results and other rows of text keep the reading width.
+
 ### Settings pages
 
 Every settings page is built from the same parts (`@/features/shared`):
@@ -1599,6 +1615,21 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   keep the full width; a form page uses the settings column. The layout
   matrix fails a text line or a field wider than 960 px, or a rail 400 px
   from its content, from 1900 px up.
+- Wide screens (1920, 2048 and 2560 px) use the width for content, not for
+  margins: lists show more columns and fuller titles (column sizing by
+  content, §3), card and link grids add columns (`auto-fill` with a minimum
+  track, never a fixed 2 or 3 up), index pages spread their groups (§4,
+  "Index pages"). Only running text keeps the reading measure; a table, a
+  grid or an index is never held in a narrow column with an empty band
+  beside it.
+- Notices take their own room in the page and scroll with it: the shell's
+  notices (platform announcement, vulnerability data status, support access)
+  are the first thing inside the page scroller, never pinned above it, and a
+  page notice is a block in the `PageStack`. Nothing pinned (sticky or
+  fixed) may sit over page content at rest or after a scroll, except a
+  table's own header and frozen columns over its rows; a sticky bar reserves
+  its height (the settings save bar). The layout matrix's `underPinned`
+  detector checks it after scrolling one screen.
 - An ellipsis or a line clamp never hides meaning. A status reason, a metric's
   label, a sentence or a value shows in full: wrap it (two lines), or give it a
   shorter plain label. Only a name or title (a DataTable column of kind `name`,
