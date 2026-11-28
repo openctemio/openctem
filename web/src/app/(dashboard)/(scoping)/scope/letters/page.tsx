@@ -8,7 +8,7 @@
  * revoked or expired letter stops every entry naming it.
  */
 
-import { useId, useMemo, useState } from 'react'
+import { useCallback, useId, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { toast } from 'sonner'
 import { Download, FileSignature, Loader2, Upload } from 'lucide-react'
@@ -213,13 +213,16 @@ export default function ScopeLettersPage() {
     }
   }
 
-  const download = async (l: AuthorizationLetter) => {
-    try {
-      await downloadLetter(l)
-    } catch (err) {
-      toast.error(errorText(err, t('letters.downloadFailed', 'The download failed')))
-    }
-  }
+  const download = useCallback(
+    async (l: AuthorizationLetter) => {
+      try {
+        await downloadLetter(l)
+      } catch (err) {
+        toast.error(errorText(err, t('letters.downloadFailed', 'The download failed')))
+      }
+    },
+    [t]
+  )
 
   const columns = useMemo<ColumnDef<AuthorizationLetter>[]>(
     () => [
@@ -299,9 +302,7 @@ export default function ScopeLettersPage() {
         ),
       },
     ],
-    // download is recreated each render; it only reads `t`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [t, canRevoke, busy]
+    [t, canRevoke, busy, download]
   )
 
   return (
