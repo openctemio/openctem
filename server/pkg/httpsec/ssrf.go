@@ -310,7 +310,7 @@ func IsPrivateIP(ip net.IP) bool {
 
 // isIPBlocked is IsIPBlocked with a per-call private switch: when
 // privateOK is true every RFC1918 / ULA address is reachable (the
-// hard-blocked ranges never are).
+// hard-blocked ranges and the platform's own service addresses never are).
 func isIPBlocked(ip net.IP, privateOK bool) bool {
 	if _, hard := hardBlockReason(ip); hard {
 		return true
@@ -330,12 +330,17 @@ func isIPBlocked(ip net.IP, privateOK bool) bool {
 	return IsPrivateIP(ip)
 }
 
-// hardBlockReason returns why ip can never be reached, if it cannot.
+// hardBlockReason returns why ip can never be reached, if it cannot: a
+// hard-blocked range, or one of the platform's own service addresses
+// (platform_services.go), which no opened range or private switch unlocks.
 func hardBlockReason(ip net.IP) (HardBlockReason, bool) {
 	for i, cidr := range hardBlockedCIDRs {
 		if cidr.Contains(ip) {
 			return hardBlockedReasons[i], true
 		}
+	}
+	if isPlatformService(ip) {
+		return HardBlockPlatformService, true
 	}
 	return "", false
 }
@@ -381,10 +386,8 @@ func resolveSafeIPsPolicy(ctx context.Context, resolver ipResolver, host string,
 // isIPBlockedStrict blocks every private range as well as the hard-blocked
 // ones, whatever ranges the installation opened.
 func isIPBlockedStrict(ip net.IP) bool {
-	for _, cidr := range hardBlockedCIDRs {
-		if cidr.Contains(ip) {
-			return true
-		}
+	if _, hard := hardBlockReason(ip); hard {
+		return true
 	}
 	return IsPrivateIP(ip)
 }
@@ -526,7 +529,8 @@ func SafeHTTPClient(timeout time.Duration) *http.Client {
 // PrivateAllowedHTTPClient is SafeHTTPClient for a destination an operator
 // explicitly allowed to be on a private network (a self-hosted model server).
 // RFC1918 and ULA addresses are reachable; loopback, link-local and cloud
-// metadata, CGNAT and the other hard-blocked ranges still are not, and the
+// metadata, CGNAT, the other hard-blocked ranges and the platform's own
+// service addresses (SetPlatformServiceAddrs) still are not, and the
 // resolve-once, dial-the-vetted-IP rule against DNS rebinding is unchanged.
 // Use it only for a URL set by a platform administrator, never one an
 // organization supplies.

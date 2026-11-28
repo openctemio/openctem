@@ -261,7 +261,6 @@
   "src/features/shared/components/one-time-secret-field.tsx": 2,
   "src/features/shared/components/untrusted-text-block.tsx": 2,
   "src/features/support-access/components/support-access-settings.tsx": 1,
-  "src/features/tenant/components/create-team-form.tsx": 1,
   "src/features/threat-intel/components/iocs-panel.tsx": 3,
   "src/features/threat-intel/components/threat-actors-panel.tsx": 3,
   "src/features/threat-model/components/threat-model-table.tsx": 1,

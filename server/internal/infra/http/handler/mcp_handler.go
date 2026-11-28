@@ -458,7 +458,7 @@ func (h *MCPHandler) handleToolsCall(w http.ResponseWriter, r *http.Request, req
 		// isError=true, not a JSON-RPC protocol error. The error is typed
 		// (classifyMCPError): absent and inaccessible items share one answer,
 		// and internal detail is never returned (logged in full here).
-		h.logger.Warn("mcp tool error", "tool", tool.Name, "error", err.Error())
+		h.logger.Warn("mcp tool error", "tool", tool.Name, "error", logger.SanitizeError(err))
 		h.auditToolCall(r, tenantID, tool.Name, p.Arguments, auditdom.ResultFailure, true, 0)
 		h.writeResult(w, req.ID, toolErrorResult(classifyMCPError(err)))
 		return

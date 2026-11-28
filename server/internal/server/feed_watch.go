@@ -32,6 +32,5 @@ func (c corpusFreshness) FreshnessStats(ctx context.Context, now time.Time) (fee
 	if err != nil {
 		return feedwatch.CorpusStats{}, err
 	}
-	return feedwatch.CorpusStats{NewestPublished: st.NewestPublished, Published24h: st.Published24h,
-		PublishedPrior30d: st.PublishedPrior30d}, nil
+	return feedwatch.CorpusStats{NewestPublished: st.NewestPublished, Daily: st.Daily}, nil
 }
