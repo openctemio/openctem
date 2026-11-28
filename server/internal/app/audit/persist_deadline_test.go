@@ -56,7 +56,7 @@ func TestLogEvent_PersistsAfterTheRequestDeadline(t *testing.T) {
 	}
 }
 
-// A cancelled request (the client went away after the write) is recorded too.
+// A canceled request (the client went away after the write) is recorded too.
 func TestLogEvent_PersistsAfterTheRequestIsCancelled(t *testing.T) {
 	repo := &ctxCheckingRepo{}
 	svc := auditapp.NewAuditService(repo, logger.NewNop())
