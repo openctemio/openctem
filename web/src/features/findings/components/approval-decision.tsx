@@ -84,7 +84,7 @@ export function useApprovalDecision({
         toast.success(t('findings.approvals.toast.signed', 'Your approval is recorded'), {
           description: t(
             'findings.approvals.toast.signedDesc',
-            '{count} more approval(s) needed before the status changes.',
+            '{count, plural, one {# more approval} other {# more approvals}} needed before the status changes.',
             { count: outcome.remaining }
           ),
         })
@@ -164,7 +164,7 @@ export function useApprovalDecision({
           remaining > 0
             ? t(
                 'confirm.findingApproval.approveDescMore',
-                'Your approval is recorded. The finding moves to the requested status once {count} more approval(s) are in.',
+                'Your approval is recorded. The finding moves to the requested status once {count, plural, one {# more approval is} other {# more approvals are}} in.',
                 { count: remaining }
               )
             : t(

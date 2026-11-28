@@ -138,7 +138,7 @@ describe('system attention copy', () => {
     const items = buildSystemAttention(system())
     expect(items.find((i) => i.id === 'sensors-all-offline')).toMatchObject({
       severity: 'critical',
-      title: 'No sensor is online',
+      title: 'No sensor of any organization or the platform is online',
     })
     expect(items.some((i) => i.id === 'service-down-sensors')).toBe(false)
   })

@@ -237,6 +237,7 @@ export function AttackPathCanvas({
             state,
             weight: target?.weight ?? undefined,
             danger: target?.finding?.kev === true,
+            via: e.via,
             // A step with no open finding has no label: the score card and
             // the node say "assumed".
             label:

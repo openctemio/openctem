@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import {
   DataTable,
+  DETAIL_SHEET_WIDTH,
   EmptyState,
   ErrorState,
   FilterSelect,
@@ -29,7 +30,10 @@ import {
   PageStack,
   RelativeTime,
   StackedCell,
+  TruncatedText,
 } from '@/features/shared'
+import { SeverityBadge } from '@/components/ui/severity-badge'
+import { cn } from '@/lib/utils'
 import { ProviderIcon } from '@/features/scm-connections'
 import { useListParams } from '@/hooks/use-list-params'
 import { useUrlFilter } from '@/hooks/use-url-param'
@@ -351,43 +355,112 @@ const DECORATION_LABEL: Record<string, string> = {
   failed: 'Failed',
 }
 
-function ReasonList({ reasons, label }: { reasons: CIGateReason[]; label: string }) {
+/** Rows a reason group shows before "Show more", and how many each press adds. */
+export const REASONS_PAGE = 10
+
+/** Reasons grouped by their type, in the order each type first appears. */
+export function groupReasons(reasons: CIGateReason[]): { code: string; items: CIGateReason[] }[] {
+  const groups = new Map<string, CIGateReason[]>()
+  for (const r of reasons) {
+    const code = r.code ?? ''
+    const g = groups.get(code)
+    if (g) g.push(r)
+    else groups.set(code, [r])
+  }
+  return [...groups.entries()].map(([code, items]) => ({ code, items }))
+}
+
+function reasonLabel(code: string, t: ReturnType<typeof useTranslation>['t']): string {
+  return REASON_LABEL[code] ? t(`scans.ci.reason.${code}`, REASON_LABEL[code]) : code
+}
+
+/**
+ * One type of reason: its name and count, then one compact row per finding
+ * (severity, title with the explanation in its tooltip, file:line, Open). A
+ * run with hundreds of findings shows the first rows of each type, and "Show
+ * more" adds a page at a time.
+ */
+function ReasonGroup({ code, items }: { code: string; items: CIGateReason[] }) {
   const { t } = useTranslation()
+  const [limit, setLimit] = useState(REASONS_PAGE)
+  const shown = items.slice(0, limit)
+  const rest = items.length - shown.length
+  const label = reasonLabel(code, t)
   return (
-    <ul className="space-y-2" aria-label={label}>
-      {reasons.map((r, i) => (
-        <li key={`${r.code}-${r.fingerprint ?? i}`} className="rounded-md border p-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">
-              {REASON_LABEL[r.code ?? '']
-                ? t(`scans.ci.reason.${r.code}`, REASON_LABEL[r.code ?? ''])
-                : r.code}
-            </Badge>
-            {r.severity && (
-              <span className="text-muted-foreground">
-                {t(`severity.${r.severity}`, r.severity)}
-              </span>
-            )}
-          </div>
-          <p className="mt-1 break-words">{r.title || r.message}</p>
-          {r.title && <p className="break-words text-muted-foreground">{r.message}</p>}
-          {r.file && (
-            <p className="break-all font-mono text-xs text-muted-foreground">
-              {r.file}
-              {r.line ? `:${r.line}` : ''}
-            </p>
-          )}
-          {r.finding_id && (
-            <Link
-              href={`/findings/${r.finding_id}`}
-              className="text-xs text-primary hover:underline"
+    <div className="space-y-1.5" data-testid="ci-reason-group">
+      <h4 className="flex items-baseline gap-2 text-sm font-medium">
+        <span className="min-w-0 break-words">{label}</span>
+        <span className="text-muted-foreground tabular-nums">{items.length}</span>
+      </h4>
+      <ul className="divide-y rounded-md border" aria-label={label}>
+        {shown.map((r, i) => {
+          const location = r.file ? `${r.file}${r.line ? `:${r.line}` : ''}` : ''
+          return (
+            <li
+              key={`${r.code}-${r.fingerprint ?? i}`}
+              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 px-3 py-2 sm:grid-cols-[5.5rem_minmax(0,1fr)_minmax(0,16rem)_auto]"
+              data-testid="ci-reason"
             >
-              {t('scans.ci.openFinding', 'Open finding')}
-            </Link>
-          )}
-        </li>
+              <span className="col-span-2 sm:col-span-1">
+                {r.severity ? <SeverityBadge severity={r.severity} /> : null}
+              </span>
+              <TruncatedText
+                value={r.title || r.message}
+                detail={r.title ? r.message : undefined}
+                className="block"
+              />
+              {location ? (
+                <TruncatedText
+                  value={location}
+                  middle={48}
+                  label={t('scans.ci.runDetail.location', 'Location')}
+                  className="order-last col-span-2 block font-mono text-xs text-muted-foreground sm:order-none sm:col-span-1"
+                />
+              ) : (
+                <span className="hidden sm:block" />
+              )}
+              {r.finding_id ? (
+                <Link
+                  href={`/findings/${r.finding_id}`}
+                  className="text-xs text-primary hover:underline"
+                  aria-label={t('scans.ci.openFinding', 'Open finding')}
+                >
+                  {t('scans.ci.runDetail.open', 'Open')}
+                </Link>
+              ) : (
+                <span />
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      {(rest > 0 || limit > REASONS_PAGE) && (
+        <div className="flex justify-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setLimit((l) => (rest > 0 ? l + REASONS_PAGE : REASONS_PAGE))}
+          >
+            {rest > 0
+              ? t('scans.ci.runDetail.showMore', 'Show {count} more', {
+                  count: Math.min(rest, REASONS_PAGE),
+                })
+              : t('scans.ci.runDetail.showFewer', 'Show fewer')}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ReasonList({ reasons, label }: { reasons: CIGateReason[]; label: string }) {
+  const groups = useMemo(() => groupReasons(reasons), [reasons])
+  return (
+    <div className="space-y-4" role="group" aria-label={label}>
+      {groups.map((g) => (
+        <ReasonGroup key={g.code} code={g.code} items={g.items} />
       ))}
-    </ul>
+    </div>
   )
 }
 
@@ -428,7 +501,7 @@ export function CIRunSheet({ id, onClose }: { id: string | null; onClose: () => 
     .join(', ')
   return (
     <Sheet open={!!id} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="w-full sm:max-w-xl">
+      <SheetContent className={cn('w-full', DETAIL_SHEET_WIDTH.wide)}>
         <SheetHeader>
           <SheetTitle className="break-words">
             {run?.repository ?? t('scans.ci.run', 'CI run')}

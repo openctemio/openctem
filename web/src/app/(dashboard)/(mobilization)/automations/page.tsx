@@ -1280,7 +1280,7 @@ export default function WorkflowsPage() {
             <DialogDescription>
               {t(
                 'automations.save.description',
-                'Save your workflow design. The workflow will include {nodes} node(s) and {edges} connection(s).',
+                'Save your workflow design. The workflow will include {nodes, plural, one {# node} other {# nodes}} and {edges, plural, one {# connection} other {# connections}}.',
                 { nodes: nodes.length, edges: edges.length }
               )}
             </DialogDescription>

@@ -122,16 +122,10 @@ func (h *BusinessServiceHandler) requireWritable(w http.ResponseWriter, r *http.
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return false
 	}
-	visible, _, scopeArgs := serviceReadFrame(scope, 3)
-	var ok bool
-	if err := h.db.QueryRowContext(r.Context(),
-		`SELECT EXISTS(SELECT 1 FROM business_services
-		  WHERE tenant_id = $1 AND id = $2
-		    AND (`+visible+` OR NOT EXISTS (
-		        SELECT 1 FROM business_service_assets e
-		         WHERE e.tenant_id = $1 AND e.service_id = business_services.id)))`,
-		append([]any{tenantID, serviceID}, scopeArgs...)...,
-	).Scan(&ok); err != nil || !ok {
+	if ok, err := serviceVisibleExists(r.Context(), h.db, tenantID, serviceID, scope, true); err != nil || !ok {
+		if err != nil {
+			h.logger.Error("business service write visibility", "error", err)
+		}
 		apierror.NotFound("business service").WriteJSON(w)
 		return false
 	}
@@ -151,6 +145,59 @@ func (h *BusinessServiceHandler) readerScope(r *http.Request, tenantID string) (
 	return h.dataScope.Resolve(r.Context(), tid)
 }
 
+// serviceVisibleFrame is the row predicate of serviceReadFrame alone, with
+// only the arguments it uses: an unrestricted scope (an administrator from
+// whom private program assets are hidden) sees every service, so its
+// predicate is TRUE and takes no argument. Passing serviceReadFrame's
+// arguments to a query without its countCol made Postgres refuse the
+// statement ("got 3 parameters but the statement requires 1").
+func serviceVisibleFrame(scope *shared.DataScope, first int) (string, []any) {
+	if !scope.Restricted() {
+		return "TRUE", nil
+	}
+	return filterspec.BusinessServiceVisibleSQL("business_services.id", scope, first)
+}
+
+// countVisibleServices counts the tenant's services the reader sees.
+func countVisibleServices(ctx context.Context, db *sql.DB, tenantID string, scope *shared.DataScope) (int64, error) {
+	visible, args := serviceVisibleFrame(scope, 2)
+	var total int64
+	//nolint:gosec // G701: visible is fixed SQL (filterspec fragments); every value is a bind argument
+	err := db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM business_services WHERE tenant_id = $1 AND "+visible,
+		append([]any{tenantID}, args...)...,
+	).Scan(&total)
+	return total, err
+}
+
+// serviceVisibleExists reports whether service id is the tenant's and
+// visible to the reader; orUnlinked also accepts a service with no linked
+// asset (a restricted caller may still write the service they just made).
+func serviceVisibleExists(ctx context.Context, db *sql.DB, tenantID, id string, scope *shared.DataScope, orUnlinked bool) (bool, error) {
+	if !validServiceID(id) {
+		return false, nil // a malformed id is an unknown id
+	}
+	visible, args := serviceVisibleFrame(scope, 3)
+	if orUnlinked {
+		visible = `(` + visible + ` OR NOT EXISTS (
+		        SELECT 1 FROM business_service_assets e
+		         WHERE e.tenant_id = $1 AND e.service_id = business_services.id))`
+	}
+	var ok bool
+	//nolint:gosec // G701: visible is fixed SQL (filterspec fragments); every value is a bind argument
+	err := db.QueryRowContext(ctx,
+		"SELECT EXISTS(SELECT 1 FROM business_services WHERE tenant_id = $1 AND id = $2 AND "+visible+")",
+		append([]any{tenantID, id}, args...)...,
+	).Scan(&ok)
+	return ok, err
+}
+
+// validServiceID reports whether id parses as a service id.
+func validServiceID(id string) bool {
+	_, err := shared.IDFromString(id)
+	return err == nil
+}
+
 // serviceReadFrame is how a read of business_services rows follows the
 // reader's scope, with its placeholders at $first (user id) and $first+1
 // (tenant id) and those arguments (none for a nil scope):
@@ -167,10 +214,7 @@ func serviceReadFrame(scope *shared.DataScope, first int) (visible, countCol str
 		   FROM business_service_assets bsa
 		   JOIN assets a ON a.id = bsa.asset_id AND a.tenant_id = business_services.tenant_id
 		  WHERE bsa.service_id = business_services.id AND ` + cond + `) AS asset_count`
-	visible = "TRUE"
-	if scope.Restricted() {
-		visible, _ = filterspec.BusinessServiceVisibleSQL("business_services.id", scope, first)
-	}
+	visible, _ = serviceVisibleFrame(scope, first)
 	return visible, countCol, args
 }
 
@@ -203,12 +247,8 @@ func (h *BusinessServiceHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The list and its total hold only the services the reader sees.
-	totalVisible, _, totalArgs := serviceReadFrame(scope, 2)
-	var total int64
-	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT COUNT(*) FROM business_services WHERE tenant_id = $1 AND "+totalVisible,
-		append([]any{tenantID}, totalArgs...)...,
-	).Scan(&total); err != nil {
+	total, err := countVisibleServices(r.Context(), h.db, tenantID, scope)
+	if err != nil {
 		h.logger.Error("business service list count", "error", err)
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
@@ -541,12 +581,10 @@ func (h *BusinessServiceHandler) ListAssets(w http.ResponseWriter, r *http.Reque
 		apierror.InternalServerError("internal error").WriteJSON(w)
 		return
 	}
-	visible, _, scopeArgs := serviceReadFrame(scope, 3)
-	var serviceExists bool
-	if err := h.db.QueryRowContext(r.Context(),
-		"SELECT EXISTS(SELECT 1 FROM business_services WHERE tenant_id = $1 AND id = $2 AND "+visible+")",
-		append([]any{tenantID, id}, scopeArgs...)...,
-	).Scan(&serviceExists); err != nil || !serviceExists {
+	if ok, err := serviceVisibleExists(r.Context(), h.db, tenantID, id, scope, false); err != nil || !ok {
+		if err != nil {
+			h.logger.Error("business service list assets visibility", "error", err)
+		}
 		apierror.NotFound("business service").WriteJSON(w)
 		return
 	}

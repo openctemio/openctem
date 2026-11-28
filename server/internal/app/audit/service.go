@@ -19,6 +19,10 @@ import (
 	"github.com/openctemio/openctem/server/pkg/pagination"
 )
 
+// persistTimeout bounds one audit write once it no longer follows the
+// request's own deadline.
+const persistTimeout = 10 * time.Second
+
 // AuditService handles audit logging operations.
 type AuditService struct {
 	auditRepo auditdom.Repository
@@ -155,7 +159,13 @@ func (s *AuditService) LogEvent(ctx context.Context, actx AuditContext, event Au
 		log.WithMetadata("scim_token_prefix", k.prefix)
 	}
 
-	// Persist
+	// Persist. The change this event records has already happened, so the
+	// write must not die with the request: a request whose deadline passed
+	// (or whose client went away) after the change used to lose its audit
+	// row. The write keeps the request's values (transaction, request id)
+	// and gets a deadline of its own.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), persistTimeout)
+	defer cancel()
 	if err := s.auditRepo.Create(ctx, log); err != nil {
 		s.logger.Error("failed to persist audit log",
 			"error", err,

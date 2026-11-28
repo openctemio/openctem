@@ -369,7 +369,7 @@ func (h *CredentialImportHandler) GetByID(w http.ResponseWriter, r *http.Request
 	item, err := h.service.GetByID(r.Context(), tenantID, id)
 	if err != nil {
 		h.logger.Error("failed to get credential", "error", err, "id", id)
-		apierror.NotFound("credential not found").WriteJSON(w)
+		apierror.NotFound("Credential").WriteJSON(w)
 		return
 	}
 
@@ -411,7 +411,7 @@ func (h *CredentialImportHandler) RevealSecret(w http.ResponseWriter, r *http.Re
 
 	item, err := h.service.GetByID(r.Context(), tenantID, id)
 	if err != nil {
-		apierror.NotFound("credential not found").WriteJSON(w)
+		apierror.NotFound("Credential").WriteJSON(w)
 		return
 	}
 	secret, err := h.service.RevealSecret(r.Context(), tenantID, id)
@@ -426,7 +426,7 @@ func (h *CredentialImportHandler) RevealSecret(w http.ResponseWriter, r *http.Re
 		return
 	default:
 		h.logger.Error("failed to reveal credential", "error", err, "id", id)
-		apierror.NotFound("credential not found").WriteJSON(w)
+		apierror.NotFound("Credential").WriteJSON(w)
 		return
 	}
 
@@ -529,7 +529,7 @@ func (h *CredentialImportHandler) GetRelatedCredentials(w http.ResponseWriter, r
 	items, err := h.service.GetRelatedCredentials(r.Context(), tenantID, id)
 	if err != nil {
 		h.logger.Error("failed to get related credentials", "error", err, "id", id)
-		apierror.NotFound("credential not found").WriteJSON(w)
+		apierror.NotFound("Credential").WriteJSON(w)
 		return
 	}
 

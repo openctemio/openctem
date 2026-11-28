@@ -47,9 +47,13 @@ export function RequestedQueue({
     try {
       const res = await remindApprovers(a.id)
       toast.success(
-        t('findings.approvals.toast.reminded', 'Reminded {count} approver(s)', {
-          count: res?.reminded ?? 0,
-        })
+        t(
+          'findings.approvals.toast.reminded',
+          'Reminded {count, plural, one {# approver} other {# approvers}}',
+          {
+            count: res?.reminded ?? 0,
+          }
+        )
       )
     } catch (err) {
       toast.error(

@@ -250,6 +250,8 @@ describe('SupportAccessBanner', () => {
       'Platform support (Hana Support) can view your findings and assets'
     )
     expect(banner).toHaveTextContent('(case CASE-42)')
+    // The case reference never breaks at its hyphen (SUP-|2026-0042).
+    expect(within(banner).getByTestId('support-case-ref')).toHaveClass('whitespace-nowrap')
     expect(within(banner).queryByRole('link')).not.toBeInTheDocument()
   })
 

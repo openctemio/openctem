@@ -89,15 +89,45 @@ var openFindingsByLocation = `SELECT COALESCE(f.location_key, ''), f.severity, C
 const findingEndpointJoin = ` LEFT JOIN finding_web_locations w ON w.tenant_id = f.tenant_id AND w.finding_id = f.id
 	LEFT JOIN web_endpoints e ON e.tenant_id = w.tenant_id AND e.id = w.endpoint_id AND e.origin_asset_id = f.asset_id`
 
-// OriginOpenFindings groups the origin asset's open findings by location key
-// and severity.
-func (r *WebEndpointRepository) OriginOpenFindings(ctx context.Context, tenantID, assetID shared.ID) ([]webendpoint.PathFinding, error) {
+// memberFindingRule is the findings list's member visibility rule for the
+// finding under alias f, with the member's user id as $4.
+var memberFindingRule = ` AND ` + vulnerability.FindingMemberVisibilitySQL("f", "$1::uuid", "$4::uuid")
+
+// openFindingsByLocationAs and openURLFindingsAs are the two finding reads
+// of a path tree as v sees them, with their arguments.
+func openFindingsByLocationAs(tenantID, assetID shared.ID, v webendpoint.FindingViewer) (string, []any) {
+	args := make([]any, 0, 4)
+	args = append(args, tenantID.String(), assetID.String(), webendpoint.MaxPathFindingRows)
+	if v.MemberUserID == "" {
+		return openFindingsByLocation, args
+	}
+	q := `SELECT COALESCE(f.location_key, ''), f.severity, COUNT(*), COALESCE(e.path_template, ''), COALESCE(e.method, '')
+	FROM findings f` + findingEndpointJoin + ` WHERE ` + openOnAsset + memberFindingRule + ` GROUP BY 1, 2, 4, 5 LIMIT $3`
+	return q, append(args, v.MemberUserID)
+}
+
+func openURLFindingsAs(tenantID, assetID shared.ID, v webendpoint.FindingViewer) (string, []any) {
+	args := make([]any, 0, 4)
+	args = append(args, tenantID.String(), assetID.String(), webendpoint.MaxPathFindingRows)
+	if v.MemberUserID == "" {
+		return openURLFindings, args
+	}
+	q := `SELECT f.id::text, COALESCE(NULLIF(f.title, ''), f.message), f.severity, f.status, COALESCE(f.location_key, ''),
+	COALESCE(e.path_template, ''), COALESCE(e.method, '') FROM findings f` + findingEndpointJoin + ` WHERE ` +
+		openOnAsset + memberFindingRule + ` AND (f.location_key LIKE 'url:%' OR e.id IS NOT NULL) ORDER BY f.id LIMIT $3`
+	return q, append(args, v.MemberUserID)
+}
+
+// OriginOpenFindings groups the origin asset's open findings by location
+// key and severity, as v sees them.
+func (r *WebEndpointRepository) OriginOpenFindings(ctx context.Context, tenantID, assetID shared.ID, v webendpoint.FindingViewer) ([]webendpoint.PathFinding, error) {
 	tx, err := beginRead(ctx, r.db.DB, webPathReadTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("begin path findings: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	rows, err := tx.QueryContext(ctx, openFindingsByLocation, tenantID.String(), assetID.String(), webendpoint.MaxPathFindingRows)
+	q, args := openFindingsByLocationAs(tenantID, assetID, v)
+	rows, err := tx.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("origin findings: %w", err)
 	}
@@ -129,13 +159,14 @@ var openURLFindings = `SELECT f.id::text, COALESCE(NULLIF(f.title, ''), f.messag
 
 // OriginURLFindings returns the origin asset's open findings with a URL
 // location (titles bounded by the column), at most MaxPathFindingRows.
-func (r *WebEndpointRepository) OriginURLFindings(ctx context.Context, tenantID, assetID shared.ID) ([]webendpoint.FindingRow, error) {
+func (r *WebEndpointRepository) OriginURLFindings(ctx context.Context, tenantID, assetID shared.ID, v webendpoint.FindingViewer) ([]webendpoint.FindingRow, error) {
 	tx, err := beginRead(ctx, r.db.DB, webPathReadTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("begin node findings: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	rows, err := tx.QueryContext(ctx, openURLFindings, tenantID.String(), assetID.String(), webendpoint.MaxPathFindingRows)
+	q, args := openURLFindingsAs(tenantID, assetID, v)
+	rows, err := tx.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("node findings: %w", err)
 	}

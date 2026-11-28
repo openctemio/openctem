@@ -315,7 +315,7 @@ export function ToolDetailSheet({
               <DetailField label={t('scans.tools.col.sensors', 'Sensors')}>
                 {sensorsLabel(item, t)}
               </DetailField>
-              <DetailField label={t('scans.tools.col.versions', 'Version(s)')}>
+              <DetailField label={t('scans.tools.col.versions', 'Versions')}>
                 {versions || '–'}
                 {item.update_available && item.latest_version && (
                   <span className="text-warning">

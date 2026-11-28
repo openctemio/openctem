@@ -152,6 +152,15 @@ func TestOwners(t *testing.T) {
 	if n := Owners(as); n != 1 {
 		t.Fatalf("named owners %d, want 1 (break-glass and inactive do not count)", n)
 	}
+	// The roles table reads the same split: 1 named owner and the emergency
+	// account apart, never "2 holders" above "fewer than two owners".
+	named, emergency := Holders(as)
+	if named[platformauthz.RoleOwner] != Owners(as) || emergency[platformauthz.RoleOwner] != 1 {
+		t.Fatalf("owner holders named %d emergency %d, want 1 and 1", named[platformauthz.RoleOwner], emergency[platformauthz.RoleOwner])
+	}
+	if named[platformauthz.RoleAdmin] != 1 || named[platformauthz.RoleSupport] != 1 || emergency[platformauthz.RoleAdmin] != 0 {
+		t.Fatalf("holders named %v emergency %v", named, emergency)
+	}
 }
 
 // Giving a role already held changes nothing: no audit row, no roster notice.

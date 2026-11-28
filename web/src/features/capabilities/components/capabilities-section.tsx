@@ -33,7 +33,14 @@ import {
   invalidateCapabilitiesCache,
 } from '@/lib/api/capability-hooks'
 import type { Capability, CapabilityUsageStatsBatchResponse } from '@/lib/api/capability-types'
-import { EmptyState, ErrorState, ListToolbar, PageHeader, PageStack } from '@/features/shared'
+import {
+  CARD_GRID,
+  EmptyState,
+  ErrorState,
+  ListToolbar,
+  PageHeader,
+  PageStack,
+} from '@/features/shared'
 import { ViewSwitcher } from '@/features/shared/components/view-switcher'
 import { useTranslation } from '@/context/i18n-provider'
 
@@ -311,7 +318,7 @@ export function CapabilitiesSection() {
       <div className="space-y-4">
         <ListToolbar search={search} start={toolbarStart} end={toolbarEnd} />
         {filteredCapabilities.length > 0 ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className={`${CARD_GRID} gap-4`}>
             {filteredCapabilities.map((capability) => (
               <CapabilityCard
                 key={capability.id}
@@ -442,9 +449,13 @@ export function CapabilitiesSection() {
                   <div className="flex items-center gap-1.5">
                     <Wrench className="h-4 w-4" />
                     <span>
-                      {t('confirm.capability.toolCount', '{count} tool(s)', {
-                        count: selectedUsageStats.tool_count,
-                      })}
+                      {t(
+                        'confirm.capability.toolCount',
+                        '{count, plural, one {# tool} other {# tools}}',
+                        {
+                          count: selectedUsageStats.tool_count,
+                        }
+                      )}
                     </span>
                   </div>
                 )}
@@ -452,9 +463,13 @@ export function CapabilitiesSection() {
                   <div className="flex items-center gap-1.5">
                     <Bot className="h-4 w-4" />
                     <span>
-                      {t('confirm.capability.sensorCount', '{count} sensor(s)', {
-                        count: selectedUsageStats.sensor_count,
-                      })}
+                      {t(
+                        'confirm.capability.sensorCount',
+                        '{count, plural, one {# sensor} other {# sensors}}',
+                        {
+                          count: selectedUsageStats.sensor_count,
+                        }
+                      )}
                     </span>
                   </div>
                 )}

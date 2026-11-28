@@ -427,3 +427,35 @@ func TestTeamAccess_PresetUpgrade(t *testing.T) {
 		t.Fatalf("second upgrade: %v", err)
 	}
 }
+
+// An administrator who is a member of a team (for example its creator,
+// who joins as its owner) cannot give it roles: that would raise their own
+// access. The refusal says so (TEAM_SELF_MEMBER), not that they added
+// themselves to the team, and nothing changes. The same administrator, once
+// not a member, may; so may the organization owner as a member.
+func TestTeamAccess_MemberAdminCannotGiveTheTeamRoles(t *testing.T) {
+	h := newGRBHarness(t)
+	if _, err := h.groups.AddMember(context.Background(), accesscontrol.AddGroupMemberInput{GroupID: h.team.String(), UserID: h.admin, Role: "owner"}, h.actx(h.owner)); err != nil {
+		t.Fatalf("add the admin to the team: %v", err)
+	}
+	_, err := h.setAccess(h.admin, h.team, "specific", "security-analyst")
+	if !errors.Is(err, accesscontrol.ErrSelfMemberRoleTeam) || errors.Is(err, accesscontrol.ErrSelfJoinRoleTeam) {
+		t.Fatalf("member admin gives the team a preset: %v, want ErrSelfMemberRoleTeam", err)
+	}
+	if !errors.Is(err, shared.ErrForbidden) {
+		t.Fatalf("the refusal is not a forbidden: %v", err)
+	}
+	var n int
+	_ = h.db.QueryRowContext(context.Background(), `SELECT count(*) FROM roles WHERE managed_group_id = $1`, h.team.String()).Scan(&n)
+	if n != 0 {
+		t.Fatalf("a refused change created %d roles", n)
+	}
+
+	// The owner, a member too, may.
+	if _, err := h.groups.AddMember(context.Background(), accesscontrol.AddGroupMemberInput{GroupID: h.team.String(), UserID: h.owner, Role: "member"}, h.actx(h.owner)); err != nil {
+		t.Fatalf("add the owner to the team: %v", err)
+	}
+	if _, err := h.setAccess(h.owner, h.team, "specific", "security-analyst"); err != nil {
+		t.Fatalf("owner gives the team a preset: %v", err)
+	}
+}

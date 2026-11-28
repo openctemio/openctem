@@ -241,6 +241,7 @@
   "common.secretKey.copyFailed": "Could not copy the key",
   "common.secretKey.manual": "Or enter this key manually",
   "common.selectAll": "Select all",
+  "common.showFewer": "Show fewer",
   "common.showingFirstOf": "Showing the first {loaded} of {total}",
   "common.table.actionsColumn": "Actions",
   "common.table.adjustSearch": "Try adjusting your search or filters",

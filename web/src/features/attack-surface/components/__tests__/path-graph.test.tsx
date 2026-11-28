@@ -93,4 +93,26 @@ describe('PathGraph', () => {
     const { container } = render(<PathGraph paths={[]} />)
     expect(container).toBeEmptyDOMElement()
   })
+
+  it('lists chains as rows of one list, not a card per chain', () => {
+    const single: PathGraphPath = {
+      id: 'chain-2',
+      rank: 2,
+      score: 40,
+      scorePct: 43,
+      nodes: [{ id: 'b1', name: '192.0.2.5', assetType: 'ip_address', role: 'entry' }],
+    }
+    render(<PathGraph paths={[chainPath, single]} />)
+    const list = screen.getByTestId('chain-list')
+    expect(list.tagName).toBe('OL')
+    const rows = screen.getAllByTestId('chain-row')
+    expect(rows).toHaveLength(2)
+    for (const r of rows) {
+      expect(r.tagName).toBe('LI')
+      expect(r.parentElement).toBe(list)
+      // A row of the list, not a bordered card of its own.
+      expect(r.className).not.toMatch(/\bborder\b/)
+    }
+    expect(screen.getByText('3 entry points')).toBeInTheDocument()
+  })
 })

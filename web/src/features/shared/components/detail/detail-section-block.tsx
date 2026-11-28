@@ -72,7 +72,8 @@ export function DetailSectionBlock({
     >
       <div
         data-slot="detail-section-title"
-        className="flex min-h-control flex-wrap items-center justify-between gap-x-3 gap-y-1"
+        // At most 40rem: on a wide page the controls stay near their title.
+        className="flex min-h-control max-w-[40rem] flex-wrap items-center justify-between gap-x-3 gap-y-1"
       >
         <div className="flex max-w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <h2 id={headingId} className="min-w-0 text-section break-words">

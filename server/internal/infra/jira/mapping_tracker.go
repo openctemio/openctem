@@ -31,7 +31,7 @@ func NewMappingTrackerResolver(r *IntegrationClientResolver) *MappingTrackerReso
 var _ appticketmap.TrackerResolver = (*MappingTrackerResolver)(nil)
 
 // ErrNotATracker: the integration is not a connected Jira site.
-var ErrNotATracker = fmt.Errorf("%w: the integration is not a connected Jira site", shared.ErrValidation)
+var ErrNotATracker = appticketmap.ErrTrackerNotConnected
 
 // ForIntegration returns the tracker of a connected Jira integration of the
 // tenant.

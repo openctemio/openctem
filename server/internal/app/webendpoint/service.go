@@ -120,10 +120,20 @@ func (s *Service) Events(ctx context.Context, c Caller, spec *filterspec.Spec) (
 	return s.repo.EventsWhere(ctx, w, pagination.New(spec.Page, spec.PerPage))
 }
 
+// PathViewer is who reads a path tree: whether they may read findings at
+// all (findings:read), and the findings visibility rule they read under.
+type PathViewer struct {
+	ReadFindings bool
+	Findings     webendpoint.FindingViewer
+}
+
 // Paths returns one level of an origin's path tree, as the caller: an asset
 // of another tenant, a deleted one or one outside the caller's data scope
 // answers shared.ErrNotFound alike (fail closed, also without an enforcer).
-func (s *Service) Paths(ctx context.Context, tenantID, assetID shared.ID, q webendpoint.PathQuery) (*webendpoint.PathLevel, error) {
+// The findings of the tree (counts, top severity, node findings) are left
+// out for a caller who cannot read findings, and otherwise follow the
+// findings list's member visibility rule.
+func (s *Service) Paths(ctx context.Context, tenantID, assetID shared.ID, q webendpoint.PathQuery, v PathViewer) (*webendpoint.PathLevel, error) {
 	if err := q.Validate(); err != nil {
 		return nil, shared.ErrValidation
 	}
@@ -138,13 +148,15 @@ func (s *Service) Paths(ctx context.Context, tenantID, assetID shared.ID, q webe
 	if err != nil {
 		return nil, err
 	}
-	fs, err := s.repo.OriginOpenFindings(ctx, tenantID, assetID)
-	if err != nil {
-		return nil, err
+	var fs []webendpoint.PathFinding
+	if v.ReadFindings {
+		if fs, err = s.repo.OriginOpenFindings(ctx, tenantID, assetID, v.Findings); err != nil {
+			return nil, err
+		}
 	}
 	lvl := webendpoint.BuildPathLevel(eps, fs, name, capped, q)
-	if q.Findings {
-		rows, err := s.repo.OriginURLFindings(ctx, tenantID, assetID)
+	if q.Findings && v.ReadFindings {
+		rows, err := s.repo.OriginURLFindings(ctx, tenantID, assetID, v.Findings)
 		if err != nil {
 			return nil, err
 		}

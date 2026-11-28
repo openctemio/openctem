@@ -497,7 +497,7 @@ func (r *EPSSRepository) scanEPSSScore(row *sql.Row) (*threatintel.EPSSScore, er
 		return nil, fmt.Errorf("failed to scan EPSS score: %w", err)
 	}
 
-	return threatintel.ReconstituteEPSSScore(
+	score := threatintel.ReconstituteEPSSScore(
 		cveID,
 		epssScore,
 		percentile.Float64,
@@ -505,7 +505,11 @@ func (r *EPSSRepository) scanEPSSScore(row *sql.Row) (*threatintel.EPSSScore, er
 		scoreDate,
 		createdAt,
 		updatedAt,
-	), nil
+	)
+	if !percentile.Valid {
+		score.MarkPercentileUnknown()
+	}
+	return score, nil
 }
 
 func (r *EPSSRepository) scanEPSSScores(rows *sql.Rows) ([]*threatintel.EPSSScore, error) {
@@ -526,7 +530,7 @@ func (r *EPSSRepository) scanEPSSScores(rows *sql.Rows) ([]*threatintel.EPSSScor
 			return nil, fmt.Errorf("failed to scan EPSS score: %w", err)
 		}
 
-		scores = append(scores, threatintel.ReconstituteEPSSScore(
+		score := threatintel.ReconstituteEPSSScore(
 			cveID,
 			epssScore,
 			percentile.Float64,
@@ -534,7 +538,11 @@ func (r *EPSSRepository) scanEPSSScores(rows *sql.Rows) ([]*threatintel.EPSSScor
 			scoreDate,
 			createdAt,
 			updatedAt,
-		))
+		)
+		if !percentile.Valid {
+			score.MarkPercentileUnknown()
+		}
+		scores = append(scores, score)
 	}
 
 	if err := rows.Err(); err != nil {

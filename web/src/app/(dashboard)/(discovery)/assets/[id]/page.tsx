@@ -46,6 +46,7 @@ import { Tabs, TabsContent, TabsCount, TabsList, TabsTrigger } from '@/component
 import { type ActionMenuEntry } from '@/components/ui/action-menu'
 import {
   DETAIL_GRID,
+  DETAIL_PANEL_FULL,
   DETAIL_RAIL,
   DETAIL_STRIP,
   DetailPageHeader,
@@ -219,7 +220,7 @@ const WIDE_TABS: ReadonlySet<TabKey> = new Set<TabKey>([
   'paths',
 ])
 const RAIL_ASIDE = 'xl:hidden'
-const PANEL_FULL = 'xl:col-span-2'
+const PANEL_FULL = DETAIL_PANEL_FULL
 
 /**
  * Same blocks and order as the page (header, tab strip, properties, panel),
@@ -575,8 +576,8 @@ export default function AssetDetailPage() {
 
             <div data-slot="asset-panel" className={cn(PANEL, WIDE_TABS.has(tab) && PANEL_FULL)}>
               <TabsContent value="overview">
-                {/* A readable measure: the risk bar and the facts never stretch across a wide screen. */}
-                <DetailSectionList className="max-w-5xl">
+                {/* The shared grid caps the panel on a wide screen and keeps the rail beside it. */}
+                <DetailSectionList>
                   {/* What it is and what runs on it; hidden when nothing was collected. */}
                   <KeyFactsSection asset={asset} />
                   <RiskSummarySection

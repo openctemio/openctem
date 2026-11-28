@@ -31,6 +31,7 @@ func TestGroupHandler_TeamGrantRefusalCodes(t *testing.T) {
 		{accesscontrol.ErrPrivilegedTeamOwnerOnly, "TEAM_PRIVILEGED_OWNER_ONLY"},
 		{accesscontrol.ErrExternalTeamFullData, "TEAM_EXTERNAL_FULL_DATA"},
 		{accesscontrol.ErrSelfJoinRoleTeam, "TEAM_SELF_JOIN"},
+		{accesscontrol.ErrSelfMemberRoleTeam, "TEAM_SELF_MEMBER"},
 		{accesscontrol.ErrGrantForbidden, "FORBIDDEN"},
 	}
 	for _, c := range cases {

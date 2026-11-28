@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/openctemio/openctem/server/pkg/domain/audit"
+
 	"github.com/openctemio/openctem/server/pkg/domain/scanrun"
 	"github.com/openctemio/openctem/server/pkg/domain/scanworkflow"
 
@@ -12,12 +14,17 @@ import (
 	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
-// A trigger that is refused before anything is dispatched (scope gate, scan
-// window that never opens, unavailable tool or sensor, no target, paused scan, ...) is recorded
-// as a run with status blocked, its refusal code and message. Before, a
-// refused manual trigger left no trace on the scan, and a refused scheduled
-// trigger moved last_run_at with no run behind it, so the list read "Last
-// run: today" beside "Runs: 0".
+// An automatic trigger (schedule, retry, automation) that is refused before
+// anything is dispatched (scope gate, scan window that never opens,
+// unavailable tool or sensor, no target, ...) is recorded as a run with
+// status blocked, its refusal code and message: nobody reads the refusal
+// itself, and before, a refused scheduled trigger moved last_run_at with no
+// run behind it, so the list read "Last run: today" beside "Runs: 0".
+//
+// A member's own "Run now" (Interactive) is answered with the refusal (4xx)
+// and creates nothing: a refused request that still wrote a run read as
+// "nothing was started" beside a new blocked run. Its refusal is audited
+// (auditInteractiveRefusal), so the attempt is still traceable.
 //
 // Threat model: the blocked run is written only after the scan was loaded
 // for the caller's tenant (GetScan is tenant-scoped) and the route's
@@ -117,4 +124,19 @@ func (s *Service) refreshRunSummary(ctx context.Context, sc *scan.Scan) {
 	if err := s.scanRepo.RefreshRunSummary(ctx, sc.TenantID, sc.ID); err != nil {
 		s.logger.Warn("failed to refresh scan run summary", "scan_id", sc.ID.String(), "error", err)
 	}
+}
+
+// auditInteractiveRefusal records a refused "Run now" in the audit log: its
+// code and our own refusal message, never the caller's trigger context.
+// Internal failures are not refusals and are not audited here.
+func (s *Service) auditInteractiveRefusal(ctx context.Context, sc *scan.Scan, input TriggerScanExecInput, cause error) {
+	code, _, ok := refusal(cause)
+	if !ok {
+		return
+	}
+	s.logAudit(ctx, AuditContext{TenantID: sc.TenantID.String(), ActorID: input.TriggeredBy},
+		NewFailureEvent(audit.ActionScanConfigTriggered, audit.ResourceTypeScanConfig, sc.ID.String(), cause).
+			WithResourceName(sc.Name).
+			WithMessage("Run now refused: "+code).
+			WithMetadata("refusal_code", code))
 }

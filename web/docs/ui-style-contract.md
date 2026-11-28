@@ -424,6 +424,31 @@ reference.
 8. A file field is an outline button in the page's language ("Choose a
    file") with the chosen file's name beside it, never the browser's bare
    file input, and the card's title is not repeated as its label.
+9. **Wide screens.** The grid (`DETAIL_GRID` in `detail-grid.ts`) caps the
+   panel at 90rem (1440 px) from a 1920 px screen and keeps the rail right
+   after it (24rem there, 21rem from 1280 px); what is left stays to the
+   right of the rail. The tab strip and a full-width panel
+   (`DETAIL_PANEL_FULL`, a wide table) span the whole width. A panel never
+   adds its own `max-w-*` cap. A page whose body is a main part beside a
+   side card (a vulnerability's summary and status beside "Who found it")
+   uses `DETAIL_SPLIT` / `DETAIL_SPLIT_MAIN`: from a 1920 px screen the
+   main part's cards stand side by side and the side card is a 24rem column
+   after them. Inside the panel:
+   - a section's title row (`DetailSectionBlock`, `DetailSection`) is at
+     most 40rem wide, so its controls (Checklist, Retest now, Add check, a
+     link to the plan) sit near the title, never a page width away;
+   - a code or output block (`UntrustedTextBlock`) is as wide as its
+     longest line, up to the column, never stretched around five short
+     lines;
+   - a proportional bar (a status or severity strip) is at most 40rem wide.
+   - blocks of one kind in a section (the ways to prove a fix: verification,
+     retest, retest check) sit side by side once each has 28rem (one column
+     up to 1440 px, two at 1920, three at 2560), so the panel's width holds
+     content and the rail stays near it (the layout matrix fails a rail more
+     than 400 px from its content);
+   - breakpoints for these rules are written in rem (`min-[120rem]:` for
+     1920 px): Tailwind orders a px breakpoint before the theme's rem ones,
+     so `xl:` would override a `min-[1920px]:` class.
 
 ## 2. Headline numbers
 
@@ -754,6 +779,59 @@ reference.
   `risk` holds the risk score badge: 148 fits its longest text ("Not yet
   scored") in both languages.
 
+- **Column sizing by content** (`columnSizing="content"`, the target for
+  every list; `data-table/column-sizing.ts`, `measure-columns.ts`). A column
+  declares its kind, never px. The table measures the header and the rows on
+  screen (one hidden copy per column, one layout, before paint; O(columns x
+  rows), only real rows, never skeletons) and sizes each column from that:
+
+  | Kind                   | Floor (px)     | Cap (px) | Weight | Below its content |
+  | ---------------------- | -------------- | -------- | ------ | ----------------- |
+  | `name`                 | min(192, 36vw) | 640      | 4      | ellipsis + title  |
+  | `asset`                | 128            | 360      | 2      | ellipsis + title  |
+  | `text`                 | 96             | 320      | 1      | ellipsis + title  |
+  | `tags`                 | 112            | 280      | 1      | folds to "+N"     |
+  | `owner`                | 112            | 240      | 0      | wraps             |
+  | `status`               | 88             | 260      | 0      | never             |
+  | `status-edit`          | 120            | 240      | 0      | never             |
+  | `id`                   | 72             | 240      | 0      | never             |
+  | `priority`             | 48             | 112      | 0      | never             |
+  | `risk`                 | 88             | 176      | 0      | never             |
+  | `severity`             | 80             | 160      | 0      | never             |
+  | `datetime-recent`      | 80             | 184      | 0      | never             |
+  | `date`                 | 88             | 160      | 0      | never             |
+  | `due`                  | 88             | 176      | 0      | never             |
+  | `number`               | 48             | 136      | 0      | never             |
+  | `signals`              | 80             | 240      | 0      | never (folds)     |
+  | `masked`               | 160            | 280      | 0      | never             |
+  | `select`               | 40             | 40       | 0      | never             |
+  | `actions`, `decisions` | content        | 200, 400 | 0      | never             |
+  1. Each column asks for its content (widest cell or header, padding
+     included), clamped to its floor and cap.
+  2. Spare room: first a value longer than its cap grows to its whole
+     length (never cut meaning when there is room), then the flexible columns
+     (weight above 0, the title first) share the rest by weight.
+  3. Short room: optional columns drop first (`meta.dropOrder`: 1 drops first),
+     while the title would get less than its content or 320 px; then the
+     flexible columns give way to their floor, the title least; a whole value
+     (a chip, a date, a number, an id) never goes below its content. What is
+     still missing scrolls the frame (Mode B).
+  4. Stability: widths settle once per data set (`sizingKey`: the filters and
+     search, not the sort or the page). Paging, sorting and refreshing keep
+     the title's width; a whole value grows only when a new row needs more
+     than 2 px more, never shrinks. A resize recomputes from the kept
+     measurements without measuring again; the language or the data set
+     measures again. The table uses a fixed layout with the computed widths,
+     so the header and rows align and frozen columns know their offsets.
+  5. Overrides: `width` (exact), `minWidth`, `maxWidth` in a column's meta
+     only with `sizeReason: '<why>'` beside it, and `dropOrder` instead of
+     px `hideBelow` points (`column-width-override.test.ts`). The viewer's
+     choice under Columns still wins over dropping.
+  6. A cut cell carries its whole value in `title`. The phone card is not
+     affected.
+
+  Lists not yet moved keep the kind defaults below.
+
 - **Column priority**: a column that may drop on a narrow screen sets
   `meta: { hideBelow: <table frame width in px> }`; `DataTable` hides it below
   that width instead of scrolling the table sideways. Set it from measured
@@ -922,6 +1000,22 @@ and no page rebuilds:
   nested card.
 - Section headings outside cards: `text-base font-semibold`, sentence case.
 
+### Index pages
+
+An index page is an overview of links in groups (the settings overview, a
+section's overview). It is not a form, so it never sits in the reading
+column: `SettingsPage wide` (or the page's full width), the groups in
+`IndexGroups` and each group's links in `IndexLinkList`
+(`@/features/shared`, `index-grid.tsx`):
+
+- the groups one under the other, and two side by side once the content is
+  80rem wide (a 1920 px screen with the sidebar), each as tall as its own
+  links;
+- a group's links in as many columns as fit, at least 14rem each: 1 on a
+  phone, 2 to 3 at 1280 and 1440, 3 to 4 per group at 1920 and up, never
+  three narrow columns beside an empty half of the page;
+- search results and other rows of text keep the reading width.
+
 ### Settings pages
 
 Every settings page is built from the same parts (`@/features/shared`):
@@ -1006,10 +1100,43 @@ Every settings page is built from the same parts (`@/features/shared`):
   with no figure), so a preview is as tall as the widget will be. Its height
   control places a widget: "Span one more row" / "Span one row fewer"
   (Shift+Down / Shift+Up) set how many rows it spans beside its neighbours.
+- **Wide screens use the width for more widgets.** Once the dashboard is
+  96rem wide (a 1920 px screen with the sidebar) the view lays widgets on a
+  12-column grid and packs each run of side-by-side widgets three to a row,
+  four to a row from 136rem (a 2560 px screen) (`widePackSpans` in
+  `features/dashboards/layout.ts`). A run is a series of neighbours with the
+  same stored width that sit fewer to a row than that; a full-width widget
+  ends a run and stays full width; a run splits into rows as evenly as it goes
+  (four widgets three to a row are two rows of two), so no row has an empty
+  cell, and the order never changes. A packed widget is one row tall. Tiles
+  already four to a row keep their place. The editor keeps the stored
+  arrangement. A bar chart's bars are at most 48 px wide.
 - **A shorter widget stretched by its row fills its card.** A chart's plot
   grows with the card (at least 180 px, 220 px from 640 px), and a state
   message or empty state centres in it; no blank band is left under the
   content.
+
+### Card grids
+
+A list of cards (dashboard templates, SCM connections, capabilities, pentest
+templates, asset categories) is a `CardGrid` (or `CARD_GRID` with the page's
+gap) from `@/features/shared`: as many columns as fit, each at least 22rem.
+One card on a phone, two or three at 1280 and 1440, four or five at 2560.
+Never a fixed `sm:grid-cols-2 lg:grid-cols-3` for a list: it stretches three
+cards across a wide screen. A chart row with a trend uses
+`OVERVIEW_CHARTS_WITH_TREND_GRID`: two charts, then the trend on its own row,
+and all three on one row from a 2048 px screen.
+
+### Label and figure rows
+
+Rows of a label (with a caption) and a figure at the far end (process
+health, time to fix by severity, how well fixes hold) are a
+`MetricRowList` (`features/dashboard/components/metric-row-list.tsx`;
+`framed={false}` inside a card of its own). The rows flow into columns as
+the list widens: one on a phone, two from 48rem, three (three rows) or four
+from 75rem / 96rem of list width, so a label and its figure are never a
+page width apart. A row that is not measured says so in muted text, never
+a dash at figure size.
 
 ## 5. Typography
 
@@ -1109,6 +1236,13 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
 - Series colours come from the `--viz-*` tokens by meaning: severity,
   priority, the eight categories, new against fixed, the sequential ramp.
   Teal (the action colour) never encodes data.
+- A categorical ring or bar never gives two series one colour: past the
+  palette the tail folds into one neutral "Other" that keeps the total
+  (`features/exposures/lib/category-slices.ts`). Legend text is the muted ink;
+  the swatch carries the colour.
+- Flow canvases: an edge that skips a column runs through a slot the layout
+  reserves in each column it crosses (`FlowEdge` `via` waypoints), never across
+  a node, and its label sits on that slot.
 - Colour never carries the meaning alone: a series has its name in the legend
   or beside its mark, a state has an icon or a word, a not-prioritised part is
   hatched.
@@ -1534,6 +1668,21 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   keep the full width; a form page uses the settings column. The layout
   matrix fails a text line or a field wider than 960 px, or a rail 400 px
   from its content, from 1900 px up.
+- Wide screens (1920, 2048 and 2560 px) use the width for content, not for
+  margins: lists show more columns and fuller titles (column sizing by
+  content, §3), card and link grids add columns (`auto-fill` with a minimum
+  track, never a fixed 2 or 3 up), index pages spread their groups (§4,
+  "Index pages"). Only running text keeps the reading measure; a table, a
+  grid or an index is never held in a narrow column with an empty band
+  beside it.
+- Notices take their own room in the page and scroll with it: the shell's
+  notices (platform announcement, vulnerability data status, support access)
+  are the first thing inside the page scroller, never pinned above it, and a
+  page notice is a block in the `PageStack`. Nothing pinned (sticky or
+  fixed) may sit over page content at rest or after a scroll, except a
+  table's own header and frozen columns over its rows; a sticky bar reserves
+  its height (the settings save bar). The layout matrix's `underPinned`
+  detector checks it after scrolling one screen.
 - An ellipsis or a line clamp never hides meaning. A status reason, a metric's
   label, a sentence or a value shows in full: wrap it (two lines), or give it a
   shorter plain label. Only a name or title (a DataTable column of kind `name`,
@@ -1553,6 +1702,43 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   (`.recharts-responsive-container`), a zoomable canvas (`.react-flow`,
   `[data-layout-canvas]`) and the shared empty state
   (`[data-slot="empty-state"]`, which centres itself in the room it is given).
+- A notice takes its own room in the page and scrolls away with it. A notice
+  (`role=alert` or `status`, `[data-slot="alert"]`, a shell banner) that stays
+  while the page scrolls, outside the page scroller above it or pinned inside
+  it, fails the layout matrix's `underPinned` detector, and so does text under
+  a sticky or fixed layer that can never be scrolled out from under it (a bar
+  at the top over the page's first lines, a bar at the bottom over its last
+  lines: keep the bar's height as padding). A sticky toolbar or table header
+  over text the page has scrolled past passes.
+- A control has no empty room inside it. A control with a trailing icon (a
+  select, a filter token, a menu button, Display, Group) hugs its content, or,
+  when it is given a width (a select field, a token holding one width with
+  `data-hold-width`), pins the icon to its end. The layout matrix's
+  `deadSpace` detector fails an icon more than 12 px from the inner end, or
+  more than 16 px after the text of a filter token, menu button or button
+  that neither fills its column nor holds its width.
+- A select or filter token is one line, as high as the controls beside it: a
+  long value ends in an ellipsis with the full text in its title
+  (`tallControl` fails a control 1.5 times as tall as its row).
+- A list row's action sits at the row's end (under the text on a phone),
+  never mid-row (`floatingAction`), and no control is drawn past the window
+  or the page column outside a box made to scroll sideways (`pastEdge`; a
+  table scroller, the page tab strip, a canvas, or `data-scroll-x`).
+- Controls side by side in one row (a toolbar, a header, a button group)
+  share one height, one centre line and one text size (buttons with
+  buttons, fields with fields: a phone field keeps 16 px text). The layout
+  matrix's `sizeMismatch` runs the page-rhythm row probe at every width.
+- A row's content stays inside the row: in a table row or a ruled list row,
+  no text line or chip comes closer than 3 px to a ruled edge or crosses it
+  (`cellCrowd`): a chip that would wrap past the row's line folds into "+N"
+  or the row grows.
+- The same issue is one row. Three or more consecutive rows of one list that
+  read the same once numbers, addresses and ids are taken out fail the layout
+  matrix's `repeatedRows` detector: fold them into one row with its count and
+  the rest one click away (an overlay or a narrowed list), never drop them.
+- A list is one frame. Five or more framed boxes stacked one per row, each as
+  wide as its column and at most 200 px tall, fail `cardPerRow`: draw one
+  bordered list with a divider between rows.
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a
   fixed column count without breakpoints.
 - `e2e/specs/75a-layout-breaks-lists.spec.ts` (and 75b settings, 75c shell, 75d detail) check the lists and their overlays at

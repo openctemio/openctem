@@ -272,9 +272,10 @@ export function buildSystemAttention(sys: AdminSystem): AttentionItem[] {
         id: 'sensors-all-offline',
         severity: 'critical',
         titleKey: 'admin.attention.sensorsAllOffline.title',
-        title: 'No sensor is online',
+        title: 'No sensor of any organization or the platform is online',
         detailKey: 'admin.attention.sensorsAllOffline.detail',
-        detail: 'Every connected sensor stopped reporting: scans and feeds wait until one is back.',
+        detail:
+          'Every sensor, of the organizations and of the platform, stopped reporting: scans and feeds wait until one is back.',
         href: '/health',
         actionKey: 'admin.attention.inspect',
         action: 'Inspect',

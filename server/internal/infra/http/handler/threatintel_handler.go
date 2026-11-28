@@ -552,12 +552,13 @@ type EnrichmentResponse struct {
 
 // EPSSScoreResponse is the response for an EPSS score.
 type EPSSScoreResponse struct {
-	CVEID        string  `json:"cve_id"`
-	Score        float64 `json:"score"`
-	Percentile   float64 `json:"percentile"`
-	ModelVersion string  `json:"model_version,omitempty"`
-	ScoreDate    string  `json:"score_date"`
-	RiskLevel    string  `json:"risk_level"`
+	CVEID string  `json:"cve_id"`
+	Score float64 `json:"score"`
+	// Percentile is omitted when the feed has no rank for the score.
+	Percentile   *float64 `json:"percentile,omitempty"`
+	ModelVersion string   `json:"model_version,omitempty"`
+	ScoreDate    string   `json:"score_date"`
+	RiskLevel    string   `json:"risk_level"`
 }
 
 // KEVEntryResponse is the response for a KEV entry.
@@ -637,7 +638,7 @@ func toEPSSScoreResponse(score *threatintel.EPSSScore) EPSSScoreResponse {
 	return EPSSScoreResponse{
 		CVEID:        score.CVEID(),
 		Score:        score.Score(),
-		Percentile:   score.Percentile(),
+		Percentile:   score.PercentilePtr(),
 		ModelVersion: score.ModelVersion(),
 		ScoreDate:    score.ScoreDate().Format("2006-01-02"),
 		RiskLevel:    threatintel.EPSSRiskLevelFromScore(score.Score()).String(),

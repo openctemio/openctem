@@ -478,7 +478,7 @@ describe('ApprovalDialog approval policy', () => {
     mockPolicy = { evaluation }
     render(<ApprovalDialog {...defaultProps} targetStatus="accepted" />)
     const banner = screen.getByTestId('approval-evaluation')
-    expect(banner).toHaveTextContent('Two approvers: 2 approval(s) needed')
+    expect(banner).toHaveTextContent('Two approvers: 2 approvals needed')
     expect(banner).toHaveTextContent('Why: critical severity, known exploited (KEV).')
     expect(banner).toHaveTextContent('Set by the platform default.')
     expect(banner).toHaveTextContent('5 approvers, 2 in the security reviewer group')

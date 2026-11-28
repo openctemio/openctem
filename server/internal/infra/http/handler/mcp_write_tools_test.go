@@ -299,3 +299,66 @@ func TestConfirmationSummaryTitleIsSingleCleanLine(t *testing.T) {
 		t.Fatalf("summary title not cleaned: %q", summary)
 	}
 }
+
+// A key spelled in another case (which encoding/json folds onto the same
+// struct field) or given twice must not let the AI show the person one
+// comment and post another: the digest, the summary and the executed
+// action all come from one strict, canonical set of arguments.
+func TestWriteToolArgumentsCannotDivergeFromConfirmation(t *testing.T) {
+	findings := &fakeFindingReader{finding: makePentestFinding(t)}
+	h := newTestMCPWithPentest(findings, &fakePentestReader{})
+	conf := &fakeConfirmer{approved: map[string]string{}}
+	comments := &fakeCommenter{}
+	h.SetWriteTools(conf, comments)
+	perms := []string{"findings:read", "findings:comment"}
+	call := func(args string) (string, bool) {
+		return resultText(wtRequest(t, h, true, perms,
+			`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add_finding_comment","arguments":`+args+`}}`))
+	}
+
+	// The reported bypass: the digest of the first spelling equals the digest
+	// of the reversed one, while the struct decodes to a different comment.
+	shown := `{"finding_id":"` + wtFinding + `","Content":"EVIL","content":"triage note"}`
+	run := `{"finding_id":"` + wtFinding + `","content":"triage note","Content":"EVIL","confirmation_id":"c1"}`
+	var a map[string]any
+	_ = json.Unmarshal([]byte(shown), &a)
+	conf.approved["c1"] = mcpoauthapp.ArgsDigest("add_finding_comment", a)
+	for _, args := range []string{shown, run} {
+		if text, isErr := call(args); !isErr || !strings.Contains(text, "invalid_argument") {
+			t.Fatalf("case-folded duplicate accepted: %v %s", isErr, text)
+		}
+	}
+	dup := `{"finding_id":"` + wtFinding + `","content":"triage note","content":"EVIL"}`
+	if text, isErr := call(dup); !isErr || !strings.Contains(text, "more than once") {
+		t.Fatalf("duplicate key accepted: %v %s", isErr, text)
+	}
+	if text, isErr := call(`{"finding_id":"` + wtFinding + `","content":"triage note","extra":1}`); !isErr || !strings.Contains(text, "unknown argument") {
+		t.Fatalf("unknown key accepted: %v %s", isErr, text)
+	}
+	if len(comments.added) != 0 {
+		t.Fatalf("a comment was written: %+v", comments.added)
+	}
+
+	// The plain spelling still works end to end.
+	plain := `{"finding_id":"` + wtFinding + `","content":"triage note","confirmation_id":"c2"}`
+	var b map[string]any
+	_ = json.Unmarshal([]byte(plain), &b)
+	conf.approved["c2"] = mcpoauthapp.ArgsDigest("add_finding_comment", b)
+	if text, isErr := call(plain); isErr || len(comments.added) != 1 || comments.added[0].Content != "triage note" {
+		t.Fatalf("plain call: %v %s", isErr, text)
+	}
+}
+
+func TestCanonicalWriteArgs(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"a":{},"b":{}}}`)
+	for raw, ok := range map[string]bool{
+		``: true, `{}`: true, `{"a":"x","b":2}`: true,
+		`{"A":"x"}`: false, `{"a":1,"a":2}`: false, `{"c":1}`: false,
+		`[]`: false, `{"a":1} {}`: false, `{"a":1`: false,
+	} {
+		_, _, err := canonicalWriteArgs(schema, json.RawMessage(raw))
+		if (err == nil) != ok {
+			t.Errorf("%q: err=%v, want ok=%v", raw, err, ok)
+		}
+	}
+}

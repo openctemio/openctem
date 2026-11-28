@@ -401,15 +401,7 @@ func (h *AdminConsoleHandler) VerifyMFA(w http.ResponseWriter, r *http.Request) 
 		apierror.InternalError(err).WriteJSON(w)
 		return
 	}
-	csrf, err := h.issueSessionCookies(w, token)
-	if err != nil {
-		apierror.InternalError(err).WriteJSON(w)
-		return
-	}
-	writeJSON(w, http.StatusOK, ValidateResponse{
-		ID: a.ID().String(), Email: a.Email(), Name: a.Name(), Role: string(a.Role()),
-		CSRFToken: csrf,
-	})
+	h.writeSignedIn(w, r, token, a)
 }
 
 // Logout handles POST /api/v1/admin/auth/logout.

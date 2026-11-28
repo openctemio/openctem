@@ -333,8 +333,8 @@ The platform's freshness watch has an open condition (the `code` label):
 `data_stale` (a feed's data is older than its limit: bundle 12 hours, KEV 6
 hours, EPSS 36 hours), `newest_record_old` (the newest CVE in the corpus is
 older than 12 hours), `import_refused` or `import_failing` (the bundle or a
-feed import is refused or keeps failing), `volume_low` (far fewer CVEs in the
-last 24 hours than usual). The administrators also get an e-mail and every
+feed import is refused or keeps failing), `volume_low` (far fewer CVEs than usual for the weekday in each of the last two
+24-hour windows). The administrators also get an e-mail and every
 user sees a banner while data is stale. Open System, Threat intelligence in
 the platform console: the banner there names the feed and the cause. For
 `data_stale` on the bundle with a clean import, the publisher has not released

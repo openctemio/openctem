@@ -117,22 +117,37 @@ export function blockedRunHint(
   return { text, fix: fix ? { href: fix.href, label: t(fix.labelKey) } : null }
 }
 
-/** One line on why a blocked or failed run ended, for hover text. */
-export function lastRunReason(
-  run: ScanLastRun | null,
-  t: Translate = enTranslate
+/**
+ * Why a run was refused or failed, in the reader's language: the catalog's
+ * words for a known refusal code. The server's message is English, so it is
+ * added only for an English reader (it names the steps and tools involved),
+ * or shown alone when there is no known code to word it from (a sensor's or
+ * a tool's own text). Every run list, sheet and hover text uses this.
+ */
+export function runMessage(
+  run: { refusal_code?: string; error_message?: string } | null | undefined,
+  t: Translate = enTranslate,
+  locale: string = 'en'
 ): string | undefined {
   if (!run) return undefined
-  const label = run.refusal_code
-    ? REFUSAL_CODES.has(run.refusal_code)
-      ? t(`scans.refusal.${run.refusal_code}`)
-      : run.refusal_code
-    : ''
+  const code = run.refusal_code ?? ''
+  const known = REFUSAL_CODES.has(code)
+  const label = code ? (known ? t(`scans.refusal.${code}`) : code) : ''
   // The message can carry sensor or tool text: control and direction
   // characters are shown as escapes, never applied.
   const message = toDisplayText(run.error_message?.trim() ?? '')
-  if (label && message) return `${label}: ${message}`
-  return label || message || undefined
+  const showMessage = message !== '' && (!known || locale.toLowerCase().startsWith('en'))
+  if (label && showMessage) return `${label}: ${message}`
+  return label || (showMessage ? message : '') || undefined
+}
+
+/** One line on why a blocked or failed run ended, for hover text. */
+export function lastRunReason(
+  run: ScanLastRun | null,
+  t: Translate = enTranslate,
+  locale: string = 'en'
+): string | undefined {
+  return runMessage(run, t, locale)
 }
 
 /**

@@ -13,6 +13,7 @@ package tenantai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -32,9 +33,24 @@ type LooseningNotifier interface {
 // ErrAutoTriageUnavailable: the store cannot write the policy.
 var ErrAutoTriageUnavailable = fmt.Errorf("%w: automatic triage policy store not wired", shared.ErrInternal)
 
+// ErrStepUpUnavailable: a loosening needs a recent re-authentication and no
+// step-up check is wired. The change is refused (fail closed), never made
+// without the check.
+var ErrStepUpUnavailable = errors.New("step-up re-authentication is not available")
+
 // SetStepUpGate wires the recent re-authentication asked for a loosening.
-// Without it (a service built outside the HTTP server) the check is skipped.
+// Without it every loosening is refused (ErrStepUpUnavailable).
 func (s *Service) SetStepUpGate(g shared.RecentAuthGate) { s.stepUp = g }
+
+// requireLooseningStepUp asks the actor for a recent re-authentication before
+// a loosening of an AI policy (auto triage, use cases, autonomy). It fails
+// closed when no step-up check is wired.
+func (s *Service) requireLooseningStepUp(ctx context.Context, actorID string) error {
+	if s.stepUp == nil {
+		return ErrStepUpUnavailable
+	}
+	return stepup.Require(ctx, s.stepUp, actorID, stepup.TierSensitive)
+}
 
 // SetLooseningNotifier wires the owner and administrator notice.
 func (s *Service) SetLooseningNotifier(n LooseningNotifier) { s.notifier = n }
@@ -100,10 +116,8 @@ func (s *Service) SaveAutoTriage(ctx context.Context, tenantID string, in tenant
 		if actx.ActorID == "" {
 			return AutoTriageView{}, ErrNoActor
 		}
-		if s.stepUp != nil {
-			if err := stepup.Require(ctx, s.stepUp, actx.ActorID, stepup.TierSensitive); err != nil {
-				return AutoTriageView{}, err
-			}
+		if err := s.requireLooseningStepUp(ctx, actx.ActorID); err != nil {
+			return AutoTriageView{}, err
 		}
 	}
 	if err := store.SaveAutoTriagePolicy(ctx, tid, next); err != nil {

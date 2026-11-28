@@ -334,8 +334,9 @@ func (s *TaskService) checkCampaignChange(ctx context.Context, tenantID shared.I
 }
 
 // GetTask returns a task as the caller may see it: a restricted caller sees
-// it only when at least one member is in their scope, with the counters over
-// those members.
+// it only when at least one member is in their scope (for a canceled task: a
+// finding it held when it was canceled), with the counters over those
+// members.
 func (s *TaskService) GetTask(ctx context.Context, tenantID, taskID shared.ID) (*remediationdom.Task, error) {
 	t, err := s.repo.GetTask(ctx, tenantID, taskID)
 	if err != nil {
@@ -352,7 +353,7 @@ func (s *TaskService) GetTask(ctx context.Context, tenantID, taskID shared.ID) (
 	if err := s.applyScope(ctx, tenantID, []*remediationdom.Task{t}, scope); err != nil {
 		return nil, err
 	}
-	if t.Counts.Total == 0 && t.Counts.Related == 0 {
+	if !t.Counts.Seen() {
 		return nil, remediationdom.ErrTaskNotFound
 	}
 	return t, nil

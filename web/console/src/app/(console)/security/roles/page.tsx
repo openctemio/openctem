@@ -129,7 +129,20 @@ export default function AdminRolesPage() {
         accessorKey: 'holders',
         header: t('admin.roles.col.holders', 'Holders'),
         meta: { kind: 'number', width: 96, label: t('admin.roles.col.holders', 'Holders') },
-        cell: ({ row }) => <span className="tabular-nums">{row.original.holders}</span>,
+        // Named holders, the count the owners warning reads; an emergency
+        // access account holding the role is said apart.
+        cell: ({ row }) => (
+          <span className="tabular-nums">
+            {row.original.holders}
+            {(row.original.emergency_holders ?? 0) > 0 && (
+              <span className="ms-1 text-muted-foreground">
+                {t('admin.roles.emergencyHolders', '+ {count} emergency', {
+                  count: row.original.emergency_holders ?? 0,
+                })}
+              </span>
+            )}
+          </span>
+        ),
       },
     ],
     [t]
@@ -265,7 +278,7 @@ export default function AdminRolesPage() {
           <Alert>
             <ShieldAlert className="size-4" />
             <AlertTitle>
-              {t('admin.roles.ownersWarningTitle', 'Fewer than two platform owners')}
+              {t('admin.roles.ownersWarningTitle', 'Fewer than two named platform owners')}
             </AlertTitle>
             <AlertDescription>
               {t(
@@ -521,6 +534,15 @@ function RolePhoneCard({ role }: { role: PlatformRoleInfo }) {
               { count: role.holders }
             )}
           </span>,
+          ...((role.emergency_holders ?? 0) > 0
+            ? [
+                <span key="emergency" className="tabular-nums">
+                  {t('admin.roles.emergencyHolders', '+ {count} emergency', {
+                    count: role.emergency_holders ?? 0,
+                  })}
+                </span>,
+              ]
+            : []),
         ]}
       />
     </div>

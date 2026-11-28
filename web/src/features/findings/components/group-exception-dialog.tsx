@@ -271,7 +271,7 @@ export function GroupExceptionDialog({
       toast.success(t('findingApprovals.group.requested', 'Exception requested'), {
         description: t(
           'findingApprovals.group.requestedDesc',
-          '{count} finding(s) wait for one decision ({tier}).',
+          '{count, plural, one {# finding waits} other {# findings wait}} for one decision ({tier}).',
           { count: batch.member_count, tier: tierLabel(t, batch.tier) }
         ),
       })
@@ -475,7 +475,7 @@ export function GroupExceptionDialog({
                   <p className="text-sm">
                     {t(
                       'findingApprovals.group.coverage',
-                      '{included} finding(s) covered, {skipped} left out.',
+                      '{included, plural, one {# finding} other {# findings}} covered, {skipped} left out.',
                       { included: preview.included, skipped: preview.skipped }
                     )}
                   </p>

@@ -1,6 +1,7 @@
 'use client'
 
 import { IntegrationHealth } from '@/features/integrations/components/integration-health'
+import { ConnectionNote } from '@/features/integrations/components/connection-note'
 import { useState, useMemo, useCallback } from 'react'
 import { csrfFetch, del } from '@/lib/api/client'
 import { useRouter } from 'next/navigation'
@@ -351,14 +352,7 @@ export default function NotificationIntegrationsPage() {
           return (
             <div className="space-y-1">
               <IntegrationHealth status={integration.status} />
-              {integration.status_message && integration.status === 'error' && (
-                <p
-                  className="line-clamp-2 max-w-[250px] text-xs text-destructive [overflow-wrap:anywhere]"
-                  title={integration.status_message}
-                >
-                  {integration.status_message}
-                </p>
-              )}
+              <ConnectionNote integration={integration} className="max-w-[250px]" />
             </div>
           )
         },
@@ -593,11 +587,7 @@ export default function NotificationIntegrationsPage() {
                     facts={
                       <>
                         <IntegrationHealth status={integration.status} />
-                        {integration.status === 'error' && integration.status_message && (
-                          <span className="line-clamp-2 basis-full text-xs text-destructive [overflow-wrap:anywhere]">
-                            {toDisplayText(integration.status_message, 300)}
-                          </span>
-                        )}
+                        <ConnectionNote integration={integration} className="basis-full" />
                       </>
                     }
                   />
