@@ -666,7 +666,7 @@ run (Postgres suite with `-race`, PostgreSQL 18, the whole e2e suite). Heavy job
 
 | Tier | Events | API CI | Web CI | All-in-one CI | Web E2E | CodeQL |
 |------|--------|--------|--------|---------------|---------|--------|
-| Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Unit tests (changed packages)`: the changed Go packages and every package that imports them, **without** a database (`.github/scripts/go-affected.sh`; `ALL` for `go.mod` or anything it cannot map). No Postgres suite on a PR: the queue runs it. `Migrations (PostgreSQL 18)` only when `migrations`; `Schema-wide tests (PostgreSQL)` only when `schema` (a migration, the role script, `server/internal/infra/postgres/` or `server/tools/lint/tenantsql/` changed): the tests that read every table (`TestTenantTablesMatchSchema`, `TestDeleteTenantAndUser_EverySchemaTable`, `TestDeleteFKPolicy`, `TestNoDuplicateIndexes_DB`, `TestFindingMergeCoversEveryFindingReference`, `TestAssetMergeCoversEveryAssetReference`) against one Postgres service. Add a new schema-wide test to the `-run` list of the `schema` job in `api-ci.yml`. Skipped on the full tier, which runs them in its shards | `Web checks`, `Web tests` (the tests the change can affect) | build skipped | the smoke set when `web/` changed (an API-only PR runs no e2e on the PR), plus the request budget check when a page or its data hooks changed; the impacted specs with `run-e2e` or when `web/e2e/` changed | changed language(s) |
+| Fast | `pull_request` | `API static checks` (gates + vet, staticcheck, golangci-lint) + `Unit tests (changed packages)`: the changed Go packages and every package that imports them, **without** a database (`.github/scripts/go-affected.sh`; `ALL` for `go.mod` or anything it cannot map). No Postgres suite on a PR: the queue runs it. `Migrations (PostgreSQL 18)` only when `migrations`; `Schema-wide tests (PostgreSQL)` only when `schema` (a migration, the role script, `server/internal/infra/postgres/` or `server/tools/lint/tenantsql/` changed): the tests that read every table (`TestTenantTablesMatchSchema`, `TestDeleteTenantAndUser_EverySchemaTable`, `TestDeleteFKPolicy`, `TestNoDuplicateIndexes_DB`, `TestFindingMergeCoversEveryFindingReference`, `TestAssetMergeCoversEveryAssetReference`) against one Postgres service. Add a new schema-wide test to the `-run` list of the `schema` job in `api-ci.yml`. Skipped on the full tier, which runs them in its shards. `DB tests (changed files)` only when the PR adds or changes a `*_db_test.go` file, or a Go file one is named after (see **API tests** below): those tests against Postgres and Redis, as the app role. Skipped on the full tier | `Web checks`, `Web tests` (the tests the change can affect) | build skipped | the smoke set when `web/` changed (an API-only PR runs no e2e on the PR), plus the request budget check when a page or its data hooks changed; the impacted specs with `run-e2e` or when `web/e2e/` changed | changed language(s) |
 | Full | `merge_group`, push to `develop`, a PR with `ci:full` or a changed CI definition | `Tests (Postgres + Redis)`: the suite in 8 shards (`-race` on a push to `develop` only) as the least-privilege app role (isolation tests and grants, decision D-30 now enforced in the queue), PostgreSQL 18, `Release Binaries` (not on a PR); Docker build on `main` | `Web checks`, `Web tests`; `next build` in the queue and on push | images built and smoke-tested | Playwright: all specs in 1 to 4 shards (`web/` or `server/` changed), also on push to `develop`, nightly and for a `release/*` PR | queue: none (the PR head was analysed); push: both |
 
 **Forcing the full tier on a PR:** add the `ci:full` label (it also brings the Postgres suite back to the PR, for a change to SQL, grants or tenant isolation that should not wait for the queue), then re-run all jobs
@@ -1396,6 +1396,27 @@ without a database; the Postgres suite runs in the full tier only (merge queue,
 push, `ci:full`, a changed CI definition). There the `spec` job plans the run
 once (`go-plan.sh`: 8 shards with the race detector) and publishes the plan as
 the `go-plan` artifact so every shard reads the same one.
+
+**DB tests on a pull request.** `Unit tests (changed packages)` has no
+database, so before this job a broken `*_db_test.go` first failed in the merge
+queue and evicted its group and every group behind it. `.github/scripts/go-db-tests.sh`
+(called by the `changes` job over the same range as `changed.sh`, so an
+incremental run measures since the last green commit) selects the top-level
+tests of every `*_db_test.go` the PR adds or changes, and of the
+`*_db_test.go` files named after a non-test Go file it changes: `<stem>.go`
+selects `<stem>_db_test.go` and `<stem>_*_db_test.go`, also with a trailing
+`_repository` dropped (`asset_repository.go` selects `asset_*_db_test.go`).
+Deleted files, helper files without tests and migrations select nothing (a
+migration runs `Schema-wide tests (PostgreSQL)` and `Migrations (PostgreSQL 18)`;
+its own test is a `*_db_test.go`). The `dbtests` job, `DB tests (changed
+files)`, then runs one `go test -run '^(...)$'` over the selected packages
+with the services, role bootstrap, migrations and environment of `Tests
+(Postgres + Redis)`, skips the quarantined tests (`.github/quarantine.yml`),
+fails when the selection ran no test, and runs `check-db-test-skips.sh` on its
+output. One job, 20 minute timeout, only on a pull request on the fast tier;
+skipped when nothing is selected. When it runs, `API CI OK` requires it. The
+merge queue and pushes still run the whole suite. A change in a file that no
+DB test is named after is caught in the queue only, as before.
 
 **API shard balance.** The full runs record each package's run time
 (`go-durations-*` artifacts merged into `go-durations`, kept 14 days). The next

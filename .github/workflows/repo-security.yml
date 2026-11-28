@@ -344,6 +344,9 @@ jobs:
       # Which Go packages the fast tier tests for a pull request.
       - name: Affected packages self-test
         run: bash .github/scripts/go-affected.test.sh
+      # Which DB-backed tests a pull request runs (api-ci.yml `dbtests`).
+      - name: Changed DB tests self-test
+        run: bash .github/scripts/go-db-tests.test.sh
       # Which base images the CI image mirror copies for the other repositories.
       - name: CI image mirror base list self-test
         run: bash .github/scripts/ci-image-bases.test.sh
