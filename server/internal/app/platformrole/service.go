@@ -90,23 +90,39 @@ func NewService(store Store, admins Admins, roster RosterNotifier, log *logger.L
 // Client is where a change came from.
 type Client struct{ IP, UserAgent string }
 
+// Holders counts the active holders of each role, split into named
+// administrators and the emergency access (break-glass) accounts. The roles
+// table and the owners warning read the same split, so "Platform owner: 2"
+// can never sit under "fewer than two platform owners" (one of the two was
+// the emergency account). Inactive administrators hold nothing.
+func Holders(as []Assignment) (named, emergency map[platformauthz.RoleKey]int) {
+	named, emergency = map[platformauthz.RoleKey]int{}, map[platformauthz.RoleKey]int{}
+	for _, a := range as {
+		if !a.Active {
+			continue
+		}
+		seen := map[platformauthz.RoleKey]bool{}
+		for _, r := range a.Roles {
+			if seen[r] {
+				continue
+			}
+			seen[r] = true
+			if a.BreakGlass {
+				emergency[r]++
+			} else {
+				named[r]++
+			}
+		}
+	}
+	return named, emergency
+}
+
 // Owners counts the named platform owners: active, not break-glass. Below two
 // the console warns (a single owner can be locked out, and four-eyes has no
 // second approver).
 func Owners(as []Assignment) int {
-	n := 0
-	for _, a := range as {
-		if !a.Active || a.BreakGlass {
-			continue
-		}
-		for _, r := range a.Roles {
-			if r == platformauthz.RoleOwner {
-				n++
-				break
-			}
-		}
-	}
-	return n
+	named, _ := Holders(as)
+	return named[platformauthz.RoleOwner]
 }
 
 // List returns every administrator's roles.

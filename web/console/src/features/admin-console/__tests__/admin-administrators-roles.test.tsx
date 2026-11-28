@@ -181,6 +181,7 @@ const ROLES: PlatformRoleInfo[] = [
     tier: 'super_admin',
     permissions: ['a', 'b'],
     holders: 1,
+    emergency_holders: 1,
   },
   {
     key: 'auditor',
@@ -228,7 +229,10 @@ describe('Roles page', () => {
     )
     me('super_admin')
     render(<RolesPage />)
-    expect(screen.getByText('Fewer than two platform owners')).toBeInTheDocument()
+    // One named owner plus the emergency account: the warning and the column
+    // read the same count, the emergency account said apart.
+    expect(screen.getByText('Fewer than two named platform owners')).toBeInTheDocument()
+    expect(screen.getAllByText('+ 1 emergency').length).toBeGreaterThan(0)
     expect(document.querySelectorAll('[data-slot="list-count"]')).toHaveLength(2)
 
     // One "Take" button (the other holder's additional role). The one row

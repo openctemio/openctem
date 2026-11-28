@@ -47,7 +47,11 @@ type PlatformRoleResponse struct {
 	Base        bool     `json:"base"`
 	Tier        string   `json:"tier"`
 	Permissions []string `json:"permissions"`
-	Holders     int      `json:"holders"`
+	// Holders counts the named administrators holding the role (active, not
+	// break-glass), the count the owners warning uses; EmergencyHolders the
+	// active emergency access accounts holding it.
+	Holders          int `json:"holders"`
+	EmergencyHolders int `json:"emergency_holders"`
 }
 
 // PlatformRolesResponse is the catalog and the roles.
@@ -79,7 +83,7 @@ type PlatformRoleChangeRequest struct {
 // Roles lists the catalog and the built-in roles with their holder counts.
 //
 // @Summary      Platform roles and permissions (platform admin)
-// @Description  The platform permission catalog, the built-in platform roles with their permissions and holder counts, and whether fewer than two named platform owners exist. Any console role.
+// @Description  The platform permission catalog, the built-in platform roles with their permissions and holder counts (named administrators, and emergency access accounts apart), and whether fewer than two named platform owners exist. Any console role.
 // @Tags         Admin
 // @Produce      json
 // @Success      200  {object}  PlatformRolesResponse
@@ -91,15 +95,7 @@ func (h *AdminPlatformRoleHandler) Roles(w http.ResponseWriter, r *http.Request)
 		apierror.InternalServerError("could not list platform roles").WriteJSON(w)
 		return
 	}
-	holders := map[platformauthz.RoleKey]int{}
-	for _, a := range as {
-		if !a.Active {
-			continue
-		}
-		for _, k := range a.Roles {
-			holders[k]++
-		}
-	}
+	holders, emergency := platformrole.Holders(as)
 	out := PlatformRolesResponse{Roles: []PlatformRoleResponse{}, Permissions: []PlatformPermissionResponse{}}
 	for _, d := range platformauthz.Catalog() {
 		out.Permissions = append(out.Permissions, PlatformPermissionResponse{Key: string(d.Key), Baseline: d.Baseline, Description: d.Description})
@@ -110,7 +106,7 @@ func (h *AdminPlatformRoleHandler) Roles(w http.ResponseWriter, r *http.Request)
 			ps = append(ps, string(p))
 		}
 		out.Roles = append(out.Roles, PlatformRoleResponse{Key: string(role.Key), Name: role.Name, Description: role.Description,
-			Base: role.Base, Tier: string(role.Tier), Permissions: ps, Holders: holders[role.Key]})
+			Base: role.Base, Tier: string(role.Tier), Permissions: ps, Holders: holders[role.Key], EmergencyHolders: emergency[role.Key]})
 	}
 	out.NamedOwners = platformrole.Owners(as)
 	out.OwnersWarning = out.NamedOwners < 2
