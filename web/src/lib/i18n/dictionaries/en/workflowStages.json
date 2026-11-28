@@ -27,8 +27,6 @@
   "workflowStages.builder.saving": "Saving",
   "workflowStages.builder.systemTemplate": "System template",
   "workflowStages.builder.unsaved": "Unsaved",
-  "workflowStages.capability.discover.subdomains": "Subdomain discovery",
-  "workflowStages.capability.resolve.dns": "DNS resolution",
   "workflowStages.cycle": "These steps wait for each other in a loop: {steps}.",
   "workflowStages.draftChanged": "The draft has changes that are not published: runs use the published version.",
   "workflowStages.edge.intrusive": "not fed: intrusive",

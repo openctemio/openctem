@@ -63,7 +63,7 @@ export function PlatformAnnouncementBanner() {
 
   return (
     <div
-      className="space-y-2 px-4 pt-2"
+      className="space-y-1.5 px-3 pt-1.5 sm:space-y-2 sm:px-4 sm:pt-2"
       role="region"
       aria-label={t('announcements.region', 'Announcements')}
     >
@@ -75,15 +75,15 @@ export function PlatformAnnouncementBanner() {
             key={a.id}
             role={a.severity === 'info' ? 'status' : 'alert'}
             className={cn(
-              'flex items-start gap-3 rounded-md border px-3 py-2 text-sm',
+              'flex items-start gap-2 rounded-md border py-1 pe-1 ps-3 text-sm sm:gap-3 sm:py-1.5',
               style.className
             )}
           >
-            <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-            <p className="min-w-0 max-w-none flex-1 break-words">{a.message}</p>
+            <Icon className="mt-1.5 size-4 shrink-0" aria-hidden="true" />
+            <p className="min-w-0 max-w-none flex-1 break-words py-1">{a.message}</p>
             <Button
               variant="ghost"
-              size="icon"
+              size="icon-sm"
               className="shrink-0"
               aria-label={t('announcements.dismiss', 'Dismiss')}
               onClick={() => {

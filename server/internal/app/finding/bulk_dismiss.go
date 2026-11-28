@@ -158,6 +158,19 @@ type BulkDismissal struct {
 	CreatedAt       time.Time
 }
 
+// BulkDismissStepUpGuard is the step-up rule Reserve re-checks under its
+// lock: more than Above decided alone since Since needs a re-authentication
+// (Above 0: the caller already passed it).
+type BulkDismissStepUpGuard struct {
+	Since time.Time
+	Above int
+}
+
+// ErrBulkDismissStepUpRecount: under the lock, the creator's decisions of
+// the step-up window plus this call exceed the step-up threshold, which
+// the unlocked plan did not see (concurrent calls).
+var ErrBulkDismissStepUpRecount = errors.New("bulk dismiss: the step-up window filled up concurrently")
+
 // BulkDismissStore stores bulk dismissals (*postgres.FindingBulkDismissRepository).
 // Every method is scoped to the tenant and the creator.
 type BulkDismissStore interface {
@@ -169,8 +182,12 @@ type BulkDismissStore interface {
 	// Reserve inserts d with decided_count = the part of want that fits the
 	// creator's budget (max over since), under a per-(tenant, creator)
 	// advisory lock in the same transaction. A concurrent insert with the
-	// same key answers the stored row and replay = true.
-	Reserve(ctx context.Context, d *BulkDismissal, want, budget int, since time.Time) (stored *BulkDismissal, granted int, replay bool, err error)
+	// same key answers the stored row and replay = true. With
+	// guard.Above > 0 it also re-counts, under the same lock, what the
+	// creator decided since guard.Since, and answers
+	// ErrBulkDismissStepUpRecount when the grant would take that over
+	// guard.Above (a parallel call spent the room the plan saw).
+	Reserve(ctx context.Context, d *BulkDismissal, want, budget int, since time.Time, guard BulkDismissStepUpGuard) (stored *BulkDismissal, granted int, replay bool, err error)
 	// Finish records the outcome of the apply.
 	Finish(ctx context.Context, d *BulkDismissal) error
 	// Get reads the creator's bulk dismissal (ErrBulkDismissNotFound for
@@ -389,7 +406,20 @@ func (s *VulnerabilityService) BulkDismiss(ctx context.Context, in BulkDismissIn
 		SourceLabel: plan.label, FilterHash: in.FilterHash, Status: BulkDismissApplied,
 	}
 	now := time.Now()
-	stored, granted, replay, err := s.bulkDismissals.Reserve(ctx, row, len(plan.decide), BulkDismissDailyBudget, now.Add(-24*time.Hour))
+	// Splitting into parallel calls must not avoid the step-up either: the
+	// hour is counted again under the budget lock, and a call the others
+	// pushed over the threshold asks for the re-authentication then.
+	guard := BulkDismissStepUpGuard{Since: now.Add(-BulkDismissStepUpWindow)}
+	if !plan.stepUpRequired() {
+		guard.Above = BulkDismissStepUpAbove
+	}
+	stored, granted, replay, err := s.bulkDismissals.Reserve(ctx, row, len(plan.decide), BulkDismissDailyBudget, now.Add(-24*time.Hour), guard)
+	if errors.Is(err, ErrBulkDismissStepUpRecount) {
+		if err := s.requireApproverStepUp(ctx, in.UserID); err != nil {
+			return nil, err
+		}
+		stored, granted, replay, err = s.bulkDismissals.Reserve(ctx, row, len(plan.decide), BulkDismissDailyBudget, now.Add(-24*time.Hour), BulkDismissStepUpGuard{})
+	}
 	if err != nil {
 		return nil, err
 	}

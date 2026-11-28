@@ -41,11 +41,11 @@ func (r *fixAppliedRepo) UpdateStatusBatchFrom(_ context.Context, _ shared.ID, i
 func TestBulkVerifyAndRejectByFilter_WriteOnlyFromFixApplied(t *testing.T) {
 	tenantID := shared.NewID()
 	uid := shared.NewID()
-	for name, run := range map[string]func(*FindingActionsService) (int64, error){
-		"verify": func(s *FindingActionsService) (int64, error) {
+	for name, run := range map[string]func(*FindingActionsService) (*BulkUpdateResult, error){
+		"verify": func(s *FindingActionsService) (*BulkUpdateResult, error) {
 			return s.BulkVerifyByFilter(context.Background(), tenantID.String(), uid.String(), VerifyByFilterInput{})
 		},
-		"reject": func(s *FindingActionsService) (int64, error) {
+		"reject": func(s *FindingActionsService) (*BulkUpdateResult, error) {
 			s.SetLifecycles(stubSchemes{}) // an organization lifecycle: the per-finding path
 			return s.BulkRejectByFilter(context.Background(), tenantID.String(), uid.String(), RejectByFilterInput{Reason: "not fixed"})
 		},

@@ -292,3 +292,77 @@ func TestGroupAssets_DataScope_DB(t *testing.T) {
 		t.Errorf("group assets for the admin: %.400s, want both", body)
 	}
 }
+
+// An administrator from whom a private program asset is hidden resolves to
+// an Unrestricted (non-nil) scope. The list showed that caller the
+// asset-less leaks (the asset column is NULL, so it is not hidden), but the
+// by-id reads and the triage actions checked the zero asset id against the
+// asset table and answered 404 for every id the list had just returned.
+// The asset-less leak must resolve for that caller, while the hidden
+// asset's leak, the other tenant's leak and a restricted member keep 404.
+func TestCredentials_AssetlessLeak_AdminWithHiddenProgramAsset_DB(t *testing.T) {
+	h := newL10Harness(t)
+	program, hiddenAsset, credHidden := shared.NewID().String(), shared.NewID().String(), shared.NewID().String()
+	h.exec(`INSERT INTO bounty_programs (id, tenant_id, name, terms_sha256, visibility) VALUES ($1, $2, 'l10-p', repeat('a', 64), 'private')`,
+		program, h.tenantA)
+	h.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, program_only) VALUES ($1, $2, $3, 'domain', TRUE)`,
+		hiddenAsset, h.tenantA, "l10-p-"+hiddenAsset+".example.com")
+	h.exec(`INSERT INTO asset_program_links (tenant_id, asset_id, program_id, source) VALUES ($1, $2, $3, 'program_manual')`,
+		h.tenantA, hiddenAsset, program)
+	h.exec(`INSERT INTO exposure_events (id, tenant_id, asset_id, event_type, severity, state, title, details, fingerprint, source)
+		VALUES ($1::uuid, $2, $3, 'credential_leaked', 'high', 'active', 'l10 hidden leak', '{"identifier":"l10-user@example.com"}', $1::text, 'l10')`,
+		credHidden, h.tenantA, hiddenAsset)
+	t.Cleanup(func() {
+		ctx := context.Background()
+		_, _ = h.db.ExecContext(ctx, `DELETE FROM exposure_events WHERE id = $1`, credHidden)
+		_, _ = h.db.ExecContext(ctx, `DELETE FROM asset_program_links WHERE asset_id = $1`, hiddenAsset)
+		_, _ = h.db.ExecContext(ctx, `DELETE FROM assets WHERE id = $1`, hiddenAsset)
+		_, _ = h.db.ExecContext(ctx, `DELETE FROM bounty_programs WHERE id = $1`, program)
+	})
+
+	list := h.get(h.admin, true, "/api/v1/credentials/?per_page=100")
+	if !strings.Contains(list, h.credNoAsset) || strings.Contains(list, credHidden) || strings.Contains(list, h.credB) {
+		t.Fatalf("admin list: %.400s, want the asset-less leak, not the hidden asset's or tenant B's", list)
+	}
+
+	// Every id the list returned resolves by id and can be triaged.
+	if status, body := h.do(h.admin, true, http.MethodGet, "/api/v1/credentials/"+h.credNoAsset); status != http.StatusOK {
+		t.Errorf("admin GET a listed asset-less leak = %d, want 200 (%.200s)", status, body)
+	}
+	if status, body := h.do(h.admin, true, http.MethodPost, "/api/v1/credentials/"+h.credNoAsset+"/resolve"); status != http.StatusOK {
+		t.Errorf("admin resolve a listed asset-less leak = %d, want 200 (%.200s)", status, body)
+	}
+	var state string
+	_ = h.db.QueryRowContext(context.Background(), `SELECT state FROM exposure_events WHERE id = $1`, h.credNoAsset).Scan(&state)
+	if state != "resolved" {
+		t.Errorf("asset-less leak state = %q after resolve, want resolved", state)
+	}
+
+	// Still 404: the hidden program asset's leak, another tenant's leak, and
+	// the asset-less leak for a restricted member.
+	for _, c := range []struct {
+		user  string
+		admin bool
+		id    string
+	}{{h.admin, true, credHidden}, {h.admin, true, h.credB}, {h.scoped, false, h.credNoAsset}} {
+		for _, op := range []struct{ method, path string }{
+			{http.MethodGet, "/api/v1/credentials/" + c.id},
+			{http.MethodPost, "/api/v1/credentials/" + c.id + "/resolve"},
+		} {
+			status, body := h.do(c.user, c.admin, op.method, op.path)
+			if status != http.StatusNotFound {
+				t.Errorf("%s %s (admin=%v) = %d, want 404 (%.200s)", op.method, op.path, c.admin, status, body)
+			}
+			if op.method == http.MethodGet && strings.Contains(body, "not found not found") {
+				t.Errorf("GET 404 message repeats itself: %.200s", body)
+			}
+		}
+	}
+	for _, c := range []string{credHidden, h.credB} {
+		var st string
+		_ = h.db.QueryRowContext(context.Background(), `SELECT state FROM exposure_events WHERE id = $1`, c).Scan(&st)
+		if st != "active" {
+			t.Errorf("a refused resolve changed leak %s (state %s)", c, st)
+		}
+	}
+}

@@ -713,7 +713,7 @@ func (p *AssetProcessor) processBatch(
 			if idx != nil {
 				recency = idx.ipRecency(i)
 			}
-			result, corrErr := p.correlator.CorrelateHostRecent(ctx, tenantID, normalizedName, props, cfg, recency)
+			result, corrErr := p.correlator.CorrelateHostRecent(ctx, tenantID, coreType, normalizedName, props, cfg, recency)
 			if corrErr != nil {
 				p.logger.Warn("IP correlation failed, creating new asset",
 					"name", logger.SanitizeValue(normalizedName), "error", corrErr)

@@ -238,6 +238,7 @@
   "common.secretKey.copyFailed": "Không sao chép được khóa",
   "common.secretKey.manual": "Hoặc nhập khóa này thủ công",
   "common.selectAll": "Chọn tất cả",
+  "common.showFewer": "Thu gọn",
   "common.showingFirstOf": "Đang hiển thị {loaded} mục đầu tiên trong tổng số {total}",
   "common.table.actionsColumn": "Thao tác",
   "common.table.adjustSearch": "Hãy thử điều chỉnh tìm kiếm hoặc bộ lọc",

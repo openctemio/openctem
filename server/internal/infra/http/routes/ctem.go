@@ -71,7 +71,9 @@ func registerThreatModelRoutes(
 		// A threat model is a computed attack route: reading one needs
 		// attack_surface:paths:read, generating one needs it with assets:write.
 		r.GET("/", h.List, middleware.Require(permission.AttackPathsRead))
-		r.POST("/generate", h.Generate, middleware.RequireAll(permission.AssetsWrite, permission.AttackPathsRead))
+		// Generation reads the tenant's whole exposure graph, edges and
+		// findings: it shares the per-tenant cap of the other heavy reads.
+		r.POST("/generate", h.Generate, middleware.RequireAll(permission.AssetsWrite, permission.AttackPathsRead), heavyReads.Middleware())
 		r.GET("/{id}", h.Get, middleware.Require(permission.AttackPathsRead))
 		r.GET("/{id}/coverage", h.Coverage, middleware.Require(permission.AttackPathsRead))
 	}, tenantMiddlewares...)

@@ -416,7 +416,12 @@ export default function FindingDetailPage() {
                         title={t('findings.detail.proofOfFix', 'Proof of fix')}
                         className="has-[[data-slot=finding-proof]:empty]:hidden"
                       >
-                        <div data-slot="finding-proof" className="flex min-w-0 flex-col gap-5">
+                        {/* The ways to prove the fix side by side once each has 28rem:
+                            one column up to 1440 px, two at 1920, three at 2560. */}
+                        <div
+                          data-slot="finding-proof"
+                          className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,28rem),1fr))] items-start gap-x-8 gap-y-5"
+                        >
                           <VerificationPanel findingId={finding.id} />
                           <FindingRetestSection finding={{ ...finding, status: triage.status }} />
                           <FindingRetestCheckSection finding={finding} />

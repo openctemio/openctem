@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
-	"github.com/openctemio/openctem/server/pkg/domain/admin"
 	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
@@ -91,13 +90,11 @@ func (h *AdminAuthHandler) Validate(w http.ResponseWriter, r *http.Request) {
 		response.Roles = append(response.Roles, string(k))
 	}
 	if sess := middleware.GetAdminSession(r.Context()); sess != nil {
-		response.AuthMethod = sess.AuthMethod
 		if as := sess.ElevatedAs(time.Now()); as != "" {
 			response.ElevatedUntil = sess.ElevatedUntil
 			response.ElevatedAs = string(as)
 		}
-		response.PasswordChangeRequired = adminUser.PasswordChangeRequired() && sess.AuthMethod == admin.AuthMethodPassword
-		response.FactorEnrollmentRequired = sess.EnrollmentRequired
+		applySessionGates(&response, adminUser, sess)
 	}
 	// The session's own CSRF token (bound to the session cookie that
 	// authenticated this request).

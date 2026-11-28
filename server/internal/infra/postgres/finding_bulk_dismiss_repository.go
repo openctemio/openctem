@@ -121,7 +121,7 @@ func (r *FindingBulkDismissRepository) DecidedSince(ctx context.Context, tenantI
 // Reserve inserts d, reserving the part of want that fits the creator's
 // budget, under a per-(tenant, creator) advisory lock held for the
 // transaction: two concurrent calls cannot both spend the same room.
-func (r *FindingBulkDismissRepository) Reserve(ctx context.Context, d *finding.BulkDismissal, want, budget int, since time.Time) (*finding.BulkDismissal, int, bool, error) {
+func (r *FindingBulkDismissRepository) Reserve(ctx context.Context, d *finding.BulkDismissal, want, budget int, since time.Time, guard finding.BulkDismissStepUpGuard) (*finding.BulkDismissal, int, bool, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, 0, false, fmt.Errorf("begin bulk dismissal: %w", err)
@@ -146,6 +146,15 @@ func (r *FindingBulkDismissRepository) Reserve(ctx context.Context, d *finding.B
 		return nil, 0, false, err
 	}
 	granted := min(max(budget-used, 0), want)
+	if guard.Above > 0 && granted > 0 {
+		recent, err := decidedSince(ctx, tx, d.TenantID, d.CreatedBy, guard.Since)
+		if err != nil {
+			return nil, 0, false, err
+		}
+		if recent+granted > guard.Above {
+			return nil, 0, false, finding.ErrBulkDismissStepUpRecount
+		}
+	}
 	var key, filterHash any
 	if d.IdempotencyKey != "" {
 		key = d.IdempotencyKey

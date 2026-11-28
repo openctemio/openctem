@@ -72,6 +72,8 @@ export interface SCMConnection {
   status: SCMConnectionStatus
   lastValidatedAt?: string
   errorMessage?: string
+  /** The INTEGRATION_* code of the last failure; errorMessage is its English fallback. */
+  errorCode?: string
   permissions: SCMPermission[]
   repositoryCount: number
   createdAt: string

@@ -26,6 +26,7 @@
 
 import { formatAbsoluteTime } from '@/lib/format-metric'
 import { toDisplayText } from '@/lib/untrusted-text'
+import { capabilityLabel } from '@/lib/capability-label'
 
 export type TranslateVars = Record<string, string | number>
 export type Translate = (key: string, fallback?: string, vars?: TranslateVars) => string
@@ -72,8 +73,7 @@ function valueText(
   if (typeof v === 'boolean') return String(v)
   if (typeof v !== 'string') return ''
   const raw = v.replace(MARKS, '')
-  if (name === 'capability')
-    return t(`assetCoverage.capability.${raw}`, toDisplayText(raw, MAX_VALUE_CHARS))
+  if (name === 'capability') return capabilityLabel(raw, t, toDisplayText(raw, MAX_VALUE_CHARS))
   if (name === 'severity' || name.endsWith('_severity'))
     return t(`severity.${raw.toLowerCase()}`, toDisplayText(raw, MAX_VALUE_CHARS))
   if (name === 'role') return t(`org.role.${raw}`, toDisplayText(raw, MAX_VALUE_CHARS))

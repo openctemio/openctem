@@ -310,17 +310,34 @@ function PathRow({
   const kevOnPath = (path.kevCount ?? 0) > 0
   const scorePct = Math.max(0, Math.min(100, path.scorePct ?? 0))
 
+  // One list row, not a card per chain: rank, the chain itself, what makes
+  // it urgent, its score and the way on, on one line from sm up (most chains
+  // are a single internet-facing asset, so a card per chain was a column of
+  // 170 px boxes holding one node each).
   return (
-    <div className="group hover:bg-muted/30 flex flex-col gap-3 rounded-lg border p-4 transition-colors">
-      {/* Header: rank + path-level badges + reachable counter */}
-      <div className="flex items-center gap-3">
+    <li
+      className="group hover:bg-muted/30 flex flex-col gap-2 px-4 py-3 transition-colors sm:flex-row sm:items-center sm:gap-4"
+      data-testid="chain-row"
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         {path.rank != null && (
           <div className="bg-muted text-muted-foreground flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold">
             {path.rank}
           </div>
         )}
+        {/* The node chain: stacks on a phone, flows left to right from sm */}
+        <div className="flex min-w-0 flex-1 flex-col items-stretch gap-2 overflow-x-auto sm:flex-row sm:flex-wrap sm:items-center sm:gap-0">
+          {path.nodes.map((node, idx) => (
+            <Fragment key={`${node.id || node.name}-${idx}`}>
+              <PathNode node={node} onOpen={onOpenNode ? () => onOpenNode(path, idx) : undefined} />
+              {idx < path.nodes.length - 1 && <Connector kevOnPath={kevOnPath} />}
+            </Fragment>
+          ))}
+        </div>
+      </div>
 
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+      <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 ps-10 sm:ps-0">
+        <div className="flex flex-wrap items-center gap-1.5">
           {kevOnPath && (
             <Badge variant="outline" className={cn('gap-1', SEVERITY_BADGE_SOFT.critical)}>
               <AlertOctagon className="h-3 w-3" aria-hidden />
@@ -337,6 +354,34 @@ function PathRow({
           )}
         </div>
 
+        {path.reachableFrom != null && (
+          <span className="text-muted-foreground text-xs tabular-nums">
+            {path.reachableFrom}{' '}
+            {path.reachableFrom === 1
+              ? t('prioritization.pathGraph.entryPointOne', 'entry point')
+              : t('prioritization.pathGraph.entryPointOther', 'entry points')}
+          </span>
+        )}
+
+        {/* Relative score: a short bar with its value */}
+        {path.score != null && (
+          <div className="flex w-36 items-center gap-2">
+            <Progress
+              value={scorePct}
+              className="h-1.5 flex-1"
+              aria-label={t(
+                'prioritization.pathGraph.scoreLabel',
+                'Urgency relative to the top chain'
+              )}
+            />
+            <span className="text-muted-foreground shrink-0 text-end text-xs tabular-nums">
+              {t('prioritization.pathGraph.score', 'score {score}', {
+                score: path.score.toFixed(0),
+              })}
+            </span>
+          </div>
+        )}
+
         {safeInternalHref(path.detailHref) && (
           <Link
             href={safeInternalHref(path.detailHref) ?? '/'}
@@ -346,43 +391,8 @@ function PathRow({
             {t('prioritization.pathGraph.openPaths', 'Open attack paths')}
           </Link>
         )}
-
-        {path.reachableFrom != null && (
-          <div className="flex shrink-0 flex-col items-center text-center">
-            <span className="text-xl leading-none font-semibold tabular-nums">
-              {path.reachableFrom}
-            </span>
-            <span className="text-muted-foreground mt-0.5 text-[10px]">
-              {path.reachableFrom === 1
-                ? t('prioritization.pathGraph.entryPointOne', 'entry point')
-                : t('prioritization.pathGraph.entryPointOther', 'entry points')}
-            </span>
-          </div>
-        )}
       </div>
-
-      {/* The node chain — stacks vertically on mobile, flows left→right on sm+ */}
-      <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-0">
-        {path.nodes.map((node, idx) => (
-          <Fragment key={`${node.id || node.name}-${idx}`}>
-            <PathNode node={node} onOpen={onOpenNode ? () => onOpenNode(path, idx) : undefined} />
-            {idx < path.nodes.length - 1 && <Connector kevOnPath={kevOnPath} />}
-          </Fragment>
-        ))}
-      </div>
-
-      {/* Relative score bar */}
-      {path.score != null && (
-        <div className="flex items-center gap-3">
-          <Progress value={scorePct} className="h-1.5 flex-1" />
-          <span className="text-muted-foreground w-20 shrink-0 text-end text-xs">
-            {t('prioritization.pathGraph.score', 'score {score}', {
-              score: path.score.toFixed(0),
-            })}
-          </span>
-        </div>
-      )}
-    </div>
+    </li>
   )
 }
 
@@ -416,15 +426,13 @@ export function PathGraph({ paths, empty, onOpenNode, className }: PathGraphProp
     return empty ? <>{empty}</> : null
   }
 
+  // One bordered list, a row per chain; an unusually long chain scrolls
+  // inside its own row instead of the page.
   return (
-    <div className={cn('space-y-3', className)}>
+    <ol className={cn('divide-y rounded-lg border', className)} data-testid="chain-list">
       {paths.map((path) => (
-        // overflow-x-auto keeps an unusually long chain scrollable on desktop
-        // instead of forcing the whole page to scroll sideways.
-        <div key={path.id} className="overflow-x-auto">
-          <PathRow path={path} onOpenNode={onOpenNode} />
-        </div>
+        <PathRow key={path.id} path={path} onOpenNode={onOpenNode} />
       ))}
-    </div>
+    </ol>
   )
 }

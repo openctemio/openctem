@@ -3,7 +3,13 @@
 import { useMemo, useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import Link from '@/components/link'
-import { SettingsPage, SettingsSection, ListToolbar } from '@/features/shared'
+import {
+  IndexGroups,
+  IndexLinkList,
+  SettingsPage,
+  SettingsSection,
+  ListToolbar,
+} from '@/features/shared'
 import { useTranslation } from '@/context/i18n-provider'
 import { useIsMobile } from '@/hooks/use-mobile'
 import {
@@ -44,6 +50,9 @@ export default function SettingsIndexPage() {
 
   return (
     <SettingsPage
+      // An index of links, not a form: it uses the page's width
+      // (docs/ui-style-contract.md, "Index pages").
+      wide
       title={t('nav.item.organizationSettings', 'Organization settings')}
       description={t(
         'settings.overview.descriptionOrg',
@@ -70,6 +79,8 @@ export default function SettingsIndexPage() {
       {searching ? (
         <section
           id="settings-search-results"
+          // Rows of a name and its place: a reading width.
+          className="max-w-settings"
           aria-label={t('settings.search.results', 'Search results')}
         >
           <p role="status" className="pb-2 text-dense text-muted-foreground">
@@ -99,9 +110,11 @@ export default function SettingsIndexPage() {
       ) : (
         <>
           <SettingsAttention enabled={canSeeOverview} />
-          {groups.map((group, i) => (
-            <SettingsGroup key={group.id} group={group} first={i === 0} />
-          ))}
+          <IndexGroups>
+            {groups.map((group, i) => (
+              <SettingsGroup key={group.id} group={group} first={i === 0} />
+            ))}
+          </IndexGroups>
         </>
       )}
     </SettingsPage>
@@ -165,7 +178,7 @@ function SettingsGroup({ group, first }: { group: VisibleSettingsGroup; first: b
             )}
             {/* Names only: the one-line descriptions are found by search
                   above and shown on hover, so the index stays short. */}
-            <ul className="grid grid-cols-1 gap-x-6 @[36rem]:grid-cols-2 @[52rem]:grid-cols-3">
+            <IndexLinkList>
               {chunk.items.map((item) => {
                 const Icon = item.icon
                 return (
@@ -182,7 +195,7 @@ function SettingsGroup({ group, first }: { group: VisibleSettingsGroup; first: b
                   </li>
                 )
               })}
-            </ul>
+            </IndexLinkList>
           </div>
         ))}
       </div>

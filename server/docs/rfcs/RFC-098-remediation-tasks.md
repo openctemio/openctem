@@ -48,7 +48,7 @@ first match wins:
 | State | Rule |
 |---|---|
 | `archived` | the task lost its last member to a move |
-| `canceled` | a person canceled it (a reason is required); its findings are released and may join another task |
+| `canceled` | a person canceled it (a reason is required); its findings are released and may join another task. The task stays listed and readable (state `canceled`) for every reader who may see one of the findings it held when it was canceled |
 | `on_hold` | a person put it on hold |
 | `done` | every member is closed **and at least one is verified fixed** (resolved by a covered scan, a retest or a reviewer with `findings:verify`) |
 | `closed_unverified` | every member is closed but none was verified fixed (accepted, false positive, duplicate, or resolved without proof) |

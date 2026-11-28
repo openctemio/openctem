@@ -318,7 +318,7 @@ export async function probe(page: Page, allTables = false): Promise<Probe> {
 }
 
 /** One control of a row: its accessible name (or tag) and its drawn box. */
-export type RowControl = { name: string; height: number; centre: number }
+export type RowControl = { name: string; height: number; centre: number; font?: number }
 /** A row whose controls differ in height or do not share one centre line. */
 export type MixedRow = { row: string; controls: RowControl[] }
 
@@ -332,9 +332,14 @@ export type MixedRow = { row: string; controls: RowControl[] }
  * Not compared: checkboxes, radios and switches, text links, what sits inside
  * a chip (its remove button), a button placed over a field (a search field's
  * clear button), and controls of different table cells.
+ *
+ * `fonts` (the layout matrix's sizeMismatch): the row also fails when its
+ * buttons, or its fields, differ in font size. Buttons and fields are compared
+ * apart: below 768 px a field keeps 16 px text so a phone never zooms into it,
+ * beside 13 px buttons ("Sizes" in docs/ui-style-contract.md).
  */
-export async function probeRowMix(page: Page): Promise<MixedRow[]> {
-  return page.evaluate(() => {
+export async function probeRowMix(page: Page, opts: { fonts?: boolean } = {}): Promise<MixedRow[]> {
+  return page.evaluate((fonts) => {
     const TOL = 0.5
     const CONTAINERS = [
       '[data-slot=list-toolbar-region]',
@@ -453,6 +458,10 @@ export async function probeRowMix(page: Page): Promise<MixedRow[]> {
     const out: { row: string; controls: { name: string; height: number; centre: number }[] }[] = []
     for (const [c, els] of byContainer) {
       if (els.length < 2) continue
+      // The matrix's row check: a fact list (<dl>) lays its facts out by
+      // their own rules (a long value goes under its label); it is not a
+      // toolbar row.
+      if (fonts && c.matches('dl')) continue
       const boxes = els
         .map((el) => ({ el, r: el.getBoundingClientRect() }))
         .sort((a, b) => a.r.top - b.r.top)
@@ -470,7 +479,47 @@ export async function probeRowMix(page: Page): Promise<MixedRow[]> {
         const hs = rw.map((b) => b.r.height)
         const cs = rw.map((b) => b.r.top + b.r.height / 2)
         const spread = (xs: number[]) => Math.max(...xs) - Math.min(...xs)
-        if (spread(hs) <= TOL && spread(cs) <= TOL) continue
+        // The size of the text the control shows: its field's, or its first
+        // visible text's (a segmented group or a button wraps its label in
+        // boxes of their own; the outer box's size says nothing).
+        // The first text the control shows (not a label read to assistive
+        // technology only: an icon button's sr-only name).
+        const textHost = (el: Element): Element | null => {
+          const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+          for (let n = w.nextNode(); n; n = w.nextNode()) {
+            const host = n.parentElement
+            if (!host || !(n.textContent ?? '').trim() || !shown(host)) continue
+            // A label folded away (font-size 0, as a phone page header draws
+            // its buttons as icons) draws nothing.
+            if (parseFloat(getComputedStyle(host).fontSize) === 0) continue
+            const range = document.createRange()
+            range.selectNodeContents(n)
+            if (range.getBoundingClientRect().width < 1) continue
+            return host
+          }
+          return null
+        }
+        const fontOf = (el: Element) => {
+          if (el.matches('input,select,textarea')) return parseFloat(getComputedStyle(el).fontSize)
+          const input = el.querySelector('input')
+          if (input) return parseFloat(getComputedStyle(input).fontSize)
+          return parseFloat(getComputedStyle(textHost(el) ?? el).fontSize)
+        }
+        const isField = (el: Element) =>
+          el.matches('input,select,textarea,[data-slot=list-search],[data-slot=select-trigger]') ||
+          !!el.querySelector('input')
+        // Text size only where there is text: an icon-only button has none.
+        // A heading that opens a menu (a queue's name) is set as a heading,
+        // not as a control.
+        const texted = rw.filter(
+          (b) => !b.el.closest('h1,h2,h3,h4') && (isField(b.el) || textHost(b.el) !== null)
+        )
+        const fontsDiffer =
+          fonts &&
+          [texted.filter((b) => isField(b.el)), texted.filter((b) => !isField(b.el))].some(
+            (g) => g.length > 1 && spread(g.map((b) => fontOf(b.el))) > TOL
+          )
+        if (spread(hs) <= TOL && spread(cs) <= TOL && !fontsDiffer) continue
         rw.sort((a, b) => a.r.left - b.r.left)
         out.push({
           row: `${describe(c)} at y=${Math.round(rw[0].r.top)}`,
@@ -478,17 +527,20 @@ export async function probeRowMix(page: Page): Promise<MixedRow[]> {
             name: label(b.el),
             height: Math.round(b.r.height * 10) / 10,
             centre: Math.round((b.r.top + b.r.height / 2) * 10) / 10,
+            ...(fonts ? { font: fontOf(b.el) } : {}),
           })),
         })
       }
     }
     return out
-  })
+  }, !!opts.fonts)
 }
 
 /** `list-toolbar at y=488: dropdown-menu-trigger "Views" 32px @504, button "Refresh" 36px @504` */
 export function formatMixedRow(m: MixedRow): string {
-  const parts = m.controls.map((c) => `${c.name} ${c.height}px @${c.centre}`)
+  const parts = m.controls.map(
+    (c) => `${c.name} ${c.height}px @${c.centre}${c.font ? ` ${c.font}px text` : ''}`
+  )
   return `${m.row}: ${parts.join(', ')}`
 }
 
