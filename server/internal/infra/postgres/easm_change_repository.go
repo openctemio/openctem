@@ -188,6 +188,16 @@ func (r *EASMChangeRepository) ListChanges(ctx context.Context, tenantID shared.
 		args = append(args, pq.Array(kinds))
 		where = append(where, fmt.Sprintf("c.kind = ANY($%d)", len(args)))
 	}
+	if g := q.Group; g != nil {
+		args = append(args, string(g.Kind), g.Detail)
+		where = append(where, fmt.Sprintf("c.kind = $%d AND c.detail = $%d", len(args)-1, len(args)))
+		if g.AssetID == "" {
+			where = append(where, "c.asset_id IS NULL")
+		} else {
+			args = append(args, g.AssetID)
+			where = append(where, fmt.Sprintf("c.asset_id = $%d::uuid", len(args)))
+		}
+	}
 	if q.Cursor != "" {
 		cur, err := decodeChangeCursor(q.Cursor)
 		if err != nil {
@@ -198,27 +208,54 @@ func (r *EASMChangeRepository) ListChanges(ctx context.Context, tenantID shared.
 		where = append(where, fmt.Sprintf("(c.at, c.id, c.kind) < ($%d, $%d, $%d)", n-2, n-1, n))
 	}
 	args = append(args, q.Limit+1)
-	query := `SELECT c.id, c.at, c.asset_id, c.asset_name, c.asset_type, c.kind, c.detail, c.old_value, c.new_value,
-	                 c.added, c.removed, c.severity, c.exposure_id
+	const cols = `c.id, c.at, c.asset_id, c.asset_name, c.asset_type, c.kind, c.detail, c.old_value, c.new_value,
+	                 c.added, c.removed, c.severity, c.exposure_id`
+	query := `SELECT ` + cols + `, 1
 	          FROM (` + changeUnion(ctx) + `) c
 	          WHERE ` + strings.Join(where, " AND ") + sc + `
 	          ORDER BY c.at DESC, c.id DESC, c.kind DESC
 	          LIMIT $` + fmt.Sprint(len(args))
+	if q.Grouped {
+		// One row per (kind, detail, asset): the newest change stands for
+		// the group, so the keyset cursor on its (at, id, kind) pages the
+		// groups the same way it pages changes.
+		inner := make([]string, 0, len(where))
+		outer := []string{"c.rn = 1"}
+		for _, w := range where {
+			if strings.HasPrefix(w, "(c.at, c.id, c.kind) <") {
+				outer = append(outer, w)
+				continue
+			}
+			inner = append(inner, w)
+		}
+		query = `SELECT ` + cols + `, c.n
+		  FROM (SELECT c.*,
+		               count(*) OVER (PARTITION BY c.kind, c.detail, c.asset_id) AS n,
+		               row_number() OVER (PARTITION BY c.kind, c.detail, c.asset_id ORDER BY c.at DESC, c.id DESC) AS rn
+		          FROM (` + changeUnion(ctx) + `) c
+		          WHERE ` + strings.Join(inner, " AND ") + sc + `) c
+		  WHERE ` + strings.Join(outer, " AND ") + `
+		  ORDER BY c.at DESC, c.id DESC, c.kind DESC
+		  LIMIT $` + fmt.Sprint(len(args))
+	}
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("easm changes: %w", err)
 	}
 	defer rows.Close()
 	page := &easmchange.Page{From: q.From, To: q.To, Counts: counts, Total: total, Items: []easmchange.Change{}}
+	var sizes []int
 	for rows.Next() {
 		var c easmchange.Change
 		var assetID, exposureID sql.NullString
 		var kind string
 		var added, removed pq.StringArray
+		var n int
 		if err := rows.Scan(&c.ID, &c.At, &assetID, &c.AssetName, &c.AssetType, &kind, &c.Detail, &c.Old, &c.New,
-			&added, &removed, &c.Severity, &exposureID); err != nil {
+			&added, &removed, &c.Severity, &exposureID, &n); err != nil {
 			return nil, fmt.Errorf("easm changes scan: %w", err)
 		}
+		sizes = append(sizes, n)
 		c.Kind = easmchange.Kind(kind)
 		c.Added, c.Removed = added, removed
 		if assetID.Valid {
@@ -236,6 +273,17 @@ func (r *EASMChangeRepository) ListChanges(ctx context.Context, tenantID shared.
 		last := page.Items[q.Limit-1]
 		page.Items = page.Items[:q.Limit]
 		page.NextCursor = encodeChangeCursor(changeCursor{At: last.At, ID: last.ID, Kind: string(last.Kind)})
+	}
+	if q.Grouped {
+		page.Groups = make([]easmchange.Group, 0, len(page.Items))
+		for i, c := range page.Items {
+			key := easmchange.GroupKey{Kind: c.Kind, Detail: c.Detail}
+			if c.AssetID != nil {
+				key.AssetID = *c.AssetID
+			}
+			page.Groups = append(page.Groups, easmchange.Group{Key: key, Count: sizes[i], Latest: c})
+		}
+		page.Items = []easmchange.Change{}
 	}
 	return page, nil
 }

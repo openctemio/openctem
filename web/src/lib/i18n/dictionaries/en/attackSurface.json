@@ -50,6 +50,8 @@
   "attackSurface.changes.emptyFiltered": "No change of the selected kinds in this window.",
   "attackSurface.changes.emptyTitle": "Nothing changed",
   "attackSurface.changes.errorTitle": "attack surface changes",
+  "attackSurface.changes.groupShowAll": "{count, plural, one {Show the # change} other {Show all # changes}}",
+  "attackSurface.changes.groupTitle": "{kind} on {asset}",
   "attackSurface.changes.kindOther": "Other change",
   "attackSurface.changes.kindsLabel": "Change kinds",
   "attackSurface.changes.lastDays": "Last {count, plural, one {# day} other {# days}}",
