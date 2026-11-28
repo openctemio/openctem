@@ -16,14 +16,18 @@
  *
  * No card: groups are separated by a rule. The list follows the width it is
  * given (a container query): one column in a rail, two columns when it sits
- * under the header on a narrower page. A value that does not fit beside its
- * label goes under it, on the row's whole width, instead of being cut. Below 768 px every row is a 44 px
+ * under the header on a narrower page. From 768 px the label and the value
+ * stay side by side in two columns; a long value or several values (tags, a
+ * list of owners) wrap inside the value column, left-aligned, never under the
+ * label. Below 768 px every row is a 44 px
  * line with the value at the end (also with a 36 px control in it), and a
  * `PropertyFold` keeps the long tail one tap away; from 768 px a fold is
  * always open.
  *
  * Each group is a `dl` of `dt` / `dd` pairs. A row whose value is empty
- * renders nothing, so a caller never guards a row twice.
+ * renders nothing, so a caller never guards a row twice. A row always shows
+ * its value: an identifier is an `IdValue` (the value and a copy button),
+ * never a lone "Copy" action in the value slot.
  */
 
 import * as React from 'react'
@@ -109,12 +113,11 @@ export function PropertyRow({ label, children, top, className }: PropertyRowProp
     <div
       data-slot="property-row"
       className={cn(
-        // From 768 px the label has a 6.75rem column and the value the rest
-        // of the line; a value wider than that place (an e-mail beside its
-        // avatar, "2 watchers" in Vietnamese, a long name) goes on a line of
-        // its own under the label, with the whole width, instead of being
-        // cut. A short value stays beside its label.
-        'min-h-control min-w-0 gap-x-3 md:flex md:flex-wrap',
+        // From 768 px two columns: the label in 6.75rem, the value in the
+        // rest. A wide value (an e-mail beside its avatar, tags, a long name)
+        // wraps inside its own column, so every value starts at the same x
+        // and no label ends up alone above its value.
+        'min-h-control min-w-0 gap-x-3 md:grid md:grid-cols-[6.75rem_minmax(0,1fr)]',
         top ? 'md:items-start' : 'md:items-center',
         // Phone: a full-width 44 px line, the value at the end. The padding is
         // small enough that a 36 px control keeps the line at 44 px (2 + 36 +
@@ -125,15 +128,8 @@ export function PropertyRow({ label, children, top, className }: PropertyRowProp
         className
       )}
     >
-      <dt
-        className={cn(
-          'text-dense text-muted-foreground md:w-[6.75rem] md:shrink-0',
-          top && 'md:pt-1.5'
-        )}
-      >
-        {label}
-      </dt>
-      <dd className="min-w-0 text-dense break-words max-md:flex max-md:flex-col max-md:items-end max-md:text-end md:flex-[1_1_auto]">
+      <dt className={cn('text-dense text-muted-foreground', top && 'md:pt-1.5')}>{label}</dt>
+      <dd className="min-w-0 text-dense break-words max-md:flex max-md:flex-col max-md:items-end max-md:text-end">
         {children}
       </dd>
     </div>

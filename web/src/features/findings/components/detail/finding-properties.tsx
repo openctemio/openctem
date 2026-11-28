@@ -17,15 +17,14 @@ import Link from '@/components/link'
 import { useTranslation } from '@/context/i18n-provider'
 import { ArrowUpRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { copyToClipboard } from '@/lib/clipboard'
 import {
   PropertyFold,
   PropertyGroup,
   PropertyList,
   PropertyRow,
+  IdValue,
 } from '@/features/shared/components/detail'
+import { maskedFindingLocation } from '@/features/findings/lib/finding-location'
 import { RelativeTime } from '@/features/shared/components/relative-time'
 import { daysUntil, isBreach } from '@/features/sla/lib/sla'
 import { cn } from '@/lib/utils'
@@ -225,6 +224,16 @@ export function FindingProperties({
   const canAssign = useCanMutate('POST /api/v1/findings/{id}/assign')
   const asset = finding.assets[0]
   const crit = asset?.criticality
+  // Where on the asset: the port, URL path or file:line (masked like the list).
+  const assetPlace = asset
+    ? maskedFindingLocation({
+        asset: { name: asset.name },
+        file_path: finding.filePath,
+        start_line: finding.startLine,
+        network_port: finding.scannerFacts?.networkPort,
+        network_transport: finding.scannerFacts?.networkTransport,
+      })
+    : null
   // Type, criticality and exposure as separate muted pieces (no middot join).
   const assetCaptionParts: string[] = asset
     ? [
@@ -395,6 +404,15 @@ export function FindingProperties({
                 ) : (
                   <span className="font-medium">{asset.name}</span>
                 )}
+                {assetPlace?.detail && (
+                  <span
+                    data-slot="asset-place"
+                    className="block font-mono text-xs break-all"
+                    title={assetPlace.full}
+                  >
+                    {/^[:/]/.test(assetPlace.detail) ? assetPlace.full : assetPlace.detail}
+                  </span>
+                )}
                 {assetCaptionParts.length > 0 && (
                   <span
                     data-slot="asset-caption"
@@ -490,17 +508,10 @@ export function FindingProperties({
           )}
           {!hideTriage && (
             <PropertyRow label={t('findings.properties.id', 'ID')}>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  copyToClipboard(finding.id)
-                  toast.success(t('findings.properties.idCopied', 'ID copied'))
-                }}
-              >
-                {t('findings.properties.copyId', 'Copy ID')}
-              </Button>
+              <IdValue
+                value={finding.id}
+                copiedMessage={t('findings.properties.idCopied', 'ID copied')}
+              />
             </PropertyRow>
           )}
         </PropertyGroup>
