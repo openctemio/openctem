@@ -22,6 +22,7 @@
   "org.acceptInvite.incomplete": "Liên kết lời mời không đầy đủ. Hãy mở lại liên kết trong email mời.",
   "org.acceptInvite.joinedMfaBody": "Hãy thiết lập xác thực hai lớp để mở tổ chức.",
   "org.acceptInvite.joinedMfaTitle": "Bạn đã tham gia {org}",
+  "org.acceptInvite.joinedMfaVerifyBody": "Nhập mã xác thực hai lớp để mở tổ chức.",
   "org.acceptInvite.joinedOrg": "Bạn đã tham gia {org}.",
   "org.acceptInvite.linkProblemTitle": "Liên kết lời mời này không dùng được",
   "org.acceptInvite.loadFailed": "Không thể tải lời mời. Hãy thử lại.",

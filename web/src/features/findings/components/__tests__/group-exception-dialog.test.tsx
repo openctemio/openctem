@@ -114,7 +114,7 @@ describe('GroupExceptionDialog', () => {
     const banner = await screen.findByTestId('approval-evaluation')
     expect(banner).toHaveTextContent('Security')
     expect(banner).toHaveTextContent(/at most 30 days/)
-    expect(screen.getByText('2 finding(s) covered, 1 left out.')).toBeInTheDocument()
+    expect(screen.getByText('2 findings covered, 1 left out.')).toBeInTheDocument()
 
     const rows = screen.getAllByTestId('group-exception-member')
     expect(rows).toHaveLength(3)

@@ -4,7 +4,7 @@
   "app/(auth)/oauth/device/page.tsx": 1,
   "app/(dashboard)/(discovery)/assets/changes/page.tsx": 14,
   "app/(dashboard)/(discovery)/error.tsx": 5,
-  "app/(dashboard)/(scoping)/compliance/page.tsx": 67,
+  "app/(dashboard)/(scoping)/compliance/page.tsx": 62,
   "app/(dashboard)/(scoping)/error.tsx": 5,
   "app/(dashboard)/error.tsx": 5,
   "app/(dashboard)/findings/page.tsx": 9,

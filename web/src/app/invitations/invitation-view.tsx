@@ -32,7 +32,11 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { OrgAvatar } from '@/components/layout/org-avatar'
 import { authErrorText } from '@/features/auth/lib/auth-error-codes'
 import { MfaSessionStep } from '@/features/auth/components/mfa-session-step'
-import { localLogoutAction, selectTenantAction } from '@/features/auth/actions/local-auth-actions'
+import {
+  localLogoutAction,
+  selectTenantAction,
+  type MfaPurpose,
+} from '@/features/auth/actions/local-auth-actions'
 import { navigateAfterSessionChange } from '@/lib/session-navigation'
 import { parseRetryAfter } from '@/lib/api/rate-limit-backoff'
 import { useTranslation } from '@/context/i18n-provider'
@@ -118,6 +122,8 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
   const [invitation, setInvitation] = useState<InvitationData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [acceptError, setAcceptError] = useState<string | null>(null)
+  // The two-factor step after joining: set it up, or only confirm a code.
+  const [mfaPurpose, setMfaPurpose] = useState<MfaPurpose>()
   // The invitation is accepted but the organization needs a second factor:
   // the page walks the person through it instead of showing an error.
   const [joinedNeedsMfa, setJoinedNeedsMfa] = useState(false)
@@ -421,9 +427,14 @@ export function InvitationView({ hasSession }: InvitationViewProps) {
       <EntryCard>
         <EntryHeader
           title={t('org.acceptInvite.joinedMfaTitle', undefined, { org: invitation.tenant.name })}
-          description={t('org.acceptInvite.joinedMfaBody')}
+          description={
+            mfaPurpose === 'verify'
+              ? t('org.acceptInvite.joinedMfaVerifyBody')
+              : t('org.acceptInvite.joinedMfaBody')
+          }
         />
         <MfaSessionStep
+          onPurpose={setMfaPurpose}
           tenantId={invitation.tenant.id}
           onComplete={() => landInOrganization(invitation.tenant.name)}
           onSessionExpired={() => router.push(invitationLoginHref)}

@@ -394,7 +394,9 @@ function FittedFacts({ asset, atoms, max }: { asset: Asset; atoms: FactAtom[]; m
   const capped = atoms.slice(0, max)
   const { rowRef, fit } = useFitCount<HTMLDivElement>(
     capped.map((a) => a.key),
-    { gap: FACT_GAP, more: MORE_WIDTH }
+    // Facts beyond the cap always fold into "+N": its room is kept even when
+    // every capped fact fits.
+    { gap: FACT_GAP, more: MORE_WIDTH, alwaysMore: atoms.length > capped.length }
   )
   const shown = capped.slice(0, fit)
   const rest = atoms.length - shown.length

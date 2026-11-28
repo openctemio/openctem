@@ -195,9 +195,13 @@ export function AssignmentRuleDetailSheet({
       )
       if (result) {
         toast.success(
-          t('org.assignmentRules.testMatched', 'Rule matched {count} finding(s)', {
-            count: result.matching_findings,
-          })
+          t(
+            'org.assignmentRules.testMatched',
+            'Rule matched {count, plural, one {# finding} other {# findings}}',
+            {
+              count: result.matching_findings,
+            }
+          )
         )
       }
     } catch (error) {

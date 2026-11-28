@@ -47,3 +47,39 @@ func TestObserveAt_InactiveStaysInactive(t *testing.T) {
 		t.Fatalf("last_seen %v, want %v", a.LastSeen(), seen)
 	}
 }
+
+// A new asset built from a report is first seen when the report's source saw
+// it, not when the report arrived: last_seen is never before first_seen.
+// Ingest used to store first_seen = the insert time and last_seen = the
+// (earlier) observation time, so the asset read "first seen" after "last seen".
+func TestSeenAt_FirstSeenNeverAfterLastSeen(t *testing.T) {
+	for name, observe := range map[string]func(*Asset, time.Time){
+		"MarkSeenAt": (*Asset).MarkSeenAt,
+		"ObserveAt":  (*Asset).ObserveAt,
+	} {
+		t.Run(name, func(t *testing.T) {
+			a, err := NewAsset("api.example.com", AssetTypeService, CriticalityLow)
+			if err != nil {
+				t.Fatal(err)
+			}
+			observed := a.FirstSeen().Add(-2 * time.Second)
+			observe(a, observed)
+			if !a.LastSeen().Equal(observed) {
+				t.Fatalf("last_seen %v, want %v", a.LastSeen(), observed)
+			}
+			if a.FirstSeen().After(a.LastSeen()) {
+				t.Fatalf("first_seen %v is after last_seen %v", a.FirstSeen(), a.LastSeen())
+			}
+			if !a.FirstSeen().Equal(observed) {
+				t.Fatalf("first_seen %v, want the observation time %v", a.FirstSeen(), observed)
+			}
+
+			// A later sighting moves last_seen only.
+			later := observed.Add(time.Second)
+			observe(a, later)
+			if !a.FirstSeen().Equal(observed) || !a.LastSeen().Equal(later) {
+				t.Fatalf("after a later sighting first_seen %v last_seen %v, want %v and %v", a.FirstSeen(), a.LastSeen(), observed, later)
+			}
+		})
+	}
+}

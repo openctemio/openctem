@@ -171,7 +171,7 @@
   "ticketMapping.preview.read": "Read issue",
   "ticketMapping.preview.run": "Preview",
   "ticketMapping.preview.statusErr": "Status ({state}): {error}",
-  "ticketMapping.preview.statusPath": "Status ({state}): {n} transition(s)",
+  "ticketMapping.preview.statusPath": "Status ({state}): {n, plural, one {# transition} other {# transitions}}",
   "ticketMapping.preview.taskId": "Task ID",
   "ticketMapping.preview.unsaved": "The preview uses the saved draft: save your changes first.",
   "ticketMapping.preview.value": "Value",

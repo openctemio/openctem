@@ -138,9 +138,13 @@ export function AddMemberToRoleDialog({
         }
         if (failed_count > 0) {
           toast.error(
-            t('org.roleAddMember.failedSome', 'Failed to add {count} member(s)', {
-              count: failed_count,
-            })
+            t(
+              'org.roleAddMember.failedSome',
+              'Failed to add {count, plural, one {# member} other {# members}}',
+              {
+                count: failed_count,
+              }
+            )
           )
         }
 

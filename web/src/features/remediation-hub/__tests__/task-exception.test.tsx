@@ -75,7 +75,7 @@ describe('useTaskException', () => {
     const banner = screen.getByTestId('task-pending-exception')
     expect(banner).toHaveTextContent('Exception pending: Accepted risk')
     expect(banner).toHaveTextContent('1 of 2 approvals')
-    expect(banner).toHaveTextContent('12 finding(s)')
+    expect(banner).toHaveTextContent('12 findings')
     expect(screen.getByRole('link', { name: 'Open in approvals' })).toHaveAttribute(
       'href',
       '/findings/approvals?view=groups&batch=b-1'

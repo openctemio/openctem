@@ -35,7 +35,7 @@ func (a *EPSSAdapter) GetByCVEIDs(ctx context.Context, cveIDs []string) (map[str
 	for _, s := range scores {
 		result[s.CVEID()] = finding.EPSSData{
 			Score:      s.Score(),
-			Percentile: s.Percentile(),
+			Percentile: s.PercentilePtr(),
 		}
 	}
 	return result, nil

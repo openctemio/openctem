@@ -14,7 +14,7 @@ import { foldToFit } from '@/lib/fit-row'
  */
 export function useFitCount<T extends HTMLElement>(
   keys: readonly string[],
-  { gap, more }: { gap: number; more: number }
+  { gap, more, alwaysMore = false }: { gap: number; more: number; alwaysMore?: boolean }
 ): { rowRef: React.RefObject<T | null>; fit: number } {
   const rowRef = React.useRef<T>(null)
   const widths = React.useRef(new Map<string, number>())
@@ -66,12 +66,13 @@ export function useFitCount<T extends HTMLElement>(
             total,
             list.map((k) => widths.current.get(k) ?? 0),
             gap,
-            more
+            more,
+            alwaysMore
           )
     if (next !== fit) setFit(next)
     // The fold settles: it only reads cached widths and the row's own width,
     // which folding does not change.
-  }, [list, tick, fit, gap, more])
+  }, [list, tick, fit, gap, more, alwaysMore])
 
   return { rowRef, fit: Math.min(fit, keys.length) }
 }

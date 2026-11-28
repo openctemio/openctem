@@ -139,7 +139,7 @@ describe('PageMonitor', () => {
   it('lists changes with their summary and opens the diff as plain text', async () => {
     wrap(<PageMonitor />)
     const list = await screen.findByTestId('page-changes')
-    expect(within(list).getByText('1 new third-party host(s)')).toBeInTheDocument()
+    expect(within(list).getByText('1 new third-party host')).toBeInTheDocument()
     await userEvent.click(within(list).getByRole('button', { name: /Open the change of/ }))
     const sheet = await screen.findByTestId('page-change-sheet')
     expect(within(sheet).getByTestId('diff-new-hosts')).toHaveTextContent('skimmer.example.net')
@@ -158,9 +158,7 @@ describe('PageMonitor', () => {
     expect(rows).toHaveLength(1)
     expect(within(rows[0]).getByText('Waiting')).toBeInTheDocument()
     expect(screen.getByTestId('page-monitor-waiting')).toBeInTheDocument()
-    await userEvent.click(
-      within(rows[0]).getByRole('button', { name: /1 script\(s\) of this page/ })
-    )
+    await userEvent.click(within(rows[0]).getByRole('button', { name: /1 script of this page/ }))
     expect(within(rows[0]).getByTestId('page-watch-scripts')).toHaveTextContent('/static/app.js')
   })
 

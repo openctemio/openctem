@@ -169,7 +169,7 @@ export function ToolSensorList({
           ? t('scans.tools.sensors.noneReport', 'No sensor reports this tool.')
           : t(
               'scans.tools.sensors.reportNoAccess',
-              '{count} sensor(s) report this tool. Listing them needs permission to read sensors.',
+              '{count, plural, one {# sensor reports} other {# sensors report}} this tool. Listing them needs permission to read sensors.',
               { count: n }
             )}
       </p>

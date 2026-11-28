@@ -46,7 +46,7 @@
   "exploration.leadTypes.asset_gone_with_findings.title": "Check it is gone",
   "exploration.leadTypes.dns_takeover_check.question": "Can this dangling alias be claimed by someone else?",
   "exploration.leadTypes.dns_takeover_check.title": "Takeover check",
-  "exploration.leadTypes.version_confirm.question": "Is the version a critical match was made on really running?",
+  "exploration.leadTypes.version_confirm.question": "Is the version that matched a critical vulnerability really running?",
   "exploration.leadTypes.version_confirm.title": "Confirm the version",
   "exploration.links.derived_from": "Came from",
   "exploration.links.dispatched_as": "Ran as",
