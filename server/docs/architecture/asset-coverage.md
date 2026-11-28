@@ -527,7 +527,12 @@ count appears, or gets clearly worse by the same rule as the organization
 alerts (doubles and grows by 5, at most once a day), goes to the platform
 administrators' alert channel (e-mail to active platform administrators and
 the console's alert webhook) with a warning log line
-(`alert=coverage_platform_failures`). The message carries the capability,
+(`coverage keeps failing on the platform or sensor side`,
+`alert=coverage_platform_failures`). "Platform side" means the check did
+not run: every check runs on a sensor, never on the platform itself. The
+usual cause of the `failed` outcome is a run no sensor picked up; its error
+names why (for example a sensor that stopped taking new work because its disk
+is low, [placement](placement.md)). The message carries the capability,
 counts per outcome and the number of organizations, never a tenant, asset
 or target. This aggregate is the one read across organizations, on purpose
 and counts only; the state is held by the loop's single replica.

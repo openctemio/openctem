@@ -217,6 +217,14 @@ such a task from waiting in silence until its run deadline:
   e.g. "no sensor picked up this run's work within 1h — withheld by sensor
   permissions: credentials", and its tasks keep `withheld_reason`, which the
   run page translates.
+- With no recorded refusal, a run that ends unclaimed because the
+  organization sensor that could take it (online, in its zone, with its tool)
+  reports `local_store.stop_claiming` with its latest heartbeats says so
+  ("… the sensor that can run it is online but stopped taking new work (low
+  disk, full local storage or results not yet delivered) …") instead of the
+  generic "check that a sensor with this scanner is online"
+  (`stoppedClaimingSQL` in `internal/infra/postgres/scan_run_stopped_claiming.go`).
+  Only the tenant's own sensors are read, and only whether one exists.
 
 Code: `internal/app/command/withheld.go`, `RecordWithheld` in
 `internal/infra/postgres/command_placement.go`, `withheldTextSQL` in

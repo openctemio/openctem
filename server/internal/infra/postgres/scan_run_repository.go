@@ -1048,8 +1048,9 @@ func withheldTextSQL(col string) string {
 // the work; it was then even retried. Here the run fails with the reason, its
 // open steps fail with NO_SENSOR (a code the retry controller never retries;
 // the message names the dispatch gate's refusal when a sensor withheld the
-// work, e.g. "withheld by sensor permissions: credentials"),
-// its commands are failed so no sensor picks them up late, and the scan
+// work, e.g. "withheld by sensor permissions: credentials", and says so when
+// the sensor that could take it is online but stopped taking new work,
+// stoppedClaimingSQL), its commands are failed so no sensor picks them up late, and the scan
 // summary is recomputed from its runs.
 func (r *ScanRunRepository) AbortUnclaimedRuns(ctx context.Context, scheduledAfter, interactiveAfter time.Duration) (int64, error) {
 	reaped, err := r.AbortUnclaimedRunsReporting(ctx, scheduledAfter, interactiveAfter)
@@ -1071,7 +1072,14 @@ func (r *ScanRunRepository) AbortUnclaimedRunsReporting(ctx context.Context, sch
 			       (SELECT c.withheld_reason FROM commands c
 			         WHERE c.tenant_id = pr.tenant_id AND c.payload->>'scan_run_id' = pr.id::text
 			           AND c.withheld_reason IS NOT NULL
-			         ORDER BY c.withheld_at DESC NULLS LAST LIMIT 1) AS withheld
+			         ORDER BY c.withheld_at DESC NULLS LAST LIMIT 1) AS withheld,
+			       -- a sensor that could take the work is online with the
+			       -- tool but stopped taking new jobs (local store full,
+			       -- disk low): named instead of "check it is online"
+			       EXISTS (SELECT 1 FROM commands
+			         WHERE commands.tenant_id = pr.tenant_id AND commands.payload->>'scan_run_id' = pr.id::text
+			           AND commands.status = 'pending'
+			           AND ` + stoppedClaimingSQL() + `) AS stopped_claiming
 			FROM scan_runs pr
 			WHERE pr.status IN ('pending', 'running')
 			  AND pr.started_at IS NOT NULL
@@ -1102,9 +1110,11 @@ func (r *ScanRunRepository) AbortUnclaimedRunsReporting(ctx context.Context, sch
 			    error_message = 'no sensor picked up this run''s work within '
 			        || CASE WHEN k.after_seconds % 3600 = 0 THEN (k.after_seconds / 3600)::text || 'h'
 			                ELSE (k.after_seconds / 60)::text || 'm' END
-			        || CASE WHEN k.withheld IS NULL
-			                THEN ' — check that a sensor with this scanner is online (and in the right zone)'
-			                ELSE ' — ' || ` + withheldTextSQL("k.withheld") + ` END
+			        || CASE WHEN k.withheld IS NOT NULL
+			                THEN ' — ' || ` + withheldTextSQL("k.withheld") + `
+			                WHEN k.stopped_claiming
+			                THEN ' — ` + stoppedClaimingHint + `'
+			                ELSE ' — check that a sensor with this scanner is online (and in the right zone)' END
 			FROM candidates k
 			WHERE pr.id = k.id
 			  AND pr.status IN ('pending', 'running')
