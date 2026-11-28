@@ -54,8 +54,24 @@ type MaturityComponent struct {
 	Score        float64 `json:"score"`        // normalized 0–100
 	Weight       float64 `json:"weight"`       // effective 0..1; active weights sum to 1.0
 	Contribution float64 `json:"contribution"` // score * weight
-	Detail       string  `json:"detail"`       // how the sub-score was derived
+	Detail       string  `json:"detail"`       // how the sub-score was derived (English)
+	// DetailCode names Detail so a client words it in the reader's language
+	// (one of the MaturityDetail* codes); Detail is the English fallback.
+	DetailCode string `json:"detail_code"`
 }
+
+// Codes of MaturityComponent.Detail. Stable: clients map them to their own
+// words, so a code is never renamed, only added.
+const (
+	MaturityDetailValidationShare   = "validation_share"
+	MaturityDetailNoRemediation     = "no_remediation"
+	MaturityDetailResolutionRatio   = "resolution_ratio"
+	MaturityDetailNoPriorCycle      = "no_prior_cycle"
+	MaturityDetailMTTRDirection     = "mttr_direction"
+	MaturityDetailNoFindingsOpened  = "no_findings_opened"
+	MaturityDetailPriorityChurn     = "priority_churn"
+	MaturityDetailScopeReportedOnly = "scope_reported_only"
+)
 
 // CTEMStageCoverage records which of the five CTEM stages the latest
 // closed cycle exercised, derived from the six metrics. Reported for
@@ -106,14 +122,14 @@ func ComputeMaturity(cycles []CycleMetrics) MaturityBreakdown {
 
 	// 1. Validation coverage — already a percentage; scorable when the cycle
 	// remediated something (no remediated finding = no sample, excluded).
-	covDetail := "share of remediated findings with validation evidence (%)"
+	covDetail, covCode := "Share of fixed findings that have proof of the fix", MaturityDetailValidationShare
 	if !hasCoverage {
-		covDetail = "no finding remediated this cycle; unscored"
+		covDetail, covCode = "No finding was fixed this cycle, so this is not scored", MaturityDetailNoRemediation
 	}
 	comps = append(comps, weighted{active: hasCoverage, c: MaturityComponent{
 		Name: "validation_coverage", RawValue: coverage, Score: clamp(coverage, 0, 100),
 		Weight: WeightValidationCoverage,
-		Detail: covDetail,
+		Detail: covDetail, DetailCode: covCode,
 	}})
 
 	// 2. Resolution throughput — resolved / opened, clamped to 100%; always
@@ -127,8 +143,9 @@ func ComputeMaturity(cycles []CycleMetrics) MaturityBreakdown {
 	}
 	comps = append(comps, weighted{active: true, c: MaturityComponent{
 		Name: "resolution_throughput", RawValue: ratio, Score: clamp(ratio*100, 0, 100),
-		Weight: WeightResolutionThroughput,
-		Detail: "findings_resolved / findings_opened this cycle",
+		Weight:     WeightResolutionThroughput,
+		Detail:     "Findings resolved this cycle compared with findings opened",
+		DetailCode: MaturityDetailResolutionRatio,
 	}})
 
 	// 3. MTTR trend — only scorable with a prior cycle to compare against,
@@ -136,21 +153,22 @@ func ComputeMaturity(cycles []CycleMetrics) MaturityBreakdown {
 	// measure it is excluded rather than reading a hollow neutral 50, and a
 	// cycle that fixed nothing (no MTTR sample) never reads as a 100% drop.
 	mttrScore := 0.0
-	mttrDetail := "no prior cycle; unscored (excluded until a prior cycle exists)"
+	mttrDetail := "No earlier cycle to compare with, so this is not scored yet"
+	mttrCode := MaturityDetailNoPriorCycle
 	mttrActive := false
 	if !hasMTTR {
-		mttrDetail = "no finding remediated this cycle; unscored"
+		mttrDetail, mttrCode = "No finding was fixed this cycle, so this is not scored", MaturityDetailNoRemediation
 	} else if prev != nil {
 		if p, ok := prev.Lookup(MetricMTTRHours); ok && p > 0 {
 			improvement := (p - mttr) / p // >0 means MTTR fell
 			mttrScore = clamp(50+50*improvement, 0, 100)
-			mttrDetail = "MTTR direction vs previous cycle (lower is better)"
+			mttrDetail, mttrCode = "Whether time to fix went down since the last cycle (lower is better)", MaturityDetailMTTRDirection
 			mttrActive = true
 		}
 	}
 	comps = append(comps, weighted{active: mttrActive, c: MaturityComponent{
 		Name: "mttr_trend", RawValue: mttr, Score: mttrScore,
-		Weight: WeightMTTRTrend, Detail: mttrDetail,
+		Weight: WeightMTTRTrend, Detail: mttrDetail, DetailCode: mttrCode,
 	}})
 
 	// 4. Priority stability — low P-class churn relative to work opened. Only
@@ -158,16 +176,16 @@ func ComputeMaturity(cycles []CycleMetrics) MaturityBreakdown {
 	// work to be "stable" about, so it is excluded rather than reading a
 	// hollow 100.
 	priScore := 0.0
-	priDetail := "no findings opened; unscored"
+	priDetail, priCode := "No finding was opened this cycle, so this is not scored", MaturityDetailNoFindingsOpened
 	priActive := opened > 0
 	if priActive {
 		priScore = 100 * (1 - clamp(churn/opened, 0, 1))
-		priDetail = "1 − min(1, p_class_churn / findings_opened)"
+		priDetail, priCode = "How rarely findings changed priority class, compared with findings opened", MaturityDetailPriorityChurn
 	}
 	comps = append(comps,
 		weighted{active: priActive, c: MaturityComponent{
 			Name: "priority_stability", RawValue: churn, Score: priScore,
-			Weight: WeightPriorityStability, Detail: priDetail,
+			Weight: WeightPriorityStability, Detail: priDetail, DetailCode: priCode,
 		}},
 		// 5. Scope stability — scope_drift_size now counts new external
 		// assets per cycle (RFC-036 §6.9), but its ratio to findings_opened is
@@ -175,9 +193,10 @@ func ComputeMaturity(cycles []CycleMetrics) MaturityBreakdown {
 		// a scoring rule for asset drift is agreed. Excluded from Score.
 		weighted{active: false, c: MaturityComponent{
 			Name: "scope_stability", RawValue: drift,
-			Score:  100 * (1 - clamp(drift/nonZero(opened), 0, 1)),
-			Weight: WeightScopeStability,
-			Detail: "reported only; excluded from score (new external assets this cycle; no scoring rule yet)",
+			Score:      100 * (1 - clamp(drift/nonZero(opened), 0, 1)),
+			Weight:     WeightScopeStability,
+			Detail:     "Shown for reference only, not part of the score: new external assets this cycle",
+			DetailCode: MaturityDetailScopeReportedOnly,
 		}})
 
 	out.finalize(comps)

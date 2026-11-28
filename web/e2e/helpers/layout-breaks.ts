@@ -27,6 +27,7 @@ import {
   statePath,
   type MatrixBreaks,
 } from './layout-matrix'
+import { formatMixedRow, probeRowMix } from './page-anatomy'
 
 /**
  * No text overlaps, no word broken inside, nothing cut without an ellipsis,
@@ -1635,6 +1636,12 @@ export function layoutMatrix({ session = 'tenant', data, ...options }: MatrixOpt
               ...(await findBreaks(page, { scope, vi: v.lang === 'vi' })),
               ...(await findMatrixBreaks(page, { scope })),
             }
+            // One size per row: measured on the page itself (probeRowMix
+            // leaves overlays out).
+            if (scope === 'main')
+              (report[v.tag] as Breaks & MatrixBreaks).sizeMismatch = (
+                await probeRowMix(page, { fonts: true })
+              ).map(formatMixedRow)
             // The shell scrolls inside its content column, not the document, so
             // a full-page screenshot stopped at the window. The window grows
             // by the page scrollers' full height for the picture (the checks

@@ -19,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/permission"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 	"github.com/openctemio/openctem/server/pkg/safetext"
 )
 
@@ -232,21 +233,21 @@ func (h *MCPHandler) runWriteTool(r *http.Request, tool *mcpTool, tenantID strin
 				return toolErrorResult(mcpError{Code: "not_confirmed", Message: "the confirmation is missing, refused, expired, already used, or for " +
 					"other arguments. Call again without confirmation_id to get a new confirmation link."}), nil, true
 			}
-			h.logger.Warn("mcp confirmation use failed", "error", err.Error())
+			h.logger.Warn("mcp confirmation use failed", "error", logger.SanitizeError(err))
 			return toolErrorResult(classifyMCPError(err)), nil, true
 		}
 		return nil, canonical, false
 	}
 	summary, msg, err := tool.prepare(ctx, tenantID, canonical)
 	if err != nil {
-		h.logger.Warn("mcp write tool prepare failed", "tool", tool.Name, "error", err.Error())
+		h.logger.Warn("mcp write tool prepare failed", "tool", tool.Name, "error", logger.SanitizeError(err))
 		return toolErrorResult(classifyMCPError(err)), nil, true
 	}
 	pending, err := h.confirmer.RequestConfirmationWith(ctx, p, tool.Name, digest, summary, msg, mcpoauthapp.Actor{
 		IP: auditClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	})
 	if err != nil {
-		h.logger.Warn("mcp confirmation request failed", "error", err.Error())
+		h.logger.Warn("mcp confirmation request failed", "error", logger.SanitizeError(err))
 		return toolErrorResult(classifyMCPError(err)), nil, true
 	}
 	text, _ := json.Marshal(map[string]any{

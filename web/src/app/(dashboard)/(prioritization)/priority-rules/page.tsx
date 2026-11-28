@@ -51,27 +51,19 @@ import { Can, Permission } from '@/lib/permissions'
 import { PriorityClassBadge } from '@/features/findings/components/priority-class-badge'
 import type { PriorityClass } from '@/features/findings/types/finding.types'
 import { DryRunDialog, type DryRunRule } from './dry-run-dialog'
-import { SEVERITY_LABELS, SEVERITY_LEVELS } from '@/lib/severity'
-import { ASSET_CRITICALITY_LEVELS, CRITICALITY_LABELS } from '@/lib/criticality'
 import { useTranslation } from '@/context/i18n-provider'
-
-type FieldKey =
-  | 'is_in_kev'
-  | 'is_reachable'
-  | 'asset_is_crown_jewel'
-  | 'epss_score'
-  | 'severity'
-  | 'asset_criticality'
-
-type FieldType = 'bool' | 'float' | 'string'
-
-type Operator = 'eq' | 'neq' | 'gte' | 'lte' | 'in'
-
-interface Condition {
-  field: FieldKey
-  operator: Operator
-  value: unknown
-}
+import {
+  FIELD_CONFIG,
+  describeCondition,
+  emptyConditionFor,
+  fieldLabel,
+  operatorLabel,
+  operatorsFor,
+  optionLabel,
+  type Condition,
+  type FieldKey,
+  type Operator,
+} from '@/features/priority-rules/lib/conditions'
 
 interface PriorityRule {
   id: string
@@ -89,70 +81,7 @@ interface ListResponse {
   data?: PriorityRule[]
 }
 
-const FIELD_CONFIG: Record<
-  FieldKey,
-  { fallback: string; type: FieldType; options?: string[]; optionKeyPrefix?: string }
-> = {
-  is_in_kev: { fallback: 'Is in KEV catalog', type: 'bool' },
-  is_reachable: { fallback: 'Is reachable', type: 'bool' },
-  asset_is_crown_jewel: { fallback: 'Asset is crown jewel', type: 'bool' },
-  epss_score: { fallback: 'EPSS score', type: 'float' },
-  severity: {
-    fallback: 'Severity',
-    type: 'string',
-    options: [...SEVERITY_LEVELS],
-    optionKeyPrefix: 'severity',
-  },
-  asset_criticality: {
-    fallback: 'Asset criticality',
-    type: 'string',
-    options: [...ASSET_CRITICALITY_LEVELS],
-    optionKeyPrefix: 'criticality',
-  },
-}
-
-const OPERATOR_LABEL: Record<Operator, string> = {
-  eq: '=',
-  neq: '!=',
-  gte: '>=',
-  lte: '<=',
-  in: 'in',
-}
-
 const PRIORITY_CLASSES: PriorityClass[] = ['P0', 'P1', 'P2', 'P3']
-
-function optionFallback(prefix: string, opt: string): string {
-  if (prefix === 'severity') return SEVERITY_LABELS[opt as keyof typeof SEVERITY_LABELS] ?? opt
-  return CRITICALITY_LABELS[opt as keyof typeof CRITICALITY_LABELS] ?? opt
-}
-
-function operatorsFor(type: FieldType): Operator[] {
-  switch (type) {
-    case 'bool':
-      return ['eq', 'neq']
-    case 'float':
-      return ['eq', 'gte', 'lte']
-    case 'string':
-      return ['eq', 'neq', 'in']
-  }
-}
-
-function emptyConditionFor(field: FieldKey): Condition {
-  const type = FIELD_CONFIG[field]?.type ?? 'string'
-  const ops = operatorsFor(type)
-  let value: unknown = ''
-  if (type === 'bool') value = true
-  else if (type === 'float') value = 0
-  return { field, operator: ops[0], value }
-}
-
-function formatConditionValue(c: Condition): string {
-  const type = FIELD_CONFIG[c.field]?.type
-  if (type === 'bool') return String(Boolean(c.value))
-  if (c.operator === 'in' && Array.isArray(c.value)) return `[${c.value.join(', ')}]`
-  if (typeof c.value === 'string' || typeof c.value === 'number') return String(c.value)
-  return JSON.stringify(c.value)
-}
 
 interface FormState {
   name: string
@@ -173,7 +102,7 @@ const emptyForm: FormState = {
 }
 
 export default function PriorityRulesPage() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const mayRiskScoring = useHasPermission(Permission.TeamUpdate)
   // Risk scoring is always on: only the permission decides.
   const canSeeRiskScoring = mayRiskScoring
@@ -330,7 +259,7 @@ export default function PriorityRulesPage() {
         if (!Number.isFinite(n)) {
           toast.error(
             t('prioritization.rules.toast.invalidNumber', 'Invalid number for {field}', {
-              field: c.field,
+              field: fieldLabel(c.field, t),
             })
           )
           return
@@ -440,13 +369,8 @@ export default function PriorityRulesPage() {
                 </span>
               ) : (
                 conditions.map((c, i) => (
-                  <Badge
-                    key={i}
-                    variant="outline"
-                    className="text-xs font-mono"
-                    title={`${c.field} ${OPERATOR_LABEL[c.operator]} ${formatConditionValue(c)}`}
-                  >
-                    {c.field} {OPERATOR_LABEL[c.operator]} {formatConditionValue(c)}
+                  <Badge key={i} variant="outline">
+                    {describeCondition(c, t, locale)}
                   </Badge>
                 ))
               )}
@@ -522,7 +446,7 @@ export default function PriorityRulesPage() {
         },
       },
     ],
-    [toggleActive, t]
+    [toggleActive, t, locale]
   )
 
   function renderValueInput(c: Condition, idx: number) {
@@ -587,9 +511,7 @@ export default function PriorityRulesPage() {
           <SelectContent>
             {cfg.options.map((opt) => (
               <SelectItem key={opt} value={opt}>
-                {cfg.optionKeyPrefix
-                  ? t(`${cfg.optionKeyPrefix}.${opt}`, optionFallback(cfg.optionKeyPrefix, opt))
-                  : opt}
+                {optionLabel(c.field, opt, t)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -860,7 +782,7 @@ export default function PriorityRulesPage() {
                             <SelectContent>
                               {(Object.keys(FIELD_CONFIG) as FieldKey[]).map((k) => (
                                 <SelectItem key={k} value={k}>
-                                  {t(`prioritization.rules.field.${k}`, FIELD_CONFIG[k].fallback)}
+                                  {fieldLabel(k, t)}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -877,7 +799,7 @@ export default function PriorityRulesPage() {
                             <SelectContent>
                               {ops.map((op) => (
                                 <SelectItem key={op} value={op}>
-                                  {OPERATOR_LABEL[op]}
+                                  {operatorLabel(op, t)}
                                 </SelectItem>
                               ))}
                             </SelectContent>

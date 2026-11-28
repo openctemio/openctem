@@ -1,6 +1,7 @@
 'use client'
 
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from '@/components/charts'
+import { LEGEND_PROPS } from './exposure-type-overview'
 
 export interface AssetTypeSlice {
   name: string
@@ -32,7 +33,9 @@ export default function AssetTypePie({ data }: { data: AssetTypeSlice[] }) {
           ))}
         </Pie>
         <Tooltip />
-        <Legend />
+        {/* Names in the muted ink (series-coloured text fails contrast); the
+            swatch carries the colour. */}
+        <Legend {...LEGEND_PROPS} />
       </PieChart>
     </ResponsiveContainer>
   )

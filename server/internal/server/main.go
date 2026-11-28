@@ -213,6 +213,10 @@ func run() int {
 		log.Warn("outbound requests may reach these private ranges for every tenant ("+httpsec.EnvAllowPrivateCIDRs+")",
 			"cidrs", strings.Join(cidrs, ","))
 	}
+	// The platform's own services stay unreachable for outbound requests,
+	// whatever private ranges are opened (pkg/httpsec/platform_services.go).
+	httpsec.RefreshPlatformServices(ctx, platformServiceHosts(cfg), platformServiceRefresh)
+	log.Info("outbound requests never reach the platform's own services", "addresses", len(httpsec.PlatformServiceAddrs()))
 
 	// ==========================================================================
 	// Infrastructure
@@ -940,4 +944,19 @@ func initKeycloakValidator(cfg *config.Config, log *logger.Logger) (*keycloak.Va
 		)
 	}
 	return keycloakValidator, nil
+}
+
+// platformServiceRefresh is how often the platform service addresses are
+// resolved again (a restarted container may get a new address).
+const platformServiceRefresh = time.Minute
+
+// platformServiceHosts are the hosts of the platform's own services named in
+// cfg (database, cache, web and gateway health URLs) and in
+// OPENCTEM_HTTPSEC_PLATFORM_HOSTS. The API's own addresses are added by
+// httpsec.ResolvePlatformServices.
+func platformServiceHosts(cfg *config.Config) []string {
+	extra := httpsec.PlatformHostsFromEnv(os.Getenv(httpsec.EnvPlatformHosts))
+	hosts := make([]string, 0, 4+len(extra))
+	hosts = append(hosts, cfg.Database.Host, cfg.Redis.Host, cfg.System.WebHealthURL, cfg.System.GatewayHealthURL)
+	return append(hosts, extra...)
 }

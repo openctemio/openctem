@@ -25,7 +25,6 @@ import (
 	aidom "github.com/openctemio/openctem/server/pkg/domain/aianalysis"
 	"github.com/openctemio/openctem/server/pkg/domain/audit"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
-	"github.com/openctemio/openctem/server/pkg/domain/stepup"
 	"github.com/openctemio/openctem/server/pkg/domain/tenant"
 )
 
@@ -132,10 +131,8 @@ func (s *Service) SaveUseCase(ctx context.Context, tenantID, useCase string, in 
 		if actx.ActorID == "" {
 			return UseCaseView{}, ErrNoActor
 		}
-		if s.stepUp != nil {
-			if err := stepup.Require(ctx, s.stepUp, actx.ActorID, stepup.TierSensitive); err != nil {
-				return UseCaseView{}, err
-			}
+		if err := s.requireLooseningStepUp(ctx, actx.ActorID); err != nil {
+			return UseCaseView{}, err
 		}
 	}
 	now := s.now().UTC()

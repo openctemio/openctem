@@ -23,6 +23,20 @@ export function scoreTone(score: number): string {
   return 'text-destructive'
 }
 
+/**
+ * How a component was derived, in the reader's language: from its stable
+ * detail code; the server's English sentence only for a code this build does
+ * not know yet.
+ */
+export function componentDetail(
+  c: Pick<MaturityComponent, 'detail' | 'detail_code'>,
+  t: (key: string, fallback?: string) => string
+): string {
+  if (c.detail_code && /^[a-z][a-z0-9_]*$/.test(c.detail_code))
+    return t(`insights.maturity.detail.${c.detail_code}`, c.detail)
+  return c.detail
+}
+
 function formatNumber(v: number, locale: string, digits: number): string {
   return new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(v)
 }
@@ -39,9 +53,9 @@ function ComponentRow({ c, measured }: { c: MaturityComponent; measured: boolean
               COMPONENT_FALLBACK[c.name] ?? c.name.replace(/_/g, ' ')
             )}
           </p>
-          <p className="text-muted-foreground mt-0.5 text-xs">{c.detail}</p>
+          <p className="text-muted-foreground mt-0.5 text-xs">{componentDetail(c, t)}</p>
         </div>
-        <div className="text-end">
+        <div className="shrink-0 whitespace-nowrap text-end">
           <span className={cn('text-lg font-semibold tabular-nums', scoreTone(c.score))}>
             {Math.round(c.score)}
           </span>
@@ -76,8 +90,8 @@ function ComponentRow({ c, measured }: { c: MaturityComponent; measured: boolean
 /**
  * MaturityBreakdownCard renders the composite maturity score and, below
  * it, every weighted component that produces it — so the number is
- * explainable by hand: score = Σ(component.score × weight). Nothing is
- * a black box.
+ * explainable by hand: the overall score is the sum of each part's score
+ * times its weight. Nothing is a black box.
  */
 export function MaturityBreakdownCard({
   maturity,

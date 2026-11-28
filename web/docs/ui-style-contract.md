@@ -947,6 +947,22 @@ and no page rebuilds:
   nested card.
 - Section headings outside cards: `text-base font-semibold`, sentence case.
 
+### Index pages
+
+An index page is an overview of links in groups (the settings overview, a
+section's overview). It is not a form, so it never sits in the reading
+column: `SettingsPage wide` (or the page's full width), the groups in
+`IndexGroups` and each group's links in `IndexLinkList`
+(`@/features/shared`, `index-grid.tsx`):
+
+- the groups one under the other, and two side by side once the content is
+  80rem wide (a 1920 px screen with the sidebar), each as tall as its own
+  links;
+- a group's links in as many columns as fit, at least 14rem each: 1 on a
+  phone, 2 to 3 at 1280 and 1440, 3 to 4 per group at 1920 and up, never
+  three narrow columns beside an empty half of the page;
+- search results and other rows of text keep the reading width.
+
 ### Settings pages
 
 Every settings page is built from the same parts (`@/features/shared`):
@@ -1167,6 +1183,13 @@ Fallback` (a local Arial or Liberation Sans with Inter's average width,
 - Series colours come from the `--viz-*` tokens by meaning: severity,
   priority, the eight categories, new against fixed, the sequential ramp.
   Teal (the action colour) never encodes data.
+- A categorical ring or bar never gives two series one colour: past the
+  palette the tail folds into one neutral "Other" that keeps the total
+  (`features/exposures/lib/category-slices.ts`). Legend text is the muted ink;
+  the swatch carries the colour.
+- Flow canvases: an edge that skips a column runs through a slot the layout
+  reserves in each column it crosses (`FlowEdge` `via` waypoints), never across
+  a node, and its label sits on that slot.
 - Colour never carries the meaning alone: a series has its name in the legend
   or beside its mark, a state has an icon or a word, a not-prioritised part is
   hatched.
@@ -1595,6 +1618,21 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
 - A notice (`Alert`) is as wide as its column up to 56rem, and from 1536 px
   it stops there: its sentences use the box's width, never a capped line
   inside a wider box, and never one line wider than the 960 px rule above.
+- Wide screens (1920, 2048 and 2560 px) use the width for content, not for
+  margins: lists show more columns and fuller titles (column sizing by
+  content, §3), card and link grids add columns (`auto-fill` with a minimum
+  track, never a fixed 2 or 3 up), index pages spread their groups (§4,
+  "Index pages"). Only running text keeps the reading measure; a table, a
+  grid or an index is never held in a narrow column with an empty band
+  beside it.
+- Notices take their own room in the page and scroll with it: the shell's
+  notices (platform announcement, vulnerability data status, support access)
+  are the first thing inside the page scroller, never pinned above it, and a
+  page notice is a block in the `PageStack`. Nothing pinned (sticky or
+  fixed) may sit over page content at rest or after a scroll, except a
+  table's own header and frozen columns over its rows; a sticky bar reserves
+  its height (the settings save bar). The layout matrix's `underPinned`
+  detector checks it after scrolling one screen.
 - An ellipsis or a line clamp never hides meaning. A status reason, a metric's
   label, a sentence or a value shows in full: wrap it (two lines), or give it a
   shorter plain label. Only a name or title (a DataTable column of kind `name`,
@@ -1622,6 +1660,28 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   at the top over the page's first lines, a bar at the bottom over its last
   lines: keep the bar's height as padding). A sticky toolbar or table header
   over text the page has scrolled past passes.
+- A control has no empty room inside it. A control with a trailing icon (a
+  select, a filter token, a menu button, Display, Group) hugs its content, or,
+  when it is given a width (a select field, a token holding one width with
+  `data-hold-width`), pins the icon to its end. The layout matrix's
+  `deadSpace` detector fails an icon more than 12 px from the inner end, or
+  more than 16 px after the text of a filter token, menu button or button
+  that neither fills its column nor holds its width.
+- A select or filter token is one line, as high as the controls beside it: a
+  long value ends in an ellipsis with the full text in its title
+  (`tallControl` fails a control 1.5 times as tall as its row).
+- A list row's action sits at the row's end (under the text on a phone),
+  never mid-row (`floatingAction`), and no control is drawn past the window
+  or the page column outside a box made to scroll sideways (`pastEdge`; a
+  table scroller, the page tab strip, a canvas, or `data-scroll-x`).
+- Controls side by side in one row (a toolbar, a header, a button group)
+  share one height, one centre line and one text size (buttons with
+  buttons, fields with fields: a phone field keeps 16 px text). The layout
+  matrix's `sizeMismatch` runs the page-rhythm row probe at every width.
+- A row's content stays inside the row: in a table row or a ruled list row,
+  no text line or chip comes closer than 3 px to a ruled edge or crosses it
+  (`cellCrowd`): a chip that would wrap past the row's line folds into "+N"
+  or the row grows.
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a
   fixed column count without breakpoints.
 - `e2e/specs/75a-layout-breaks-lists.spec.ts` (and 75b settings, 75c shell, 75d detail) check the lists and their overlays at

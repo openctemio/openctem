@@ -83,6 +83,48 @@ import { submitSignIn } from './auth'
  *                    it (it eats the page's height), or pinned itself inside
  *                    it. A line reads `notice "<text>" stays while the page
  *                    scrolls at <selector>`.
+ *   deadSpace        a control with a trailing icon (combobox, menu or popup
+ *                    button, a button ending in an svg) whose icon stands more
+ *                    than 12 px from its inner end, or more than 16 px after
+ *                    its text ("Target: All" sized for "Known exploited", its
+ *                    chevron mid-way, owner 2026-11-27). The second is asked
+ *                    of filter tokens, menu buttons and buttons only (a
+ *                    select field may be given a width, its chevron pinned to
+ *                    its end), and not of one holding one width by design
+ *                    (`data-hold-width`, a ToolbarSlot) or filling its column
+ *   floatingAction   a list row's (li, listitem, 480 px and wider) kit button
+ *                    with nothing of the row after it, yet more than 64 px
+ *                    from both the row's start and its end ("Validate" mid-way
+ *                    along a 1500 px "Waiting for you" row)
+ *   tallControl      a button, select or filter token more than 1.5x (and
+ *                    12 px) taller than the median of the controls beside it
+ *                    in its flex or grid row (a select wrapped onto 3 lines)
+ *   pastEdge         a control past the window's edge, or past the page
+ *                    column (#content), outside a box made to scroll sideways
+ *                    (table scroller, tab strip, canvas, `data-scroll-x`, or a
+ *                    box that does scroll sideways): toolbar buttons cut at
+ *                    the window's right edge
+ *   sizeMismatch     controls side by side in one row (a toolbar, a header, a
+ *                    button group) that differ in height or centre line, or
+ *                    whose buttons (or fields) differ in font size
+ *                    (probeRowMix of helpers/page-anatomy.ts with `fonts`, on
+ *                    the page, not over an overlay): "All severities" wrapped
+ *                    taller than the search beside it
+ *   unfilledPlaceholder  visible text that still shows a `{name}` placeholder
+ *                    of its catalog string ("Imports choose it as format
+ *                    {format}."), outside code, a field and an editor.
+ *                    Reported in the run's JSON, not yet failed on (see
+ *                    MATRIX_REPORT_ONLY)
+ *   phoneTable       at 480 px and narrower, a table wider than the box that
+ *                    shows it (it scrolls sideways) or a cell taller than
+ *                    three lines: a list without its phone card layout
+ *                    (sensor products, scope letters). Reported only, like
+ *                    unfilledPlaceholder
+ *   cellCrowd        in a table row or a ruled list row, a text line or a
+ *                    chip closer than 3 px (the kit pads 4, a glyph may
+ *                    overhang its line by 1) to the row's ruled top or bottom
+ *                    edge, or across it ("Ransomware" crossing the row's
+ *                    bottom border)
  */
 
 export type MatrixBreaks = {
@@ -96,6 +138,14 @@ export type MatrixBreaks = {
   cutMeaning: string[]
   hollowCard: string[]
   underPinned: string[]
+  deadSpace: string[]
+  floatingAction: string[]
+  tallControl: string[]
+  pastEdge: string[]
+  sizeMismatch: string[]
+  cellCrowd: string[]
+  unfilledPlaceholder: string[]
+  phoneTable: string[]
 }
 
 export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
@@ -109,7 +159,20 @@ export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
   'cutMeaning',
   'hollowCard',
   'underPinned',
+  'deadSpace',
+  'floatingAction',
+  'tallControl',
+  'pastEdge',
+  'sizeMismatch',
+  'cellCrowd',
 ]
+
+/**
+ * Detectors that report into the run's JSON but do not fail it yet: a new
+ * class is measured over a full sweep first, then moves to MATRIX_KINDS
+ * with the debt that sweep finds.
+ */
+export const MATRIX_REPORT_ONLY: (keyof MatrixBreaks)[] = ['unfilledPlaceholder', 'phoneTable']
 
 /** Widths of the v2 matrix with the height of their device class. */
 export const MATRIX_V2: { width: number; height: number }[] = [
@@ -640,6 +703,15 @@ export async function findMatrixBreaks(
       cutMeaning: [] as string[],
       hollowCard: [] as string[],
       underPinned: [] as string[],
+      deadSpace: [] as string[],
+      floatingAction: [] as string[],
+      tallControl: [] as string[],
+      pastEdge: [] as string[],
+      // Filled by the matrix run (probeRowMix with fonts, helpers/page-anatomy.ts).
+      sizeMismatch: [] as string[],
+      cellCrowd: [] as string[],
+      unfilledPlaceholder: [] as string[],
+      phoneTable: [] as string[],
     }
     const roots = Array.from(document.querySelectorAll(scope))
     if (!roots.length) return out
@@ -1486,6 +1558,335 @@ export async function findMatrixBreaks(
         `card ends ${h.m.gap}px below its last content (${h.m.height}px tall, limit ${h.m.limit}px) at ${sel}${n > 1 ? ` (${n} cards)` : ''} "${short(h.el.textContent, 40)}"`
       )
 
+    // ---- The control-shape kinds (owner reports 2026-11-27): a chevron
+    // floating mid-control, a queue row's action floating mid-row, a select
+    // three lines tall in a 32 px toolbar, a toolbar's buttons cut by the
+    // window's edge.
+    const rtlOf = (el: Element) => getComputedStyle(el).direction === 'rtl'
+    const innerBox = (el: Element) => {
+      const r = el.getBoundingClientRect()
+      const s = getComputedStyle(el)
+      return {
+        left: r.left + parseFloat(s.borderLeftWidth) + parseFloat(s.paddingLeft),
+        right: r.right - parseFloat(s.borderRightWidth) - parseFloat(s.paddingRight),
+      }
+    }
+    const painted = (el: Element) => {
+      const s = getComputedStyle(el)
+      return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0'
+    }
+    // Horizontal extents of what a box paints: its text line boxes, its svgs
+    // and images, and boxes with a background or border, each cut to the box.
+    const contentSpans = (box: Element, skip: Element | null) => {
+      const spans: { left: number; right: number }[] = []
+      const rg = document.createRange()
+      const walk = (e: Element) => {
+        if (e === skip || !painted(e)) return
+        if (e.getAttribute('aria-hidden') === 'true' && e.tagName !== 'svg') return
+        if (/^(svg|IMG)$/.test(e.tagName)) {
+          const r = e.getBoundingClientRect()
+          if (r.width >= 1) spans.push({ left: r.left, right: r.right })
+          return
+        }
+        const s = getComputedStyle(e)
+        if (e !== box && (!clear(s.backgroundColor) || parseFloat(s.borderLeftWidth) > 0)) {
+          const r = e.getBoundingClientRect()
+          if (r.width >= 2 && r.height >= 2) spans.push({ left: r.left, right: r.right })
+        }
+        for (const n of Array.from(e.childNodes)) {
+          if (n.nodeType === 3 && (n.textContent ?? '').trim()) {
+            rg.selectNodeContents(n)
+            for (const b of Array.from(rg.getClientRects()))
+              if (b.width >= 1) spans.push({ left: b.left, right: b.right })
+          } else if (n.nodeType === 1) walk(n as Element)
+        }
+      }
+      walk(box)
+      return spans
+    }
+
+    // ---- deadSpace: a control with a trailing icon (a chevron, a caret: a
+    // combobox, a menu or popup button, a button ending in an svg) whose icon
+    // stands more than 12 px from the control's inner end, or more than 16 px
+    // after the control's text (empty room inside the control: "Target: All"
+    // in a box sized for "Known exploited"). Exempt from the second only a
+    // control that holds one width by design (`data-hold-width`, a
+    // `ToolbarSlot` sized by every value it can show) and a field that fills
+    // its column (a form's full-width select: its chevron is at its end).
+    const TRAILING =
+      '[role=combobox]:not(input), button[aria-haspopup], [role=button][aria-haspopup], [data-slot="select-trigger"], [data-slot="filter-select"], [data-slot="button"], button'
+    for (const root of roots) {
+      for (const c of Array.from(root.querySelectorAll(TRAILING))) {
+        if (!shown(c) || c.closest('.react-flow, [data-layout-canvas]')) continue
+        const r = c.getBoundingClientRect()
+        if (r.width < 48 || r.height > 64) continue
+        const rtl = rtlOf(c)
+        // The trailing icon: the icon-sized svg drawn furthest towards the
+        // end, with text before it and nothing after it. Found by position,
+        // not by markup, so a group (a filter token: its trigger, then an
+        // empty room kept for its clear button) is measured as one control.
+        const svgs = Array.from(c.querySelectorAll('svg')).filter((g) => {
+          if (!painted(g) || hidden(g)) return false
+          const gr = g.getBoundingClientRect()
+          return gr.width >= 8 && gr.width <= 24
+        })
+        if (!svgs.length) continue
+        const last = svgs.reduce((x, y) => {
+          const xr = x.getBoundingClientRect()
+          const yr = y.getBoundingClientRect()
+          return (rtl ? yr.left < xr.left : yr.right > xr.right) ? y : x
+        })
+        const icon = last.getBoundingClientRect()
+        const others = contentSpans(c, last).filter((sp) => sp.right - sp.left >= 1)
+        if (!others.length) continue
+        if (others.some((sp) => (rtl ? sp.left < icon.left - 1 : sp.right > icon.right + 1)))
+          continue
+        const inner = innerBox(c)
+        const tail = Math.round(rtl ? icon.left - inner.left : inner.right - icon.right)
+        const name = nameOf(c)
+        if (tail > 12) {
+          out.deadSpace.push(
+            `trailing icon ${tail}px from the end of "${name}" (${Math.round(r.width)}px wide)`
+          )
+          continue
+        }
+        // A select field may be given a width (a form column, a set toolbar
+        // width) with its chevron pinned to its end; a filter token, a menu
+        // button or a button hugs what it shows.
+        if (c.matches('[data-slot="select-trigger"], [role=combobox]')) continue
+        if (c.closest('[data-hold-width]') || c.querySelector('[data-slot="toolbar-slot"]'))
+          continue
+        const p = c.parentElement
+        if (p && painted(p)) {
+          const pi = innerBox(p)
+          if (r.width >= pi.right - pi.left - 2) continue
+        }
+        const spans = contentSpans(c, last).filter((s) =>
+          rtl ? s.left >= icon.right - 1 : s.right <= icon.left + 1
+        )
+        if (!spans.length) continue
+        const end = rtl
+          ? Math.min(...spans.map((s) => s.left))
+          : Math.max(...spans.map((s) => s.right))
+        const gap = Math.round(rtl ? end - icon.right : icon.left - end)
+        if (gap > 16)
+          out.deadSpace.push(
+            `${gap}px of empty room before the trailing icon of "${name}" (${Math.round(r.width)}px wide)`
+          )
+      }
+    }
+
+    // ---- floatingAction: a list row's action that stands neither at the
+    // row's start nor at its end: nothing of the row after it, yet more than
+    // 64 px short of the row's inner end ("Validate" in the middle of a
+    // 1500 px "Waiting for you" row).
+    for (const root of roots) {
+      for (const row of Array.from(root.querySelectorAll('li, [role=listitem]'))) {
+        if (!shown(row)) continue
+        const rr = row.getBoundingClientRect()
+        if (rr.width < 480) continue
+        const rtl = rtlOf(row)
+        const inner = innerBox(row)
+        const actions = Array.from(row.querySelectorAll('[data-slot="button"]')).filter(
+          (b) => shown(b) && b.closest('li, [role=listitem]') === row
+        )
+        for (const b of actions) {
+          const br = b.getBoundingClientRect()
+          const fromEnd = Math.round(rtl ? br.left - inner.left : inner.right - br.right)
+          const fromStart = Math.round(rtl ? inner.right - br.right : br.left - inner.left)
+          if (fromEnd <= 64 || fromStart <= 64) continue
+          // Anything of the row past the action, on the action's line?
+          const after = contentSpans(row, b).some((s) => {
+            return rtl ? s.right <= br.left + 1 && s.right > inner.left : s.left >= br.right - 1
+          })
+          if (after) continue
+          out.floatingAction.push(
+            `action "${nameOf(b)}" floats ${fromEnd}px short of its row's end (${Math.round(rr.width)}px row)`
+          )
+        }
+      }
+    }
+
+    // ---- tallControl: a button, select or filter token more than 1.5x as
+    // tall as the other controls of its row (a select whose value wrapped
+    // onto three lines beside 32 px buttons). The row is the nearest flex or
+    // grid box that lays the control out beside others.
+    const SHAPED =
+      '[data-slot="button"], [data-slot="select-trigger"], [data-slot="filter-select"], [role=combobox]:not(input)'
+    for (const root of roots) {
+      const ctrls = Array.from(root.querySelectorAll(SHAPED)).filter(
+        (c) => shown(c) && !c.parentElement?.closest(SHAPED)
+      )
+      const seen = new Set<Element>()
+      for (const c of ctrls) {
+        const r = c.getBoundingClientRect()
+        let box: Element | null = c.parentElement
+        for (; box && box !== root.parentElement; box = box.parentElement) {
+          const s = getComputedStyle(box)
+          if (s.display === 'contents') continue
+          if (/flex/.test(s.display) && !/column/.test(s.flexDirection)) break
+          if (/grid/.test(s.display)) break
+        }
+        if (!box) continue
+        const peers = ctrls.filter((o) => {
+          if (o === c || !box!.contains(o)) return false
+          const or = o.getBoundingClientRect()
+          // A text link drawn as a kit button (variant link) is a line of
+          // text, not a control of the row's height.
+          if (o.matches('[data-variant="link"]') || or.height < 24) return false
+          // Beside it: the two share part of their height band.
+          return Math.min(or.bottom, r.bottom) - Math.max(or.top, r.top) > 4
+        })
+        if (!peers.length) continue
+        const hs = peers.map((o) => o.getBoundingClientRect().height).sort((a, b) => a - b)
+        const median = hs[Math.floor(hs.length / 2)]
+        if (r.height > median * 1.5 && r.height - median > 12 && !seen.has(c)) {
+          seen.add(c)
+          out.tallControl.push(
+            `control "${nameOf(c)}" is ${Math.round(r.height)}px tall beside ${Math.round(median)}px controls`
+          )
+        }
+      }
+    }
+
+    // ---- pastEdge: a control drawn past the window's edge, or past the
+    // page column's edge, outside a box made to scroll sideways (a table's
+    // scroller, the page tab strip, a canvas): the toolbar's "Refresh" and
+    // "Display" cut at the right of the window.
+    const SIDEWAYS =
+      '[data-slot="table-container"], [data-tab-strip], .react-flow, [data-layout-canvas], [data-scroll-x]'
+    const content = document.querySelector('#content')
+    for (const root of roots) {
+      // The page column bounds a page's controls; an overlay (a dialog, a
+      // sheet) is bounded by the window only.
+      const column = content && content.contains(root) ? content : document.documentElement
+      const colBox = column.getBoundingClientRect()
+      const edgeR = Math.min(vw, colBox.right)
+      const edgeL = Math.max(0, colBox.left)
+      for (const c of Array.from(root.querySelectorAll(CONTROL))) {
+        const outer = c.parentElement?.closest(CONTROL)
+        if (outer && root.contains(outer)) continue
+        if (!shown(c) || c.closest(SIDEWAYS)) continue
+        // Inside a box of its own that scrolls sideways (a wide preview): a
+        // control out of view there is reached by scrolling.
+        let scrolls = false
+        for (
+          let a = c.parentElement;
+          a && a !== column && a !== document.body;
+          a = a.parentElement
+        ) {
+          if (
+            /auto|scroll/.test(getComputedStyle(a).overflowX) &&
+            a.scrollWidth > a.clientWidth + 1
+          ) {
+            scrolls = true
+            break
+          }
+        }
+        if (scrolls) continue
+        const r = c.getBoundingClientRect()
+        const past = Math.round(Math.max(r.right - edgeR, edgeL - r.left))
+        if (past > 1)
+          out.pastEdge.push(
+            `control "${nameOf(c)}" ${past}px past the ${r.right > edgeR ? (edgeR === vw ? 'window' : 'page column') : 'start'} edge`
+          )
+      }
+    }
+
+    // ---- cellCrowd: in a table row or a list row drawn between lines, a
+    // text line or a chip closer than 3 px to the row's ruled top or bottom
+    // edge, or across it (a "Ransomware" chip crossing the row's bottom
+    // border, owner 2026-11-27). Only an edge with a line on it counts: the
+    // row's own border, or its neighbour's border on that side.
+    const CHIP =
+      '[data-slot="badge"], [data-slot="signal-chip"], [data-slot="status-lozenge"], [data-slot="severity-badge"]'
+    const bw = (el: Element | null, side: 'Top' | 'Bottom') => {
+      if (!el) return 0
+      const s = getComputedStyle(el)
+      return s[`border${side}Style`] === 'none' ? 0 : parseFloat(s[`border${side}Width`])
+    }
+    // The kit pads a cell 4 px; a glyph's box may overhang its line box by
+    // up to 1 px, so content 3 px or more from a ruled edge is clear of it.
+    const CROWD = 3
+    const crowdRange = document.createRange()
+    for (const root of roots) {
+      for (const row of Array.from(root.querySelectorAll('tr, [role=row], li'))) {
+        if (!shown(row) || row.closest('.react-flow, [data-layout-canvas]')) continue
+        // A header row is laid out by its own rules; a row in a sideways
+        // scroller still has its own height.
+        if (row.closest('thead')) continue
+        const rr = row.getBoundingClientRect()
+        if (rr.height < 16) continue
+        // The row's box: a table row's cells may draw the line.
+        const cell = row.matches('tr') ? row.querySelector('td, th') : null
+        const ruleTop =
+          bw(row, 'Top') > 0 || bw(cell, 'Top') > 0 || bw(row.previousElementSibling, 'Bottom') > 0
+        const ruleBottom =
+          bw(row, 'Bottom') > 0 ||
+          bw(cell, 'Bottom') > 0 ||
+          bw(row.nextElementSibling, 'Top') > 0 ||
+          // A divide-y list rules every row but the last from above.
+          (!!row.nextElementSibling && bw(row.nextElementSibling, 'Top') > 0)
+        if (!ruleTop && !ruleBottom) continue
+        const boxes: { top: number; bottom: number; what: string }[] = []
+        for (const chip of Array.from(row.querySelectorAll(CHIP))) {
+          if (!shown(chip) || chip.closest('tr, [role=row], li') !== row) continue
+          const r = chip.getBoundingClientRect()
+          boxes.push({
+            top: r.top,
+            bottom: r.bottom,
+            what: `chip "${short(chip.textContent, 30)}"`,
+          })
+        }
+        const tw = document.createTreeWalker(row, NodeFilter.SHOW_TEXT)
+        for (let n = tw.nextNode(); n; n = tw.nextNode()) {
+          const host = n.parentElement
+          if (!host || !(n.textContent ?? '').trim() || hidden(host)) continue
+          if (host.closest('tr, [role=row], li') !== row || host.closest(CHIP)) continue
+          // What is drawn: a line clamp or a clipping box (up to the row)
+          // hides the lines past it.
+          let clipTop = -Infinity
+          let clipBottom = Infinity
+          for (let a: Element | null = host; a && a !== row; a = a.parentElement) {
+            if (getComputedStyle(a).overflowY !== 'visible') {
+              const ar = a.getBoundingClientRect()
+              clipTop = Math.max(clipTop, ar.top)
+              clipBottom = Math.min(clipBottom, ar.bottom)
+            }
+          }
+          crowdRange.selectNodeContents(n)
+          for (const b of Array.from(crowdRange.getClientRects())) {
+            if (b.width < 1 || b.height < 1) continue
+            const top = Math.max(b.top, clipTop)
+            const bottom = Math.min(b.bottom, clipBottom)
+            if (bottom - top < 1) continue
+            boxes.push({ top, bottom, what: `text "${short(n.textContent, 30)}"` })
+          }
+        }
+        const inTop = rr.top + bw(row, 'Top')
+        const inBottom = rr.bottom - bw(row, 'Bottom')
+        for (const b of boxes) {
+          // Wholly outside the row (a popover anchored to it, a row cut by
+          // its scroller): not the row's own content.
+          if (b.bottom <= rr.top || b.top >= rr.bottom) continue
+          const below = Math.round((inBottom - b.bottom) * 10) / 10
+          const above = Math.round((b.top - inTop) * 10) / 10
+          if (ruleBottom && below < CROWD) {
+            out.cellCrowd.push(
+              `${b.what} ${below < 0 ? `${-below}px past` : `${below}px from`} its row's bottom edge (${Math.round(rr.height)}px row)`
+            )
+            break
+          }
+          if (ruleTop && above < CROWD) {
+            out.cellCrowd.push(
+              `${b.what} ${above < 0 ? `${-above}px past` : `${above}px from`} its row's top edge (${Math.round(rr.height)}px row)`
+            )
+            break
+          }
+        }
+      }
+    }
+
     // ---- underPinned: a notice that stays while the page scrolls, or text
     // under a sticky or fixed layer. Last, since it scrolls the page (and puts
     // it back), and in `main` only: an overlay is measured where it opened.
@@ -1653,6 +2054,61 @@ export async function findMatrixBreaks(
         out.underPinned.push(`"${text}" ${key}${n > 1 ? ` (${n} texts)` : ''}`)
       scroller.scrollTo({ top: start, behavior: 'instant' as ScrollBehavior })
       await wait(100)
+    }
+
+    // ---- unfilledPlaceholder: visible text that still holds a `{name}`
+    // placeholder of its catalog string ("Imports choose it as format
+    // {format}.", audit 2026-11-27 D5). Text in code, a field's value or an
+    // editor is data, not a sentence of the page.
+    for (const root of roots) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const text = n.textContent ?? ''
+        const m = text.match(/\{[a-z][a-zA-Z_]*\}/)
+        if (!m) continue
+        const el = n.parentElement
+        if (!el || !shown(el)) continue
+        if (el.closest('code, pre, kbd, samp, textarea, [contenteditable], [data-raw-text]'))
+          continue
+        out.unfilledPlaceholder.push(`"${short(text, 60)}" shows ${m[0]} at ${selectorOf(el)}`)
+      }
+    }
+
+    // ---- phoneTable: on a phone (480 px and narrower), a table wider than
+    // the box that shows it (it scrolls sideways) or a cell taller than three
+    // lines (names broken into stacks): the list needs its phone card layout
+    // (audit 2026-11-27 D9: sensor products, scope letters).
+    if (vw <= 480) {
+      for (const root of roots) {
+        for (const table of Array.from(root.querySelectorAll('table'))) {
+          if (!shown(table)) continue
+          const tr = table.getBoundingClientRect()
+          let frame: Element | null = table.parentElement
+          while (frame && frame !== root && !isScroller(frame)) frame = frame.parentElement
+          const room = frame && frame !== root ? frame.clientWidth : root.clientWidth
+          if (tr.width > room + 4) {
+            out.phoneTable.push(
+              `table ${Math.round(tr.width)}px wide in ${Math.round(room)}px at ${selectorOf(table)}`
+            )
+            continue
+          }
+          for (const cell of Array.from(table.querySelectorAll('td'))) {
+            if (!shown(cell)) continue
+            const cs = getComputedStyle(cell)
+            const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.4
+            const inner =
+              cell.getBoundingClientRect().height -
+              parseFloat(cs.paddingTop) -
+              parseFloat(cs.paddingBottom)
+            if (inner > line * 3 + 2) {
+              out.phoneTable.push(
+                `cell "${short(cell.textContent, 30)}" ${Math.round(inner)}px tall (over 3 lines) at ${selectorOf(table)}`
+              )
+              break
+            }
+          }
+        }
+      }
     }
 
     for (const k of Object.keys(out) as (keyof typeof out)[]) out[k] = [...new Set(out[k])]

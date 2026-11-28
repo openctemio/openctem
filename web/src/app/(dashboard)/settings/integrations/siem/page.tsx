@@ -1,6 +1,7 @@
 'use client'
 
 import { IntegrationHealth } from '@/features/integrations/components/integration-health'
+import { ConnectionNote } from '@/features/integrations/components/connection-note'
 import { useCallback, useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Shield, Plus, Send, Trash2, Loader2 } from 'lucide-react'
@@ -159,7 +160,11 @@ export default function SIEMIntegrationPage() {
       accessorKey: 'name',
       header: t('siemIntegration.columns.name', 'Name'),
       cell: ({ row }) => (
-        <StackedCell primary={row.original.name} secondary={row.original.status_message} truncate />
+        <StackedCell
+          primary={row.original.name}
+          secondary={<ConnectionNote integration={row.original} />}
+          truncate
+        />
       ),
     },
     {
