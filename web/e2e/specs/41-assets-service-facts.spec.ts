@@ -90,7 +90,8 @@ for (const { width, sidebarOpen } of CASES) {
       test.skip(!seeded, 'no seeded HTTP service')
 
       // No chip runs out of its line or its cell, none is squeezed.
-      expect(await clippedChips(page)).toEqual([])
+      // (The line folds again after the table settles its column widths.)
+      await expect.poll(() => clippedChips(page)).toEqual([])
 
       // Status first as its code, then the port, then "+N" with the rest.
       const line = row.getByTestId('surface-facts-line')

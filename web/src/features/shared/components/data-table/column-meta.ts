@@ -47,8 +47,22 @@ export interface DataTableColumnMeta {
    * collapses. The row actions column is frozen at the end on its own.
    */
   pin?: 'start'
-  /** Hide the column while the table frame is narrower than this (px). */
+  /** Hide the column while the table frame is narrower than this (px). Kind sizing only. */
   hideBelow?: number
+  /**
+   * Content sizing (`columnSizing="content"`): the column may drop when the
+   * frame cannot hold every column at its floor; 1 drops first, then 2, and
+   * so on (replaces `hideBelow`, whose px points came from fixed widths).
+   * The viewer's choice under Columns still wins.
+   */
+  dropOrder?: number
+  /**
+   * Why this column overrides its kind's sizing (`width`, `minWidth`,
+   * `maxWidth`). Required on a content-sized table
+   * (`column-width-override.test.ts`): widths follow the content unless a
+   * measured reason says otherwise.
+   */
+  sizeReason?: string
   /** The direction of the first click on the header. */
   sortFirst?: 'asc' | 'desc'
   /** An info popover after the header label (legend, unit, scope). */

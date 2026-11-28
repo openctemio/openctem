@@ -779,6 +779,59 @@ reference.
   `risk` holds the risk score badge: 148 fits its longest text ("Not yet
   scored") in both languages.
 
+- **Column sizing by content** (`columnSizing="content"`, the target for
+  every list; `data-table/column-sizing.ts`, `measure-columns.ts`). A column
+  declares its kind, never px. The table measures the header and the rows on
+  screen (one hidden copy per column, one layout, before paint; O(columns x
+  rows), only real rows, never skeletons) and sizes each column from that:
+
+  | Kind                   | Floor (px)     | Cap (px) | Weight | Below its content |
+  | ---------------------- | -------------- | -------- | ------ | ----------------- |
+  | `name`                 | min(192, 36vw) | 640      | 4      | ellipsis + title  |
+  | `asset`                | 128            | 360      | 2      | ellipsis + title  |
+  | `text`                 | 96             | 320      | 1      | ellipsis + title  |
+  | `tags`                 | 112            | 280      | 1      | folds to "+N"     |
+  | `owner`                | 112            | 240      | 0      | wraps             |
+  | `status`               | 88             | 260      | 0      | never             |
+  | `status-edit`          | 120            | 240      | 0      | never             |
+  | `id`                   | 72             | 240      | 0      | never             |
+  | `priority`             | 48             | 112      | 0      | never             |
+  | `risk`                 | 88             | 176      | 0      | never             |
+  | `severity`             | 80             | 160      | 0      | never             |
+  | `datetime-recent`      | 80             | 184      | 0      | never             |
+  | `date`                 | 88             | 160      | 0      | never             |
+  | `due`                  | 88             | 176      | 0      | never             |
+  | `number`               | 48             | 136      | 0      | never             |
+  | `signals`              | 80             | 240      | 0      | never (folds)     |
+  | `masked`               | 160            | 280      | 0      | never             |
+  | `select`               | 40             | 40       | 0      | never             |
+  | `actions`, `decisions` | content        | 200, 400 | 0      | never             |
+  1. Each column asks for its content (widest cell or header, padding
+     included), clamped to its floor and cap.
+  2. Spare room: first a value longer than its cap grows to its whole
+     length (never cut meaning when there is room), then the flexible columns
+     (weight above 0, the title first) share the rest by weight.
+  3. Short room: optional columns drop first (`meta.dropOrder`: 1 drops first),
+     while the title would get less than its content or 320 px; then the
+     flexible columns give way to their floor, the title least; a whole value
+     (a chip, a date, a number, an id) never goes below its content. What is
+     still missing scrolls the frame (Mode B).
+  4. Stability: widths settle once per data set (`sizingKey`: the filters and
+     search, not the sort or the page). Paging, sorting and refreshing keep
+     the title's width; a whole value grows only when a new row needs more
+     than 2 px more, never shrinks. A resize recomputes from the kept
+     measurements without measuring again; the language or the data set
+     measures again. The table uses a fixed layout with the computed widths,
+     so the header and rows align and frozen columns know their offsets.
+  5. Overrides: `width` (exact), `minWidth`, `maxWidth` in a column's meta
+     only with `sizeReason: '<why>'` beside it, and `dropOrder` instead of
+     px `hideBelow` points (`column-width-override.test.ts`). The viewer's
+     choice under Columns still wins over dropping.
+  6. A cut cell carries its whole value in `title`. The phone card is not
+     affected.
+
+  Lists not yet moved keep the kind defaults below.
+
 - **Column priority**: a column that may drop on a narrow screen sets
   `meta: { hideBelow: <table frame width in px> }`; `DataTable` hides it below
   that width instead of scrolling the table sideways. Set it from measured
