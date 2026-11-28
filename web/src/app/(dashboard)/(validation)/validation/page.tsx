@@ -1,5 +1,6 @@
 'use client'
 
+import { formatPercent } from '@/lib/format-metric'
 import { Main } from '@/components/layout'
 import { ErrorState } from '@/features/shared/components/error-state'
 import { ExternalLink } from 'lucide-react'
@@ -97,12 +98,17 @@ export default function ValidationOverviewPage() {
         total: r.total,
       })
     )
-  const dash = (n: number | undefined) => (n === undefined ? '–' : n)
+  const dash = (n: number | undefined) => (n === undefined ? '—' : n)
   const metrics: MetricStripItem[] = [
     {
       key: 'coverage',
       label: t('validation.overview.coverage.label', 'Validated top-priority fixes'),
-      value: coverageError || covTotal === 0 ? '–' : `${share(covValidated, covTotal)}%`,
+      // Nothing to measure yet is said in words, not a bare dash as the headline.
+      value: coverageError
+        ? '—'
+        : covTotal === 0
+          ? t('validation.overview.coverage.noneValue', 'None yet')
+          : formatPercent(share(covValidated, covTotal)),
       detail: coverageError
         ? undefined
         : covTotal === 0
