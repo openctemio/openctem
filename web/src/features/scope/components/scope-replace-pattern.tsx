@@ -237,7 +237,7 @@ export function ScopeReplacePattern({ entry, onReplaced, disabled }: ScopeReplac
             {pending
               ? t(
                   'scope.replace.needsApproval',
-                  'Needs approval: the new entry waits for {n} approval(s), and this entry stays in effect until it is approved.',
+                  'Needs approval: the new entry waits for {n, plural, one {# approval} other {# approvals}}, and this entry stays in effect until it is approved.',
                   { n: preview.new?.approvals_required ?? 1 }
                 )
               : t(
@@ -289,7 +289,7 @@ export function ScopeReplacePattern({ entry, onReplaced, disabled }: ScopeReplac
             <p>
               {t(
                 'scope.replace.zonesHidden',
-                '{n} scan zone(s) name the old range. Ask someone who manages scan zones to update them.',
+                '{n, plural, one {# scan zone names} other {# scan zones name}} the old range. Ask someone who manages scan zones to update them.',
                 { n: hiddenZones }
               )}
             </p>

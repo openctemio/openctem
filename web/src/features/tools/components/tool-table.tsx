@@ -192,11 +192,11 @@ export function ToolTable({
           kind: 'text',
           width: 120,
           hideBelow: TOOL_HIDE_BELOW.versions,
-          label: t('scans.tools.col.versions', 'Version(s)'),
+          label: t('scans.tools.col.versions', 'Versions'),
         },
         accessorFn: (i) => versionsLabel(i),
         enableSorting: false,
-        header: t('scans.tools.col.versions', 'Version(s)'),
+        header: t('scans.tools.col.versions', 'Versions'),
         cell: ({ row }) => {
           const item = row.original
           const label = versionsLabel(item)

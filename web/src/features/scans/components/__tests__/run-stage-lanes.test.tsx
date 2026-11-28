@@ -150,7 +150,7 @@ describe('RunStageLanes chunks', () => {
     const rows = within(bySensor).getAllByRole('listitem')
     expect(rows).toHaveLength(2)
     expect(rows[0].textContent).toContain('edge-1')
-    expect(rows[0].textContent).toContain('1 chunk(s), 1 done')
+    expect(rows[0].textContent).toContain('1 chunk, 1 done')
     expect(rows[1].textContent).toContain('Shared sensors')
   })
 })
@@ -205,7 +205,7 @@ describe('stage streaming marks', () => {
     const lanes = await screen.findAllByTestId('stage-lane')
     expect(within(lanes[0]).getByTestId('stage-stream-badge')).toHaveTextContent('Streaming')
     expect(within(lanes[1]).getByTestId('stage-stream-badge')).toHaveTextContent(
-      'Streamed in 3 wave(s)'
+      'Streamed in 3 waves'
     )
     expect(within(lanes[2]).queryByTestId('stage-stream-badge')).toBeNull()
   })

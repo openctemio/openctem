@@ -233,7 +233,13 @@ export function LifecycleDraftEditor({
         out.push(t('findingLifecycle.guardSummary.denyKinds', 'People only'))
     }
     if (tr.when?.length)
-      out.push(t('findingLifecycle.guardSummary.when', '{n} condition(s)', { n: tr.when.length }))
+      out.push(
+        t(
+          'findingLifecycle.guardSummary.when',
+          '{n, plural, one {# condition} other {# conditions}}',
+          { n: tr.when.length }
+        )
+      )
     return out
   }
 

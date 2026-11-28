@@ -130,10 +130,14 @@ function ago(iso: string | null | undefined, locale: string): string {
 /** What a group exception decision did, for its toast. */
 function appliedDescription(t: Translate, batch: ApprovalBatch): string {
   const canceled = batch.canceled?.length ?? 0
-  const base = t('findingApprovals.group.appliedDesc', '{count} finding(s) moved to {kind}.', {
-    count: batch.applied ?? batch.member_count,
-    kind: kindLabel(t, batch.requested_status),
-  })
+  const base = t(
+    'findingApprovals.group.appliedDesc',
+    '{count, plural, one {# finding} other {# findings}} moved to {kind}.',
+    {
+      count: batch.applied ?? batch.member_count,
+      kind: kindLabel(t, batch.requested_status),
+    }
+  )
   return canceled > 0
     ? `${base} ${t(
         'findingApprovals.group.canceledDesc',
@@ -382,7 +386,7 @@ export function GroupExceptionSheet({
         toast.success(t('findings.approvals.toast.signed', 'Your approval is recorded'), {
           description: t(
             'findingApprovals.group.signedDesc',
-            '{count} more approval(s) needed before the findings change.',
+            '{count, plural, one {# more approval} other {# more approvals}} needed before the findings change.',
             { count: outcome.remaining }
           ),
         })
@@ -567,9 +571,13 @@ export function GroupExceptionSheet({
                 )}
                 <section className="space-y-2">
                   <h3 className="text-sm font-semibold">
-                    {t('findingApprovals.group.memberCount', '{count} finding(s)', {
-                      count: batch.member_count,
-                    })}
+                    {t(
+                      'findingApprovals.group.memberCount',
+                      '{count, plural, one {# finding} other {# findings}}',
+                      {
+                        count: batch.member_count,
+                      }
+                    )}
                   </h3>
                   <ul className="divide-y rounded-md border text-sm" data-testid="batch-members">
                     {(batch.members ?? []).map((m) => (
@@ -679,9 +687,13 @@ export function GroupExceptionSheet({
                     )}
                     {remaining > 1
                       ? t('findingApprovals.group.approveSign', 'Add my approval')
-                      : t('findingApprovals.group.approveAll', 'Approve {count} finding(s)', {
-                          count: batch.member_count,
-                        })}
+                      : t(
+                          'findingApprovals.group.approveAll',
+                          'Approve {count, plural, one {# finding} other {# findings}}',
+                          {
+                            count: batch.member_count,
+                          }
+                        )}
                   </Button>
                 </Can>
               )}
@@ -753,9 +765,13 @@ export function GroupExceptionSheet({
         confirmText={
           remaining > 1
             ? t('findingApprovals.group.approveSign', 'Add my approval')
-            : t('findingApprovals.group.approveAll', 'Approve {count} finding(s)', {
-                count: batch?.member_count ?? 0,
-              })
+            : t(
+                'findingApprovals.group.approveAll',
+                'Approve {count, plural, one {# finding} other {# findings}}',
+                {
+                  count: batch?.member_count ?? 0,
+                }
+              )
         }
         isLoading={busy === 'approve'}
         handleConfirm={approve}

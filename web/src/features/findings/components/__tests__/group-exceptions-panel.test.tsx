@@ -126,7 +126,7 @@ describe('GroupExceptionSheet', () => {
     )
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith('Your approval is recorded', {
-        description: '1 more approval(s) needed before the findings change.',
+        description: '1 more approval needed before the findings change.',
       })
     )
     expect(onDecided).toHaveBeenCalled()
@@ -144,16 +144,15 @@ describe('GroupExceptionSheet', () => {
       canceled: ['f-2'],
     })
     renderSheet()
-    await user.click(screen.getByRole('button', { name: 'Approve 2 finding(s)' }))
+    await user.click(screen.getByRole('button', { name: 'Approve 2 findings' }))
     await user.click(
       within(await screen.findByRole('alertdialog')).getByRole('button', {
-        name: 'Approve 2 finding(s)',
+        name: 'Approve 2 findings',
       })
     )
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith('Group exception approved', {
-        description:
-          '1 finding(s) moved to Accepted risk. 1 left out because they changed meanwhile.',
+        description: '1 finding moved to Accepted risk. 1 left out because they changed meanwhile.',
       })
     )
   })
