@@ -213,7 +213,7 @@ export function SensorProductsSettings() {
     const cols: ColumnDef<CustomProduct>[] = [
       {
         id: 'product',
-        meta: { label: t('sensors.customProducts.product') },
+        meta: { kind: 'id', label: t('sensors.customProducts.product') },
         header: t('sensors.customProducts.product'),
         cell: ({ row: { original: i } }) => (
           <span
@@ -226,7 +226,7 @@ export function SensorProductsSettings() {
       },
       {
         id: 'latest',
-        meta: { label: t('sensors.customProducts.latest') },
+        meta: { kind: 'text', label: t('sensors.customProducts.latest') },
         header: t('sensors.customProducts.latest'),
         cell: ({ row: { original: i } }) => (
           <span className="tabular-nums">{i.latest_version || notSet}</span>
@@ -234,7 +234,7 @@ export function SensorProductsSettings() {
       },
       {
         id: 'min',
-        meta: { label: t('sensors.customProducts.min') },
+        meta: { kind: 'text', label: t('sensors.customProducts.min') },
         header: t('sensors.customProducts.min'),
         cell: ({ row: { original: i } }) => (
           <span className="tabular-nums">{i.min_version || notSet}</span>
@@ -242,7 +242,7 @@ export function SensorProductsSettings() {
       },
       {
         id: 'updated',
-        meta: { label: t('sensors.customProducts.updated') },
+        meta: { kind: 'datetime-recent', label: t('sensors.customProducts.updated') },
         header: t('sensors.customProducts.updated'),
         cell: ({ row: { original: i } }) => (
           <span className="text-muted-foreground">{exactTime(i.updated_at) ?? ''}</span>

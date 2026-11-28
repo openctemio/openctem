@@ -225,7 +225,7 @@ export default function ScopeLettersPage() {
     () => [
       {
         id: 'title',
-        meta: { label: t('letters.form.title', 'Title') },
+        meta: { kind: 'name', label: t('letters.form.title', 'Title') },
         header: t('letters.form.title', 'Title'),
         cell: ({ row: { original: l } }) => (
           <span className="font-medium break-words">
@@ -238,13 +238,13 @@ export default function ScopeLettersPage() {
       },
       {
         id: 'issuer',
-        meta: { label: t('letters.col.issuer', 'Issued by') },
+        meta: { kind: 'text', label: t('letters.col.issuer', 'Issued by') },
         header: t('letters.col.issuer', 'Issued by'),
         cell: ({ row: { original: l } }) => <span className="text-sm">{l.issuer || '—'}</span>,
       },
       {
         id: 'valid',
-        meta: { label: t('letters.col.valid', 'Valid') },
+        meta: { kind: 'text', label: t('letters.col.valid', 'Valid') },
         header: t('letters.col.valid', 'Valid'),
         cell: ({ row: { original: l } }) => (
           <span className="text-xs whitespace-nowrap">
@@ -260,7 +260,7 @@ export default function ScopeLettersPage() {
       },
       {
         id: 'sha',
-        meta: { label: t('letters.col.sha', 'SHA-256') },
+        meta: { kind: 'id', label: t('letters.col.sha', 'SHA-256') },
         header: t('letters.col.sha', 'SHA-256'),
         cell: ({ row: { original: l } }) => (
           <span className="font-mono text-xs" title={l.file_sha256}>
