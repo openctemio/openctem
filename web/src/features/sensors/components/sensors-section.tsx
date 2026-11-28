@@ -850,12 +850,14 @@ export function SensorsSection({
   const toolbarEnd = (
     <Select value={groupBy} onValueChange={(v) => setGroupParam(v === 'none' ? '' : v)}>
       <SelectTrigger
-        className="w-auto gap-2 sm:min-w-36"
+        className="gap-2"
         iconOnlyBelow="@2xl/toolbar"
         aria-label={t('sensors.list.groupBy.label')}
       >
         <Layers className="h-4 w-4 text-muted-foreground" />
-        <span className="sr-only sm:not-sr-only">
+        {/* The value shows exactly while the select is not drawn as an icon
+            (the toolbar's own width, not the window's). */}
+        <span className="sr-only @2xl/toolbar:not-sr-only">
           <SelectValue />
         </span>
       </SelectTrigger>

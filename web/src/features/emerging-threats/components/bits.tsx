@@ -458,17 +458,21 @@ export function ThreatCell({
   const { t } = useTranslation()
   const more = Math.max(0, (alert.product_count ?? 0) - 1)
   return (
-    <div className="min-w-0 max-w-xs">
+    // One line: the list is one compact row per threat (32 px), and a
+    // second line pressed the text against the row's lines.
+    <div className="flex min-w-0 max-w-md items-baseline gap-2">
       <Link
         href={`/emerging-threats/${alert.id}`}
-        className="font-mono text-sm font-medium hover:underline"
+        className="shrink-0 font-mono text-sm font-medium hover:underline"
         onClick={(e) => e.stopPropagation()}
       >
         {alert.vuln_id}
       </Link>
       {alert.product ? (
-        <p className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-          <span className="truncate">{alert.product}</span>
+        <span className="flex min-w-0 items-baseline gap-1.5 text-sm text-muted-foreground">
+          <span data-cut-tooltip="" title={alert.product} className="truncate">
+            {alert.product}
+          </span>
           {more > 0 && (
             <span
               className="shrink-0 tabular-nums"
@@ -477,7 +481,7 @@ export function ThreatCell({
               {t('emergingThreats.threat.moreProducts', undefined, { n: more })}
             </span>
           )}
-        </p>
+        </span>
       ) : null}
     </div>
   )

@@ -430,12 +430,13 @@ function MappingRowCard({
     })
 
   return (
-    <li className={cn('rounded-lg border p-3', hasError && 'border-destructive')}>
-      {/* Capped like a settings form from 1536 px: on a wide screen the transform and remove
-          buttons stay beside the Jira field instead of at the far edge. Below 1280 px the
-          source takes a line of its own, so its selects keep the width of their values
-          instead of wrapping them. */}
-      <div className="grid items-center gap-2 md:grid-cols-[auto_minmax(0,1fr)_auto] xl:grid-cols-[minmax(0,1.3fr)_auto_minmax(0,1fr)_auto] 2xl:max-w-4xl">
+    <li className={cn('rounded-lg border p-3 2xl:max-w-4xl', hasError && 'border-destructive')}>
+      {/* The row is capped like a settings form from 1536 px, its frame
+          included: on a wide screen the transform and remove buttons end the
+          row beside the Jira field, never mid-way along a wider frame. Below
+          1280 px the source takes a line of its own, so its selects keep the
+          width of their values. */}
+      <div className="grid items-center gap-2 md:grid-cols-[auto_minmax(0,1fr)_auto] xl:grid-cols-[minmax(0,1.3fr)_auto_minmax(0,1fr)_auto]">
         {/* Source */}
         <div className="flex min-w-0 gap-2 md:col-span-3 xl:col-span-1">
           <Select
@@ -464,7 +465,7 @@ function MappingRowCard({
               disabled={readOnly}
             >
               <SelectTrigger
-                className="min-w-0 flex-1 font-mono text-xs"
+                className="min-w-0 flex-1 font-mono"
                 aria-label={t('ticketMapping.fields.attribute', 'Attribute')}
               >
                 <SelectValue />
@@ -558,7 +559,11 @@ function MappingRowCard({
           >
             <span className="flex min-w-0 items-center gap-2">
               <FieldIcon field={field} />
-              <span className="min-w-0 break-words">
+              <span
+                data-cut-tooltip=""
+                title={field?.name ?? row.target.name ?? row.target.field_id}
+                className="min-w-0 truncate"
+              >
                 {field?.name ?? row.target.name ?? row.target.field_id}
               </span>
             </span>

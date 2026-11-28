@@ -39,8 +39,9 @@ export function Search({ className = '', placeholder }: SearchProps) {
         // 1024-1279: 200 wide with the label; from 1280: 420 with the Ctrl K
         // hint. The field never gives room to the breadcrumb: the breadcrumb
         // folds its levels into the "…" menu by measured width instead.
-        // Transparent with the field border (shell package (c)).
-        'lg:border-border-strong lg:text-dense lg:w-50 lg:justify-start lg:gap-2 lg:border lg:px-2 xl:w-105',
+        // Transparent with the field border (shell package (c)). Its text is
+        // the size of the buttons beside it in the top bar (one size per row).
+        'lg:border-border-strong lg:text-body lg:w-50 lg:justify-start lg:gap-2 lg:border lg:px-2 xl:w-105',
         className
       )}
       onClick={() => setOpen(true)}

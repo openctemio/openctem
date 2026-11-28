@@ -62,17 +62,20 @@ export interface FilterSelectProps<V extends string> {
    */
   foldLabel?: boolean
   /**
-   * Every value label the control can ever show (default: the options, and
-   * "All" when clearable). The value sits in a box as wide as the longest, so
-   * choosing a value, or options arriving later, never changes the control's
-   * width. Pass the whole set when `options` lists only some of it.
+   * With `holdWidth`: every value label the control can ever show (default:
+   * the options, and "All" when clearable). The value sits in a box as wide
+   * as the longest, so choosing a value never changes the control's width.
+   * Pass the whole set when `options` lists only some of it.
    */
   sizeLabels?: readonly string[]
   /**
-   * The token keeps one width whatever it shows (a fixed scope chip): the
-   * value never sizes it, and a longer one (a saved view's "Set by the
-   * view") ends in an ellipsis, whole in its title. Without it a long value
-   * is shown whole and may widen the token.
+   * The token keeps one width whatever it shows (a fixed scope chip that the
+   * list header's no-jump rule covers): the value sits in a box as wide as
+   * the longest value, cut to 7rem, and a longer one (a saved view's "Set by
+   * the view") ends in an ellipsis, whole in its title. Without it the token
+   * hugs what it shows: key, value, chevron and, once filtered, the clear
+   * button, with no empty room inside (owner report 2026-11-27: "Target: All"
+   * stood in a box sized for "Known exploited", its chevron mid-way).
    */
   holdWidth?: boolean
   /** The menu opened or closed: lets a page read what only the menu shows when it opens. */
@@ -119,9 +122,25 @@ export function FilterSelect<V extends string>({
       <span className="ms-auto ps-4 tabular-nums text-muted-foreground">{fmt.format(n)}</span>
     ) : null
 
+  const shown =
+    keyForAll && !filtered ? (
+      <>
+        <span className={FOLD_HIDDEN}>{all}</span>
+        <span
+          data-slot="filter-select-key"
+          className="hidden @max-4xl/toolbar:inline group-data-[fold=true]/toolbar:inline"
+        >
+          {label}
+        </span>
+      </>
+    ) : (
+      (current?.label ?? all)
+    )
+
   return (
     <div
       data-slot="filter-select"
+      data-hold-width={holdWidth ? 'true' : undefined}
       data-filtered={filtered ? 'true' : 'false'}
       className={cn(
         'inline-flex h-control-field max-w-full items-center rounded-md border bg-background text-body max-md:h-control-touch max-md:text-dense',
@@ -138,37 +157,34 @@ export function FilterSelect<V extends string>({
           aria-label={`${label}: ${current?.label ?? all}`}
         >
           <span className={cn('text-muted-foreground', foldLabel && FOLD_HIDDEN)}>{label}:</span>
-          {/* The other values reserve up to 7rem, so the token keeps one
-              width for short values; the value shown is whole up to 15rem
-              ("Awaiting approval") and ends in an ellipsis only when the row
-              itself is too narrow. The full value stays in its title and the
-              trigger's accessible name. With `holdWidth` the value never
-              sizes the token: it is cut to the values' 7rem instead. */}
-          <ToolbarSlot
-            className={cn(holdWidth ? 'max-w-28' : 'max-w-60', 'font-medium')}
-            reserveClassName={holdWidth ? undefined : 'max-w-28'}
-            options={[
-              ...(sizeLabels ?? [...(clearable ? [all] : []), ...options.map((o) => o.label)]),
-              // The key is one of the texts the slot shows: it sizes the slot
-              // too, so folding and choosing a value move nothing.
-              ...(keyForAll ? [label] : []),
-            ]}
-            title={current?.label ?? all}
-          >
-            {keyForAll && !filtered ? (
-              <>
-                <span className={FOLD_HIDDEN}>{all}</span>
-                <span
-                  data-slot="filter-select-key"
-                  className="hidden @max-4xl/toolbar:inline group-data-[fold=true]/toolbar:inline"
-                >
-                  {label}
-                </span>
-              </>
-            ) : (
-              (current?.label ?? all)
-            )}
-          </ToolbarSlot>
+          {/* Hugging: the value shown is whole up to 15rem and ends in an
+              ellipsis only when the row itself is too narrow; the full value
+              stays in its title and the trigger's accessible name. With
+              `holdWidth` the token keeps the width of its longest value
+              instead (cut to 7rem), so a fixed scope never moves the row. */}
+          {holdWidth ? (
+            <ToolbarSlot
+              className="max-w-28 font-medium"
+              options={[
+                ...(sizeLabels ?? [...(clearable ? [all] : []), ...options.map((o) => o.label)]),
+                // The key is one of the texts the slot shows: it sizes the slot
+                // too, so folding and choosing a value move nothing.
+                ...(keyForAll ? [label] : []),
+              ]}
+              title={current?.label ?? all}
+            >
+              {shown}
+            </ToolbarSlot>
+          ) : (
+            <span
+              data-slot="filter-select-value"
+              data-cut-tooltip=""
+              title={current?.label ?? all}
+              className="min-w-0 max-w-60 truncate font-medium"
+            >
+              {shown}
+            </span>
+          )}
           <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground" />
         </DropdownMenuTrigger>
         <DropdownMenuContent>
@@ -191,8 +207,8 @@ export function FilterSelect<V extends string>({
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-      {/* The clear button's room is kept while nothing is filtered, so
-          choosing a value never changes the token's width. */}
+      {/* Shown once a value is chosen; with nothing filtered the token
+          ends at its chevron (no empty room kept for the button). */}
       {filtered ? (
         <button
           type="button"
@@ -209,7 +225,7 @@ export function FilterSelect<V extends string>({
             <X aria-hidden className="size-4" />
           </span>
         </button>
-      ) : clearable ? (
+      ) : holdWidth && clearable ? (
         <span
           aria-hidden
           data-slot="filter-select-clear-room"

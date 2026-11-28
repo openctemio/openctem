@@ -323,6 +323,9 @@ export function EmergingThreatsList() {
       {
         id: 'exploit',
         header: t('emergingThreats.col.exploit'),
+        // The widths below are measured in Vietnamese, the longer headers:
+        // a column that would be cut by the table's edge leaves instead.
+        meta: { hideBelow: 700 },
         cell: ({ row }) => (
           <ExploitBadges
             inKev={row.original.in_kev}
@@ -349,13 +352,13 @@ export function EmergingThreatsList() {
         header: t('emergingThreats.col.state'),
         // A 768 screen (frame about 650) keeps the threat, level, exploit
         // and hosts; the state is in the row menu and on the threat's page.
-        meta: { hideBelow: 680 },
+        meta: { hideBelow: 780 },
         cell: ({ row }) => <StateBadge state={row.original.state} />,
       },
       {
         id: 'event',
         header: t('emergingThreats.col.lastEvent'),
-        meta: { hideBelow: 1000 },
+        meta: { hideBelow: 1160 },
         cell: ({ row }) => (
           <LastChangeCell kind={row.original.last_event_kind} at={row.original.event_at} />
         ),

@@ -1668,6 +1668,9 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   keep the full width; a form page uses the settings column. The layout
   matrix fails a text line or a field wider than 960 px, or a rail 400 px
   from its content, from 1900 px up.
+- A notice (`Alert`) is as wide as its column up to 56rem, and from 1536 px
+  it stops there: its sentences use the box's width, never a capped line
+  inside a wider box, and never one line wider than the 960 px rule above.
 - Wide screens (1920, 2048 and 2560 px) use the width for content, not for
   margins: lists show more columns and fuller titles (column sizing by
   content, §3), card and link grids add columns (`auto-fill` with a minimum

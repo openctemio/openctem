@@ -110,8 +110,14 @@ function useTopRiskColumns(): ColumnDef<TopRiskRow>[] {
         accessorKey: 'asset_name',
         enableSorting: false,
         header: t('insights.executive.colAsset', 'Asset'),
+        // Leaves a narrow table rather than run past its edge (Vietnamese).
+        meta: { hideBelow: 760 },
         cell: ({ row }) => (
-          <span className="block max-w-xs truncate text-sm text-muted-foreground">
+          <span
+            data-cut-tooltip=""
+            title={row.original.asset_name}
+            className="block max-w-xs truncate text-sm text-muted-foreground"
+          >
             {row.original.asset_name}
           </span>
         ),

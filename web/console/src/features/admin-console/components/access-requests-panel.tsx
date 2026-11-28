@@ -256,10 +256,7 @@ export function AccessRequestsPanel({ canDecide }: { canDecide: boolean }) {
           value={status || 'open'}
           onValueChange={(v) => setStatus(v === 'open' ? '' : (v as AccessRequestStatusFilter))}
         >
-          <SelectTrigger
-            className="w-48"
-            aria-label={t('admin.accessRequestsPanel.status', 'Status')}
-          >
+          <SelectTrigger aria-label={t('admin.accessRequestsPanel.status', 'Status')}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
