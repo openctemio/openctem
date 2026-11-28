@@ -1198,7 +1198,10 @@ export interface PlatformRoleInfo {
   base: boolean
   tier: AdminRole
   permissions: string[]
+  /** Named administrators holding it (active, not emergency access). */
   holders: number
+  /** Emergency access (break-glass) accounts holding it, counted apart. */
+  emergency_holders?: number
 }
 
 /** The platform permission catalog and built-in roles. */

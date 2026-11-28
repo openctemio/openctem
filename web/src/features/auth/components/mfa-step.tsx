@@ -123,6 +123,7 @@ export function MfaStep({
       onCancel={onCancel}
       backLabel={backLabel}
       headingLevel={headingLevel}
+      pageTitled={pageTitled}
     />
   )
 }
@@ -163,6 +164,7 @@ function VerifyStep({
   onCancel,
   backLabel,
   headingLevel = 2,
+  pageTitled = false,
 }: Omit<MfaStepProps, 'purpose' | 'orgs'>) {
   const { t } = useTranslation()
   const [useRecovery, setUseRecovery] = useState(false)
@@ -206,15 +208,27 @@ function VerifyStep({
       className="flex flex-col gap-3.5"
       aria-label={t('auth.mfa.verifyFormLabel', 'Two-factor verification')}
     >
-      <EntryHeader
-        level={headingLevel}
-        title={t('auth.mfa.title', 'Two-factor authentication')}
-        description={
-          useRecovery
+      {pageTitled ? (
+        // The page above already names the step: only the hint here.
+        <p className="text-body text-muted-foreground">
+          {useRecovery
             ? t('auth.mfa.recoveryHint', 'Enter one of your recovery codes. Each code works once.')
-            : t('auth.mfa.codeHint', 'Enter the 6-digit code from your authenticator app.')
-        }
-      />
+            : t('auth.mfa.codeHint', 'Enter the 6-digit code from your authenticator app.')}
+        </p>
+      ) : (
+        <EntryHeader
+          level={headingLevel}
+          title={t('auth.mfa.title', 'Two-factor authentication')}
+          description={
+            useRecovery
+              ? t(
+                  'auth.mfa.recoveryHint',
+                  'Enter one of your recovery codes. Each code works once.'
+                )
+              : t('auth.mfa.codeHint', 'Enter the 6-digit code from your authenticator app.')
+          }
+        />
+      )}
 
       <VerificationCodeInput
         key={useRecovery ? 'recovery' : 'totp'}

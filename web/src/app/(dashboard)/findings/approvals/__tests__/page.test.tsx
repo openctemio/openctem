@@ -805,7 +805,7 @@ describe('ApprovalsPage approval policy', () => {
     await approveFromMenu()
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith('Your approval is recorded', {
-        description: '1 more approval(s) needed before the status changes.',
+        description: '1 more approval needed before the status changes.',
       })
     )
   })
@@ -1149,10 +1149,10 @@ describe('ApprovalsPage gates', () => {
     await waitFor(() => expect(remindApprovers).toHaveBeenCalledWith('approval-mine'))
     await waitFor(() =>
       expect(pageEl.querySelector('[data-slot="queue-announcer"]')).toHaveTextContent(
-        'Reminded 2 approver(s)'
+        'Reminded 2 approvers'
       )
     )
-    expect(toast.success).toHaveBeenCalledWith('Reminded 2 approver(s)')
+    expect(toast.success).toHaveBeenCalledWith('Reminded 2 approvers')
   })
 
   it('a second reminder within the hour is refused with the reason', async () => {

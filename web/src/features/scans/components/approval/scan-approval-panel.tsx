@@ -142,10 +142,14 @@ export function ScanApprovalPanel({ scanId, onRan }: ScanApprovalPanelProps) {
   } else if (data.required && pending) {
     icon = <ShieldQuestion className="size-5 text-warning" aria-hidden />
     title = t('scans.approvalPanel.pending', 'Waiting for approval')
-    detail = t('scans.approvalPanel.pendingDetail', '{remaining} more approval(s) needed: {who}.', {
-      remaining: current?.remaining ?? 0,
-      who: approversText(t, ev),
-    })
+    detail = t(
+      'scans.approvalPanel.pendingDetail',
+      '{remaining, plural, one {# more approval} other {# more approvals}} needed: {who}.',
+      {
+        remaining: current?.remaining ?? 0,
+        who: approversText(t, ev),
+      }
+    )
   } else if (data.required) {
     icon = <ShieldAlert className="size-5 text-destructive" aria-hidden />
     title = t('scans.approvalPanel.required', 'Needs approval before it runs')
@@ -281,7 +285,11 @@ export function ScanApprovalPanel({ scanId, onRan }: ScanApprovalPanelProps) {
                 <SelectContent>
                   {HOURS.map((h) => (
                     <SelectItem key={h} value={String(h)}>
-                      {t('scans.approvalPanel.hours', '{count} hour(s)', { count: h })}
+                      {t(
+                        'scans.approvalPanel.hours',
+                        '{count, plural, one {# hour} other {# hours}}',
+                        { count: h }
+                      )}
                     </SelectItem>
                   ))}
                 </SelectContent>

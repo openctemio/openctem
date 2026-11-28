@@ -164,13 +164,14 @@ describe('Validation overview', () => {
     )
   })
 
-  it('shows a dash, not 0%, when no P0/P1 finding is closed', () => {
+  it('says "None yet", not 0% or a bare dash, when no P0/P1 finding is closed', () => {
     const saved = state.coverage
     state.coverage = { p0_p1_total: 0, p0_p1_validated: 0, by_priority: [] }
     render(<ValidationOverviewPage />)
     const tile = screen.getByRole('link', { name: /Validated top-priority fixes/ })
-    expect(tile).toHaveTextContent('–')
+    expect(tile).toHaveTextContent('None yet')
     expect(tile).not.toHaveTextContent('0%')
+    expect(tile).not.toHaveTextContent('–')
     state.coverage = saved
   })
 

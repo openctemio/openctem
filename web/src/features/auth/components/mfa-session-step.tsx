@@ -39,6 +39,12 @@ interface MfaSessionStepProps {
    * caller sends the person to the password sign-in, which offers enrollment.
    */
   onReauthRequired: () => void
+  /**
+   * The challenge is known: "enroll" (no second factor yet) or "verify" (one
+   * is on and only needs a code). The page heading says which, so a person
+   * with 2FA on is not told to "set it up" and then asked only for a code.
+   */
+  onPurpose?: (purpose: MfaPurpose) => void
 }
 
 type Phase =
@@ -53,14 +59,17 @@ export function MfaSessionStep({
   onComplete,
   onSessionExpired,
   onReauthRequired,
+  onPurpose,
 }: MfaSessionStepProps) {
   const { t } = useTranslation()
   const [phase, setPhase] = useState<Phase>({ kind: 'starting' })
   const [attempt, setAttempt] = useState(0)
   const expiredRef = useRef(onSessionExpired)
+  const purposeRef = useRef(onPurpose)
   useEffect(() => {
     expiredRef.current = onSessionExpired
-  }, [onSessionExpired])
+    purposeRef.current = onPurpose
+  }, [onSessionExpired, onPurpose])
 
   // One challenge per attempt (React StrictMode runs effects twice in
   // development; a second start would replace the first challenge).
@@ -78,6 +87,7 @@ export function MfaSessionStep({
         return
       }
       if (res.success && res.purpose) {
+        purposeRef.current?.(res.purpose)
         setPhase({ kind: 'step', purpose: res.purpose, orgs: res.orgs })
         return
       }

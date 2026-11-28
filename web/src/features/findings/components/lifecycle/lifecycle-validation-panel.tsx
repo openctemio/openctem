@@ -36,9 +36,13 @@ export function LifecycleValidationPanel({ result }: LifecycleValidationPanelPro
       ) : (
         <p className="flex items-center gap-2 text-sm text-destructive">
           <XCircle className="size-4" aria-hidden />
-          {t('findingLifecycle.validation.invalid', '{count} problem(s) to fix before publishing', {
-            count: errors.length,
-          })}
+          {t(
+            'findingLifecycle.validation.invalid',
+            '{count, plural, one {# problem} other {# problems}} to fix before publishing',
+            {
+              count: errors.length,
+            }
+          )}
         </p>
       )}
       {(errors.length > 0 || warnings.length > 0) && (

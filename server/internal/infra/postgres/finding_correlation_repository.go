@@ -277,8 +277,15 @@ func (r *FindingCorrelationRepository) link(ctx context.Context, tenant string, 
 		tenant, l.PrimaryID, l.MemberID, reason, pointKey, mStatus, mRes, prior); err != nil {
 		return fmt.Errorf("insert correlation: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE findings SET status = 'duplicate', duplicate_of = $3, resolution = $4, updated_at = NOW()
+	// Closed like any duplicate: it carries its closing time, and the
+	// primary counts it (the manual and merge paths do both).
+	if _, err := tx.ExecContext(ctx, `UPDATE findings SET status = 'duplicate', duplicate_of = $3, resolution = $4,
+			resolved_at = COALESCE(resolved_at, NOW()), updated_at = NOW()
 		WHERE tenant_id = $1 AND id = $2`, tenant, l.MemberID, l.PrimaryID, ResolutionCorrelated); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE findings SET duplicate_count = COALESCE(duplicate_count, 0) + 1
+		WHERE tenant_id = $1 AND id = $2`, tenant, l.PrimaryID); err != nil {
 		return err
 	}
 	// The group counts once, at its worst severity.
@@ -368,9 +375,21 @@ func (r *FindingCorrelationRepository) release(ctx context.Context, tenant, memb
 			released_by = $5, updated_at = NOW() WHERE tenant_id = $1 AND id = $2`, tenant, id, state, why, by); err != nil {
 		return false, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE findings SET status = $3, duplicate_of = NULL, resolution = $4, updated_at = NOW()
-		WHERE tenant_id = $1 AND id = $2 AND status = 'duplicate'`, tenant, member, status, priorRes); err != nil {
+	// Open again: no closing time, and the primary no longer counts it.
+	res, err := tx.ExecContext(ctx, `UPDATE findings SET status = $3, duplicate_of = NULL, resolution = $4, resolved_at = NULL, updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2 AND status = 'duplicate'`, tenant, member, status, priorRes)
+	if err != nil {
 		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if n > 0 {
+		if _, err := tx.ExecContext(ctx, `UPDATE findings SET duplicate_count = GREATEST(COALESCE(duplicate_count, 0) - 1, 0)
+			WHERE tenant_id = $1 AND id = $2`, tenant, primary); err != nil {
+			return false, err
+		}
 	}
 	// The primary's severity: its own from before, or a remaining member's
 	// if worse.

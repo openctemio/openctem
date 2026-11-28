@@ -76,65 +76,19 @@ import {
 import { BreakText } from '@/features/shared/components/break-text'
 
 /**
- * Column widths in px (each holds its cell padding). A width fits the column's
- * header word with its sort arrow and its longest standard value, in English
- * and Vietnamese, so no chip is cut and no header folds.
+ * Column priority: when the frame cannot hold every column at its floor (the
+ * table measures them, column-sizing.ts), last seen drops first, then owner,
+ * exposure, criticality, monitoring, open findings and service facts. Name,
+ * risk and scope always show; the name takes the room left.
  */
-const WIDTH = {
-  select: 40,
-  // The name's floor: the least it gets before a column drops.
-  name: 200,
-  // The kit's `risk` kind (the badge's longest state whole).
-  risk: 148,
-  type: 140,
-  // "Guardrail hold", "Giữ bởi rào chắn".
-  scope: 136,
-  // The state chip with its menu arrow: "Không hoạt động".
-  monitoring: 152,
-  service: 268,
-  // The header sets these three: "Mức độ quan trọng", "Mức phơi nhiễm",
-  // "Phát hiện đang mở", each with its sort arrow.
-  criticality: 140,
-  exposure: 124,
-  findings: 150,
-  // "No owner", "Chưa có chủ sở hữu" with its icon.
-  owner: 160,
-  last_seen: 160,
-  actions: 48,
-} as const
-
-/** The room of a desktop frame: the checkbox, name, risk, scope, service facts and the row menu. */
-const BASE_ROOM =
-  WIDTH.select + WIDTH.name + WIDTH.risk + WIDTH.scope + WIDTH.service + WIDTH.actions
-
-/**
- * Column priority: the table frame width each lower-priority column needs
- * before it shows, so a narrow screen drops columns instead of scrolling the
- * table sideways. Name, risk, scope and service facts always show; then open
- * findings, monitoring, criticality, exposure, owner and last seen join in
- * that order. Each value is the running sum of the widths shown at it. A
- * column turned on or off under Columns keeps that choice.
- */
-const COLUMN_ROOM = {
-  findings: BASE_ROOM + WIDTH.findings,
-  monitoring: BASE_ROOM + WIDTH.findings + WIDTH.monitoring,
-  criticality: BASE_ROOM + WIDTH.findings + WIDTH.monitoring + WIDTH.criticality,
-  exposure: BASE_ROOM + WIDTH.findings + WIDTH.monitoring + WIDTH.criticality + WIDTH.exposure,
-  owner:
-    BASE_ROOM +
-    WIDTH.findings +
-    WIDTH.monitoring +
-    WIDTH.criticality +
-    WIDTH.exposure +
-    WIDTH.owner,
-  last_seen:
-    BASE_ROOM +
-    WIDTH.findings +
-    WIDTH.monitoring +
-    WIDTH.criticality +
-    WIDTH.exposure +
-    WIDTH.owner +
-    WIDTH.last_seen,
+const DROP_ORDER = {
+  last_seen: 1,
+  owner: 2,
+  exposure: 3,
+  criticality: 4,
+  monitoring: 5,
+  findings: 6,
+  service: 7,
 } as const
 
 /** A one-type list shows "Service facts" only when its own columns do not already. */
@@ -342,7 +296,6 @@ export function InventoryTable({
         meta: {
           kind: 'name',
           pin: 'start',
-          minWidth: WIDTH.name,
           label: t('assets.properties.columns.name', 'Name'),
         },
         enableHiding: false,
@@ -383,8 +336,6 @@ export function InventoryTable({
         id: `attr:${attribute.key}`,
         meta: {
           kind: 'text',
-          minWidth: 120,
-          maxWidth: 240,
           label: propertyLabel(attribute.key, locale),
         },
         enableSorting: false,
@@ -398,7 +349,7 @@ export function InventoryTable({
         ? ([
             {
               id: 'ip_network',
-              meta: { kind: 'text', width: 152, label: t('assets.ip.network', 'Network /24') },
+              meta: { kind: 'text', label: t('assets.ip.network', 'Network /24') },
               enableSorting: false,
               header: ({ column }) => (
                 <DataTableColumnHeader
@@ -412,8 +363,6 @@ export function InventoryTable({
               id: 'ip_names',
               meta: {
                 kind: 'text',
-                minWidth: 160,
-                maxWidth: 280,
                 label: t('assets.ip.names', 'Names'),
               },
               enableSorting: false,
@@ -426,8 +375,6 @@ export function InventoryTable({
               id: 'ip_ports',
               meta: {
                 kind: 'text',
-                minWidth: 140,
-                maxWidth: 240,
                 label: t('assets.ip.ports', 'Open ports'),
               },
               enableSorting: false,
@@ -458,7 +405,6 @@ export function InventoryTable({
         id: 'type',
         meta: {
           kind: 'text',
-          width: WIDTH.type,
           label: t('assets.properties.columns.type', 'Type'),
         },
         accessorKey: 'type',
@@ -490,7 +436,7 @@ export function InventoryTable({
         ? [
             {
               id: 'scan_scope',
-              meta: { kind: 'status', width: WIDTH.scope, label: t('scope.check.column', 'Scope') },
+              meta: { kind: 'status', label: t('scope.check.column', 'Scope') },
               enableSorting: false,
               header: ({ column }) => (
                 <DataTableColumnHeader column={column} title={t('scope.check.column', 'Scope')} />
@@ -504,8 +450,7 @@ export function InventoryTable({
         id: 'monitoring_state',
         meta: {
           kind: 'status-edit',
-          width: WIDTH.monitoring,
-          hideBelow: COLUMN_ROOM.monitoring,
+          dropOrder: DROP_ORDER.monitoring,
           label: t('assets.monitoring.column', 'Monitoring'),
         },
         enableSorting: false,
@@ -532,23 +477,28 @@ export function InventoryTable({
         // Only known facts are shown; a row with none shows the muted dash.
         id: 'service',
         meta: {
-          kind: 'text',
-          width: WIDTH.service,
-          // Needs the room of every desktop column: on a tablet frame narrower
-          // than that it would scroll sideways with its chips cut, so it drops
-          // (Columns turns it back on; the row sheet lists the facts).
-          hideBelow: BASE_ROOM,
+          // Chips that fold into "+N".
+          kind: 'tags',
+          // Drops last of the optional columns on a narrow frame (Columns
+          // turns it back on; the row sheet lists the facts).
+          dropOrder: DROP_ORDER.service,
+          // The cell folds its chips to the width it is given, so measuring it
+          // would size the column to its folded self: it keeps the room of the
+          // status, the port and "+N" (the width of its facts line).
+          minWidth: 268,
+          sizeReason:
+            'service facts fold into "+N" to the column width, so the content cannot size it',
           label: t('assets.facts.title', 'Service facts'),
         },
         enableSorting: false,
         header: ({ column }) => (
           <DataTableColumnHeader column={column} title={t('assets.facts.title', 'Service facts')} />
         ),
-        // One line (research/266) in a fixed width: as many whole facts as
-        // fit (status code, port, edge, what runs there), then "+N" opening
-        // every fact, so rows keep one height and no chip is cut.
+        // One line (research/266) as wide as the column: as many whole facts
+        // as fit (status code, port, edge, what runs there), then "+N"
+        // opening every fact, so rows keep one height and no chip is cut.
         cell: ({ row }) => (
-          <div className="w-64">
+          <div className="w-full min-w-0">
             {cellsForType(row.original.type, row.original.subType) ? (
               <SurfaceFactsLine asset={row.original} />
             ) : (
@@ -561,8 +511,7 @@ export function InventoryTable({
         id: 'criticality',
         meta: {
           kind: 'severity',
-          width: WIDTH.criticality,
-          hideBelow: COLUMN_ROOM.criticality,
+          dropOrder: DROP_ORDER.criticality,
           label: t('assets.badge.criticality', 'Criticality'),
         },
         accessorKey: 'criticality',
@@ -581,8 +530,7 @@ export function InventoryTable({
         id: 'exposure',
         meta: {
           kind: 'status',
-          width: WIDTH.exposure,
-          hideBelow: COLUMN_ROOM.exposure,
+          dropOrder: DROP_ORDER.exposure,
           label: t('assets.badge.exposure', 'Exposure'),
         },
         accessorKey: 'exposure',
@@ -598,8 +546,7 @@ export function InventoryTable({
         id: 'findings',
         meta: {
           kind: 'number',
-          width: WIDTH.findings,
-          hideBelow: COLUMN_ROOM.findings,
+          dropOrder: DROP_ORDER.findings,
           label: t('assets.col.openFindings', 'Open findings'),
         },
         accessorKey: 'findingCount',
@@ -618,8 +565,7 @@ export function InventoryTable({
         id: 'owner',
         meta: {
           kind: 'owner',
-          width: WIDTH.owner,
-          hideBelow: COLUMN_ROOM.owner,
+          dropOrder: DROP_ORDER.owner,
           label: t('assets.inv.col.owner', 'Owner'),
         },
         enableSorting: false,
@@ -656,9 +602,8 @@ export function InventoryTable({
         // aligned, since the state follows the time.
         meta: {
           kind: 'text',
-          width: WIDTH.last_seen,
           sortFirst: 'desc',
-          hideBelow: COLUMN_ROOM.last_seen,
+          dropOrder: DROP_ORDER.last_seen,
           label: t('components.col.lastSeen', 'Last seen'),
         },
         accessorKey: 'lastSeen',
@@ -716,7 +661,7 @@ export function InventoryTable({
         ? [
             {
               id: 'scope',
-              meta: { kind: 'status', width: WIDTH.scope, label: t('scope.check.column', 'Scope') },
+              meta: { kind: 'status', label: t('scope.check.column', 'Scope') },
               enableSorting: false,
               header: ({ column }) => (
                 <DataTableColumnHeader column={column} title={t('scope.check.column', 'Scope')} />
@@ -807,6 +752,8 @@ export function InventoryTable({
       />
       <DataTable
         columns={columns}
+        // Widths follow the header and the rows on screen (column-sizing.ts).
+        columnSizing="content"
         data={assets}
         showSearch={false}
         search={search}

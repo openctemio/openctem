@@ -15,6 +15,14 @@ vi.mock('@/components/layout', () => ({
   Main: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }))
 
+const frameworkStats = vi.fn(() => ({
+  TotalControls: 4,
+  Implemented: 2,
+  Partial: 0,
+  NotImplemented: 1,
+  NotApplicable: 0,
+  NotAssessed: 1,
+}))
 const useFrameworkControls = vi.fn((..._args: unknown[]) => ({ data: undefined, isLoading: false }))
 const useAssessments = vi.fn((..._args: unknown[]) => ({ data: undefined }))
 vi.mock('@/features/compliance/api/use-compliance-api', () => ({
@@ -27,14 +35,7 @@ vi.mock('@/features/compliance/api/use-compliance-api', () => ({
           description: '',
           total_controls: 3,
           // The list carries each framework's stats (include=stats).
-          stats: {
-            TotalControls: 4,
-            Implemented: 2,
-            Partial: 0,
-            NotImplemented: 1,
-            NotApplicable: 0,
-            NotAssessed: 1,
-          },
+          stats: frameworkStats(),
         },
       ],
     },
@@ -68,6 +69,21 @@ describe('compliance page requests', () => {
     window.history.replaceState(null, '', '/compliance')
     render(<CompliancePage />)
     expect(screen.getByText('50%')).toBeTruthy()
+  })
+
+  it('a framework with nothing assessed says so instead of "0% compliant"', () => {
+    frameworkStats.mockReturnValueOnce({
+      TotalControls: 103,
+      Implemented: 0,
+      Partial: 0,
+      NotImplemented: 0,
+      NotApplicable: 0,
+      NotAssessed: 103,
+    })
+    window.history.replaceState(null, '', '/compliance')
+    render(<CompliancePage />)
+    expect(screen.getByText('Not assessed yet')).toBeTruthy()
+    expect(screen.queryByText('0%')).toBeNull()
   })
 
   it('the Controls tab loads the first framework when none is selected', () => {

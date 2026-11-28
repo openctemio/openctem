@@ -128,7 +128,7 @@ func TestEnrichBatch_EPSSKEVFromCVEDetail(t *testing.T) {
 	e := NewExposureEnricher(nil, logger.NewNop()) // no asset repo needed for this path
 	due := time.Now().UTC().Add(14 * 24 * time.Hour)
 	e.SetThreatIntel(
-		fakeEPSS{m: map[string]EPSSData{"CVE-2021-44228": {Score: 0.97, Percentile: 99}}},
+		fakeEPSS{m: map[string]EPSSData{"CVE-2021-44228": {Score: 0.97, Percentile: func() *float64 { v := 99.0; return &v }()}}},
 		fakeKEV{m: map[string]KEVData{"CVE-2021-44228": {DueDate: &due}}},
 	)
 

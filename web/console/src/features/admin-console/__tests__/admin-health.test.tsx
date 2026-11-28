@@ -118,7 +118,7 @@ describe('Health page', () => {
   it('shows each service, volume, backup, certificate and version', () => {
     state.data = system()
     render(<AdminHealthPage />)
-    expect(screen.getByText('Connected sensors')).toBeInTheDocument()
+    expect(screen.getByText('Sensors online (organizations and platform)')).toBeInTheDocument()
     expect(screen.getByText('3 online')).toBeInTheDocument()
     expect(screen.getByText('Not configured')).toBeInTheDocument()
     expect(screen.getByText('Unhealthy')).toBeInTheDocument()

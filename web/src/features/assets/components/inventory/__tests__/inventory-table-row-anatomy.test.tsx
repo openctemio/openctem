@@ -82,9 +82,18 @@ describe('InventoryTable on a tablet frame', () => {
   })
 
   it('drops Service facts instead of scrolling the table with cut chips', () => {
-    frame(700)
+    // The facts fold into "+N" in a narrow column; only a frame that cannot
+    // hold the name, risk and facts at their floors drops them.
+    frame(420)
     renderTable([http])
     expect(screen.queryByRole('columnheader', { name: /Service facts/ })).toBeNull()
+  })
+
+  it('drops the optional columns first, last seen before the facts', () => {
+    frame(700)
+    renderTable([http])
+    expect(screen.getByRole('columnheader', { name: /Service facts/ })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /Last seen/ })).toBeNull()
   })
 
   it('keeps Service facts on a desktop frame', () => {

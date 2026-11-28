@@ -174,10 +174,14 @@ export function MappingPreview({ profileId, kind, fields, dirty }: Props) {
                       state: out.state,
                       error: out.status.error,
                     })
-                  : t('ticketMapping.preview.statusPath', 'Status ({state}): {n} transition(s)', {
-                      state: out.state,
-                      n: out.status.steps?.length ?? 0,
-                    })}
+                  : t(
+                      'ticketMapping.preview.statusPath',
+                      'Status ({state}): {n, plural, one {# transition} other {# transitions}}',
+                      {
+                        state: out.state,
+                        n: out.status.steps?.length ?? 0,
+                      }
+                    )}
               </p>
             )}
           </div>

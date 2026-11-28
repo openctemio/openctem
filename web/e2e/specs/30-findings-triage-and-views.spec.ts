@@ -45,23 +45,33 @@ test.describe('Findings triage and view state', { tag: ['@findings'] }, () => {
   test('columns drop by width so the title keeps 240; the title is a link; Priority is sorted at rest', async ({
     page,
   }) => {
-    const expected: Record<number, { shown: string[]; dropped: string[] }> = {
-      1600: { shown: ['Severity', 'Signals and EPSS', 'Due / SLA'], dropped: [] },
-      1440: { shown: ['Signals and EPSS', 'Due / SLA'], dropped: ['Severity'] },
-      1280: { shown: ['Due / SLA'], dropped: ['Severity', 'Signals and EPSS'] },
-      1024: { shown: [], dropped: ['Severity', 'Signals and EPSS', 'Due / SLA'] },
-    }
-    for (const [width, cols] of Object.entries(expected)) {
-      await page.setViewportSize({ width: Number(width), height: 900 })
+    // The table measures its columns (column-sizing.ts), so the points where a
+    // column drops follow the content, not fixed widths. What holds at every
+    // width: Severity drops first, then Signals and EPSS, then Due / SLA, and a
+    // narrower frame never shows a column a wider one dropped. Every optional
+    // column fits at 1600.
+    const optional = ['Severity', 'Signals and EPSS', 'Due / SLA']
+    let wider: string[] | null = null
+    for (const width of [1600, 1440, 1280, 1024]) {
+      await page.setViewportSize({ width, height: 900 })
       await page.goto('/findings')
       const title = page.getByRole('columnheader', { name: 'Title' })
       await expect(title).toBeVisible({ timeout: 20_000 })
       const link = page.locator('[data-slot="finding-title-link"]').first()
       if (!(await link.isVisible().catch(() => false))) continue // no findings on this stack
-      for (const name of cols.shown)
-        await expect(page.getByRole('columnheader', { name }), `${name} at ${width}`).toHaveCount(1)
-      for (const name of cols.dropped)
-        await expect(page.getByRole('columnheader', { name }), `${name} at ${width}`).toHaveCount(0)
+      // The table settles its columns once the rows are measured.
+      await expect
+        .poll(async () => title.evaluate((th) => th.getBoundingClientRect().width), {
+          message: `title at ${width}`,
+        })
+        .toBeGreaterThanOrEqual(239)
+      const shown: string[] = []
+      for (const name of optional)
+        if ((await page.getByRole('columnheader', { name }).count()) > 0) shown.push(name)
+      expect(shown, `shown at ${width}`).toEqual(optional.slice(optional.length - shown.length))
+      if (wider) for (const name of shown) expect(wider, `${name} at ${width}`).toContain(name)
+      if (width === 1600) expect(shown, 'shown at 1600').toEqual(optional)
+      wider = shown
       const w = await title.evaluate((th) => th.getBoundingClientRect().width)
       expect(w, `title at ${width}`).toBeGreaterThanOrEqual(239)
       await expect(link).toHaveAttribute('href', /^\/findings\/[^/]+$/)

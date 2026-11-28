@@ -9,9 +9,12 @@ import (
 
 // EPSSScore represents an EPSS score entry from FIRST.org.
 type EPSSScore struct {
-	cveID        string
-	epssScore    float64
-	percentile   float64
+	cveID      string
+	epssScore  float64
+	percentile float64
+	// noPercentile: the feed's curve has no rank for this score, so the
+	// percentile is unknown (not 0: "97.6%, 0th percentile" read as a fact).
+	noPercentile bool
 	modelVersion string
 	scoreDate    time.Time
 	createdAt    time.Time
@@ -73,8 +76,23 @@ func (e *EPSSScore) CVEID() string { return e.cveID }
 // Score returns the EPSS score (0.0 to 1.0).
 func (e *EPSSScore) Score() float64 { return e.epssScore }
 
-// Percentile returns the percentile rank.
+// Percentile returns the percentile rank (0 when unknown; see PercentilePtr).
 func (e *EPSSScore) Percentile() float64 { return e.percentile }
+
+// PercentilePtr returns the percentile rank, or nil when it is unknown.
+func (e *EPSSScore) PercentilePtr() *float64 {
+	if e.noPercentile {
+		return nil
+	}
+	p := e.percentile
+	return &p
+}
+
+// MarkPercentileUnknown records that no percentile is known for the score.
+func (e *EPSSScore) MarkPercentileUnknown() {
+	e.noPercentile = true
+	e.percentile = 0
+}
 
 // ModelVersion returns the EPSS model version.
 func (e *EPSSScore) ModelVersion() string { return e.modelVersion }
