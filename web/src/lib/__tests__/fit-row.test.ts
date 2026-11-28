@@ -36,9 +36,11 @@ describe('foldToFit', () => {
   })
 
   it('"+N" that shows regardless keeps its room even when every item fits', () => {
-    // 50 + 4 + 50 = 104 fits in 120, but "+N" (40) needs 144 beside both.
+    // 50 + 4 + 50 = 104 fits in 120, but "+N" (40) needs 148 beside both
+    // (40 + 4 + 50 + 4 + 50).
     expect(foldToFit(120, [50, 50], 4, 40)).toBe(2)
     expect(foldToFit(120, [50, 50], 4, 40, true)).toBe(1)
-    expect(foldToFit(144, [50, 50], 4, 40, true)).toBe(2)
+    expect(foldToFit(147, [50, 50], 4, 40, true)).toBe(1)
+    expect(foldToFit(148, [50, 50], 4, 40, true)).toBe(2)
   })
 })
