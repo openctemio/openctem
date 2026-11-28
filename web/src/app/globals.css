@@ -5,7 +5,62 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Focus rings follow the keyboard (src/lib/input-modality.ts). After a
+   pointer press `data-input="pointer"` is on <html>, and `focus-visible:`
+   then matches text fields only: a focus moved by script after a click (a
+   sheet focusing the current page's row, a menu or select giving the focus
+   back to its trigger, a panel focused after a tab click) draws no ring at
+   rest. The first key press sets `keyboard` before the focus moves. This
+   replaces the built-in variant, so every `focus-visible:`, `group-` and
+   `peer-focus-visible:` and `has-focus-visible:` class follows it. */
+@custom-variant focus-visible {
+  &:focus-visible:not(
+      :where(
+          [data-input='pointer']
+            :not(
+              textarea,
+              [contenteditable]:not([contenteditable='false']),
+              input:not(
+                  [type='checkbox'],
+                  [type='radio'],
+                  [type='range'],
+                  [type='button'],
+                  [type='submit'],
+                  [type='reset'],
+                  [type='file'],
+                  [type='color'],
+                  [type='image']
+                )
+            )
+        )
+    ) {
+    @slot;
+  }
+}
+
 @layer base {
+  /* The browser's own focus outline follows the same rule as the
+     `focus-visible:` variant above: none after a pointer press, except on a
+     text field. */
+  [data-input='pointer']
+    :focus-visible:not(
+      textarea,
+      [contenteditable]:not([contenteditable='false']),
+      input:not(
+          [type='checkbox'],
+          [type='radio'],
+          [type='range'],
+          [type='button'],
+          [type='submit'],
+          [type='reset'],
+          [type='file'],
+          [type='color'],
+          [type='image']
+        )
+    ) {
+    outline: none;
+  }
+
   /* Links in rendered prose (markdown previews) follow the inline link rule
      of TextLink: signal colour, underlined at 45%, 3px under the text. */
   :is(.prose, .wmde-markdown) a {

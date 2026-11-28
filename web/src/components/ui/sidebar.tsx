@@ -342,7 +342,15 @@ function SidebarSheetContent({
           : (event) => {
               event.preventDefault()
               const sheet = event.currentTarget as HTMLElement
-              ;(sheet.querySelector<HTMLElement>('[aria-current="page"]') ?? sheet).focus()
+              const row = sheet.querySelector<HTMLElement>('[aria-current="page"]')
+              if (!row) return sheet.focus()
+              // The browser's own scroll-into-view on focus stops the row at
+              // the nav's edge, under its fade, with the row above it cut by
+              // the header. The row is centred in the nav instead (the browser
+              // clamps at the ends). After a click this focus draws no ring
+              // (src/lib/input-modality.ts).
+              row.focus({ preventScroll: true })
+              row.scrollIntoView({ block: 'center', inline: 'nearest' })
             }
       }
     >
@@ -508,9 +516,58 @@ function SidebarSeparator({ className, ...props }: React.ComponentProps<typeof S
   )
 }
 
-function SidebarContent({ className, ...props }: React.ComponentProps<'div'>) {
+/**
+ * The nav's top and bottom edge fade while more rows are hidden that way
+ * (`data-fade-top` / `data-fade-bottom`, set by `useSidebarScrollEdges`): a
+ * row cut by the scroller's edge under the organization switcher, or above
+ * the footer, then reads as "more this way" instead of a broken row.
+ */
+const SIDEBAR_EDGE_FADE_CLASS = [
+  'data-[fade-top=true]:[mask-image:linear-gradient(to_bottom,transparent,black_1.5rem)]',
+  'data-[fade-bottom=true]:[mask-image:linear-gradient(to_top,transparent,black_1.5rem)]',
+  'data-[fade-top=true]:data-[fade-bottom=true]:[mask-image:linear-gradient(to_bottom,transparent,black_1.5rem,black_calc(100%-1.5rem),transparent)]',
+].join(' ')
+
+/** Marks which edges of the nav scroller have rows hidden behind them. */
+function useSidebarScrollEdges(ref: React.RefObject<HTMLDivElement | null>) {
+  React.useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const update = () => {
+      const max = el.scrollHeight - el.clientHeight
+      const top = String(el.scrollTop > 1)
+      const bottom = String(max - el.scrollTop > 1)
+      if (el.dataset.fadeTop !== top) el.dataset.fadeTop = top
+      if (el.dataset.fadeBottom !== bottom) el.dataset.fadeBottom = bottom
+    }
+    update()
+    el.addEventListener('scroll', update, { passive: true })
+    // Sections open and close, counts arrive, the window is resized: the
+    // content's height changes without a scroll.
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(update) : undefined
+    ro?.observe(el)
+    if (el.firstElementChild) ro?.observe(el.firstElementChild)
+    return () => {
+      el.removeEventListener('scroll', update)
+      ro?.disconnect()
+    }
+  }, [ref])
+}
+
+function SidebarContent({ className, ref, ...props }: React.ComponentProps<'div'>) {
+  const own = React.useRef<HTMLDivElement | null>(null)
+  useSidebarScrollEdges(own)
+  const setRef = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      own.current = node
+      if (typeof ref === 'function') ref(node)
+      else if (ref) ref.current = node
+    },
+    [ref]
+  )
   return (
     <div
+      ref={setRef}
       data-slot="sidebar-content"
       data-sidebar="content"
       className={cn(
@@ -524,6 +581,9 @@ function SidebarContent({ className, ...props }: React.ComponentProps<'div'>) {
         // scrollbar there is nothing to appear/disappear and change the content
         // width, so the stable-gutter workaround is no longer needed.
         'no-scrollbar overscroll-contain',
+        // A row reached by Tab or scrolled to stops clear of the edge fades.
+        'scroll-py-6',
+        SIDEBAR_EDGE_FADE_CLASS,
         'group-data-[collapsible=icon]:overflow-y-auto',
         // Phone drawer: never sideways. On a short screen the drawer column
         // scrolls instead (one scroller): full content height, still growing to

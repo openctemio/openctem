@@ -292,7 +292,7 @@ export function ListSearchModeSwitch({
             aria-keyshortcuts="Control+/"
             title={hint}
             onClick={() => active !== on && onActiveChange(on)}
-            className="h-control-seg rounded-sm px-2.5 text-xs font-medium whitespace-nowrap text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+            className="h-control-seg rounded-sm px-2.5 text-body font-medium whitespace-nowrap text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring aria-pressed:bg-primary aria-pressed:text-primary-foreground"
           >
             {text}
           </button>

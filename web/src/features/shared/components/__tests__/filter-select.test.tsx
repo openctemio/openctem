@@ -31,21 +31,53 @@ describe('FilterSelect', () => {
     expect(screen.queryByRole('button', { name: 'Clear Status' })).not.toBeInTheDocument()
   })
 
-  it("keeps the clear button's room while nothing is filtered, so a value never resizes it", () => {
-    const { rerender } = render(
-      <FilterSelect label="Status" value="" options={options} onChange={() => {}} />
+  it('hugs what it shows: no room kept for a clear button, no box sized by other values', () => {
+    const view = render(
+      <FilterSelect label="Target" value="" options={options} onChange={() => {}} />
     )
-    const room = document.querySelector('[data-slot=filter-select-clear-room]')
-    expect(room).toHaveClass('aspect-square', 'me-1', 'shrink-0')
-    expect(room).toHaveAttribute('aria-hidden')
-    rerender(<FilterSelect label="Status" value="pending" options={options} onChange={() => {}} />)
+    // "Target: All" ended in a box sized for the longest value plus an empty
+    // clear-button square, its chevron mid-way (owner report 2026-11-27).
     expect(document.querySelector('[data-slot=filter-select-clear-room]')).toBeNull()
-    // Same square as the room: the token's own height, as wide as tall.
+    expect(document.querySelector('[data-slot=toolbar-slot]')).toBeNull()
+    const value = document.querySelector('[data-slot=filter-select-value]') as HTMLElement
+    expect(value).toHaveTextContent('All')
+    expect(value).toHaveClass('truncate', 'min-w-0')
+    expect(value).toHaveAttribute('title', 'All')
+    // The chevron is the trigger's last child: nothing after it but padding.
+    const trigger = screen.getByRole('button', { name: 'Target: All' })
+    expect(trigger.lastElementChild?.tagName.toLowerCase()).toBe('svg')
+    view.rerender(
+      <FilterSelect label="Target" value="pending" options={options} onChange={() => {}} />
+    )
     expect(document.querySelector('[data-slot=filter-select-clear]')).toHaveClass(
       'aspect-square',
       'me-1',
       'shrink-0'
     )
+  })
+
+  it('with holdWidth keeps one width: the value box is sized by every value', () => {
+    const view = render(
+      <FilterSelect label="Status" value="" options={options} holdWidth onChange={() => {}} />
+    )
+    const room = document.querySelector('[data-slot=filter-select-clear-room]')
+    expect(room).toHaveAttribute('aria-hidden')
+    expect(document.querySelector('[data-slot=filter-select]')).toHaveAttribute(
+      'data-hold-width',
+      'true'
+    )
+    const sized = Array.from(document.querySelectorAll('[data-slot=toolbar-slot] [data-label]'))
+    expect(sized.map((el) => el.getAttribute('data-label'))).toEqual(['All', 'Pending', 'Approved'])
+    view.rerender(
+      <FilterSelect
+        label="Status"
+        value="pending"
+        options={options}
+        holdWidth
+        onChange={() => {}}
+      />
+    )
+    expect(document.querySelector('[data-slot=filter-select-clear-room]')).toBeNull()
   })
 
   it('keeps no room for a clear button it never shows', () => {
@@ -119,7 +151,16 @@ describe('FilterSelect', () => {
   })
 
   it('folded with nothing chosen shows its key instead of All, and keeps "State: All" as its name', () => {
-    render(<FilterSelect label="State" value="" options={options} foldLabel onChange={() => {}} />)
+    render(
+      <FilterSelect
+        label="State"
+        value=""
+        options={options}
+        foldLabel
+        holdWidth
+        onChange={() => {}}
+      />
+    )
     const trigger = screen.getByRole('button', { name: 'State: All' })
     const key = trigger.querySelector('[data-slot=filter-select-key]') as HTMLElement
     expect(key).toHaveTextContent('State')
@@ -147,7 +188,7 @@ describe('FilterSelect', () => {
     )
     const trigger = screen.getByRole('button', { name: 'State: Pending' })
     expect(trigger.querySelector('[data-slot=filter-select-key]')).toBeNull()
-    expect(trigger.querySelector('[data-slot=toolbar-slot]')).toHaveTextContent('Pending')
+    expect(trigger.querySelector('[data-slot=filter-select-value]')).toHaveTextContent('Pending')
   })
 
   it('the key never stands in without foldLabel, or for a select that always has a value', () => {

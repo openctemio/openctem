@@ -118,10 +118,14 @@ function TableCell({ className, ...props }: React.ComponentProps<'td'>) {
     <td
       data-slot="table-cell"
       className={cn(
-        // No vertical padding: the row height (--row-h) and middle alignment
-        // place the content, so a row control as tall as the row's dense
-        // control (32, 28 compact) keeps the row at its density height.
-        'h-row px-1.5 py-0 align-middle first:ps-3 last:pe-3 [&:has([role=checkbox])]:pe-0 [&>[role=checkbox]]:translate-y-[2px]',
+        // The row height (--row-h) and middle alignment place the content.
+        // The 40 px default row holds a stacked cell (a state over its reason:
+        // two 18 px lines, 36.5) with 1 px above and below; 4 px there made
+        // such a row 44.5 and broke "one line per row". Roomier densities pad
+        // 4 px so a two-line cell or a wrapped chip stays off the row's lines;
+        // compact rows (32) keep no padding, so a control as tall as the row
+        // keeps the row at its height.
+        'h-row px-1.5 py-1 in-data-[density=default]:py-px in-data-[density=compact]:py-0 align-middle first:ps-3 last:pe-3 [&:has([role=checkbox])]:pe-0 [&>[role=checkbox]]:translate-y-[2px]',
         className
       )}
       {...props}

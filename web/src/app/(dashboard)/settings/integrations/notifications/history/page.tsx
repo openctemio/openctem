@@ -229,8 +229,11 @@ function HistoryContent() {
 
   const picker = (
     <Select value={selectedId} onValueChange={setPickedId}>
+      {/* Hugs the channel's name up to 16rem, on one line (the kit cuts a
+          longer name with an ellipsis, whole in its title); the provider
+          chip is shown in the list only. */}
       <SelectTrigger
-        className="w-[16rem] max-w-full"
+        className="max-w-64"
         aria-label={t('notificationChannels.history.channel', 'Channel')}
       >
         <SelectValue
@@ -243,10 +246,10 @@ function HistoryContent() {
             {/* A long channel name ends in an ellipsis in the trigger;
                 the full name is in the list and the title. */}
             <div className="flex min-w-0 items-center gap-2">
-              <span data-slot="select-text" title={i.name}>
+              <span data-slot="select-text" data-cut-tooltip="" title={i.name}>
                 {i.name}
               </span>
-              <Badge variant="outline" className="shrink-0">
+              <Badge variant="outline" className="shrink-0 in-data-[slot=select-trigger]:hidden">
                 {NOTIFICATION_PROVIDER_LABELS[i.provider] ?? i.provider}
               </Badge>
             </div>
