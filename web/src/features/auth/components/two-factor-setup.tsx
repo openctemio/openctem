@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 
 import { EntryHeader } from '@/components/entry'
 import { useTranslation } from '@/context/i18n-provider'
@@ -9,7 +9,7 @@ import { getCookie } from '@/lib/cookies'
 import { env } from '@/lib/env'
 import { validateRedirectUrl } from '@/lib/redirect'
 
-import { localLogoutAction } from '../actions/local-auth-actions'
+import { localLogoutAction, type MfaPurpose } from '../actions/local-auth-actions'
 import { MfaSessionStep } from './mfa-session-step'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -40,6 +40,10 @@ export function TwoFactorSetup({ next, org }: { next?: string; org?: string }) {
   // exchange; the id is never trusted on its own.
   const tenantId = org && UUID.test(org) ? org : currentTenantId()
 
+  // Unknown until the API answers: a person who already has 2FA on is asked
+  // only for a code, so the heading must not tell them to set it up.
+  const [purpose, setPurpose] = useState<MfaPurpose>()
+
   const onComplete = useCallback(() => {
     navigateAfterSessionChange(target)
   }, [target])
@@ -56,14 +60,27 @@ export function TwoFactorSetup({ next, org }: { next?: string; org?: string }) {
 
   return (
     <>
-      <EntryHeader
-        title={t('auth.mfaSession.pageTitle', 'Set up two-factor authentication')}
-        description={t(
-          'auth.mfaSession.pageBody',
-          'Your organization now requires two-factor authentication. Set it up to keep working; you stay signed in.'
-        )}
-      />
+      {purpose === 'verify' ? (
+        <EntryHeader
+          title={t('auth.mfaSession.verifyPageTitle', 'Confirm two-factor authentication')}
+          description={t(
+            'auth.mfaSession.verifyPageBody',
+            'Your organization requires two-factor authentication, and yours is already on. Enter a code to keep working; you stay signed in.'
+          )}
+        />
+      ) : purpose === 'enroll' ? (
+        <EntryHeader
+          title={t('auth.mfaSession.pageTitle', 'Set up two-factor authentication')}
+          description={t(
+            'auth.mfaSession.pageBody',
+            'Your organization now requires two-factor authentication. Set it up to keep working; you stay signed in.'
+          )}
+        />
+      ) : (
+        <EntryHeader title={t('auth.mfa.title', 'Two-factor authentication')} />
+      )}
       <MfaSessionStep
+        onPurpose={setPurpose}
         tenantId={tenantId}
         onComplete={onComplete}
         onSessionExpired={onSessionExpired}
