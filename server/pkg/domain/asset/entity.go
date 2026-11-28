@@ -632,6 +632,7 @@ func (a *Asset) markSeenAt(observedAt time.Time, reviveInactive bool) {
 		observedAt = now
 	}
 	a.lastSeen = observedAt.UTC()
+	a.firstSeenNotAfterLastSeen()
 	a.updatedAt = now
 
 	if a.manualStatusOverride || a.status == StatusArchived {
@@ -659,10 +660,22 @@ func (a *Asset) ObserveAt(observedAt time.Time) {
 	}
 	if !a.lastSeen.IsZero() && observedAt.Before(a.lastSeen) {
 		a.lastSeen = observedAt.UTC()
+		a.firstSeenNotAfterLastSeen()
 		a.updatedAt = now
 		return
 	}
 	a.markSeenAt(observedAt, false)
+}
+
+// firstSeenNotAfterLastSeen keeps first_seen at or before last_seen. A new
+// asset starts with both at the time it was built; an observation made
+// earlier (a report's own timestamp) is when the asset was first seen, so
+// first_seen follows it back. The store's upsert never rewrites first_seen
+// of a stored asset, so this decides the value of a new asset only.
+func (a *Asset) firstSeenNotAfterLastSeen() {
+	if a.firstSeen.IsZero() || a.lastSeen.Before(a.firstSeen) {
+		a.firstSeen = a.lastSeen
+	}
 }
 
 // MarkStale is called by the lifecycle worker to flag an asset that
