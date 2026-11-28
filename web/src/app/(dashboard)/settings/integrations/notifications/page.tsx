@@ -341,6 +341,9 @@ export default function NotificationIntegrationsPage() {
       },
       {
         accessorKey: 'status',
+        // The row's state: a phone card shows it on its title line. The cell
+        // also says why a connection failed, so it keeps room for that reason.
+        meta: { kind: 'status', width: 280 },
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}

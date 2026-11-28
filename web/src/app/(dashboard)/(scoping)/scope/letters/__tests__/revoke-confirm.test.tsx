@@ -40,6 +40,27 @@ vi.mock('@/features/scope-letters', async (orig) => ({
 }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
+describe('Authorization letters on a phone', () => {
+  it('shows each letter as a card, not a table that scrolls sideways', () => {
+    const width = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+    try {
+      render(<ScopeLettersPage />)
+      expect(screen.getByRole('table', { hidden: true }).closest('.rounded-md.border')).toHaveClass(
+        'hidden'
+      )
+      // The issuer is the card's subtitle (its value, no label); the validity
+      // period is a labelled field.
+      expect(screen.getByText('Valid', { selector: 'dt' })).toBeInTheDocument()
+      expect(document.querySelector('[data-slot="mobile-card-subtitle"]')).toHaveTextContent('Acme')
+      // The state stays on the card (its title line), not dropped.
+      expect(screen.getAllByText(/In effect|Ends in|Expired/).length).toBeGreaterThan(0)
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+    }
+  })
+})
+
 describe('Authorization letters revoke', () => {
   it('asks before revoking and names the letter', async () => {
     render(<ScopeLettersPage />)

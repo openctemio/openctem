@@ -55,9 +55,29 @@ describe('SensorProductsSettings', () => {
 
   it('lists the recorded products', () => {
     render(<SensorProductsSettings />)
-    const row = screen.getByTestId('custom-product-acme-sensor')
+    const row = screen.getByTestId('custom-product-acme-sensor').closest('tr')!
     expect(row).toHaveTextContent('v1.4.0')
     expect(row).toHaveTextContent(en['sensors.customProducts.notSet'])
+  })
+
+  it('shows each product as a card on a phone, not a table that scrolls sideways', () => {
+    const width = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+    try {
+      render(<SensorProductsSettings />)
+      // The shared table hides its table frame on a phone and lists cards.
+      expect(screen.getByRole('table', { hidden: true }).closest('.rounded-md.border')).toHaveClass(
+        'hidden'
+      )
+      // The first text column is the card's subtitle (its value, no label);
+      // the next one is a labelled field.
+      expect(
+        screen.getByText(en['sensors.customProducts.min'], { selector: 'dt' })
+      ).toBeInTheDocument()
+      expect(document.querySelector('[data-slot="mobile-card"]')).toHaveTextContent('v1.4.0')
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+    }
   })
 
   it('hides every write action without sensors:write', () => {

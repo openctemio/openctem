@@ -352,11 +352,11 @@ function getControlColumns(t: TFn): ColumnDef<ControlTest>[] {
     },
     {
       id: 'actions',
-      enableSorting: false,
-      enableHiding: false,
       // A labelled button: the column is as wide as it ("Record result" was
       // cut past the table's edge in the 48 px icon column).
       meta: { kind: 'decisions' },
+      enableSorting: false,
+      enableHiding: false,
       cell: ({ row }) => <RecordResultAction ct={row.original} />,
     },
   ]

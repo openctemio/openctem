@@ -177,6 +177,8 @@ export default function SIEMIntegrationPage() {
     },
     {
       accessorKey: 'status',
+      // The row's state: a phone card shows it on its title line.
+      meta: { kind: 'status' },
       header: t('siemIntegration.columns.status', 'Status'),
       cell: ({ row }) => <StatusBadge status={row.original.status} />,
     },

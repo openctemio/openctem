@@ -9,6 +9,7 @@
  */
 
 import { useMemo, useState, type FormEvent } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
 import { Info, Loader2, Lock, Package, Pencil, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -29,16 +30,8 @@ import { DialogSubmitError } from '@/components/ui/dialog-submit-error'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { useTranslation } from '@/context/i18n-provider'
-import { EmptyState, ErrorState, PageHeader, PageStack } from '@/features/shared'
+import { DataTable, EmptyState, ErrorState, PageHeader, PageStack } from '@/features/shared'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import {
   deleteCustomProduct,
@@ -216,6 +209,86 @@ export function SensorProductsSettings() {
 
   const notSet = t('sensors.customProducts.notSet')
 
+  const columns = useMemo<ColumnDef<CustomProduct>[]>(() => {
+    const cols: ColumnDef<CustomProduct>[] = [
+      {
+        id: 'product',
+        meta: { kind: 'id', label: t('sensors.customProducts.product') },
+        header: t('sensors.customProducts.product'),
+        cell: ({ row: { original: i } }) => (
+          <span
+            className="font-mono text-sm [overflow-wrap:anywhere]"
+            data-testid={`custom-product-${i.product}`}
+          >
+            {i.product}
+          </span>
+        ),
+      },
+      {
+        id: 'latest',
+        meta: { kind: 'text', label: t('sensors.customProducts.latest') },
+        header: t('sensors.customProducts.latest'),
+        cell: ({ row: { original: i } }) => (
+          <span className="tabular-nums">{i.latest_version || notSet}</span>
+        ),
+      },
+      {
+        id: 'min',
+        meta: { kind: 'text', label: t('sensors.customProducts.min') },
+        header: t('sensors.customProducts.min'),
+        cell: ({ row: { original: i } }) => (
+          <span className="tabular-nums">{i.min_version || notSet}</span>
+        ),
+      },
+      {
+        id: 'updated',
+        meta: { kind: 'datetime-recent', label: t('sensors.customProducts.updated') },
+        header: t('sensors.customProducts.updated'),
+        cell: ({ row: { original: i } }) => (
+          <span className="text-muted-foreground">{exactTime(i.updated_at) ?? ''}</span>
+        ),
+      },
+    ]
+    if (canWrite) {
+      cols.push({
+        id: 'actions',
+        header: () => <span className="sr-only">{t('sensors.customProducts.actions')}</span>,
+        // Two icon buttons (edit, remove): as wide as its controls.
+        meta: { kind: 'decisions' },
+        cell: ({ row: { original: i } }) => (
+          <div className="flex justify-end gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={t('sensors.customProducts.edit', undefined, { product: i.product })}
+              onClick={() =>
+                setEditing({
+                  product: i.product,
+                  latest: i.latest_version,
+                  min: i.min_version,
+                  isNew: false,
+                })
+              }
+            >
+              <Pencil className="size-4" aria-hidden="true" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={t('sensors.customProducts.delete', undefined, { product: i.product })}
+              onClick={() => setRemoving(i)}
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+            </Button>
+          </div>
+        ),
+      })
+    }
+    return cols
+  }, [t, notSet, canWrite])
+
   // Products the sensors report and nobody recorded yet: one click records one.
   const reported =
     canWrite && suggestions.length > 0 ? (
@@ -268,72 +341,17 @@ export function SensorProductsSettings() {
         />
       )}
       {items && items.length > 0 && (
-        <div className="overflow-x-auto rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('sensors.customProducts.product')}</TableHead>
-                <TableHead>{t('sensors.customProducts.latest')}</TableHead>
-                <TableHead>{t('sensors.customProducts.min')}</TableHead>
-                <TableHead className="hidden sm:table-cell">
-                  {t('sensors.customProducts.updated')}
-                </TableHead>
-                {canWrite && (
-                  <TableHead className="w-24">
-                    <span className="sr-only">{t('sensors.customProducts.actions')}</span>
-                  </TableHead>
-                )}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((i) => (
-                <TableRow key={i.product} data-testid={`custom-product-${i.product}`}>
-                  <TableCell className="font-mono text-sm">{i.product}</TableCell>
-                  <TableCell className="tabular-nums">{i.latest_version || notSet}</TableCell>
-                  <TableCell className="tabular-nums">{i.min_version || notSet}</TableCell>
-                  <TableCell className="hidden text-muted-foreground sm:table-cell">
-                    {exactTime(i.updated_at) ?? ''}
-                  </TableCell>
-                  {canWrite && (
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label={t('sensors.customProducts.edit', undefined, {
-                            product: i.product,
-                          })}
-                          onClick={() =>
-                            setEditing({
-                              product: i.product,
-                              latest: i.latest_version,
-                              min: i.min_version,
-                              isNew: false,
-                            })
-                          }
-                        >
-                          <Pencil className="size-4" aria-hidden="true" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label={t('sensors.customProducts.delete', undefined, {
-                            product: i.product,
-                          })}
-                          onClick={() => setRemoving(i)}
-                        >
-                          <Trash2 className="size-4" aria-hidden="true" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        // The shared table: on a phone each product is a card, never a table
+        // that scrolls sideways.
+        <DataTable
+          columns={columns}
+          data={items}
+          getRowId={(i) => i.product}
+          showSearch={false}
+          showColumnToggle={false}
+          showSelectionCount={false}
+          showPagination={items.length > 20}
+        />
       )}
       {/* The note, the read-only line and the reported products come after
           the list, so the products are the first thing on the page. */}

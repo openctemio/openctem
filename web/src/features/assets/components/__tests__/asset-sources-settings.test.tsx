@@ -93,6 +93,21 @@ describe('AssetSourcesSettingsForm', () => {
     expect(screen.getByText('Applies to: Exposure')).toBeInTheDocument()
   })
 
+  it('lays every row out the same: name and last seen, then the controls', () => {
+    setup()
+    const rows = within(defaultList()).getAllByTestId(/^source-row-/)
+    for (const row of rows) {
+      // Two parts in a fixed order, so a phone stacks them the same way in
+      // every row instead of wrapping by the length of the text.
+      const parts = Array.from(row.children)
+      expect(parts).toHaveLength(2)
+      expect(parts[0]).toHaveTextContent(/Last seen|Not seen yet/)
+      expect(parts[1]).toHaveAttribute('data-testid', 'source-controls')
+      expect(within(parts[1] as HTMLElement).getByRole('switch')).toBeInTheDocument()
+    }
+    expect(rows[0].className).toMatch(/\bflex-col\b/)
+  })
+
   it('the reorder handle is a square icon button (control height and width)', () => {
     setup()
     const handle = within(defaultList()).getByRole('button', {

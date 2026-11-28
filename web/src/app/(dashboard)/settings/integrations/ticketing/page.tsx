@@ -937,6 +937,8 @@ function useColumns(): ColumnDef<Integration>[] {
       },
       {
         accessorKey: 'status',
+        // The row's state: a phone card shows it on its title line.
+        meta: { kind: 'status' },
         header: t('ticketingIntegration.columns.status', 'Status'),
         cell: ({ row }) => <StatusBadge integration={row.original} />,
       },
