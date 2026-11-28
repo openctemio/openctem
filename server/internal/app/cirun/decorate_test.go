@@ -309,7 +309,7 @@ func (f fakeDecorationRepo) CommitVerdicts(_ context.Context, _, _ shared.ID, sh
 func (f fakeDecorationRepo) ClaimDecorations(context.Context, int) ([]cirun.Run, error) {
 	return nil, nil
 }
-func (f fakeDecorationRepo) FinishDecoration(context.Context, shared.ID, shared.ID, string, string) error {
+func (f fakeDecorationRepo) FinishDecoration(context.Context, shared.ID, shared.ID, int, string, string) error {
 	return nil
 }
 func (f fakeDecorationRepo) PullRequestPassed(_ context.Context, _, _ shared.ID, pr string) (bool, error) {

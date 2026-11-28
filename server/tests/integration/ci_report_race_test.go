@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	cirunapp "github.com/openctemio/openctem/server/internal/app/cirun"
 	"github.com/openctemio/openctem/server/internal/infra/postgres"
@@ -21,7 +20,8 @@ type lateReportRepo struct {
 	saves int
 }
 
-func (l *lateReportRepo) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int, failedCapabilities []string) error {
+func (l *lateReportRepo) SaveVerdictRecord(ctx context.Context, rec cirun.VerdictRecord) error {
+	tenantID, runID := rec.TenantID, rec.RunID
 	l.saves++
 	if l.saves == 1 {
 		if err := l.ReserveRunReport(ctx, tenantID, runID); err != nil {
@@ -31,7 +31,7 @@ func (l *lateReportRepo) SaveVerdict(ctx context.Context, tenantID, runID shared
 			return err
 		}
 	}
-	return l.CIRunRepository.SaveVerdict(ctx, tenantID, runID, verdict, detail, at, expectFindings, failedCapabilities)
+	return l.CIRunRepository.SaveVerdictRecord(ctx, rec)
 }
 
 // A verdict computed before a concurrent report was recorded is not stored:

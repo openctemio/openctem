@@ -95,7 +95,7 @@ func TestCIDecorationQueue(t *testing.T) {
 	// Retry until the cap, then failed. A retried run waits its backoff
 	// (30 s doubling): not claimed at once, claimed once the wait passed.
 	for i := 1; i < cirun.MaxDecorationAttempts; i++ {
-		if err := repo.FinishDecoration(ctx, tenant, gh.ID, cirun.DecorationRetry, "502"); err != nil {
+		if err := repo.FinishDecoration(ctx, tenant, gh.ID, 0, cirun.DecorationRetry, "502"); err != nil {
 			t.Fatal(err)
 		}
 		if s, _ := state(gh.ID); s != cirun.DecorationPending {
@@ -124,14 +124,14 @@ func TestCIDecorationQueue(t *testing.T) {
 			t.Fatalf("retry %d not claimed after its backoff", i)
 		}
 	}
-	if err := repo.FinishDecoration(ctx, tenant, gh.ID, cirun.DecorationRetry, "502"); err != nil {
+	if err := repo.FinishDecoration(ctx, tenant, gh.ID, 0, cirun.DecorationRetry, "502"); err != nil {
 		t.Fatal(err)
 	}
 	if s, n := state(gh.ID); s != cirun.DecorationFailed || n != cirun.MaxDecorationAttempts {
 		t.Fatalf("after the cap: %q %d", s, n)
 	}
 	// Another tenant cannot change it.
-	if err := repo.FinishDecoration(ctx, other, gh.ID, cirun.DecorationPosted, ""); err != nil {
+	if err := repo.FinishDecoration(ctx, other, gh.ID, 0, cirun.DecorationPosted, ""); err != nil {
 		t.Fatal(err)
 	}
 	if s, _ := state(gh.ID); s != cirun.DecorationFailed {

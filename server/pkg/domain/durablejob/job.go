@@ -18,6 +18,8 @@ const (
 	KindJiraStatusSync   Kind = "jira_status_sync"
 	KindGitHubStatusSync Kind = "github_status_sync"
 	KindInvitationEmail  Kind = "invitation_email"
+	// KindCIRejudge re-judges the CI runs a final decision may reopen.
+	KindCIRejudge Kind = "ci_rejudge"
 )
 
 // Job is a job to queue. SubjectID is the finding or invitation it is

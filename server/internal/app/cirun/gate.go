@@ -45,6 +45,9 @@ type Verdict struct {
 	// policy does not allow repository files), or empty (none sent).
 	RepoFile string       `json:"repo_file,omitempty"`
 	Links    VerdictLinks `json:"links"`
+	// Revision says which verdict revision this is when a decision made in
+	// the platform re-judged the run (absent for the first verdict).
+	Revision *cirun.RevisionView `json:"revision,omitempty"`
 }
 
 // VerdictLinks point to the run and its findings in the web console.
@@ -181,7 +184,7 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	if err != nil {
 		return nil, fmt.Errorf("load run findings cap: %w", err)
 	}
-	gv := cirun.Evaluate(cirun.GateInput{
+	gin := cirun.GateInput{
 		NoResults: noResults,
 		Policy:    policy, PolicySource: source, Findings: findings, NewFingerprints: cmp.newSet,
 		BaselineBranch: cmp.branch, BaselineKnown: cmp.known, BaselineSetAt: cmp.baselineAt, BaselineEstablished: cmp.established, BaselineDueAt: cmp.dueAt, ScanFailures: in.ScanFailures,
@@ -191,7 +194,14 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 		MissingCapabilities: missing,
 		DefaultBranch:       run.IsDefaultBranch,
 		Override:            override, Now: now, FindingURL: func(id shared.ID) string { return s.findingURL(run.TenantID, id) },
-	})
+	}
+	gv := cirun.Evaluate(gin)
+	// What the verdict was computed with, so a decision made later can
+	// re-judge the run without the job (verdict revisions).
+	snapshot, err := json.Marshal(cirun.NewJudgeSnapshot(gin, repoFile))
+	if err != nil {
+		return nil, err
+	}
 	v := &Verdict{RunID: run.ID.String(), GateVerdict: gv, RepoFile: repoFile, Links: VerdictLinks{
 		Run:      s.webURL(run.TenantID, RunPath(run.ID)),
 		Findings: s.webURL(run.TenantID, gateFindingsPath(run)),
@@ -200,7 +210,9 @@ func (s *Service) judge(ctx context.Context, run *cirun.Run, in EvaluateInput, p
 	if err != nil {
 		return nil, err
 	}
-	if err := s.repo.SaveVerdict(ctx, run.TenantID, run.ID, gv.Verdict, detail, now, run.FindingsCount, capabilityNames(failedCaps)); err != nil {
+	if err := s.repo.SaveVerdictRecord(ctx, cirun.VerdictRecord{TenantID: run.TenantID, RunID: run.ID, Verdict: gv.Verdict,
+		Detail: detail, At: now, ExpectFindings: run.FindingsCount, FailedCapabilities: capabilityNames(failedCaps),
+		Snapshot: snapshot, GateJobID: run.TokenJobID}); err != nil {
 		if errors.Is(err, cirun.ErrRunChanged) {
 			return nil, err
 		}

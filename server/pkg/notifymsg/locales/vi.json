@@ -44,6 +44,7 @@
   "event.ci.schedule_missed": "CI bỏ lỡ lượt quét theo lịch",
   "event.ci.token_refusals": "CI từ chối token",
   "event.ci.ungated_merge": "CI có merge không qua kiểm tra",
+  "event.ci.gate_reopened": "Cổng CI được mở lại bởi một quyết định",
   "event.coverage_gap": "Khoảng trống độ phủ",
   "event.emerging_threat": "Mối đe dọa mới nổi",
   "event.emerging_threat_digest": "Tổng hợp mối đe dọa mới nổi hằng ngày",

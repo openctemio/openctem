@@ -371,7 +371,7 @@ const ciRunColumns = `id, tenant_id, trust_config_id, repository_asset_id, provi
 	run_attempt, workflow, pipeline_url, fork, token_expires_at, status, verdict, verdict_detail, evaluated_at,
 	reports_count, findings_count, pipeline_id, sensor_version, scan_failures, tools, template_ref, created_at, updated_at,
 	external_job_id, aggregate, commit_verified, base_ref, decoration_state, decoration_detail, carried_scan_failures,
-	carried_failed_capabilities`
+	carried_failed_capabilities, verdict_revision, verdict_revised_at, gate_job_id, gate_job_retried_revision`
 
 func scanCIRun(row ciScanner) (cirun.Run, error) {
 	var (
@@ -380,6 +380,7 @@ func scanCIRun(row ciScanner) (cirun.Run, error) {
 		trust, verdict       sql.NullString
 		pipeline             sql.NullString
 		tokenExp, evaluated  sql.NullTime
+		revised              sql.NullTime
 		detail, tools        []byte
 		failures             sql.NullInt64
 	)
@@ -389,9 +390,11 @@ func scanCIRun(row ciScanner) (cirun.Run, error) {
 		&run.Status, &verdict, &detail, &evaluated, &run.ReportsCount, &run.FindingsCount, &pipeline,
 		&run.SensorVersion, &failures, &tools, &run.TemplateRef, &run.CreatedAt, &run.UpdatedAt,
 		&run.ExternalJobID, &run.Aggregate, &run.CommitVerified, &run.BaseRef, &run.DecorationState, &run.DecorationDetail, &run.CarriedScanFailures,
-		pq.Array(&run.CarriedFailedCapabilities)); err != nil {
+		pq.Array(&run.CarriedFailedCapabilities), &run.VerdictRevision, &revised, &run.GateJobID,
+		&run.GateJobRetriedRevision); err != nil {
 		return run, err
 	}
+	run.VerdictRevisedAt = optTime(revised)
 	run.ID, _ = shared.IDFromString(id)
 	run.TenantID, _ = shared.IDFromString(tid)
 	run.RepositoryAssetID, _ = shared.IDFromString(asset)
@@ -542,11 +545,21 @@ func (r *CIRunRepository) GetRun(ctx context.Context, tenantID, id shared.ID) (*
 func (r *CIRunRepository) GetRunByTokenHash(ctx context.Context, hash []byte, now time.Time) (*cirun.Run, error) {
 	run, err := scanCIRun(r.db.QueryRowContext(ctx, `SELECT `+ciRunColumns+` FROM ci_runs
 		WHERE token_hash = $1 AND token_expires_at > $2`, hash, now))
+	if err == nil {
+		run.TokenJobID = run.ExternalJobID
+	}
 	if errors.Is(err, sql.ErrNoRows) {
-		// A job token of an aggregate run.
+		// A job token of an aggregate run: the job is the token's own.
 		run, err = scanCIRun(r.db.QueryRowContext(ctx, `SELECT `+ciRunColumns+` FROM ci_runs
 			WHERE (tenant_id, id) = (SELECT tenant_id, run_id FROM ci_run_tokens WHERE token_hash = $1 AND expires_at > $2)`,
 			hash, now))
+		if err == nil {
+			if jerr := r.db.QueryRowContext(ctx, `SELECT external_job_id FROM ci_run_tokens
+				WHERE token_hash = $1 AND tenant_id = $2 AND run_id = $3`, hash, run.TenantID.String(), run.ID.String()).
+				Scan(&run.TokenJobID); jerr != nil && !errors.Is(jerr, sql.ErrNoRows) {
+				return nil, jerr
+			}
+		}
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, cirun.ErrRunNotFound
@@ -854,53 +867,110 @@ func scanRunFindings(rows *sql.Rows) ([]cirun.RunFinding, error) {
 	return out, rows.Err()
 }
 
-// SaveVerdict stores the run's verdict. The first verdict is final: a run
-// that is no longer running keeps the verdict it has (cirun.ErrRunEvaluated).
-// A run marked over the findings cap stores only a verdict that names the
-// cap (ReasonTooManyFindings): one computed before the mark is refused as
-// changed and judged again.
+// SaveVerdict stores the run's verdict without a snapshot (the sweeper's
+// "not judged" verdict, which is never re-judged). See SaveVerdictRecord.
 func (r *CIRunRepository) SaveVerdict(ctx context.Context, tenantID, runID shared.ID, verdict string, detail []byte, at time.Time, expectFindings int, failedCapabilities []string) error {
+	return r.SaveVerdictRecord(ctx, cirun.VerdictRecord{TenantID: tenantID, RunID: runID, Verdict: verdict, Detail: detail,
+		At: at, ExpectFindings: expectFindings, FailedCapabilities: failedCapabilities})
+}
+
+// saveVerdictSQL stores a CI job's verdict on a running run (SaveVerdictRecord).
+const saveVerdictSQL = `UPDATE ci_runs SET status = 'evaluated', verdict = $3, verdict_detail = $4,
+			evaluated_at = $5, failed_capabilities = $7, updated_at = NOW(), verdict_revision = $8,
+			policy_snapshot = $9, gate_job_id = CASE WHEN $10 <> '' THEN $10 ELSE gate_job_id END,` + decorationQueued + `
+			WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND findings_count = $6
+			  AND (NOT findings_over_cap OR $4::jsonb @> '{"reasons":[{"code":"` + cirun.ReasonTooManyFindings + `"}]}')
+			  AND NOT EXISTS (SELECT 1 FROM ingest_jobs j WHERE j.tenant_id = $1 AND j.kind = 'ci_results'
+			      AND j.source_ref = $2::text AND j.status IN ('pending', 'processing'))`
+
+// SaveVerdictRecord stores the run's verdict and appends it as the run's
+// next verdict revision (cause evaluate), in one transaction. Only a
+// running run takes a verdict: a run that is no longer running keeps the one
+// it has (cirun.ErrRunEvaluated). A run marked over the findings cap stores
+// only a verdict that names the cap (ReasonTooManyFindings): one computed
+// before the mark is refused as changed and judged again.
+//
+// A run a later attempt re-opened gets its new verdict as a new revision;
+// the earlier revisions stay. A run judged before revisions existed has its
+// stored verdict recorded as revision 1 first.
+func (r *CIRunRepository) SaveVerdictRecord(ctx context.Context, rec cirun.VerdictRecord) error {
+	failedCapabilities := rec.FailedCapabilities
 	if failedCapabilities == nil {
 		failedCapabilities = []string{}
 	}
-	// The failed capabilities are written with the verdict, in one
-	// statement: a later attempt re-opening the run carries exactly the list
-	// of the verdict it re-opens.
-	res, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET status = 'evaluated', verdict = $3, verdict_detail = $4,
-		evaluated_at = $5, failed_capabilities = $7, updated_at = NOW(),`+decorationQueued+`
-		WHERE tenant_id = $1 AND id = $2 AND status = 'running' AND findings_count = $6
-		  AND (NOT findings_over_cap OR $4::jsonb @> '{"reasons":[{"code":"`+cirun.ReasonTooManyFindings+`"}]}')
-		  AND NOT EXISTS (SELECT 1 FROM ingest_jobs j WHERE j.tenant_id = $1 AND j.kind = 'ci_results'
-		      AND j.source_ref = $2::text AND j.status IN ('pending', 'processing'))`,
-		tenantID.String(), runID.String(), verdict, detail, at, expectFindings, pq.Array(failedCapabilities))
-	if err != nil {
+	var snapshot any
+	if len(rec.Snapshot) > 0 {
+		snapshot = rec.Snapshot
+	}
+	tenantID, runID := rec.TenantID.String(), rec.RunID.String()
+	applied := false
+	err := r.db.Transaction(ctx, func(tx *sql.Tx) error {
+		var (
+			prevVerdict sql.NullString
+			prevDetail  []byte
+			prevRev     int
+			prevAt      sql.NullTime
+		)
+		err := tx.QueryRowContext(ctx, `SELECT verdict, verdict_detail, verdict_revision, evaluated_at FROM ci_runs
+			WHERE tenant_id = $1 AND id = $2 FOR UPDATE`, tenantID, runID).Scan(&prevVerdict, &prevDetail, &prevRev, &prevAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			return cirun.ErrRunNotFound
+		}
+		if err != nil {
+			return err
+		}
+		legacy := prevRev == 0 && prevVerdict.Valid && len(prevDetail) > 0
+		next := prevRev + 1
+		if legacy {
+			next = 2
+		}
+		// The failed capabilities are written with the verdict, in one
+		// statement: a later attempt re-opening the run carries exactly the
+		// list of the verdict it re-opens.
+		res, err := tx.ExecContext(ctx, saveVerdictSQL,
+			tenantID, runID, rec.Verdict, rec.Detail, rec.At, rec.ExpectFindings, pq.Array(failedCapabilities),
+			next, snapshot, truncateJobID(rec.GateJobID))
+		if err != nil {
+			return err
+		}
+		if n, err := res.RowsAffected(); err != nil || n == 0 {
+			return err
+		}
+		applied = true
+		if legacy {
+			if err := insertRevisionTx(ctx, tx, cirun.VerdictRevision{TenantID: rec.TenantID, RunID: rec.RunID, Revision: 1,
+				Verdict: prevVerdict.String, Detail: prevDetail, Cause: cirun.RevisionCauseEvaluate, CreatedAt: prevAt.Time}); err != nil {
+				return err
+			}
+		}
+		return insertRevisionTx(ctx, tx, cirun.VerdictRevision{TenantID: rec.TenantID, RunID: rec.RunID, Revision: next,
+			Verdict: rec.Verdict, Detail: rec.Detail, Cause: cirun.RevisionCauseEvaluate, CreatedAt: rec.At})
+	})
+	if err != nil || applied {
 		return err
 	}
-	if n, err := res.RowsAffected(); err == nil && n == 0 {
-		var status string
-		if err := r.db.QueryRowContext(ctx, `SELECT status FROM ci_runs WHERE tenant_id = $1 AND id = $2`,
-			tenantID.String(), runID.String()).Scan(&status); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return cirun.ErrRunNotFound
-			}
-			return err
+	var status string
+	if err := r.db.QueryRowContext(ctx, `SELECT status FROM ci_runs WHERE tenant_id = $1 AND id = $2`,
+		tenantID, runID).Scan(&status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return cirun.ErrRunNotFound
 		}
-		if status != string(cirun.StatusRunning) {
-			return cirun.ErrRunEvaluated
-		}
-		// An upload accepted after the gate's wait: the verdict waits for it.
-		var pending bool
-		if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM ingest_jobs WHERE tenant_id = $1
-			AND kind = 'ci_results' AND source_ref = $2 AND status IN ('pending', 'processing'))`,
-			tenantID.String(), runID.String()).Scan(&pending); err != nil {
-			return err
-		}
-		if pending {
-			return cirun.ErrRunUploadsPending
-		}
-		return cirun.ErrRunChanged
+		return err
 	}
-	return nil
+	if status != string(cirun.StatusRunning) {
+		return cirun.ErrRunEvaluated
+	}
+	// An upload accepted after the gate's wait: the verdict waits for it.
+	var pending bool
+	if err := r.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM ingest_jobs WHERE tenant_id = $1
+		AND kind = 'ci_results' AND source_ref = $2 AND status IN ('pending', 'processing'))`,
+		tenantID, runID).Scan(&pending); err != nil {
+		return err
+	}
+	if pending {
+		return cirun.ErrRunUploadsPending
+	}
+	return cirun.ErrRunChanged
 }
 
 // ------------------------------------------------------------- policies ---
@@ -1318,7 +1388,7 @@ func (r *CIRunRepository) ClaimDecorations(ctx context.Context, limit int) ([]ci
 			WHERE ((decoration_state = 'pending' AND (decoration_attempts = 0 OR decoration_updated_at <= NOW()
 			        - LEAST(INTERVAL '30 seconds' * power(2, decoration_attempts - 1), INTERVAL '30 minutes')))
 			    OR (decoration_state = 'posting' AND decoration_updated_at < NOW() - INTERVAL '10 minutes'))
-			  AND evaluated_at > NOW() - INTERVAL '1 day'
+			  AND COALESCE(verdict_revised_at, evaluated_at) > NOW() - INTERVAL '1 day'
 			ORDER BY decoration_updated_at
 			LIMIT $1
 			FOR UPDATE SKIP LOCKED)
@@ -1340,16 +1410,19 @@ func (r *CIRunRepository) ClaimDecorations(ctx context.Context, limit int) ([]ci
 
 // FinishDecoration records how posting a run went (tenant-scoped). The state
 // cirun.DecorationRetry queues the run again, up to cirun.MaxDecorationAttempts
-// attempts, then marks it failed.
-func (r *CIRunRepository) FinishDecoration(ctx context.Context, tenantID, runID shared.ID, state, detail string) error {
+// attempts, then marks it failed. revision is the verdict revision that was
+// posted: when a re-judge stored a newer one meanwhile, the run is queued
+// again from the first attempt, so the newest revision is always posted last.
+func (r *CIRunRepository) FinishDecoration(ctx context.Context, tenantID, runID shared.ID, revision int, state, detail string) error {
 	if len(detail) > 255 {
 		detail = detail[:255]
 	}
 	_, err := r.db.ExecContext(ctx, `UPDATE ci_runs SET
-			decoration_state = CASE WHEN $3 <> 'retry' THEN $3
+			decoration_state = CASE WHEN verdict_revision <> $6 THEN 'pending' WHEN $3 <> 'retry' THEN $3
 				WHEN decoration_attempts >= $5 THEN 'failed' ELSE 'pending' END,
-			decoration_detail = $4, decoration_updated_at = NOW()
-		WHERE tenant_id = $1 AND id = $2`, tenantID.String(), runID.String(), state, detail, cirun.MaxDecorationAttempts)
+			decoration_attempts = CASE WHEN verdict_revision <> $6 THEN 0 ELSE decoration_attempts END,
+			decoration_detail = CASE WHEN verdict_revision <> $6 THEN '' ELSE $4 END, decoration_updated_at = NOW()
+		WHERE tenant_id = $1 AND id = $2`, tenantID.String(), runID.String(), state, detail, cirun.MaxDecorationAttempts, revision)
 	return err
 }
 

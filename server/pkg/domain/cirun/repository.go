@@ -152,6 +152,7 @@ type Repository interface {
 
 	PipelineRepository
 	CoverageRepository
+	RevisionRepository
 }
 
 // Coverage errors.
