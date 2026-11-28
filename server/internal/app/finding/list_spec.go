@@ -456,7 +456,7 @@ func (s *VulnerabilityService) CountQuickViewsOf(ctx context.Context, c FilterCa
 func (s *VulnerabilityService) CountQuickViewsIn(ctx context.Context, c FilterCaller, includeInformational bool, practiceView string, keys []string) ([]QuickViewCount, error) {
 	practiceParams, err := vulnerability.PracticeViewParams(practiceView)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+		return nil, fmt.Errorf("%w: unknown practice view", shared.ErrValidation)
 	}
 	repo, ok := s.findingRepo.(findingFacetRepo)
 	if !ok {

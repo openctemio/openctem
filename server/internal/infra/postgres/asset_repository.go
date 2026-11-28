@@ -2666,7 +2666,7 @@ func aggregateStatsWhere(tenantID shared.ID, access asset.AccessScope, types, le
 	// "All assets" in the sidebar counts the assets the list shows.
 	cond, states, ok, err := assetlist.AttributionInSQL(attributionValues, idx)
 	if err != nil {
-		return "", nil, fmt.Errorf("%w: %s", shared.ErrValidation, err.Error())
+		return "", nil, fmt.Errorf("%w: unknown attribution filter", shared.ErrValidation)
 	}
 	if ok {
 		filterClause += " AND " + cond
