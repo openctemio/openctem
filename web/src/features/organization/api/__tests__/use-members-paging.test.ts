@@ -53,6 +53,13 @@ describe('useMembers server paging', () => {
     expect(p.get('status')).toBe('suspended')
     expect(p.get('role')).toBe('admin')
   })
+
+  it('asks for people or service accounts only when told to', () => {
+    renderHook(() => useMembers('acme', { account: 'person' }))
+    expect(lastParams().get('account')).toBe('person')
+    renderHook(() => useMembers('acme', {}))
+    expect(lastParams().has('account')).toBe(false)
+  })
 })
 
 describe('settings members page', () => {
@@ -64,5 +71,9 @@ describe('settings members page', () => {
     expect(src).toMatch(/manualPagination/)
     expect(src).toMatch(/rowCount=\{membersTotal\}/)
     expect(src).not.toMatch(/filteredData/)
+  })
+
+  it('lists people only: service accounts have their own page', () => {
+    expect(src).toMatch(/account: 'person'/)
   })
 })

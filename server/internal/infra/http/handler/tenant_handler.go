@@ -338,6 +338,10 @@ type MemberWithUserResponse struct {
 	// Personal: an external member with a consumer address (gmail.com, ...)
 	// that no organization manages (owners and admins only).
 	Personal bool `json:"personal,omitempty"`
+	// ServiceAccount: the member is an organization-owned service account,
+	// not a person (a picker marks it; the member directory leaves it out
+	// with account=person).
+	ServiceAccount bool `json:"service_account,omitempty"`
 }
 
 // MemberRBACRoleResponse represents a simplified RBAC role in member response.
@@ -939,6 +943,8 @@ func (h *TenantHandler) Delete(w http.ResponseWriter, r *http.Request) {
 //   - role: owner | admin | member | viewer (effective system role); empty = any
 //   - user_ids: comma-separated user ids (at most 100); only those of them that
 //     are members of this organization are returned. Used by the people chip.
+//   - account: person | service (who the member is); empty = both. The
+//     member directory asks for people: service accounts have their own page.
 //   - page: 1-based page (default 1)
 //   - per_page: page size (default 100, max 500)
 //   - status: active | suspended | offboarded | all. Default: active and
@@ -995,6 +1001,13 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	account := r.URL.Query().Get("account")
+	switch account {
+	case "", tenant.MemberAccountPerson, tenant.MemberAccountService:
+	default:
+		apierror.BadRequest("account must be person or service").WriteJSON(w)
+		return
+	}
 
 	if includeUser {
 		// Always paginate when include=user. The legacy unpaginated
@@ -1007,6 +1020,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 			Status:         statusFilter,
 			Role:           r.URL.Query().Get("role"),
 			Kind:           memberKindFilter(r.URL.Query().Get("kind")),
+			Account:        account,
 			UserIDs:        userIDs,
 		}
 		result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(), filters)
@@ -1034,6 +1048,8 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 				Status:       m.Status,
 				PendingSetup: m.PendingSetup,
 				Kind:         string(memberKindOrInternal(m.Kind)),
+				// Who it is, not a contact detail: every caller may see it.
+				ServiceAccount: m.ServiceAccount,
 			}
 			if m.Kind == tenant.MemberKindExternal {
 				response[i].HomeOrganization = m.HomeTenantName
@@ -1063,7 +1079,7 @@ func (h *TenantHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 	// Basic member list. Paginated like the include=user path: it used to
 	// return every member of the organization in one response.
 	result, err := h.service.SearchMembersWithUserInfo(r.Context(), tenantID.String(),
-		tenant.MemberSearchFilters{Search: search, SearchNameOnly: !showDirectory, Limit: limit, Offset: offset, Status: statusFilter, UserIDs: userIDs})
+		tenant.MemberSearchFilters{Search: search, SearchNameOnly: !showDirectory, Limit: limit, Offset: offset, Status: statusFilter, Account: account, UserIDs: userIDs})
 	if err != nil {
 		h.handleServiceError(w, err)
 		return
