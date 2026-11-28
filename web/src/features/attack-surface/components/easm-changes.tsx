@@ -6,7 +6,7 @@
  * (?from=&to=); otherwise the last 7, 14 or 30 days.
  */
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Award,
   CircleOff,
@@ -25,6 +25,14 @@ import {
 import Link from '@/components/link'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { useTranslation } from '@/context/i18n-provider'
 import {
   EmptyState,
@@ -40,7 +48,7 @@ import { RemovableFilterChip } from '@/features/shared/components/removable-filt
 import { isLinkableAssetId } from '@/features/findings/lib/asset-link'
 import { AssetPeekLink } from '@/features/assets/components/asset-peek'
 import { useUrlFilter, useUrlFilterList } from '@/hooks/use-url-param'
-import type { EASMChange } from '@/lib/api/generated'
+import type { EASMChange, EASMChangeGroup } from '@/lib/api/generated'
 import { cn } from '@/lib/utils'
 import { toSeverity } from './easm-overview'
 import { useEASMChanges } from '../hooks/use-easm-changes'
@@ -49,6 +57,7 @@ import {
   CHANGE_WINDOWS,
   isChangeKind,
   parseTime,
+  type ChangeGroupKey,
   type ChangeKind,
 } from '../lib/changes'
 import { formatDate } from '@/lib/app-locale'
@@ -133,7 +142,16 @@ function ChangeDetail({ change }: { change: EASMChange }) {
   )
 }
 
-function ChangeRow({ change }: { change: EASMChange }) {
+function ChangeRow({
+  change,
+  count = 1,
+  onShowGroup,
+}: {
+  change: EASMChange
+  /** How many changes this row folds (the same kind on the same asset). */
+  count?: number
+  onShowGroup?: () => void
+}) {
   const { t } = useTranslation()
   const kindLabel = useKindLabel()
   // A kind this build does not know yet (the API may add one first) is shown
@@ -176,9 +194,93 @@ function ChangeRow({ change }: { change: EASMChange }) {
         <div className="col-start-2 col-end-4 row-start-3 min-w-0 empty:hidden">
           <ChangeDetail change={change} />
         </div>
+        {count > 1 && onShowGroup && (
+          <div className="col-start-2 col-end-4 row-start-4">
+            {/* The same change on one asset many times is this one row;
+                every one of them opens over the page. */}
+            <Button variant="link" size="sm" onClick={onShowGroup} data-testid="change-group-open">
+              {t('attackSurface.changes.groupShowAll', 'Show all {count} changes', { count })}
+            </Button>
+          </div>
+        )}
       </div>
       <RelativeTime date={change.at} className="col-start-3 row-start-1 shrink-0 text-xs" />
     </li>
+  )
+}
+
+/** Every change behind one grouped row, newest first, over the page. */
+function ChangeGroupSheet({
+  group,
+  from,
+  to,
+  onOpenChange,
+}: {
+  group: EASMChangeGroup | null
+  from?: string
+  to?: string
+  onOpenChange: (open: boolean) => void
+}) {
+  const { t } = useTranslation()
+  const kindLabel = useKindLabel()
+  const key = group?.key as ChangeGroupKey | undefined
+  const { items, error, isLoading, hasMore, loadMore, loadingMore, mutate } = useEASMChanges(
+    { from, to, days: 7, kinds: [], group: key },
+    !!key && !!from && !!to
+  )
+  const latest = group?.latest
+  const kind = latest?.kind && isChangeKind(latest.kind) ? kindLabel(latest.kind) : ''
+  return (
+    <Sheet open={!!group} onOpenChange={onOpenChange}>
+      <SheetContent className="w-full sm:max-w-2xl">
+        <SheetHeader>
+          <SheetTitle>
+            {t('attackSurface.changes.groupTitle', '{kind} on {asset}', {
+              kind,
+              asset:
+                latest?.asset_name || t('attackSurface.changes.noAsset', 'Not linked to an asset'),
+            })}
+          </SheetTitle>
+          <SheetDescription>
+            {t('attackSurface.changes.count', '{count} changes', { count: group?.count ?? 0 })}
+          </SheetDescription>
+        </SheetHeader>
+        <SheetBody>
+          {error ? (
+            <ErrorState
+              title={t('attackSurface.changes.errorTitle', 'attack surface changes')}
+              error={error}
+              onRetry={() => void mutate()}
+            />
+          ) : isLoading && items.length === 0 ? (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <ol className="divide-y rounded-md border px-4" data-testid="change-group-items">
+                {items.map((c) => (
+                  <ChangeRow key={`${c.id}-${c.kind}`} change={c} />
+                ))}
+              </ol>
+              {hasMore && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void loadMore()}
+                  disabled={loadingMore}
+                >
+                  {loadingMore && <Loader2 className="me-1 h-4 w-4 animate-spin" />}
+                  {t('attackSurface.changes.loadMore', 'Show older changes')}
+                </Button>
+              )}
+            </div>
+          )}
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
   )
 }
 
@@ -195,10 +297,13 @@ export function EASMChanges() {
   const kinds = useMemo(() => kindParam.filter(isChangeKind), [kindParam])
   const days = CHANGE_WINDOWS.find((d) => String(d) === daysParam) ?? 7
 
+  const [openGroup, setOpenGroup] = useState<EASMChangeGroup | null>(null)
   const {
-    items,
+    groups: items,
     counts,
     total,
+    from: windowFrom,
+    to: windowTo,
     error,
     isLoading,
     allowed,
@@ -211,6 +316,9 @@ export function EASMChanges() {
     to: explicit ? to : undefined,
     days,
     kinds,
+    // The same change on one asset many times (a lookalike of one domain
+    // registered 400 times) is one row with its count.
+    grouped: true,
   })
 
   const clearWindow = () => {
@@ -348,8 +456,13 @@ export function EASMChanges() {
       ) : (
         <>
           <ol className="divide-y rounded-md border px-4">
-            {items.map((c) => (
-              <ChangeRow key={`${c.id}-${c.kind}`} change={c} />
+            {items.map((g) => (
+              <ChangeRow
+                key={`${g.latest?.id}-${g.latest?.kind}`}
+                change={g.latest as EASMChange}
+                count={g.count ?? 1}
+                onShowGroup={() => setOpenGroup(g)}
+              />
             ))}
           </ol>
           {hasMore && (
@@ -365,6 +478,12 @@ export function EASMChanges() {
           )}
         </>
       )}
+      <ChangeGroupSheet
+        group={openGroup}
+        from={windowFrom}
+        to={windowTo}
+        onOpenChange={(o) => !o && setOpenGroup(null)}
+      />
     </div>
   )
 }

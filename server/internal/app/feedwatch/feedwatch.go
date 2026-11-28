@@ -7,9 +7,10 @@
 //     whether its imports fail (a refused bundle at once, other failures
 //     after two runs);
 //   - the corpus itself: the age of the newest published CVE record, and the
-//     number of CVEs published in the last 24 hours against the daily
-//     average of the 30 days before, which catches an import that "succeeds"
-//     on old data.
+//     number of CVEs published in each of the last two 24-hour windows
+//     against the median of the same weekday over the 8 weeks before (both
+//     must fall short, so a weekend or a holiday does not alert), which
+//     catches an import that "succeeds" on partial or old data.
 //
 // What holds is stored in one platform setting (StateKey), so a restart or a
 // lease move does not alert twice. The platform administrators get one
@@ -55,13 +56,20 @@ const (
 	// old (or as old as the bundle may be, when that limit is higher). About 280 CVEs are published a day, so a gap this long means the
 	// corpus stopped moving even if every import "succeeds".
 	NewestRecordStaleAfter = 12 * time.Hour
-	// VolumeFloor: the CVEs published in the last 24 hours may not fall
-	// under this share of the daily average of the 30 days before.
+	// VolumeFloor: the CVEs published in a 24-hour window may not fall under
+	// this share of the same weekday's usual count (the median of that
+	// window 1 to 8 weeks earlier). The check alerts only when the last two
+	// windows both fall under it: one quiet day (a weekend, a public
+	// holiday) is not a gap.
 	VolumeFloor = 0.3
-	// VolumeMinBaseline: the volume check runs only on a corpus that holds at
-	// least this many CVEs a day on average (a partial or test corpus does
-	// not alert).
+	// VolumeMinBaseline: the usual count of a window must be at least this
+	// many CVEs for the volume check to judge it (a partial or test corpus
+	// does not alert).
 	VolumeMinBaseline = 50.0
+	// volumeMinSamples: the same-weekday median needs at least this many of
+	// the 8 earlier weeks.
+	volumeMinSamples = 4
+	volumeWeeks      = 8
 	// NeverLoadedGrace: a feed that never held data alerts once the watch
 	// has run this long (the first import of a new install).
 	NeverLoadedGrace = 2 * time.Hour
@@ -111,6 +119,11 @@ type Condition struct {
 	ErrorParams map[string]string `json:"error_params,omitempty"`
 	// FailingSince is when the imports started failing.
 	FailingSince *time.Time `json:"failing_since,omitempty"`
+	// Observed and Expected are the CVE counts a volume_low condition was
+	// judged by (the last 24 hours, and the usual count for them); the
+	// "back to normal" message quotes them.
+	Observed int `json:"observed,omitempty"`
+	Expected int `json:"expected,omitempty"`
 }
 
 // State is what the watch stores.
@@ -127,10 +140,10 @@ type CorpusStats struct {
 	// NewestPublished is the newest publication date in the corpus that is
 	// not in the future (nil: empty corpus).
 	NewestPublished *time.Time
-	// Published24h is the number of CVEs published in the 24 hours before
-	// now; PublishedPrior30d in the 30 days before those.
-	Published24h      int
-	PublishedPrior30d int
+	// Daily[k] is the number of CVEs published in the 24-hour window that
+	// ended k days before now (Daily[0]: the last 24 hours). The volume
+	// check needs 2+7*8 windows; a shorter slice skips the check.
+	Daily []int
 }
 
 // Feeds lists the feed views (*threat.IntelService).
@@ -258,7 +271,7 @@ func (s *Service) Check(ctx context.Context) (int, error) {
 	for _, c := range resolved {
 		s.logger.Info("feed freshness alert resolved", "alert", c.Key)
 	}
-	s.send(ctx, opened, resolved, next.Open)
+	s.send(ctx, opened, resolved, next.Open, stats, now)
 	return len(next.Open), nil
 }
 
@@ -327,13 +340,50 @@ func Evaluate(views []feedstatus.View, stats *CorpusStats, first, now time.Time)
 			Detail: fmt.Sprintf("The newest CVE record in the corpus was published %s ago (limit %s): new vulnerabilities are not arriving.",
 				hours(now.Sub(at)), hours(newestLimit))})
 	}
-	baseline := float64(stats.PublishedPrior30d) / 30
-	if baseline >= VolumeMinBaseline && float64(stats.Published24h) < VolumeFloor*baseline {
-		out = append(out, Condition{Key: CodeVolumeLow, Code: CodeVolumeLow, Since: now,
-			Detail: fmt.Sprintf("Only %d CVEs were published in the last 24 hours against a daily average of %.0f over the 30 days before: the corpus may be missing records.",
-				stats.Published24h, baseline)})
+	if obs, exp, low := volumeLow(stats.Daily); low {
+		out = append(out, Condition{Key: CodeVolumeLow, Code: CodeVolumeLow, Since: now, Observed: obs, Expected: exp,
+			Detail: fmt.Sprintf("Only %d CVEs were published in the last 24 hours against a usual %d for this day of the week, and the 24 hours before were also under the usual: the corpus may be missing records.",
+				obs, exp)})
 	}
 	return out
+}
+
+// volumeLow judges the last two 24-hour windows. Each is compared with the
+// median of the same window 1 to 8 weeks earlier, so the weekly rhythm
+// (quiet weekends, public holidays) is the baseline and not a fault. It
+// holds only when both windows are under VolumeFloor of their usual count,
+// and each usual count is at least VolumeMinBaseline. It returns the last
+// window's count and usual count.
+func volumeLow(daily []int) (observed, expected int, low bool) {
+	for k := range 2 {
+		var same []int
+		for w := 1; w <= volumeWeeks; w++ {
+			if i := k + 7*w; i < len(daily) {
+				same = append(same, daily[i])
+			}
+		}
+		if len(same) < volumeMinSamples || k >= len(daily) {
+			return 0, 0, false
+		}
+		usual := median(same)
+		if usual < VolumeMinBaseline || float64(daily[k]) >= VolumeFloor*usual {
+			return 0, 0, false
+		}
+		if k == 0 {
+			observed, expected = daily[0], int(usual+0.5)
+		}
+	}
+	return observed, expected, true
+}
+
+func median(v []int) float64 {
+	s := slices.Clone(v)
+	slices.Sort(s)
+	if n := len(s); n%2 == 1 {
+		return float64(s[n/2])
+	}
+	n := len(s)
+	return float64(s[n/2-1]+s[n/2]) / 2
 }
 
 // failingAfter: two runs of the feed, at least minFailingAfter. A server
@@ -433,7 +483,7 @@ func (s *Service) Open(ctx context.Context) ([]Condition, error) {
 }
 
 // send writes one message for what opened and one for what cleared.
-func (s *Service) send(ctx context.Context, opened, resolved, open []Condition) {
+func (s *Service) send(ctx context.Context, opened, resolved, open []Condition, stats *CorpusStats, now time.Time) {
 	if s.notifier == nil || (len(opened) == 0 && len(resolved) == 0) {
 		return
 	}
@@ -462,13 +512,40 @@ func (s *Service) send(ctx context.Context, opened, resolved, open []Condition) 
 	}
 	if len(resolved) > 0 {
 		var b strings.Builder
-		b.WriteString("<p>Cleared:</p><ul>")
+		b.WriteString("<p>Back to normal:</p><ul>")
 		for _, c := range resolved {
-			b.WriteString("<li>" + html.EscapeString(c.Detail) + "</li>")
+			b.WriteString("<li>" + html.EscapeString(backToNormal(c, stats, now)) + "</li>")
 		}
 		b.WriteString("</ul>" + consoleHint)
 		s.deliver(ctx, "Threat intelligence feeds: resolved", b.String())
 	}
+}
+
+// backToNormal says what holds now for a condition that cleared, never the
+// condition that opened it: the reader must not take a clearing message for
+// a repeat of the alarm.
+func backToNormal(c Condition, stats *CorpusStats, now time.Time) string {
+	switch c.Code {
+	case CodeVolumeLow:
+		if stats != nil && len(stats.Daily) > 0 {
+			return fmt.Sprintf("Back to normal: %d CVEs in the last 24 hours (it was %d against a usual %d).",
+				stats.Daily[0], c.Observed, c.Expected)
+		}
+		return "Back to normal: CVEs are being published at the usual rate again."
+	case CodeNewestRecordOld:
+		if stats != nil && stats.NewestPublished != nil {
+			return fmt.Sprintf("Back to normal: new CVE records are arriving again (the newest was published %s ago).",
+				hours(now.Sub(*stats.NewestPublished)))
+		}
+		return "Back to normal: new CVE records are arriving again."
+	case CodeDataStale:
+		return fmt.Sprintf("Back to normal: %s data is current again.", feedName(c.Source))
+	case CodeImportFailing:
+		return fmt.Sprintf("Back to normal: %s imports succeed again.", feedName(c.Source))
+	case CodeImportRefused:
+		return fmt.Sprintf("Back to normal: %s imports are accepted again.", feedName(c.Source))
+	}
+	return "Back to normal: " + c.Detail
 }
 
 const consoleHint = "<p>Open System &gt; Threat intelligence in the platform console for the full status.</p>"

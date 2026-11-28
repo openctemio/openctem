@@ -204,7 +204,7 @@
   "components.shared.kev.remediationDue": "Remediation due:",
   "components.shared.kev.title": "CISA Known Exploited Vulnerability",
   "components.shared.pagination.page": "Page {page} of {total}",
-  "components.shared.pagination.selected": "{selected} of {total} row(s) selected",
+  "components.shared.pagination.selected": "{selected} of {total, plural, one {# row} other {# rows}} selected",
   "components.shared.runStatus.queued": "Queued",
   "components.shared.secret.copied": "{noun} copied",
   "components.shared.secret.copiedToast": "{noun} copied to clipboard",

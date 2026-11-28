@@ -260,3 +260,69 @@ func TestCorrelation_Lifecycle(t *testing.T) {
 		t.Fatal("auto correlation ran with the switch off")
 	}
 }
+
+// A correlated duplicate is closed like any other duplicate: it carries the
+// time it was closed, and its primary counts it among its duplicates. Both
+// are undone when the correlation is released. The link used to leave
+// resolved_at empty (closed findings missing from "closed" and time-to-fix
+// figures) and the primary's duplicate_count at 0.
+func TestCorrelation_DuplicateIsClosedAndCounted(t *testing.T) {
+	c := newCorrRig(t)
+	ctx := context.Background()
+	generic, specific := corrPair("high", "medium")
+	tn := c.r.newTenant()
+	tid := tn.tenant.String()
+
+	state := func() (memberResolved bool, primaryDups int) {
+		t.Helper()
+		rows := c.rows(t, tn)
+		g, s := rows["open-redirect-generic"], rows["CVE-2025-54793"]
+		if err := c.r.db.QueryRowContext(ctx, `SELECT resolved_at IS NOT NULL FROM findings WHERE tenant_id = $1 AND id = $2`,
+			tid, g.id).Scan(&memberResolved); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.r.db.QueryRowContext(ctx, `SELECT duplicate_count FROM findings WHERE tenant_id = $1 AND id = $2`,
+			tid, s.id).Scan(&primaryDups); err != nil {
+			t.Fatal(err)
+		}
+		return memberResolved, primaryDups
+	}
+
+	c.scan(t, tn, "shop.example.com", generic, specific)
+	if g := c.rows(t, tn)["open-redirect-generic"]; g.status != "duplicate" {
+		t.Fatalf("not correlated: %+v", g)
+	}
+	if resolved, dups := state(); !resolved || dups != 1 {
+		t.Fatalf("after the link: member resolved %v, primary duplicate_count %d; want true and 1", resolved, dups)
+	}
+
+	// Seen again with its primary: still one duplicate, not two.
+	c.scan(t, tn, "shop.example.com", generic, specific)
+	if resolved, dups := state(); !resolved || dups != 1 {
+		t.Fatalf("after a second scan: member resolved %v, primary duplicate_count %d; want true and 1", resolved, dups)
+	}
+
+	// Released by a person: open again, no closing time, not counted.
+	gid, _ := shared.IDFromString(c.rows(t, tn)["open-redirect-generic"].id)
+	if ok, err := c.repo.ReleaseByUser(ctx, tn.tenant, gid, shared.ID{}); err != nil || !ok {
+		t.Fatalf("release: %v %v", ok, err)
+	}
+	if resolved, dups := state(); resolved || dups != 0 {
+		t.Fatalf("after the release: member resolved %v, primary duplicate_count %d; want false and 0", resolved, dups)
+	}
+
+	// Released because its primary was not seen: the same.
+	tn = c.r.newTenant()
+	tid = tn.tenant.String()
+	c.scan(t, tn, "shop.example.com", generic, specific)
+	c.scan(t, tn, "shop.example.com", generic)
+	if g := c.rows(t, tn)["open-redirect-generic"]; g.status != "new" {
+		t.Fatalf("not released: %+v", g)
+	}
+	if resolved, dups := state(); resolved || dups != 0 {
+		t.Fatalf("after the scan release: member resolved %v, primary duplicate_count %d; want false and 0", resolved, dups)
+	}
+	if n := c.count(t, `SELECT count(*) FROM findings WHERE tenant_id = $1 AND duplicate_count < 0`, tid); n != 0 {
+		t.Fatalf("%d findings with a negative duplicate_count", n)
+	}
+}

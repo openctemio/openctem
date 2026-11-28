@@ -60,10 +60,14 @@ export function ApprovalEvaluationBanner({
     >
       <p className="flex items-center gap-2 font-medium">
         <ShieldCheck className="h-4 w-4 shrink-0 text-primary" aria-hidden />
-        {t('findingApprovals.evaluation.headline', '{tier}: {count} approval(s) needed', {
-          tier: tierLabel(t, e.tier),
-          count: e.approvals_required,
-        })}
+        {t(
+          'findingApprovals.evaluation.headline',
+          '{tier}: {count, plural, one {# approval} other {# approvals}} needed',
+          {
+            tier: tierLabel(t, e.tier),
+            count: e.approvals_required,
+          }
+        )}
       </p>
       {why.length > 0 && (
         <p>

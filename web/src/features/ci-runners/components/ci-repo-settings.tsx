@@ -812,7 +812,7 @@ export function CIRepositorySettingsTab({ repositoryAssetId }: { repositoryAsset
           {overrides > 0
             ? t(
                 'scans.ci.repoSettings.summaryOverrides',
-                '{count} field(s) set for this repository; the rest are inherited.',
+                '{count, plural, one {# field} other {# fields}} set for this repository; the rest are inherited.',
                 { count: overrides }
               )
             : t(

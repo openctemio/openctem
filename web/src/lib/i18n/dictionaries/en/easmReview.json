@@ -32,6 +32,7 @@
   "easmReview.overview.fixFirst": "Fix first",
   "easmReview.overview.monitoringSettings": "Monitoring settings",
   "easmReview.overview.monitoringSettingsHint": "How often discovery and DNS checks run, and which lookups leave your network.",
+  "easmReview.overview.moreAssets": "+{count} more",
   "easmReview.overview.noRisks": "No open external risks",
   "easmReview.overview.noRisksHint": "Nothing of medium severity or above is open on the external surface.",
   "easmReview.overview.notChecked": "not checked yet",

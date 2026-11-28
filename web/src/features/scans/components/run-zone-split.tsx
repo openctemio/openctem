@@ -54,7 +54,11 @@ export function RunZoneSplitPanel({
           >
             <span className="font-medium">{g.zone_name ? toDisplayText(g.zone_name) : noZone}</span>
             <span className="text-muted-foreground">
-              {t('scans.runZoneSplit.targets', '{count} target(s)', { count: g.targets })}
+              {t(
+                'scans.runZoneSplit.targets',
+                '{count, plural, one {# target} other {# targets}}',
+                { count: g.targets }
+              )}
             </span>
             <span className="ml-auto flex items-center gap-3">
               {g.status === 'refused' ? (

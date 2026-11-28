@@ -118,7 +118,7 @@ export function EASMPostureCard() {
             <h3 className="text-sm font-medium">
               {t('attackSurface.posture.fixFirstTitle', 'What to fix to raise the grade')}
             </h3>
-            <PosturePlanList steps={steps} />
+            <PosturePlanList steps={steps} currentScore={posture.score.score} />
           </section>
         )}
       </div>

@@ -22,30 +22,41 @@ const { EASMChanges } = await import('../easm-changes')
 const wrap = (ui: ReactNode) =>
   render(<SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{ui}</SWRConfig>)
 
+type Item = { id: string; kind: string; asset_id?: string; [k: string]: unknown }
+const grouped = (items: Item[], count = 1) =>
+  items.map((c) => ({
+    key: { kind: c.kind, detail: '', asset_id: c.asset_id },
+    count,
+    latest: c,
+  }))
+
+const changes: Item[] = [
+  {
+    id: 'x1',
+    kind: 'dns_dangling',
+    at: '2026-10-10T00:00:00Z',
+    asset_name: 'old.example.com',
+    asset_id: '0198f0e2-0000-7000-8000-0000000000a1',
+    severity: 'medium',
+    new: 'Dangling CNAME',
+    exposure_id: 'x1',
+  },
+  {
+    id: 'h1',
+    kind: 'host_added',
+    at: '2026-10-09T00:00:00Z',
+    asset_name: 'new.example.com',
+    asset_id: '0198f0e2-0000-7000-8000-0000000000a2',
+  },
+]
+
 const page = {
   from: '2026-10-04T00:00:00Z',
   to: '2026-10-11T00:00:00Z',
   total: 3,
   counts: { host_added: 2, dns_dangling: 1 },
-  items: [
-    {
-      id: 'x1',
-      kind: 'dns_dangling',
-      at: '2026-10-10T00:00:00Z',
-      asset_name: 'old.example.com',
-      asset_id: '0198f0e2-0000-7000-8000-0000000000a1',
-      severity: 'medium',
-      new: 'Dangling CNAME',
-      exposure_id: 'x1',
-    },
-    {
-      id: 'h1',
-      kind: 'host_added',
-      at: '2026-10-09T00:00:00Z',
-      asset_name: 'new.example.com',
-      asset_id: '0198f0e2-0000-7000-8000-0000000000a2',
-    },
-  ],
+  items: [],
+  groups: grouped(changes),
 }
 
 beforeEach(() => {
@@ -104,14 +115,14 @@ describe('EASMChanges', () => {
   it('shows an unknown kind as itself, neutral, never as a new exposure', async () => {
     api.get.mockResolvedValue({
       ...page,
-      items: [
+      groups: grouped([
         {
           id: 'u1',
           kind: 'brand_new_kind',
           at: '2026-10-10T00:00:00Z',
           asset_name: 'x.example.com',
         },
-      ],
+      ]),
     })
     wrap(<EASMChanges />)
     await screen.findByText('x.example.com')
@@ -128,5 +139,62 @@ describe('EASMChanges', () => {
     const link = await screen.findByRole('link', { name: 'Dangling CNAME' })
     expect(link).toHaveAttribute('href', '/exposures?state=all&q=Dangling%20CNAME')
     expect(screen.getByText('Medium')).toBeInTheDocument()
+  })
+
+  it('folds the same change on one asset into one row and opens all of them over the page', async () => {
+    const lookalike = (id: string, name: string) => ({
+      id,
+      kind: 'exposure_new',
+      at: '2026-10-10T00:00:00Z',
+      asset_name: 'example.com',
+      asset_id: '0198f0e2-0000-7000-8000-0000000000b1',
+      detail: 'lookalike_domain',
+      severity: 'low',
+      new: `Lookalike domain registered: ${name}`,
+      exposure_id: id,
+    })
+    api.get.mockImplementation(async (url: string) => {
+      const q = new URL(url, 'http://x').searchParams
+      if (q.get('group_kind')) {
+        return {
+          ...page,
+          total: 474,
+          groups: undefined,
+          items: [lookalike('l1', 'eaxmple.com'), lookalike('l2', 'examp1e.com')],
+        }
+      }
+      return {
+        ...page,
+        total: 474,
+        groups: [
+          {
+            key: {
+              kind: 'exposure_new',
+              detail: 'lookalike_domain',
+              asset_id: '0198f0e2-0000-7000-8000-0000000000b1',
+            },
+            count: 474,
+            latest: lookalike('l1', 'eaxmple.com'),
+          },
+        ],
+      }
+    })
+    wrap(<EASMChanges />)
+    // One row, not 474.
+    expect(await screen.findAllByText('example.com')).toHaveLength(1)
+    const first = new URL(api.get.mock.calls[0][0] as string, 'http://x')
+    expect(first.searchParams.get('grouped')).toBe('true')
+    await userEvent.click(screen.getByRole('button', { name: 'Show all 474 changes' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      await within(dialog).findByText('Lookalike domain registered: examp1e.com')
+    ).toBeInTheDocument()
+    const groupCall = new URL(api.get.mock.calls.at(-1)?.[0] as string, 'http://x')
+    expect(groupCall.searchParams.get('group_kind')).toBe('exposure_new')
+    expect(groupCall.searchParams.get('group_detail')).toBe('lookalike_domain')
+    expect(groupCall.searchParams.get('group_asset')).toBe('0198f0e2-0000-7000-8000-0000000000b1')
+    expect(groupCall.searchParams.get('grouped')).toBeNull()
+    // The sheet reads the same window as the page.
+    expect(groupCall.searchParams.get('from')).toBe('2026-10-04T00:00:00Z')
   })
 })

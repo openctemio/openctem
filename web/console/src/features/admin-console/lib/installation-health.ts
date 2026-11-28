@@ -156,7 +156,7 @@ function sensorsTile(o: AdminOverview): HealthTile {
     href: PLATFORM_SENSORS_URL,
   } as const
   if (s.total === 0) {
-    return { ...base, tone: 'muted', stateKey: 'admin.health.sensorsNone', state: 'None connected' }
+    return { ...base, tone: 'muted', stateKey: 'admin.health.sensorsNone', state: 'None enrolled' }
   }
   return {
     ...base,

@@ -449,9 +449,13 @@ export function CapabilitiesSection() {
                   <div className="flex items-center gap-1.5">
                     <Wrench className="h-4 w-4" />
                     <span>
-                      {t('confirm.capability.toolCount', '{count} tool(s)', {
-                        count: selectedUsageStats.tool_count,
-                      })}
+                      {t(
+                        'confirm.capability.toolCount',
+                        '{count, plural, one {# tool} other {# tools}}',
+                        {
+                          count: selectedUsageStats.tool_count,
+                        }
+                      )}
                     </span>
                   </div>
                 )}
@@ -459,9 +463,13 @@ export function CapabilitiesSection() {
                   <div className="flex items-center gap-1.5">
                     <Bot className="h-4 w-4" />
                     <span>
-                      {t('confirm.capability.sensorCount', '{count} sensor(s)', {
-                        count: selectedUsageStats.sensor_count,
-                      })}
+                      {t(
+                        'confirm.capability.sensorCount',
+                        '{count, plural, one {# sensor} other {# sensors}}',
+                        {
+                          count: selectedUsageStats.sensor_count,
+                        }
+                      )}
                     </span>
                   </div>
                 )}

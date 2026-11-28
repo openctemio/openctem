@@ -2,7 +2,6 @@
 
 import { useTranslation } from '@/context/i18n-provider'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import Link from '@/components/link'
 import {
   AlertTriangle,
   Building2,

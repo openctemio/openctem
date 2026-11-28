@@ -48,9 +48,13 @@ export function PendingTaskException({ batch }: { batch: ApprovalBatch }) {
         })}
       </span>
       <span className="text-muted-foreground">
-        {t('findingApprovals.group.memberCount', '{count} finding(s)', {
-          count: batch.member_count,
-        })}
+        {t(
+          'findingApprovals.group.memberCount',
+          '{count, plural, one {# finding} other {# findings}}',
+          {
+            count: batch.member_count,
+          }
+        )}
       </span>
       {batch.decide_by && (
         <span className="text-muted-foreground">

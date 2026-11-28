@@ -179,8 +179,9 @@ func (r *ControlTestRepository) List(ctx context.Context, filter simulation.Cont
 		argIdx++
 	}
 	if filter.Framework != nil && *filter.Framework != "" {
-		where += fmt.Sprintf(" AND framework = $%d", argIdx)
-		args = append(args, *filter.Framework)
+		// One framework under any spelling ("cis", "CIS Controls").
+		where += fmt.Sprintf(" AND lower(framework) = lower($%d)", argIdx)
+		args = append(args, simulation.CanonicalFramework(*filter.Framework))
 		argIdx++
 	}
 	if filter.Status != nil && *filter.Status != "" {
@@ -228,8 +229,11 @@ func (r *ControlTestRepository) List(ctx context.Context, filter simulation.Cont
 }
 
 func (r *ControlTestRepository) GetStatsByFramework(ctx context.Context, tenantID shared.ID) ([]simulation.FrameworkStats, error) {
+	// Grouped by the name without case, so a framework typed in two cases is
+	// one card; the migration control_test_canonical_frameworks stored the
+	// known ones under their standard name.
 	query := `SELECT
-		framework,
+		min(framework),
 		COUNT(*) as total,
 		COUNT(*) FILTER (WHERE status = 'pass') as passed,
 		COUNT(*) FILTER (WHERE status = 'fail') as failed,
@@ -238,8 +242,8 @@ func (r *ControlTestRepository) GetStatsByFramework(ctx context.Context, tenantI
 		COUNT(*) FILTER (WHERE status = 'not_applicable') as not_applicable
 		FROM control_tests
 		WHERE tenant_id = $1
-		GROUP BY framework
-		ORDER BY framework`
+		GROUP BY lower(framework)
+		ORDER BY lower(framework)`
 
 	rows, err := r.db.QueryContext(ctx, query, tenantID.String())
 	if err != nil {

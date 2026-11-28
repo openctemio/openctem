@@ -37,7 +37,7 @@ describe('InstanceScanZonesCard', () => {
     render(<InstanceScanZonesCard zones={[zone]} canEdit={false} onChanged={vi.fn()} />)
     expect(screen.getByText('HQ')).toBeInTheDocument()
     expect(screen.getByText('10.20.0.0/16')).toBeInTheDocument()
-    expect(screen.getByText('2 organization(s)')).toBeInTheDocument()
+    expect(screen.getByText('2 organizations')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Add zone' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument()
   })

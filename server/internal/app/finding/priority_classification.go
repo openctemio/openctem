@@ -295,8 +295,8 @@ type CompensatingControlLookup interface {
 
 // EPSSData holds EPSS score for a CVE.
 type EPSSData struct {
-	Score      float64 // probability, 0-1
-	Percentile float64 // rank, canonical 0-100 (epss_scores.percentile)
+	Score      float64  // probability, 0-1
+	Percentile *float64 // rank, canonical 0-100 (epss_scores.percentile); nil when unknown
 }
 
 // KEVData holds KEV catalog info for a CVE.
@@ -784,7 +784,8 @@ func (s *PriorityClassificationService) enrichAndContextualize(
 		// Enrich with EPSS.
 		if epss, ok := epssMap[f.CVEID()]; ok {
 			f.SetEPSSScore(epss.Score)
-			f.SetEPSSPercentile(epss.Percentile)
+			// An unknown rank stays unknown, never 0 ("0th percentile").
+			f.SetEPSSPercentilePtr(epss.Percentile)
 		}
 		// Enrich with KEV.
 		// The flag follows the catalog both ways: a CVE that left KEV, or a
