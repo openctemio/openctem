@@ -88,7 +88,10 @@ export async function measureScrollEnd(page: Page): Promise<ScrollEnd> {
     for (const c of main.children) walk(c, Infinity)
     // The page's own bottom padding: the first block of the scroller (the
     // page's <Main>) and the scroller's own.
-    const first = main.firstElementChild as HTMLElement | null
+    // The shell's notices come first in the scroller and are not the page.
+    const first = Array.from(main.children).find(
+      (c) => (c as HTMLElement).dataset?.slot !== 'shell-banners'
+    ) as HTMLElement | undefined
     const padding =
       parseFloat(getComputedStyle(main).paddingBottom) +
       (first ? parseFloat(getComputedStyle(first).paddingBottom) : 0)

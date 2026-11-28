@@ -132,7 +132,7 @@ func newMarkFixedResponse(updated, skipped, failed, queued int, rows []finding.B
 	out := MarkFixedResponse{Updated: updated, Skipped: skipped, Failed: failed, ValidationsQueued: queued,
 		Rows: make([]MarkFixedRow, 0, len(rows))}
 	for _, r := range rows {
-		out.Rows = append(out.Rows, MarkFixedRow(r))
+		out.Rows = append(out.Rows, MarkFixedRow{FindingID: r.FindingID, Outcome: r.Outcome, Reason: r.Reason})
 	}
 	return out
 }

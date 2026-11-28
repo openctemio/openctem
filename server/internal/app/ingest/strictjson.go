@@ -552,9 +552,10 @@ func ValidateReportV2(r *ctis.Report, limits protov2.Limits) *V2ReportError {
 		return schemaInvalid(errs)
 	}
 	// Everything else CTIS 2.0 requires. Its message can quote the document,
-	// so the sensor gets the fixed detail and the server log the cause.
+	// so the sensor gets a pointer and a code per problem (ctis_problems.go)
+	// and the server log the cause.
 	if err := r.Validate(); err != nil {
-		v := schemaInvalid([]protov2.ItemError{item("", protov2.CodeInvalidValue, protov2.DetailInvalidValue)})
+		v := schemaInvalid(ctisProblemItems(err))
 		v.Cause = err
 		return v
 	}

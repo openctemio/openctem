@@ -9,11 +9,13 @@ package routes
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/openctemio/openctem/server/pkg/domain/permission"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
@@ -242,5 +244,70 @@ func TestWebPaths_FullOriginTiming_DB(t *testing.T) {
 		if st != http.StatusOK || took > 2*time.Second || len(body) > 256<<10 {
 			t.Errorf("web-paths%s = %d, %d bytes, %s", q, st, len(body), took)
 		}
+	}
+}
+
+// The findings of a path tree follow the findings list's rules: a caller
+// without findings:read gets none (counts, top severity, node findings), and
+// a member never sees a pentest finding of a campaign they are not on.
+func TestWebPaths_FindingVisibility_DB(t *testing.T) {
+	h := newDSHarness(t)
+	s := h.seedWebPaths()
+	ten := h.tenant.String()
+	camp := shared.NewID()
+	h.exec(`INSERT INTO pentest_campaigns (id, tenant_id, name) VALUES ($1, $2, 'wp-embargo')`, camp.String(), ten)
+	h.exec(`INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, title, message, severity, fingerprint, status, location_key, pentest_campaign_id)
+		VALUES ($1::uuid, $2, $3, 'pentest', 'pt', 'PENTEST-EMBARGO', 'PENTEST-EMBARGO', 'critical', $1::text, 'confirmed', 'url:https://paths.web.test/api/users/42', $4)`,
+		shared.NewID().String(), ten, s.origin.String(), camp.String())
+	get := func(perms, q string) (int, string) {
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet,
+			h.srv.URL+"/api/v1/assets/"+s.origin.String()+"/web-paths"+q, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("X-Test-User", h.memberA.String())
+		if perms != "" {
+			req.Header.Set("X-Test-Perms", perms)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	node := "?path=/api/users/{int}&here=true&findings=true"
+
+	// A member with findings:read, not on the campaign: the pentest finding
+	// is neither listed nor counted (the seed's two open URL findings are).
+	st, body := get("", "")
+	if st != http.StatusOK {
+		t.Fatalf("member tree = %d %s", st, body)
+	}
+	if r := decodeWP(t, body); r.Totals.Findings != 2 || r.Totals.TopSeverity != "critical" {
+		t.Errorf("member totals = %+v, want the two non-pentest findings", r.Totals)
+	}
+	if st, body := get("", node); st != http.StatusOK || strings.Contains(body, "PENTEST-EMBARGO") {
+		t.Errorf("member node findings = %d, leaked the embargoed finding: %s", st, body)
+	}
+
+	// assets:read only (an external tester's grant): the tree, no findings.
+	st, body = get(permission.AssetsRead.String(), node)
+	if st != http.StatusOK {
+		t.Fatalf("assets:read tree = %d %s", st, body)
+	}
+	if strings.Contains(body, "wp finding") || strings.Contains(body, "PENTEST-EMBARGO") || strings.Contains(body, `"node_findings"`) {
+		t.Errorf("assets:read caller read findings: %s", body)
+	}
+	if st, body = get(permission.AssetsRead.String(), ""); decodeWP(t, body).Totals.Findings != 0 {
+		t.Errorf("assets:read totals = %d %s", st, body)
+	}
+
+	// On the campaign: the member sees it like any other finding.
+	h.exec(`INSERT INTO pentest_campaign_members (tenant_id, campaign_id, user_id, role) VALUES ($1, $2, $3, 'tester')`,
+		ten, camp.String(), h.memberA.String())
+	if st, body := get("", node); st != http.StatusOK || !strings.Contains(body, "PENTEST-EMBARGO") {
+		t.Errorf("campaign member node findings = %d %s", st, body)
 	}
 }

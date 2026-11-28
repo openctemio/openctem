@@ -265,7 +265,9 @@ can tell. The service asks a `shared.RecentAuthGate` (wired at startup to
 check behind `requireStepUp()`), and the handler answers its refusal with
 `middleware.WriteStepUpError`, exactly like the middleware
 (`403 STEP_UP_REQUIRED` with `window_seconds`, or `STEP_UP_UNAVAILABLE`), so
-the web dialog appears and the request is retried.
+the web dialog appears and the request is retried. A service with no gate
+wired refuses the change (`STEP_UP_UNAVAILABLE`) rather than making it
+without the check; the AI settings loosenings below do so.
 
 | Action | Where it is checked |
 |---|---|
@@ -277,6 +279,7 @@ the web dialog appears and the request is retried.
 | Renaming the organization's slug: `PATCH /api/v1/tenants/{tenant}` with a new `slug` | `TenantService.UpdateTenant` |
 | Allowing bearer-key sensors again: `PUT /api/v1/sensors/identity-policy` with `bearer_keys_allowed: true` while the organization requires key-bound identity | `SensorService.SetBearerKeysAllowed` (requiring key-bound identity, and re-sending the current value, stay one click) |
 | Widening automatic AI triage: `PUT /api/v1/organization/settings/ai/auto-triage` turning it on, or adding a severity while it is on (more finding content goes to the AI provider without a person asking). Turning it off, fewer severities and the delay never prompt. | `tenantai.Service.SaveAutoTriage` (`tenant.AutoTriageLoosened`); high-severity audit `ai_settings.auto_triage_updated` and an owner/admin notice |
+| Loosening an AI use case or the AI autonomy limits: `PUT /api/v1/organization/settings/ai/use-cases/{use_case}` (auto-apply on, a higher data ceiling), `PUT /api/v1/organization/settings/ai/autonomy` (unpausing, a higher or no hourly/daily limit) | `tenantai.Service.SaveUseCase`, `SaveAutonomy` (`requireLooseningStepUp`, fail closed) |
 | Raising the organization's maximum API key lifetime: `PUT /api/v1/organization/settings/api-keys` with a longer `max_lifetime_days` (a shorter one never prompts) | `TenantService.UpdateAPIKeySettings`; high-severity audit `tenant.api_key_policy_updated` and an owner/admin notice |
 
 The gate judges only the user making the request: a grant authorized

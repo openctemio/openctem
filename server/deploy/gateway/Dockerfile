@@ -17,11 +17,11 @@
 # Base images are pinned by digest in the FROM lines themselves, where
 # Dependabot finds and refreshes them (it does not read ARG defaults).
 FROM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS build
-ARG CADDY_VERSION=v2.11.4
-ARG CADDY_L4_VERSION=v0.1.2
+ARG CADDY_VERSION=v2.11.9
+ARG CADDY_L4_VERSION=v0.1.3
 # Dependencies with security fixes newer than the Caddy release; drop an entry
 # once a Caddy release requires that version itself.
-ARG CADDY_DEPS="golang.org/x/net@v0.60.0 google.golang.org/grpc@v1.83.2"
+ARG CADDY_DEPS="golang.org/x/net@v0.62.0 google.golang.org/grpc@v1.83.2 github.com/klauspost/compress@v1.20.2 go.opentelemetry.io/otel@v1.47.0 go.opentelemetry.io/otel/sdk@v1.47.0 go.opentelemetry.io/otel/sdk/log@v1.47.0 go.opentelemetry.io/otel/trace@v1.47.0"
 WORKDIR /src
 RUN printf '%s\n' 'package main' \
       'import (' \

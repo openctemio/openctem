@@ -62,9 +62,30 @@ func (h *TicketMappingHandler) decode(w http.ResponseWriter, r *http.Request, ds
 	return true
 }
 
+// Ticket mapping refusals. Not in the pkg/apierror registry yet (their
+// console words follow in a web change): sent with their own status and
+// sentence, which the console shows for a code it has no words for.
+const (
+	// codeTicketMappingInvalidField: one field of a mapping request is wrong
+	// (details.params.field).
+	codeTicketMappingInvalidField apierror.Code = "TICKET_MAPPING_INVALID_FIELD"
+	// codeTicketMappingTrackerNotConnected: the mapping's integration is not
+	// a connected Jira site.
+	codeTicketMappingTrackerNotConnected apierror.Code = "TICKET_MAPPING_TRACKER_NOT_CONNECTED"
+
+	ticketMappingTrackerNotConnectedMessage = "This integration is not a connected Jira site. Test its connection in Integrations, then create the mapping."
+)
+
 func (h *TicketMappingHandler) fail(w http.ResponseWriter, err error) {
 	var ve *appticketmap.ValidationError
+	var fe *ticketmap.FieldError
 	switch {
+	case errors.As(err, &fe):
+		// Which field and why: our own sentence, never a request value.
+		apierror.New(http.StatusBadRequest, codeTicketMappingInvalidField, fe.Sentence()).
+			WithParams(apierror.Params{"field": fe.Field}).WriteJSON(w)
+	case errors.Is(err, appticketmap.ErrTrackerNotConnected):
+		apierror.New(http.StatusConflict, codeTicketMappingTrackerNotConnected, ticketMappingTrackerNotConnectedMessage).WriteJSON(w)
 	case errors.As(err, &ve):
 		apierror.ValidationFailed("the mapping has errors", map[string]any{"issues": ve.Issues}).WriteJSON(w)
 	case errors.Is(err, shared.ErrNotFound):
@@ -179,7 +200,7 @@ type CreateTicketMappingRequest struct {
 func (req CreateTicketMappingRequest) input(tid shared.ID, by *shared.ID) (appticketmap.CreateProfileInput, error) {
 	iid, err := shared.IDFromString(req.IntegrationID)
 	if err != nil {
-		return appticketmap.CreateProfileInput{}, fmt.Errorf("%w: invalid integration_id", shared.ErrValidation)
+		return appticketmap.CreateProfileInput{}, ticketmap.FieldInvalid("integration_id", "it must be the id of a Jira integration of the organization")
 	}
 	return appticketmap.CreateProfileInput{
 		TenantID: tid, IntegrationID: iid, ObjectKind: ticketmap.ObjectKind(req.ObjectKind),

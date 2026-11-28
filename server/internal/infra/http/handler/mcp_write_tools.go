@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"unicode/utf8"
@@ -17,6 +19,7 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/permission"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 	"github.com/openctemio/openctem/server/pkg/safetext"
 )
 
@@ -207,41 +210,45 @@ func (h *MCPHandler) toolAddFindingComment(ctx context.Context, tenantID string,
 
 // runWriteTool is the confirmation step in front of a write tool's
 // executor. It returns the result to send, or nil when the tool should run.
-func (h *MCPHandler) runWriteTool(r *http.Request, tool *mcpTool, tenantID string, raw json.RawMessage) (map[string]any, bool) {
+//
+// It also returns the canonical arguments the tool must run with: the
+// digest, the summary the person confirms and the executed action all come
+// from these same bytes, so no spelling of the arguments (a duplicate key,
+// or a key differing only in case, which encoding/json folds onto one
+// struct field) can show the person one action and run another.
+func (h *MCPHandler) runWriteTool(r *http.Request, tool *mcpTool, tenantID string, raw json.RawMessage) (map[string]any, json.RawMessage, bool) {
 	ctx := r.Context()
 	p := middleware.GetMCPPrincipal(ctx)
 	if p == nil || h.confirmer == nil {
-		return toolErrorResult(mcpError{Code: mcpErrPermissionDenied, Message: "this tool needs a connection a person approved; API keys cannot change data." + mcpPolicyDecision()}), true
+		return toolErrorResult(mcpError{Code: mcpErrPermissionDenied, Message: "this tool needs a connection a person approved; API keys cannot change data." + mcpPolicyDecision()}), nil, true
 	}
-	var args map[string]any
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &args); err != nil {
-			return toolErrorResult(mcpError{Code: mcpErrInvalidArgument, Message: "invalid arguments: malformed JSON"}), true
-		}
+	args, canonical, err := canonicalWriteArgs(tool.InputSchema, raw)
+	if err != nil {
+		return toolErrorResult(mcpError{Code: mcpErrInvalidArgument, Message: err.Error()}), nil, true
 	}
 	digest := mcpoauthapp.ArgsDigest(tool.Name, args)
 	if id, _ := args["confirmation_id"].(string); id != "" {
 		if err := h.confirmer.UseConfirmation(ctx, p, id, tool.Name, digest); err != nil {
 			if errors.Is(err, mcpoauth.ErrConfirmationRequired) {
 				return toolErrorResult(mcpError{Code: "not_confirmed", Message: "the confirmation is missing, refused, expired, already used, or for " +
-					"other arguments. Call again without confirmation_id to get a new confirmation link."}), true
+					"other arguments. Call again without confirmation_id to get a new confirmation link."}), nil, true
 			}
-			h.logger.Warn("mcp confirmation use failed", "error", err.Error())
-			return toolErrorResult(classifyMCPError(err)), true
+			h.logger.Warn("mcp confirmation use failed", "error", logger.SanitizeError(err))
+			return toolErrorResult(classifyMCPError(err)), nil, true
 		}
-		return nil, false
+		return nil, canonical, false
 	}
-	summary, msg, err := tool.prepare(ctx, tenantID, raw)
+	summary, msg, err := tool.prepare(ctx, tenantID, canonical)
 	if err != nil {
-		h.logger.Warn("mcp write tool prepare failed", "tool", tool.Name, "error", err.Error())
-		return toolErrorResult(classifyMCPError(err)), true
+		h.logger.Warn("mcp write tool prepare failed", "tool", tool.Name, "error", logger.SanitizeError(err))
+		return toolErrorResult(classifyMCPError(err)), nil, true
 	}
 	pending, err := h.confirmer.RequestConfirmationWith(ctx, p, tool.Name, digest, summary, msg, mcpoauthapp.Actor{
 		IP: auditClientIP(r), UserAgent: r.UserAgent(), RequestID: middleware.GetRequestID(r.Context()),
 	})
 	if err != nil {
-		h.logger.Warn("mcp confirmation request failed", "error", err.Error())
-		return toolErrorResult(classifyMCPError(err)), true
+		h.logger.Warn("mcp confirmation request failed", "error", logger.SanitizeError(err))
+		return toolErrorResult(classifyMCPError(err)), nil, true
 	}
 	text, _ := json.Marshal(map[string]any{
 		"status":             "confirmation_required",
@@ -251,5 +258,61 @@ func (h *MCPHandler) runWriteTool(r *http.Request, tool *mcpTool, tenantID strin
 		"next": "Ask the user to open confirmation_url and confirm. Then call " + tool.Name +
 			" again with the same arguments and confirmation_id. Nothing has changed yet.",
 	})
-	return toolResult(string(text), false), true
+	return toolResult(string(text), false), nil, true
+}
+
+// canonicalWriteArgs decodes a write tool's arguments strictly: a JSON
+// object whose keys are exactly the property names of the tool's input
+// schema (case-sensitive), each at most once. It returns the decoded map
+// (for the digest) and its canonical encoding (for the summary and the
+// executor). Anything else is refused, never folded or dropped.
+func canonicalWriteArgs(schema, raw json.RawMessage) (map[string]any, json.RawMessage, error) {
+	var s struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal(schema, &s); err != nil {
+		return nil, nil, errors.New("invalid arguments: the tool has no readable input schema")
+	}
+	args := map[string]any{}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return args, json.RawMessage("{}"), nil
+	}
+	malformed := errors.New("invalid arguments: malformed JSON")
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return nil, nil, errors.New("invalid arguments: expected a JSON object")
+	}
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, nil, malformed
+		}
+		key, ok := tok.(string)
+		if !ok {
+			return nil, nil, malformed
+		}
+		if _, known := s.Properties[key]; !known {
+			return nil, nil, fmt.Errorf("invalid arguments: unknown argument %q (argument names are case-sensitive)", key)
+		}
+		if _, dup := args[key]; dup {
+			return nil, nil, fmt.Errorf("invalid arguments: argument %q given more than once", key)
+		}
+		var v any
+		if err := dec.Decode(&v); err != nil {
+			return nil, nil, malformed
+		}
+		args[key] = v
+	}
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('}') {
+		return nil, nil, malformed
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, nil, malformed
+	}
+	canonical, err := json.Marshal(args)
+	if err != nil {
+		return nil, nil, malformed
+	}
+	return args, canonical, nil
 }

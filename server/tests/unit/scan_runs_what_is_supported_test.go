@@ -213,9 +213,11 @@ func TestSupported_DependentStepSkipped(t *testing.T) {
 	}
 }
 
-// No step can run: the trigger is refused as a blocked run with
-// NO_RUNNABLE_STEPS naming what is missing, and nothing is dispatched. The
-// same for a scheduled trigger.
+// No step can run: the trigger is refused with NO_RUNNABLE_STEPS naming what
+// is missing, and nothing is dispatched. A member's own "Run now" gets the
+// refusal as its 400 answer and creates nothing (no run, not even a blocked
+// one); a scheduled trigger, whose refusal nobody reads, is recorded as a
+// blocked run.
 func TestSupported_NoRunnableStepsBlocked(t *testing.T) {
 	for _, mode := range []string{"manual", "scheduled"} {
 		t.Run(mode, func(t *testing.T) {
@@ -226,6 +228,7 @@ func TestSupported_NoRunnableStepsBlocked(t *testing.T) {
 				&scanworkflow.Step{StepKey: "shots", Name: "Ports", Capabilities: []string{"scan.ports"}},
 				&scanworkflow.Step{StepKey: "after", Tool: "nuclei", DependsOn: []string{"iac"}},
 			)
+			runsBefore := len(deps.runRepo.runs)
 			_, err := svc.TriggerScan(context.Background(), triggerInputs(tenantID, sc)[mode])
 			if wildcardCode(err) != scanservice.CodeNoRunnableSteps || !errors.Is(err, shared.ErrValidation) {
 				t.Fatalf("err = %v, want %s", err, scanservice.CodeNoRunnableSteps)
@@ -234,6 +237,12 @@ func TestSupported_NoRunnableStepsBlocked(t *testing.T) {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("refusal %q does not name %q", err.Error(), want)
 				}
+			}
+			if mode == "manual" {
+				if n := len(deps.runRepo.runs); n != runsBefore {
+					t.Fatalf("runs = %d after a refused Run now, want %d (nothing created)", n, runsBefore)
+				}
+				return
 			}
 			b := blockedRuns(deps, sc.ID)
 			if len(b) != 1 || b[0].RefusalCode != scanservice.CodeNoRunnableSteps {

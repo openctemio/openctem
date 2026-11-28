@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { summarizeApprovalBulk, summarizeBulkResult } from '../bulk-result'
+import {
+  FIX_REFUSAL_CODES,
+  summarizeApprovalBulk,
+  summarizeBulkResult,
+  summarizeFixDecision,
+} from '../bulk-result'
 import { getDictionary, translate } from '@/lib/i18n'
 
 const en = getDictionary('en')
@@ -141,5 +146,98 @@ describe('summarizeApprovalBulk', () => {
       tVi
     )
     expect(s).toEqual({ kind: 'success', message: '2 đã từ chối', description: undefined })
+  })
+})
+
+// "0 done" is never a success: a 200 with nothing changed used to toast
+// "Updated 0 findings" / "0 findings verified" in green.
+describe('nothing done is not a success', () => {
+  it('summarizeBulkResult with nothing updated and nothing refused', () => {
+    const s = summarizeBulkResult({ updated: 0, failed: 0 }, 2, 'updated', t)
+    expect(s.kind).toBe('warning')
+    expect(s.message).toBe('No findings were changed')
+  })
+
+  it('summarizeApprovalBulk with nothing decided and nothing refused', () => {
+    const s = summarizeApprovalBulk(
+      { results: [], approved: 0, signed: 0, rejected: 0, skipped: 0, failed: 0 },
+      t
+    )
+    expect(s.kind).toBe('warning')
+  })
+})
+
+// Approve / Reject of claimed fixes in the verification queue
+// (POST /findings/actions/verify and /reject-fix).
+describe('summarizeFixDecision', () => {
+  it('says why nothing was verified (the critical finding on prod)', () => {
+    const s = summarizeFixDecision(
+      {
+        updated: 0,
+        refused: 1,
+        reasons: { evidence_required: 1 },
+        rows: [{ finding_id: 'f1', code: 'evidence_required' }],
+      },
+      'verified',
+      t
+    )
+    expect(s.kind).toBe('error')
+    expect(s.message).toBe(
+      'Nothing was verified: A critical, P0 or known-exploited finding needs a retest that confirms the fix, or the verification checklist completed by another person'
+    )
+    expect(s.message).not.toMatch(/^0 /)
+  })
+
+  it('warns on a partial verify with every reason and its count', () => {
+    const s = summarizeFixDecision(
+      { updated: 1, refused: 2, reasons: { checklist_required: 1, changed: 1 } },
+      'verified',
+      t
+    )
+    expect(s.kind).toBe('warning')
+    expect(s.message).toBe('1 of 3 verified')
+    expect(s.description).toContain('2 not changed:')
+    expect(s.description).toContain('Changed meanwhile: reload and try again (1)')
+  })
+
+  it('lists the reasons when several kept everything back', () => {
+    const s = summarizeFixDecision(
+      { updated: 0, refused: 3, reasons: { not_found: 1, evidence_required: 2 } },
+      'rejected',
+      t
+    )
+    expect(s.kind).toBe('error')
+    expect(s.message).toBe('Nothing was rejected')
+    expect(s.description?.startsWith('A critical')).toBe(true)
+  })
+
+  it('is a warning, not a success, when nothing was waiting any more', () => {
+    const s = summarizeFixDecision({ updated: 0, refused: 0, reasons: {} }, 'verified', t)
+    expect(s.kind).toBe('warning')
+  })
+
+  it('is a success only when every finding moved', () => {
+    expect(summarizeFixDecision({ updated: 2, refused: 0 }, 'verified', t)).toEqual({
+      kind: 'success',
+      message: '2 findings verified',
+    })
+  })
+
+  it('reads in Vietnamese', () => {
+    const s = summarizeFixDecision(
+      { updated: 0, refused: 1, reasons: { not_found: 1 } },
+      'verified',
+      tVi
+    )
+    expect(s.message).toBe(
+      'Không có gì được xác minh: Không tìm thấy, hoặc nằm ngoài phạm vi bạn được xem'
+    )
+  })
+
+  it('has an English and a Vietnamese sentence for every refusal code', () => {
+    for (const code of FIX_REFUSAL_CODES) {
+      expect(en[`findings.fixRefusal.${code}`], code).toBeTruthy()
+      expect(vi[`findings.fixRefusal.${code}`], code).toBeTruthy()
+    }
   })
 })

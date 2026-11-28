@@ -130,7 +130,7 @@ export function StatusCard({ cve, exposure }: { cve: string; exposure: CveExposu
         ) : (
           <>
             <div
-              className="flex h-3 gap-0.5 overflow-hidden rounded-sm"
+              className="flex h-3 max-w-[40rem] gap-0.5 overflow-hidden rounded-sm"
               // The legend below carries the counts and the links for
               // assistive tech and the keyboard; the bar is for the eye and the mouse.
               aria-hidden

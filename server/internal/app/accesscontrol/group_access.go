@@ -361,7 +361,7 @@ func (s *GroupService) authorizeAccessChange(ctx context.Context, g *groupdom.Gr
 			return false, err
 		}
 		if isMember {
-			return false, ErrSelfJoinRoleTeam
+			return false, ErrSelfMemberRoleTeam
 		}
 	}
 	if fullData {

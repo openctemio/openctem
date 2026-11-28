@@ -2555,12 +2555,13 @@ export function DataTable<TData, TValue>({
                 <TableRow>
                   {/* An error block is start-aligned like every alert: icon,
                       title, sentence and buttons share one edge (a centred
-                      cell centred only its text). */}
+                      cell centred only its text). The cell is as tall as the
+                      alert: a fixed height left an empty band under it. */}
                   <TableCell
                     colSpan={columns.length}
                     data-slot={errorState ? 'table-error-cell' : undefined}
                     className={cn(
-                      errorState ? 'h-48 align-top whitespace-normal text-start' : 'text-center'
+                      errorState ? 'align-top whitespace-normal text-start' : 'text-center'
                     )}
                   >
                     {errorState ?? emptyBody}

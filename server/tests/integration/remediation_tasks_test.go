@@ -534,3 +534,77 @@ func TestRemediationTasks_DeletedMemberRecomputes(t *testing.T) {
 		check(t, r, task.ID)
 	})
 }
+
+// A canceled task stays readable: GET by id answers it with state canceled,
+// the list shows it, and the state filter finds it, for every caller who
+// could see it before the cancel. The cancel releases the members (their
+// findings may join another task), and the visibility test counted live
+// members only, so the task vanished for every caller with a data scope: a
+// restricted member, and an administrator from whom a private program asset
+// is hidden. Another tenant and a member who never saw it still get 404.
+func TestRemediationTasks_CanceledTaskStaysVisible(t *testing.T) {
+	r := newRTRig(t)
+	// A private program asset hidden from the administrator gives them an
+	// Unrestricted, non-nil scope (the demo organization's case).
+	program, hiddenAsset := shared.NewID(), shared.NewID()
+	r.exec(`INSERT INTO bounty_programs (id, tenant_id, name, terms_sha256, visibility) VALUES ($1, $2, 'rt-p', repeat('a', 64), 'private')`,
+		program.String(), r.tenant.String())
+	r.exec(`INSERT INTO assets (id, tenant_id, name, asset_type, program_only) VALUES ($1, $2, $3, 'domain', TRUE)`,
+		hiddenAsset.String(), r.tenant.String(), "rt-p-"+hiddenAsset.String()+".example.com")
+	r.exec(`INSERT INTO asset_program_links (tenant_id, asset_id, program_id, source) VALUES ($1, $2, $3, 'program_manual')`,
+		r.tenant.String(), hiddenAsset.String(), program.String())
+
+	admin, member := r.adminCtx(), r.memberCtx()
+	task, err := r.svc.CreateTask(admin, remediationapp.CreateTaskInput{TenantID: r.tenant, ActorID: &r.admin, Title: "Cancel me",
+		FindingIDs: []shared.ID{r.finding(r.assetA, "new", nil)}}, auditapp.AuditContext{})
+	require.NoError(t, err)
+	onlyB, err := r.svc.CreateTask(admin, remediationapp.CreateTaskInput{TenantID: r.tenant, ActorID: &r.admin, Title: "Cancel B",
+		FindingIDs: []shared.ID{r.finding(r.assetB, "new", nil)}}, auditapp.AuditContext{})
+	require.NoError(t, err)
+	for _, tk := range []*remediation.Task{task, onlyB} {
+		_, err = r.svc.UpdateTask(admin, remediationapp.UpdateTaskInput{TenantID: r.tenant, TaskID: tk.ID, ActorID: &r.admin,
+			Version: tk.Version, Cancel: true, StateNote: "duplicate effort"}, auditapp.AuditContext{})
+		require.NoError(t, err)
+	}
+
+	canceled := remediation.TaskFilter{States: []remediation.TaskState{remediation.TaskStateCanceled}}
+	listed := func(ctx context.Context, f remediation.TaskFilter) []shared.ID {
+		t.Helper()
+		res, lerr := r.svc.ListTasks(ctx, remediationapp.ListTasksInput{TenantID: r.tenant, Filter: f}, pagination.New(1, 50))
+		require.NoError(t, lerr)
+		n, cerr := r.svc.CountTasks(ctx, remediationapp.ListTasksInput{TenantID: r.tenant, Filter: f})
+		require.NoError(t, cerr)
+		assert.EqualValues(t, len(res.Data), n, "count matches the list")
+		ids := make([]shared.ID, 0, len(res.Data))
+		for _, tk := range res.Data {
+			ids = append(ids, tk.ID)
+		}
+		return ids
+	}
+
+	for name, c := range map[string]struct {
+		ctx  context.Context
+		sees []shared.ID
+	}{
+		"admin with a hidden program asset": {admin, []shared.ID{task.ID, onlyB.ID}},
+		"restricted member":                 {member, []shared.ID{task.ID}},
+	} {
+		got, gerr := r.svc.GetTask(c.ctx, r.tenant, task.ID)
+		require.NoError(t, gerr, name)
+		assert.Equal(t, remediation.TaskStateCanceled, got.State, name)
+		assert.ElementsMatch(t, c.sees, listed(c.ctx, remediation.TaskFilter{}), name+": list")
+		assert.ElementsMatch(t, c.sees, listed(c.ctx, canceled), name+": state=canceled")
+		assert.Empty(t, listed(c.ctx, remediation.TaskFilter{States: []remediation.TaskState{remediation.TaskStateOpen}}), name+": state=open")
+		_, gerr = r.svc.ListEvents(c.ctx, r.tenant, task.ID, pagination.New(1, 50))
+		assert.NoError(t, gerr, name+": timeline")
+	}
+
+	// Never seen before the cancel, never seen after it.
+	_, err = r.svc.GetTask(member, r.tenant, onlyB.ID)
+	assert.ErrorIs(t, err, shared.ErrNotFound)
+	_, err = r.svc.GetTask(admin, r.other, task.ID)
+	assert.ErrorIs(t, err, shared.ErrNotFound)
+	res, err := r.svc.ListTasks(admin, remediationapp.ListTasksInput{TenantID: r.other, Filter: canceled}, pagination.New(1, 50))
+	require.NoError(t, err)
+	assert.Empty(t, res.Data)
+}

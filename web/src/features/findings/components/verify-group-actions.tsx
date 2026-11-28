@@ -16,6 +16,8 @@ import { toast } from 'sonner'
 import { post } from '@/lib/api/client'
 import { getErrorMessage } from '@/lib/api/error-handler'
 import type { FindingGroup } from '../api/use-finding-groups'
+import { summarizeFixDecision, type FixDecisionResult } from '../lib/bulk-result'
+import { showBulkSummary } from '../lib/show-bulk-summary'
 
 interface VerifyGroupActionsProps {
   /** A CVE group; every claimed fix of its CVE is approved or rejected. */
@@ -42,13 +44,13 @@ export function VerifyGroupActions({ group, finding, onDone }: VerifyGroupAction
   const approve = async () => {
     setBusy(true)
     try {
-      const result = await post<{ updated: number }>('/api/v1/findings/actions/verify', {
+      const result = await post<FixDecisionResult>('/api/v1/findings/actions/verify', {
         ...target,
         note: t('findings.verifyGroup.verifyNote', 'Batch verified: {label}', { label }),
       })
-      toast.success(
-        t('findings.verifyGroup.verified', '{count} findings verified', { count: result.updated })
-      )
+      // 200 also when every finding was refused: the counts and the reason
+      // codes say what happened, never "0 verified" as a success.
+      showBulkSummary(summarizeFixDecision(result, 'verified', t))
       setApproveOpen(false)
       onDone?.()
     } catch (error) {
@@ -64,15 +66,11 @@ export function VerifyGroupActions({ group, finding, onDone }: VerifyGroupAction
     if (!reason.trim()) return
     setBusy(true)
     try {
-      const result = await post<{ updated: number }>('/api/v1/findings/actions/reject-fix', {
+      const result = await post<FixDecisionResult>('/api/v1/findings/actions/reject-fix', {
         ...target,
         reason: reason.trim(),
       })
-      toast.success(
-        t('findings.verifyGroup.rejected', '{count} findings rejected, sent back to the assignee', {
-          count: result.updated,
-        })
-      )
+      showBulkSummary(summarizeFixDecision(result, 'rejected', t))
       setRejectOpen(false)
       setReason('')
       onDone?.()

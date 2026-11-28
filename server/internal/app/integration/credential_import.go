@@ -69,17 +69,13 @@ func (s *CredentialImportService) scoped(ctx context.Context, tenantID string, f
 }
 
 // assertInScope returns shared.ErrNotFound unless the caller may see the
-// leak's asset (an asset-less leak: unrestricted callers only), the same
-// rule as /exposures/{id} for the same row.
+// leak's asset (an asset-less leak: callers whose scope is not restricted),
+// the rule List applies and the same as /exposures/{id} for the same row.
 func (s *CredentialImportService) assertInScope(ctx context.Context, event *exposure.ExposureEvent) error {
 	if s.dataScope == nil {
 		return nil
 	}
-	var assetID shared.ID
-	if event.AssetID() != nil {
-		assetID = *event.AssetID()
-	}
-	return s.dataScope.AssertAsset(ctx, event.TenantID(), assetID)
+	return s.dataScope.AssertOptionalAsset(ctx, event.TenantID(), event.AssetID())
 }
 
 // NewCredentialImportService creates a new CredentialImportService.
