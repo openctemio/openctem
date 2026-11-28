@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // Code represents an error code.
@@ -258,13 +259,27 @@ func ModuleNotEnabled(message string) *Error {
 	return New(http.StatusForbidden, CodeModuleNotEnabled, message)
 }
 
-// NotFound creates a 404 Not Found error.
+// NotFound creates a 404 Not Found error. resource is what was not found
+// ("Asset" gives "Asset not found"); a whole sentence that already says so
+// ("Attachment not found", "No risk change request is waiting for this asset")
+// is used as it is. About 70 callers pass the sentence, and the reply used to
+// read "Attachment not found not found".
 func NotFound(resource string) *Error {
 	message := "Resource not found"
-	if resource != "" {
-		message = fmt.Sprintf("%s not found", resource)
+	if resource = strings.TrimSpace(resource); resource != "" {
+		message = resource
+		if !isNotFoundSentence(resource) {
+			message = fmt.Sprintf("%s not found", resource)
+		}
 	}
 	return New(http.StatusNotFound, CodeNotFound, message)
+}
+
+// isNotFoundSentence reports whether a NotFound argument is already the whole
+// message rather than the name of a resource.
+func isNotFoundSentence(s string) bool {
+	lower := strings.ToLower(s)
+	return strings.Contains(lower, "not found") || strings.HasPrefix(lower, "no ")
 }
 
 // Conflict creates a 409 Conflict error.
