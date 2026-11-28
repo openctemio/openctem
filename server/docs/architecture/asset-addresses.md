@@ -70,6 +70,15 @@ so a group rule and the list it was built from always agree. Each range is one b
 IPv4 ranges never reach IPv6 addresses (inet orders by family first). The tenant comes first in the index, so a
 range never reads another organization's rows.
 
+### Bounds
+
+A range is at most a /8 of IPv4 or a /32 of IPv6 (`filterspec.CheckInetFilterWidth`, the same bounds as a
+pasted asset-group range). `0.0.0.0/0`, `::/0` and other wider ranges are refused with 400 naming the bound,
+in GET params, filter documents and smart group rules: they select nothing a narrower filter could not and only
+make the database walk every address of the organization. One filter binds at most 50 addresses or ranges over
+all its address leaves (`filterspec.MaxInetValues`, each is one range scan ORed into the query); a field still
+takes at most 20 values (10 in a group rule).
+
 ### Query shape
 
 `asset.AssetInRangesSQL(col, tenant, ranges...)` is `col IN (SELECT x.asset_id FROM asset_ip_addresses x WHERE

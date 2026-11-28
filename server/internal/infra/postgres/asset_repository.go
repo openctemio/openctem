@@ -517,7 +517,7 @@ func (r *AssetRepository) selectQuery(ctx context.Context) string {
 			   a.impact_confidentiality, a.impact_integrity, a.impact_availability,
 			   a.is_crown_jewel,
 			   a.risk_scored_at,
-			   EXISTS (SELECT 1 FROM asset_risk_queue q WHERE q.asset_id = a.id AND q.enqueued_at <= now()) AS risk_score_pending
+			   EXISTS (SELECT 1 FROM asset_risk_queue q WHERE q.asset_id = a.id AND q.tenant_id = a.tenant_id AND q.enqueued_at <= now()) AS risk_score_pending
 		FROM assets a
 		-- LATERAL correlates the finding aggregate to each selected asset (and its
 		-- tenant), so it runs indexed per-row via idx_findings_tenant_asset_status
@@ -2553,7 +2553,7 @@ func attributionCond(af *attribution.StateFilter, argIndex int) (string, []any) 
 		args = append(args, pq.Array(states))
 	}
 	if af.Unrecorded {
-		parts = append(parts, "NOT EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id)")
+		parts = append(parts, "NOT EXISTS (SELECT 1 FROM asset_attributions aat WHERE aat.asset_id = a.id AND aat.tenant_id = a.tenant_id)")
 	}
 	if af.ProviderAddresses {
 		parts = append(parts, "EXISTS (SELECT 1 FROM asset_attributions apa WHERE apa.asset_id = a.id AND apa.tenant_id = a.tenant_id AND "+
@@ -2733,7 +2733,7 @@ finding_counts AS (
   -- and the findings total agree with the list.
   SELECT f.asset_id, COUNT(*)::bigint AS cnt
   FROM findings f
-  WHERE f.asset_id IN (SELECT id FROM filtered) AND NOT f.branch_only
+  WHERE f.tenant_id = $1 AND f.asset_id IN (SELECT id FROM filtered) AND NOT f.branch_only
     AND `+vulnerability.OpenStatusSQL("f.status")+` AND `+vulnerability.NotHeldSQL("f.verification_state")+`
   GROUP BY f.asset_id
 )
