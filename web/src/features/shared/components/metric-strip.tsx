@@ -260,7 +260,10 @@ export function MetricStrip({
                 ) : (
                   <span
                     className={cn(
-                      'text-lg font-semibold tabular-nums tracking-tight sm:text-kpi',
+                      // Tight tracking is for the figure itself: set in em at
+                      // 32 px it is inherited as px, so a status pill inside
+                      // (12 px) ran its words together ("Allanswering").
+                      'text-lg font-semibold tabular-nums tracking-tight sm:text-kpi [&_*]:tracking-normal',
                       zero && 'text-muted-foreground',
                       alarming && 'text-destructive',
                       warning && 'text-warning'

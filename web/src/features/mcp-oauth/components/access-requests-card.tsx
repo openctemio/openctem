@@ -104,11 +104,15 @@ export function AccessRequestsCard({ canEdit }: AccessRequestsCardProps) {
                     </span>
                   </div>
                   <p className="text-muted-foreground text-xs">
-                    {t('mcp.requests.meta', 'Requested by {name}, {count} request(s), {when}', {
-                      name: r.requester_name || t('mcp.requests.formerMember', 'a former member'),
-                      count: r.request_count,
-                      when: formatRelative(r.updated_at),
-                    })}
+                    {t(
+                      'mcp.requests.meta',
+                      'Requested by {name}, {count, plural, one {# request} other {# requests}}, {when}',
+                      {
+                        name: r.requester_name || t('mcp.requests.formerMember', 'a former member'),
+                        count: r.request_count,
+                        when: formatRelative(r.updated_at),
+                      }
+                    )}
                   </p>
                   {r.scopes.length > 0 && (
                     <div className="flex flex-wrap items-center gap-1">

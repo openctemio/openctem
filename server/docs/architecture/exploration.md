@@ -163,7 +163,7 @@ checks it and writes `pkg/domain/exploration/lead_types_generated.go` and
 | Lead type | Asks | Action (tier from the stage catalog) |
 |---|---|---|
 | `dns.takeover_check` | can this dangling alias be claimed? | `check.takeover` (T1) on a domain or subdomain |
-| `version.confirm` | is the version a critical match was made on really there? | `probe.http` (T1) |
+| `version.confirm` | is the version that matched a critical vulnerability really there? | `probe.http` (T1) |
 | `asset.gone_with_findings` | is an asset reported gone really gone, while findings stay open on it? | `resolve.dns` (T0) for names, `probe.http` (T1) for web services and hosts, `discover.hosts` (T1) for addresses |
 
 Each entry has a version (rules record `<id>@<version>` as a lead's origin),

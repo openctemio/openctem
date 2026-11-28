@@ -1,0 +1,5 @@
+### Fixed: the console's owner and sensor counts no longer contradict each other
+
+- Roles: the Holders column counted the emergency access (break-glass) account as a platform owner while the warning above it did not, so "Platform owner: 2" sat under "Fewer than two platform owners". Both now read one count (`platformrole.Holders`): named holders in the column, an emergency account said apart ("+ 1 emergency"), and the warning says "Fewer than two named platform owners". `GET /admin/platform-roles` adds `emergency_holders` per role; `holders` counts named administrators only.
+- Sensors: three readouts count three populations and now say which. The Overview tile counts platform sensors and says "None enrolled" when there is none (as the Platform sensors page does); the attention item and the Health page count the sensors of every organization and of the platform ("No sensor of any organization or the platform is online", "Sensors online (organizations and platform)").
+- Docs: none (the API reference is generated from the handler annotations and no guide quotes these labels)

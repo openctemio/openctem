@@ -44,8 +44,8 @@ type Enrichment struct {
 // same threat-intel adapters can back both, without coupling this package to the
 // finding package.
 type EPSSData struct {
-	Score      float64 // probability, 0-1
-	Percentile float64 // rank, canonical 0-100 (epss_scores.percentile)
+	Score      float64  // probability, 0-1
+	Percentile *float64 // rank, canonical 0-100 (epss_scores.percentile); nil when unknown
 }
 
 // KEVData holds CISA KEV catalog info for a CVE.
@@ -193,9 +193,8 @@ func (e *ExposureEnricher) EnrichBatch(ctx context.Context, tenantID shared.ID, 
 			enr.CVEID = cve
 			if d, ok := epssMap[cve]; ok {
 				score := d.Score
-				pct := d.Percentile
 				enr.EPSSScore = &score
-				enr.EPSSPercentile = &pct
+				enr.EPSSPercentile = d.Percentile
 			}
 			if k, ok := kevMap[cve]; ok {
 				enr.IsInKEV = boolPtr(true)

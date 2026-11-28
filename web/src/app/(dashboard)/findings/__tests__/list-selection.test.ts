@@ -14,10 +14,12 @@ describe('findings list selection', () => {
     expect(page).toMatch(
       /const selectionScope = `\$\{pagination\.pageIndex\}\|\$\{pagination\.pageSize\}\|\$\{filterKey\}`/
     )
-    for (const part of ['debouncedSearch', 'sortParam', 'viewParam', 'groupParam'])
-      expect(page.slice(page.indexOf('const filterKey'), page.indexOf('].join(')), part).toContain(
+    // The data set (filters, search, view) and then the sort.
+    for (const part of ['debouncedSearch', 'viewParam', 'groupParam'])
+      expect(page.slice(page.indexOf('const dataSetKey'), page.indexOf('].join(')), part).toContain(
         part
       )
+    expect(page).toContain('const filterKey = `${dataSetKey}|${sortParam}`')
   })
 
   it('hands the scope to the flat table and the grouped views', () => {

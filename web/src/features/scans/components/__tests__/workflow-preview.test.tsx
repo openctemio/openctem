@@ -35,7 +35,7 @@ describe('WorkflowPreviewBody', () => {
       />
     )
     expect(screen.getByTestId('preview-parallel').textContent).toContain('chunks of 50')
-    expect(screen.getByTestId('preview-parallel').textContent).toContain('up to 2 sensor(s)')
+    expect(screen.getByTestId('preview-parallel').textContent).toContain('up to 2 sensors')
   })
 
   it('says nothing about chunks for a one-command step', () => {
@@ -50,7 +50,7 @@ describe('WorkflowPreviewBody', () => {
     expect(screen.getByText('T0')).toBeInTheDocument()
     expect(screen.getByText('picks subfinder')).toBeInTheDocument()
     expect(screen.getByText('ready, 2/2 online')).toBeInTheDocument()
-    expect(screen.getByText(/3 target\(s\) resolved, 1 excluded by scope/)).toBeInTheDocument()
+    expect(screen.getByText(/3 targets resolved, 1 excluded by scope/)).toBeInTheDocument()
   })
 
   it('shows what the trigger would refuse with, and the targets that wait for a scan window', () => {

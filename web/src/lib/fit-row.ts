@@ -11,11 +11,19 @@
  * @param widths width of each item, in order
  * @param gap    space between two items (and between the last item and "+N")
  * @param more   width kept for the "+N" opener
+ * @param alwaysMore the "+N" opener shows even when every item fits (more items
+ *        exist than the row was given), so its room is always kept
  */
-export function foldToFit(avail: number, widths: number[], gap: number, more: number): number {
+export function foldToFit(
+  avail: number,
+  widths: number[],
+  gap: number,
+  more: number,
+  alwaysMore = false
+): number {
   const n = widths.length
   const all = widths.reduce((s, w) => s + w, 0) + gap * Math.max(0, n - 1)
-  if (all <= avail) return n
+  if (!alwaysMore && all <= avail) return n
   let fit = 0
   let used = more
   for (const w of widths) {

@@ -27,6 +27,7 @@ import (
 	"golang.org/x/net/publicsuffix"
 
 	"github.com/openctemio/openctem/server/internal/app/scope"
+	"github.com/openctemio/openctem/server/pkg/domain/asset"
 	"github.com/openctemio/openctem/server/pkg/domain/attribution"
 	"github.com/openctemio/openctem/server/pkg/domain/edgeaddr"
 	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
@@ -219,6 +220,29 @@ func ipPattern(a netip.Addr) string {
 	return p.String()
 }
 
+// rangePattern is the rule for an address range item: the range itself
+// when it is wider than the /24 (IPv4) or /48 (IPv6) an address is grouped
+// under, else that /24 or /48.
+func rangePattern(p netip.Prefix) string {
+	p = netip.PrefixFrom(p.Addr().Unmap(), min(p.Bits(), p.Addr().Unmap().BitLen())).Masked()
+	if (p.Addr().Is4() && p.Bits() < 24) || (!p.Addr().Is4() && p.Bits() < 48) {
+		return p.String()
+	}
+	return ipPattern(p.Addr())
+}
+
+// suggestableDomain reports whether a name can be the base of a domain
+// wildcard: a real host name whose last label is not a number. An app id
+// with a platform ("shop.example (android)") or an address written with a
+// mask is not, and gave rules such as "*.20.1.0".
+func suggestableDomain(host string) bool {
+	if host == "" || !asset.ValidHostname(host) {
+		return false
+	}
+	last := host[strings.LastIndexByte(host, '.')+1:]
+	return strings.Trim(last, "0123456789") != ""
+}
+
 // MaxRuleSuggestions bounds the suggested rules of one answer.
 const MaxRuleSuggestions = 50
 
@@ -311,12 +335,20 @@ func (s *RuleService) group(ctx context.Context, tenantID shared.ID, items []Rev
 		if a := assets[it.AssetID]; a != nil {
 			props = a.Properties()
 		}
-		if addr, err := netip.ParseAddr(strings.Trim(strings.TrimSpace(it.Name), "[]")); err == nil {
-			s.groupAddress(g, it, addr, props)
+		name := strings.Trim(strings.TrimSpace(it.Name), "[]")
+		if addr, err := netip.ParseAddr(name); err == nil {
+			s.groupAddress(g, it, addr, ipPattern(addr.Unmap()), props)
+			continue
+		}
+		// An address range is grouped under itself (or its /24, /48 when
+		// narrower), never read as a domain: "203.0.113.0/24" became the
+		// wildcard "*.0.113.0/24".
+		if p, err := netip.ParsePrefix(name); err == nil {
+			s.groupAddress(g, it, p.Addr(), rangePattern(p), props)
 			continue
 		}
 		host := dnsHost(it.Name)
-		if host == "" {
+		if !suggestableDomain(host) {
 			continue
 		}
 		hints := evidenceHints(it.Evidence)
@@ -331,7 +363,7 @@ func (s *RuleService) group(ctx context.Context, tenantID shared.ID, items []Rev
 
 // groupAddress puts an address under its /24 or /48, or lists it on its own
 // when it is shared provider space.
-func (s *RuleService) groupAddress(g *grouping, it ReviewItem, addr netip.Addr, props map[string]any) {
+func (s *RuleService) groupAddress(g *grouping, it ReviewItem, addr netip.Addr, pattern string, props map[string]any) {
 	shared, who := sharedAddress(props)
 	if !shared {
 		// A published edge range is shared space even before enrichment
@@ -345,7 +377,6 @@ func (s *RuleService) groupAddress(g *grouping, it ReviewItem, addr netip.Addr, 
 			Reason: "shared or CDN provider address (" + who + "): accept one by one"})
 		return
 	}
-	pattern := ipPattern(addr.Unmap())
 	if s.guardrails.CheckPattern(scopedom.TargetTypeCIDR, pattern) != nil {
 		return
 	}

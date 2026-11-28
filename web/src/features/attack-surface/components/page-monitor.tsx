@@ -91,19 +91,31 @@ function useSummaryParts() {
     const out: string[] = []
     if (s.new_third_party_hosts > 0)
       out.push(
-        t('pageMonitor.summary.newHosts', '{count} new third-party host(s)', {
-          count: s.new_third_party_hosts,
-        })
+        t(
+          'pageMonitor.summary.newHosts',
+          '{count, plural, one {# new third-party host} other {# new third-party hosts}}',
+          {
+            count: s.new_third_party_hosts,
+          }
+        )
       )
     if (s.scripts_added > 0)
       out.push(
-        t('pageMonitor.summary.scriptsAdded', '{count} script(s) added', { count: s.scripts_added })
+        t(
+          'pageMonitor.summary.scriptsAdded',
+          '{count, plural, one {# script} other {# scripts}} added',
+          { count: s.scripts_added }
+        )
       )
     if (s.scripts_removed > 0)
       out.push(
-        t('pageMonitor.summary.scriptsRemoved', '{count} script(s) removed', {
-          count: s.scripts_removed,
-        })
+        t(
+          'pageMonitor.summary.scriptsRemoved',
+          '{count, plural, one {# script} other {# scripts}} removed',
+          {
+            count: s.scripts_removed,
+          }
+        )
       )
     if (s.content_changed) out.push(t('pageMonitor.summary.content', 'Content changed'))
     if (s.urls_added > 0)
@@ -114,10 +126,14 @@ function useSummaryParts() {
       )
     if (s.lines_added + s.lines_removed > 0)
       out.push(
-        t('pageMonitor.summary.lines', '{added} line(s) added, {removed} removed', {
-          added: s.lines_added,
-          removed: s.lines_removed,
-        })
+        t(
+          'pageMonitor.summary.lines',
+          '{added, plural, one {# line} other {# lines}} added, {removed} removed',
+          {
+            added: s.lines_added,
+            removed: s.lines_removed,
+          }
+        )
       )
     return out
   }
@@ -452,7 +468,11 @@ function WatchRow({
             t('pageMonitor.notChecked', 'Not checked yet')
           )}
         </span>
-        <span>{t('pageMonitor.changeCount', '{count} change(s)', { count: watch.changes })}</span>
+        <span>
+          {t('pageMonitor.changeCount', '{count, plural, one {# change} other {# changes}}', {
+            count: watch.changes,
+          })}
+        </span>
         {watch.state !== 'ok' && watch.last_error && <span>{watch.last_error}</span>}
       </div>
       {scripts.length > 0 && (
@@ -469,9 +489,13 @@ function WatchRow({
             ) : (
               <ChevronRight className="me-1 h-3 w-3" aria-hidden />
             )}
-            {t('pageMonitor.scriptsWatched', '{count} script(s) of this page watched with it', {
-              count: scripts.length,
-            })}
+            {t(
+              'pageMonitor.scriptsWatched',
+              '{count, plural, one {# script} other {# scripts}} of this page watched with it',
+              {
+                count: scripts.length,
+              }
+            )}
           </Button>
           {showScripts && (
             <ul className="ms-6 space-y-1" data-testid="page-watch-scripts">

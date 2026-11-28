@@ -473,10 +473,14 @@ export function ScanApprovalsInbox() {
               className="block truncate text-muted-foreground"
               title={approversText(t, row.original.evaluation)}
             >
-              {t('scans.approval.remaining', '{count} approval(s) left, {who}', {
-                count: row.original.remaining,
-                who: approversText(t, row.original.evaluation),
-              })}
+              {t(
+                'scans.approval.remaining',
+                '{count, plural, one {# approval} other {# approvals}} left, {who}',
+                {
+                  count: row.original.remaining,
+                  who: approversText(t, row.original.evaluation),
+                }
+              )}
             </span>
           ) : (
             <span className="text-muted-foreground">-</span>
@@ -660,10 +664,14 @@ export function ScanApprovalsInbox() {
                     {req.status === 'pending' && (
                       <>
                         {ruleNames(req) ? '. ' : ''}
-                        {t('scans.approval.remaining', '{count} approval(s) left, {who}', {
-                          count: req.remaining,
-                          who: approversText(t, req.evaluation),
-                        })}
+                        {t(
+                          'scans.approval.remaining',
+                          '{count, plural, one {# approval} other {# approvals}} left, {who}',
+                          {
+                            count: req.remaining,
+                            who: approversText(t, req.evaluation),
+                          }
+                        )}
                       </>
                     )}
                   </span>

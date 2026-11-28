@@ -46,7 +46,7 @@
   "exploration.leadTypes.asset_gone_with_findings.title": "Kiểm tra đã biến mất",
   "exploration.leadTypes.dns_takeover_check.question": "Bí danh treo này có thể bị người khác chiếm không?",
   "exploration.leadTypes.dns_takeover_check.title": "Kiểm tra chiếm quyền",
-  "exploration.leadTypes.version_confirm.question": "Phiên bản mà một khớp nghiêm trọng dựa vào có thật sự đang chạy không?",
+  "exploration.leadTypes.version_confirm.question": "Phiên bản khớp với một lỗ hổng nghiêm trọng có thật sự đang chạy không?",
   "exploration.leadTypes.version_confirm.title": "Xác nhận phiên bản",
   "exploration.links.derived_from": "Bắt nguồn từ",
   "exploration.links.dispatched_as": "Đã chạy dưới dạng",
