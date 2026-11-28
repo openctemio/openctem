@@ -90,7 +90,44 @@ func (s *Service) List(ctx context.Context, tenantID shared.ID, filter tmdom.Mod
 		return nil, 0, fmt.Errorf("resolve data scope: %w", err)
 	}
 	filter.DataScope = scope
-	return s.repo.ListModels(ctx, tenantID, filter, page)
+	models, total, err := s.repo.ListModels(ctx, tenantID, filter, page)
+	if err != nil {
+		return nil, 0, err
+	}
+	for i, m := range models {
+		if models[i], err = s.scopedRollups(ctx, tenantID, m, scope); err != nil {
+			return nil, 0, err
+		}
+	}
+	return models, total, nil
+}
+
+// scopedRollups returns the model with its threat counts and coverage
+// counted over the threats the caller may see. The stored rollups count every
+// threat at generation; a restricted caller of a model that spans assets
+// outside its scope (a tenant-wide model) would otherwise learn how many
+// threats exist there. An unrestricted caller (nil scope) gets the model as
+// stored. The stored model is not modified.
+func (s *Service) scopedRollups(ctx context.Context, tenantID shared.ID, m *tmdom.ThreatModel, scope *shared.DataScope) (*tmdom.ThreatModel, error) {
+	if scope == nil || m == nil {
+		return m, nil
+	}
+	threats, err := s.repo.ListThreats(ctx, tenantID, m.ID, tmdom.ThreatFilter{DataScope: scope})
+	if err != nil {
+		return nil, fmt.Errorf("list scoped threats: %w", err)
+	}
+	scoped := *m
+	scoped.RecomputeRollups(threats)
+	return &scoped, nil
+}
+
+// scopedModel is scopedRollups for the request's caller.
+func (s *Service) scopedModel(ctx context.Context, tenantID shared.ID, m *tmdom.ThreatModel) (*tmdom.ThreatModel, error) {
+	scope, err := s.dataScope.Resolve(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve data scope: %w", err)
+	}
+	return s.scopedRollups(ctx, tenantID, m, scope)
 }
 
 // scopedThreats loads a model's threats under the caller's data scope.
@@ -116,6 +153,9 @@ func (s *Service) Get(ctx context.Context, tenantID, id shared.ID, filter tmdom.
 	if err != nil {
 		return nil, nil, err
 	}
+	if model, err = s.scopedModel(ctx, tenantID, model); err != nil {
+		return nil, nil, err
+	}
 	return model, threats, nil
 }
 
@@ -130,6 +170,9 @@ func (s *Service) Coverage(ctx context.Context, tenantID, id shared.ID) (*tmdom.
 	}
 	threats, err := s.scopedThreats(ctx, tenantID, model, tmdom.ThreatFilter{})
 	if err != nil {
+		return nil, Coverage{}, err
+	}
+	if model, err = s.scopedModel(ctx, tenantID, model); err != nil {
 		return nil, Coverage{}, err
 	}
 	return model, buildCoverage(threats, s.techniqueMeta(ctx, model.TechniqueDatasetVersion)), nil
@@ -234,7 +277,7 @@ func (s *Service) GenerateForScope(ctx context.Context, tenantID shared.ID, scop
 		if existing.InputHash != "" && existing.InputHash == model.InputHash {
 			s.logger.Debug("threat model inputs unchanged; skipping regeneration",
 				"model_id", existing.ID.String(), "scope_type", scopeType.String())
-			return existing, nil
+			return s.scopedModel(ctx, tenantID, existing)
 		}
 	} else if !errors.Is(gerr, tmdom.ErrNotFound) {
 		return nil, fmt.Errorf("check existing model: %w", gerr)
@@ -249,7 +292,7 @@ func (s *Service) GenerateForScope(ctx context.Context, tenantID shared.ID, scop
 	s.logger.Info("generated threat model",
 		"model_id", model.ID.String(), "scope_type", scopeType.String(),
 		"chains", len(scoped), "profiles", len(profs), "threats", len(threats))
-	return model, nil
+	return s.scopedModel(ctx, tenantID, model)
 }
 
 // resolveScope validates the scope and returns the model name, the concrete

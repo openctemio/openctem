@@ -56,7 +56,10 @@ export interface MaturityComponent {
   score: number
   weight: number
   contribution: number
+  /** How the score was derived, in English (the fallback of detail_code). */
   detail: string
+  /** Stable code of detail; the web words it from insights.maturity.detail.<code>. */
+  detail_code?: string
 }
 
 /** CTEM stage coverage — ctemcycle.CTEMStageCoverage. Reported, not scored. */

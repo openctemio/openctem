@@ -35,22 +35,7 @@ import { SEVERITY_BADGE_SOFT, type SeverityLevel } from '@/lib/severity-colors'
 import { AlertTriangle, ArrowRight, FlaskConical, ListChecks } from 'lucide-react'
 import type { PriorityClass } from '@/features/findings/types/finding.types'
 import { useTranslation } from '@/context/i18n-provider'
-
-type FieldKey =
-  | 'is_in_kev'
-  | 'is_reachable'
-  | 'asset_is_crown_jewel'
-  | 'epss_score'
-  | 'severity'
-  | 'asset_criticality'
-
-type Operator = 'eq' | 'neq' | 'gte' | 'lte' | 'in'
-
-interface Condition {
-  field: FieldKey
-  operator: Operator
-  value: unknown
-}
+import type { Condition } from '@/features/priority-rules/lib/conditions'
 
 // A conservative subset of the main PriorityRule: the dialog is
 // intentionally decoupled from the full rule entity so an in-progress

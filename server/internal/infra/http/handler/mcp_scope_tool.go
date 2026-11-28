@@ -14,6 +14,7 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/permission"
 	scopedom "github.com/openctemio/openctem/server/pkg/domain/scope"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
+	"github.com/openctemio/openctem/server/pkg/logger"
 )
 
 // check_scope answers one question for an outside AI client: may I test this
@@ -168,7 +169,7 @@ func (h *MCPHandler) decideScope(ctx context.Context, tenantID shared.ID, target
 	}
 	auth, err := scopeauth.Load(ctx, tenantID, h.scopeTargets, h.scopeRoots)
 	if err != nil {
-		h.logger.Warn("mcp check_scope: authority lookup failed", "error", err.Error())
+		h.logger.Warn("mcp check_scope: authority lookup failed", "error", logger.SanitizeError(err))
 		return refusedScope("The scope could not be read; nothing is allowed until it can. Try again later.", scopeReasonLookupFailed)
 	}
 
@@ -191,7 +192,7 @@ func (h *MCPHandler) decideScope(ctx context.Context, tenantID shared.ID, target
 		}
 		member, err := h.callerInProgram(ctx, tenantID, program)
 		if err != nil {
-			h.logger.Warn("mcp check_scope: program lookup failed", "error", err.Error())
+			h.logger.Warn("mcp check_scope: program lookup failed", "error", logger.SanitizeError(err))
 			return refusedScope("The scope could not be read; nothing is allowed until it can. Try again later.", scopeReasonLookupFailed)
 		}
 		if !member || !auth.CoveredByPrograms(target, map[shared.ID]bool{program: true}) {

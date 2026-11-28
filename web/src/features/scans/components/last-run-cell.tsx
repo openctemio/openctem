@@ -67,11 +67,11 @@ export function LastRunCell({
    */
   inline?: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   if (!run) {
     return <span className="text-sm text-muted-foreground">{t('scans.cell.never')}</span>
   }
-  const reason = lastRunReason(run, t)
+  const reason = lastRunReason(run, t, locale)
   // A run whose every task still waits in the queue is waiting for a sensor,
   // not "running 0%".
   const ts = run.task_summary

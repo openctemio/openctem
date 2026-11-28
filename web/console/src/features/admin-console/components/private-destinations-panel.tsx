@@ -103,6 +103,11 @@ export function hardBlockText(code: string | undefined, t: TFn): string {
       return t('admin.privateNetworks.hard.sharedAddress', 'carrier network address space')
     case 'multicast':
       return t('admin.privateNetworks.hard.multicast', 'a multicast address')
+    case 'platform_service':
+      return t(
+        'admin.privateNetworks.hard.platformService',
+        "one of the platform's own services (database, cache, gateway or the API)"
+      )
     case 'broadcast':
       return t('admin.privateNetworks.hard.broadcast', 'the broadcast address')
     case 'unspecified':

@@ -1,6 +1,8 @@
 'use client'
 
 import { IntegrationHealth } from '@/features/integrations/components/integration-health'
+import { ConnectionNote } from '@/features/integrations/components/connection-note'
+import { connectionNote } from '@/features/integrations/lib/connection-status'
 import { useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from '@/components/link'
@@ -56,7 +58,7 @@ function categoryLabel(t: TFn, i: Integration): string {
 
 // The name opens the page that manages the integration (no per-row "Manage"
 // button); the status is the shared IntegrationHealth.
-function buildColumns(t: TFn): ColumnDef<Integration>[] {
+function buildColumns(t: TFn, locale: string): ColumnDef<Integration>[] {
   return [
     {
       accessorKey: 'name',
@@ -64,7 +66,6 @@ function buildColumns(t: TFn): ColumnDef<Integration>[] {
       meta: { kind: 'name' },
       cell: ({ row }) => {
         const i = row.original
-        const problem = i.sync_error || i.status_message
         return (
           <StackedCell
             primary={
@@ -73,13 +74,7 @@ function buildColumns(t: TFn): ColumnDef<Integration>[] {
               </Link>
             }
             secondary={
-              problem ? (
-                <span className="block truncate text-destructive" title={problem}>
-                  {problem}
-                </span>
-              ) : (
-                i.description
-              )
+              connectionNote(i, t, locale) ? <ConnectionNote integration={i} /> : i.description
             }
             truncate
           />
@@ -112,9 +107,9 @@ function buildColumns(t: TFn): ColumnDef<Integration>[] {
 }
 
 export default function IntegrationsPage() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const router = useRouter()
-  const columns = useMemo(() => buildColumns(t), [t])
+  const columns = useMemo(() => buildColumns(t, locale), [t, locale])
   const { data: scmConnectionsData } = useSCMConnections()
   const { data: integrationsData, error, isLoading, mutate } = useIntegrationsApi()
 

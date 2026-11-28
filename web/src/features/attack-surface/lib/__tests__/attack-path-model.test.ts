@@ -36,6 +36,39 @@ describe('attack-path model', () => {
     expect(l.edges.map((e) => e.id)).toContain(`${INTERNET}->n1`)
   })
 
+  it('routes an edge that skips a column through a slot of its own, never across a node', () => {
+    // The target is reachable straight from the internet and through an
+    // entry point: the direct edge skips the entry column.
+    const d = mockupDetail()
+    const detail = {
+      ...d,
+      edges: [
+        { from: '', to: 'n0', relationship: '', paths: [0] },
+        { from: '', to: 'n1', relationship: '', paths: [1] },
+        { from: 'n1', to: 'n0', relationship: 'has_access_to', paths: [1] },
+      ],
+      paths: [
+        { nodes: ['n0'], length: 0, likelihood: 0.98, kevSteps: 1 },
+        { nodes: ['n1', 'n0'], length: 1, likelihood: 0.5, kevSteps: 1 },
+      ],
+    }
+    const l = layoutPaths(detail, [0, 1])
+    const at = (k: string) => l.nodes.find((n) => n.key === k)!
+    expect(at('n1').column).toBe(1)
+    expect(at('n0').column).toBe(2)
+    const direct = l.edges.find((e) => e.id === `${INTERNET}->n0`)!
+    expect(direct.via).toHaveLength(1)
+    const [p] = direct.via!
+    // The slot is in the entry column, clear of the entry card (180 x 104).
+    const entry = at('n1')
+    expect(p.x).toBeGreaterThanOrEqual(entry.x)
+    expect(p.x).toBeLessThanOrEqual(entry.x + 180)
+    expect(p.y < entry.y || p.y > entry.y + 104).toBe(true)
+    // No slot is drawn as a node, and ordinary edges have no waypoint.
+    expect(l.nodes.some((n) => n.key.includes('via:'))).toBe(false)
+    expect(l.edges.find((e) => e.id === 'n1->n0')!.via).toBeUndefined()
+  })
+
   it('keeps only the edges of shown routes', () => {
     const l = layoutPaths(mockupDetail(), [0])
     expect(l.nodes.map((n) => n.key).sort()).toEqual(['internet', 'n0', 'n1', 'n2'])
