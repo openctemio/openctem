@@ -341,6 +341,12 @@ the platform console: the banner there names the feed and the cause. For
 recently: check the newest release of the bundle repository. In relay mode
 check the relay sensor first.
 
+The API log line "feed freshness alert" names the feed in `source` for a
+per-feed condition. `volume_low` is about the whole CVE corpus, not one feed:
+its line carries `scope=corpus` with `observed_24h` and `expected_24h` (the
+CVEs published in the last 24 hours and the usual count for that weekday)
+instead of a source.
+
 ### SensorsOffline
 
 Active sensors stopped sending heartbeats. The Sensors page lists them. Check

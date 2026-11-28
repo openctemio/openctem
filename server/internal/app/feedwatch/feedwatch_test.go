@@ -3,6 +3,7 @@ package feedwatch
 import (
 	"context"
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -439,5 +440,24 @@ func TestVolumeLowResolvedSaysBackToNormal(t *testing.T) {
 	if !strings.Contains(body, "Back to normal: 372 CVEs in the last 24 hours (it was 91 against a usual 386).") ||
 		strings.Contains(body, "Only 91") || !strings.Contains(subject, "resolved") {
 		t.Fatalf("resolved message: %q %q", subject, body)
+	}
+}
+
+// The volume alert is about the whole corpus: its log line carries the counts
+// it was judged by and no empty source field. A feed alert names its feed.
+func TestAlertLogArgs(t *testing.T) {
+	vol := alertLogArgs(Condition{Key: CodeVolumeLow, Code: CodeVolumeLow, Observed: 12, Expected: 210})
+	want := []any{"alert", CodeVolumeLow, "code", CodeVolumeLow, "scope", "corpus", "observed_24h", 12, "expected_24h", 210}
+	if !reflect.DeepEqual(vol, want) {
+		t.Fatalf("volume_low log fields %v, want %v", vol, want)
+	}
+	stale := alertLogArgs(Condition{Key: CodeDataStale + ":" + feedstatus.SourceKEV, Code: CodeDataStale, Source: feedstatus.SourceKEV})
+	if len(stale) != 6 || stale[4] != "source" || stale[5] != feedstatus.SourceKEV {
+		t.Fatalf("feed alert log fields %v, want the source", stale)
+	}
+	for i := 0; i+1 < len(vol); i += 2 {
+		if vol[i] == "source" {
+			t.Fatalf("volume_low logs a source field: %v", vol)
+		}
 	}
 }

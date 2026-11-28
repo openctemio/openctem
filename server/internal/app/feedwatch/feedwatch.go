@@ -266,7 +266,7 @@ func (s *Service) Check(ctx context.Context) (int, error) {
 		return len(next.Open), fmt.Errorf("feed freshness: store state: %w", err)
 	}
 	for _, c := range opened {
-		s.logger.Warn("feed freshness alert", "alert", c.Key, "code", c.Code, "source", c.Source)
+		s.logger.Warn("feed freshness alert", alertLogArgs(c)...)
 	}
 	for _, c := range resolved {
 		s.logger.Info("feed freshness alert resolved", "alert", c.Key)
@@ -480,6 +480,21 @@ func (s *Service) Open(ctx context.Context) ([]Condition, error) {
 		return nil, err
 	}
 	return st.Open, nil
+}
+
+// alertLogArgs are the log fields of an alert that opened. A per-feed
+// condition names its feed; a corpus condition (newest_record_old,
+// volume_low) is about the whole CVE corpus and carries no empty source
+// field: volume_low logs the counts it was judged by instead.
+func alertLogArgs(c Condition) []any {
+	args := []any{"alert", c.Key, "code", c.Code}
+	if c.Code == CodeVolumeLow {
+		return append(args, "scope", "corpus", "observed_24h", c.Observed, "expected_24h", c.Expected)
+	}
+	if c.Source != "" {
+		args = append(args, "source", c.Source)
+	}
+	return args
 }
 
 // send writes one message for what opened and one for what cleared.
