@@ -16,6 +16,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useTranslation } from '@/context/i18n-provider'
 import { ErrorState, TonePill, type PillTone } from '@/features/shared'
 import { useUrlFilter } from '@/hooks/use-url-param'
+import { CARD_GRID } from '@/features/shared/components/card-grid'
+import { cn } from '@/lib/utils'
 import { coversText, scopeRefusalLabel } from '@/features/scope'
 import { Permission, usePermissions } from '@/lib/permissions'
 import { useEASMRuleSuggestions, type EASMRuleSuggestion } from '../hooks/use-easm-rules'
@@ -149,11 +151,17 @@ export function EASMRuleSuggestions({
           )}
         </p>
       </div>
-      <ul className="grid gap-3 md:grid-cols-2">
+      {/* The shared card tracks: a column never grows past the screen, so a
+          long name wraps inside its card on a phone instead of pushing the
+          card wider than the page. */}
+      <ul className={cn(CARD_GRID, 'gap-3')}>
         {list.map((s) => {
           const strength = strengthOf(t, s.strength)
           return (
-            <li key={s.id ?? s.pattern} className="flex flex-col gap-2 rounded-lg border p-3">
+            <li
+              key={s.id ?? s.pattern}
+              className="flex min-w-0 flex-col gap-2 rounded-lg border p-3 [overflow-wrap:anywhere]"
+            >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <code className="break-all text-sm font-medium">{s.pattern}</code>
@@ -205,13 +213,19 @@ export function EASMRuleSuggestions({
               )}
               {canDecide && (
                 <div className="mt-auto flex flex-wrap gap-2 pt-1">
-                  <Button size="sm" onClick={() => setOpen({ s, action: 'accept_rule' })}>
+                  {/* Several cards on one screen: no card's button is the
+                      page's one filled primary. */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setOpen({ s, action: 'accept_rule' })}
+                  >
                     <Check className="h-4 w-4" aria-hidden />
                     {t('easmReview.rule.accept', 'Accept as rule')}
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="ghost"
                     onClick={() => setOpen({ s, action: 'reject_rule' })}
                   >
                     <X className="h-4 w-4" aria-hidden />

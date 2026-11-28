@@ -53,7 +53,7 @@ export const CATEGORY_CHART_COLORS = [
  * The legend under a chart: the caption size in the muted ink, in the order
  * of the series (the library sorts by name unless told not to).
  */
-const LEGEND_PROPS = {
+export const LEGEND_PROPS = {
   itemSorter: null,
   wrapperStyle: { fontSize: 12, color: 'var(--muted-foreground)' },
   formatter: (value: string) => <span className="text-muted-foreground">{value}</span>,

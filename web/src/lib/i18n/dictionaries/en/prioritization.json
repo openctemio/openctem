@@ -225,6 +225,7 @@
   "prioritization.pathGraph.nodeTitle": "{name} ({type}) — view findings",
   "prioritization.pathGraph.openPaths": "Open attack paths",
   "prioritization.pathGraph.score": "score {score}",
+  "prioritization.pathGraph.scoreLabel": "Urgency relative to the top chain",
   "prioritization.pathGraph.target": "Target",
   "prioritization.rules.action.delete": "Delete",
   "prioritization.rules.action.dryRun": "Test run",

@@ -249,6 +249,7 @@
   "exposures.misconfigurations.errorTitle": "misconfiguration statistics",
   "exposures.misconfigurations.nounMany": "misconfigurations",
   "exposures.misconfigurations.nounOne": "misconfiguration",
+  "exposures.misconfigurations.otherTypes": "Other",
   "exposures.misconfigurations.severityDescription": "{count, plural, one {# misconfiguration} other {# misconfigurations}} by severity",
   "exposures.misconfigurations.title": "Misconfigurations",
   "exposures.page.description": "Changes to your attack surface that need a decision. Resolve, accept or dismiss them.",

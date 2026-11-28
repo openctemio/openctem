@@ -2,6 +2,7 @@ package ctemcycle
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -171,6 +172,55 @@ func TestComputeMaturity_NoRemediationIsNotMeasured(t *testing.T) {
 		case "mttr_trend", "validation_coverage":
 			approx(t, c.Name+".weight(no sample)", c.Weight, 0)
 			approx(t, c.Name+".contribution(no sample)", c.Contribution, 0)
+		}
+	}
+}
+
+// Every component says how it was derived with a stable code, so a client
+// words it in the reader's language instead of showing the English sentence
+// (or a metric key) on a page in another language.
+func TestComputeMaturity_DetailCodes(t *testing.T) {
+	base := time.Now().UTC()
+	scored := ComputeMaturity([]CycleMetrics{
+		{CycleID: shared.NewID(), ClosedAt: base.Add(-time.Hour), Metrics: map[string]float64{MetricMTTRHours: 20}},
+		{CycleID: shared.NewID(), ClosedAt: base, Metrics: map[string]float64{
+			MetricFindingsOpened: 10, MetricFindingsResolved: 8, MetricPClassChurn: 2,
+			MetricValidationCoverage: 75, MetricMTTRHours: 10,
+		}},
+	})
+	idle := ComputeMaturity([]CycleMetrics{{CycleID: shared.NewID(), ClosedAt: base, Metrics: map[string]float64{}}})
+
+	want := map[string][2]string{ // component -> {scored cycle, idle single cycle}
+		"validation_coverage":   {MaturityDetailValidationShare, MaturityDetailNoRemediation},
+		"resolution_throughput": {MaturityDetailResolutionRatio, MaturityDetailResolutionRatio},
+		"mttr_trend":            {MaturityDetailMTTRDirection, MaturityDetailNoRemediation},
+		"priority_stability":    {MaturityDetailPriorityChurn, MaturityDetailNoFindingsOpened},
+		"scope_stability":       {MaturityDetailScopeReportedOnly, MaturityDetailScopeReportedOnly},
+	}
+	for i, b := range []MaturityBreakdown{scored, idle} {
+		for _, c := range b.Components {
+			w, ok := want[c.Name]
+			if !ok {
+				t.Fatalf("component %q has no expected code", c.Name)
+			}
+			if c.DetailCode != w[i] {
+				t.Errorf("case %d %s: DetailCode = %q, want %q", i, c.Name, c.DetailCode, w[i])
+			}
+			if c.Detail == "" {
+				t.Errorf("case %d %s: empty English fallback", i, c.Name)
+			}
+			for _, raw := range []string{"findings_", "p_class_churn", "unscored"} {
+				if strings.Contains(c.Detail, raw) {
+					t.Errorf("case %d %s: Detail %q shows a raw metric key or jargon %q", i, c.Name, c.Detail, raw)
+				}
+			}
+		}
+	}
+
+	noPrior := ComputeMaturity([]CycleMetrics{{CycleID: shared.NewID(), ClosedAt: base, Metrics: map[string]float64{MetricMTTRHours: 5}}})
+	for _, c := range noPrior.Components {
+		if c.Name == "mttr_trend" && c.DetailCode != MaturityDetailNoPriorCycle {
+			t.Errorf("mttr_trend without a prior cycle: %q, want %q", c.DetailCode, MaturityDetailNoPriorCycle)
 		}
 	}
 }

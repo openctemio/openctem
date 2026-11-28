@@ -249,6 +249,7 @@
   "exposures.misconfigurations.errorTitle": "thống kê cấu hình sai",
   "exposures.misconfigurations.nounMany": "cấu hình sai",
   "exposures.misconfigurations.nounOne": "cấu hình sai",
+  "exposures.misconfigurations.otherTypes": "Khác",
   "exposures.misconfigurations.severityDescription": "{count} cấu hình sai theo mức độ nghiêm trọng",
   "exposures.misconfigurations.title": "Cấu hình sai",
   "exposures.page.description": "Các thay đổi trên bề mặt tấn công cần được quyết định. Hãy xử lý, chấp nhận hoặc bỏ qua chúng.",

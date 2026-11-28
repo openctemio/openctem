@@ -1632,6 +1632,11 @@ vars:
     type: string
     default: "unset"
     description: "`1` opens every private range. Honored only with `APP_ENV=development`: with any other `APP_ENV` (or none) the API refuses to start, because it would open the platform's own network to every organization. Use `OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS` instead. Any value other than empty, `0` or `1` is refused."
+  - name: OPENCTEM_HTTPSEC_PLATFORM_HOSTS
+    component: api
+    group: "Integrations"
+    type: list
+    description: "Comma-separated hosts of more platform services (host names, IP addresses, host:port or URLs) that outbound calls of the API must never reach, whatever private ranges are opened. The API already blocks its database and cache hosts (`DB_HOST`, `REDIS_HOST`), the web and gateway health URLs and its own addresses, and resolves the list again every minute. Compose sets it to the admin console service."
   - name: OPENCTEM_HTTPSEC_ALLOW_PRIVATE_CIDRS
     component: api
     group: "Integrations"
