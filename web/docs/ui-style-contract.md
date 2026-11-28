@@ -1679,6 +1679,13 @@ user taps the field. With a mouse or trackpad the field gets focus on open.
   no text line or chip comes closer than 3 px to a ruled edge or crosses it
   (`cellCrowd`): a chip that would wrap past the row's line folds into "+N"
   or the row grows.
+- The same issue is one row. Three or more consecutive rows of one list that
+  read the same once numbers, addresses and ids are taken out fail the layout
+  matrix's `repeatedRows` detector: fold them into one row with its count and
+  the rest one click away (an overlay or a narrowed list), never drop them.
+- A list is one frame. Five or more framed boxes stacked one per row, each as
+  wide as its column and at most 200 px tall, fail `cardPerRow`: draw one
+  bordered list with a divider between rows.
 - Grids collapse: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-4` style, never a
   fixed column count without breakpoints.
 - `e2e/specs/75a-layout-breaks-lists.spec.ts` (and 75b settings, 75c shell, 75d detail) check the lists and their overlays at
