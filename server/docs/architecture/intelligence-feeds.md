@@ -98,7 +98,7 @@ platform's vulnerability data whatever the delivery mode (direct or relay):
 | `import_refused:<feed>` | the last import was refused (expired, bad signature, rollback, guard): at once, even while the data is still current | no |
 | `import_failing:<feed>` | imports have failed for two runs (at least 30 minutes); at once for a server setting refused at start-up (`config_invalid`, or `blocked_address` with the setting named), which no later run can fix | no |
 | `newest_record_old` | the newest published CVE in the corpus is older than 12 hours, or than the bundle limit when that is higher (about 280 CVEs are published a day) | yes |
-| `volume_low` | the CVEs published in the last 24 hours are under 30% of the daily average of the 30 days before (only on a corpus averaging 50 a day or more) | no |
+| `volume_low` | the CVEs published in each of the last two 24-hour windows are under 30% of the usual count for that weekday (the median of the same window 1 to 8 weeks earlier, at least 4 weeks of history, a usual count of at least 50). Both windows must fall short, so a weekend or public holiday (a single quiet day) never alerts, while two days of a real shortfall, or none at all, do | no |
 
 **Limits.** KEV and EPSS arrive only inside the signed vulnerability release, published every 2 to 6 hours, so
 their limits follow the bundle's (a fixed 6-hour KEV limit made the banner come and go between two releases; the default
@@ -112,6 +112,8 @@ audit entry `platform.feed_freshness_limits_changed`, every administrator told),
 hours the banner would flap between releases, and a release older than 7 days is refused as expired whatever the limit.
 A setting that cannot be read gives the strictest limit (6 hours), never looser than what was stored. KEV and EPSS cards show the bundle import's
 next run and cycle (20 minutes), not a schedule of their own. `internal/app/feedlimits`, `feedstatus.Limits`.
+
+When `volume_low` clears, the message to the administrators states the state now ("Back to normal: 372 CVEs in the last 24 hours (it was 91 against a usual 386)"); every cleared condition is worded as what holds now, never as the alarm that opened it.
 
 The two corpus checks run only once a bundle was applied, and catch an import that "succeeds" on old data. A feed an
 administrator switched off is not checked. The open conditions are stored in the platform setting `feed_freshness.state`
