@@ -3,6 +3,7 @@
 import { useTranslation } from '@/context/i18n-provider'
 import { formatNumber } from '@/lib/app-locale'
 import Link from '@/components/link'
+import { safeHref } from '@/lib/safe-href'
 
 /**
  * One line shown when a register hit its row cap: "Showing the first N of M".
@@ -29,7 +30,10 @@ export function CappedNotice({
       {allHref ? (
         <>
           {' '}
-          <Link href={allHref} className="font-medium text-foreground underline underline-offset-4">
+          <Link
+            href={safeHref(allHref) ?? '/assets'}
+            className="font-medium text-foreground underline underline-offset-4"
+          >
             {t('common.openAllInAssetList', 'Open all {total} in the asset list', {
               total: formatNumber(total),
             })}

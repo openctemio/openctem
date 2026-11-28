@@ -5,6 +5,7 @@ import { get } from '@/lib/api/client'
 import { endpoints } from '@/lib/api/endpoints'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { useAssetStats } from '@/features/assets/hooks/use-assets'
+import { DEFAULT_ATTRIBUTION } from '@/features/assets/lib/inventory-url'
 
 // Types matching backend response
 interface AssetStats {
@@ -164,9 +165,10 @@ export function useDashboardStats(tenantId: string | null) {
   // in the asset-stats endpoint (`risk_score_avg`, the AVG of assets.risk_score,
   // same value the executive summary reports). Source it here so every consumer
   // of `stats.assets.riskScore` shows the real value on one consistent scale.
-  // SWR dedupes the 'asset-stats' key, so this adds no extra network round-trip
-  // for pages that already read asset stats.
-  const { stats: assetStats } = useAssetStats()
+  // Asked with the same attribution as every figure on screen (the default
+  // inventory count), so SWR dedupes it with the page's own asset stats and
+  // this adds no extra network round-trip.
+  const { stats: assetStats } = useAssetStats({ attribution: DEFAULT_ATTRIBUTION })
 
   const stats = data ? transformStats(data) : emptyStats
   const mergedStats: DashboardStats = {
