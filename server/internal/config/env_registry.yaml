@@ -634,7 +634,7 @@ vars:
     group: "Authentication"
     type: duration
     default: "30s"
-    description: "How long after a refresh-token rotation the same client may present the replaced token again (parallel requests) and receive the successor already issued instead of ending the session. 0 disables; capped at 2m. Any other reuse still ends the session."
+    description: "How long after a refresh-token rotation the same client may present the replaced token again (parallel requests) and receive the successor already issued instead of ending the session. 0 disables; capped at 2m; `/auth/token` uses at most 5s. Requires the same user agent and the browser's client binding (`X-Refresh-Client-Binding`, forwarded by the web server); any other reuse still ends the session."
   - name: SCOPE_DENY_EXTRA
     component: api
     group: "Organizations and scope guardrails"

@@ -122,7 +122,7 @@ describe('vulnerability feed address', () => {
     vi.mocked(testVulnFeedSources).mockResolvedValue({
       results: [
         { origin: base.base_url, ok: true, format: 'v2', sequence: 41 },
-        { origin: base.mirrors[0], ok: false, error: 'root_mismatch' },
+        { origin: base.mirrors[0], ok: false, error: 'not_verified' },
       ],
     })
     render(<VulnFeedSourcesCard canEdit />)
@@ -133,7 +133,9 @@ describe('vulnerability feed address', () => {
     })
     const list = await screen.findByTestId('feed-test-results')
     expect(list).toHaveTextContent('Release 41, signed by the trusted root.')
-    expect(list).toHaveTextContent('not signed by the root this server trusts')
+    expect(list).toHaveTextContent('No verified feed was found at this address.')
+    // The answer names no cause: no status, root or reachability detail.
+    expect(list).not.toHaveTextContent('not signed by the root')
   })
 
   it('an administrator without the permission reads only', () => {
