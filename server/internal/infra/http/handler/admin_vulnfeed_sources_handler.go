@@ -127,7 +127,7 @@ func (h *AdminPlatformSettingsHandler) UpdateVulnFeedSources(w http.ResponseWrit
 
 // TestVulnFeedSources fetches and verifies the newest signed pointer.
 // @Summary      Test the vulnerability feed address
-// @Description  Fetches the key set and the newest signed pointer from the release URL and each mirror (the ones given, else the ones in force) with the platform's guarded feed client, and verifies them against the pinned root. Imports nothing. Refused (409 FEED_TEST_UNAVAILABLE) in relay mode or with a bundle directory, where the platform makes no outbound request. Platform owner permission (platform.settings.feed_sources); a few per minute per administrator.
+// @Description  Fetches the key set and the newest signed pointer from the release URL and each mirror (the ones given, else the ones in force) with the platform's guarded feed client, and verifies them against the pinned root. Imports nothing. Each address answers verified or one code (blocked_address, not_verified, not_configured): the precise cause is logged on the server, never returned. Every test is in the admin audit (platform.vulnfeed_sources_tested). Refused (409 FEED_TEST_UNAVAILABLE) in relay mode or with a bundle directory, where the platform makes no outbound request. Platform owner permission (platform.settings.feed_sources); a few per minute per administrator.
 // @Tags         Admin System
 // @Accept       json
 // @Produce      json
@@ -139,11 +139,15 @@ func (h *AdminPlatformSettingsHandler) UpdateVulnFeedSources(w http.ResponseWrit
 // @Security     AdminAuth
 // @Router       /admin/settings/vulnfeed-sources/test [post]
 func (h *AdminPlatformSettingsHandler) TestVulnFeedSources(w http.ResponseWriter, r *http.Request) {
+	actor := requireActor(w, r)
+	if actor == nil {
+		return
+	}
 	var req TestVulnFeedSourcesRequest
 	if !decodeSetting(w, r, &req) {
 		return
 	}
-	res, err := h.VulnFeedSources.Test(r.Context(), req.BaseURL, req.Mirrors)
+	res, err := h.VulnFeedSources.Test(r.Context(), actor, req.BaseURL, req.Mirrors, middleware.ClientIP(r), r.UserAgent())
 	switch {
 	case errors.Is(err, vulnfeedsources.ErrRelayMode):
 		apierror.New(http.StatusConflict, CodeFeedTestUnavailable, "Feeds come through the relay sensors, so the platform does not fetch them itself").
