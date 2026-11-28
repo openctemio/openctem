@@ -231,8 +231,13 @@ func (r *BusinessUnitRepository) RecalculateCounts(ctx context.Context, tenantID
 	return nil
 }
 
-// ScopedStats computes the rollup counters of the given units over the
-// assets in scope (the stored counters cover every asset of the unit).
+// ScopedStats computes the rollup counters of the given units live, over the
+// assets in scope (nil scope: every asset of the unit). Every reader gets
+// these: the stored counters are refreshed only when an asset joins or leaves
+// the unit, so they miss every finding opened or fixed since. The findings
+// are the dashboard population (open, not held, findingExcl: no program-only
+// asset, the viewer's pentest visibility, no compliance check), so a unit's
+// critical count adds up with the dashboard's.
 func (r *BusinessUnitRepository) ScopedStats(ctx context.Context, tenantID shared.ID, buIDs []shared.ID, scope *shared.DataScope) (map[shared.ID]businessunit.Stats, error) {
 	out := make(map[shared.ID]businessunit.Stats, len(buIDs))
 	if len(buIDs) == 0 {
@@ -243,7 +248,10 @@ func (r *BusinessUnitRepository) ScopedStats(ctx context.Context, tenantID share
 		ids[i] = id.String()
 		out[id] = businessunit.Stats{}
 	}
-	cond, scopeArgs := dataScopeCondAt("bua.asset_id", scope, 3)
+	cond, scopeArgs := sqlTrue, []any(nil)
+	if scope != nil {
+		cond, scopeArgs = dataScopeCondAt("bua.asset_id", scope, 3)
+	}
 	args := append([]any{tenantID.String(), pq.Array(ids)}, scopeArgs...)
 	query := `
 		SELECT bua.business_unit_id,
@@ -252,13 +260,13 @@ func (r *BusinessUnitRepository) ScopedStats(ctx context.Context, tenantID share
 		       COALESCE(SUM(fc.open_count), 0),
 		       COALESCE(SUM(fc.critical_count), 0)
 		  FROM business_unit_assets bua
-		  JOIN assets a ON a.id = bua.asset_id AND a.tenant_id = $1 AND a.deleted_at IS NULL
+		  JOIN assets a ON a.id = bua.asset_id AND a.tenant_id = $1 AND a.deleted_at IS NULL` + programAssetExcl(ctx, "a.") + `
 		  LEFT JOIN LATERAL (
 		        SELECT COUNT(*) AS open_count,
 		               COUNT(*) FILTER (WHERE f.severity = 'critical') AS critical_count
 		          FROM findings f
 		         WHERE f.asset_id = bua.asset_id AND f.tenant_id = $1 AND NOT f.branch_only
-		           AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + `
+		           AND ` + vulnerability.OpenStatusSQL("f.status") + ` AND ` + vulnerability.NotHeldSQL("f.verification_state") + findingExcl(ctx, "f.asset_id") + `
 		  ) fc ON TRUE
 		 WHERE bua.tenant_id = $1 AND bua.business_unit_id = ANY($2::uuid[]) AND ` + cond + `
 		 GROUP BY bua.business_unit_id`

@@ -23,6 +23,7 @@ import { Building2, Crown } from 'lucide-react'
 import { useTenant } from '@/context/tenant-provider'
 import { useDashboardStats } from '@/features/dashboard/hooks/use-dashboard-stats'
 import { useAssetStats } from '@/features/assets/hooks/use-assets'
+import { DEFAULT_ATTRIBUTION } from '@/features/assets/lib/inventory-url'
 import {
   useBusinessUnits,
   type BusinessUnit,
@@ -104,9 +105,16 @@ function buildColumns(t: TFn): ColumnDef<BusinessUnit>[] {
           title={t('prioritization.businessImpact.col.risk', 'Avg risk')}
         />
       ),
-      cell: ({ row }) => (
-        <RiskScoreBadge score={Number((row.original.avg_risk_score || 0).toFixed(1))} size="sm" />
-      ),
+      // A unit nobody assigned an asset to has no risk to show, not "no open
+      // risk": say what is missing.
+      cell: ({ row }) =>
+        row.original.asset_count === 0 ? (
+          <span className="text-sm text-muted-foreground">
+            {t('prioritization.businessImpact.noAssets', 'No assets assigned')}
+          </span>
+        ) : (
+          <RiskScoreBadge score={Number((row.original.avg_risk_score || 0).toFixed(1))} size="sm" />
+        ),
     },
   ]
 }
@@ -126,7 +134,7 @@ export default function BusinessImpactPage() {
     isLoading: assetStatsLoading,
     error: assetStatsError,
     mutate: retryAssetStats,
-  } = useAssetStats()
+  } = useAssetStats({ attribution: DEFAULT_ATTRIBUTION })
   const { data: buData, isLoading: buLoading, error: buError, mutate: retryBu } = useBusinessUnits()
   const {
     data: crownData,

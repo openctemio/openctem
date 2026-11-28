@@ -13,16 +13,17 @@ import { changesRequestUrl, type ChangeQuery } from '../lib/changes'
  * caller's data scope. The relative window is fixed when the query changes,
  * so later pages continue the same window.
  */
-export function useEASMChanges(q: ChangeQuery) {
+export function useEASMChanges(q: ChangeQuery, enabled = true) {
   const { can } = usePermissions()
   const allowed = can(Permission.AssetsRead)
-  const key = `${q.from ?? ''}|${q.to ?? ''}|${q.days}|${q.kinds.join(',')}`
+  const g = q.group
+  const key = `${q.from ?? ''}|${q.to ?? ''}|${q.days}|${q.kinds.join(',')}|${q.grouped ? 1 : 0}|${g ? `${g.kind}/${g.detail}/${g.asset_id ?? ''}` : ''}`
   // eslint-disable-next-line react-hooks/exhaustive-deps -- a new window starts when the query changes
   const now = useMemo(() => new Date(), [key])
   const { data, error, isLoading, isValidating, size, setSize, mutate } =
     useSWRInfinite<EASMChangePage>(
       (index, previous: EASMChangePage | null) => {
-        if (!allowed) return null
+        if (!allowed || !enabled) return null
         if (index === 0) return changesRequestUrl(q, undefined, now)
         if (!previous?.next_cursor) return null
         return changesRequestUrl(q, previous.next_cursor, now)
@@ -34,6 +35,7 @@ export function useEASMChanges(q: ChangeQuery) {
   const first = pages[0]
   return {
     items: pages.flatMap((p) => p.items ?? []),
+    groups: pages.flatMap((p) => p.groups ?? []),
     counts: (first?.counts ?? {}) as Record<string, number>,
     total: first?.total ?? 0,
     from: first?.from,

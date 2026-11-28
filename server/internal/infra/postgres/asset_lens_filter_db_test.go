@@ -50,7 +50,7 @@ func TestAssetLensFilter_ListAndStats(t *testing.T) {
 	}
 
 	stats, err := repo.GetAggregateStats(ctx, tenant, asset.AccessScope{}, nil,
-		[]string{string(asset.LensData)}, nil, "")
+		[]string{string(asset.LensData)}, nil, "", nil)
 	if err != nil {
 		t.Fatalf("GetAggregateStats: %v", err)
 	}

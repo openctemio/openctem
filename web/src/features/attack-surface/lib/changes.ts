@@ -32,6 +32,18 @@ export interface ChangeQuery {
   to?: string
   days: number
   kinds: ChangeKind[]
+  /** Fold the changes of one kind, detail and asset into one row. */
+  grouped?: boolean
+  /** Only the changes behind one grouped row. */
+  group?: ChangeGroupKey
+}
+
+/** What folds changes into one row (the API's group key). */
+export interface ChangeGroupKey {
+  kind: string
+  detail: string
+  /** Empty: the changes without an asset. */
+  asset_id?: string
 }
 
 /** Builds the request URL of one page. now is injectable for tests. */
@@ -45,6 +57,12 @@ export function changesRequestUrl(q: ChangeQuery, cursor?: string, now: Date = n
     p.set('from', new Date(now.getTime() - days * 86_400_000).toISOString())
   }
   if (q.kinds.length > 0) p.set('kind', q.kinds.join(','))
+  if (q.grouped) p.set('grouped', 'true')
+  if (q.group) {
+    p.set('group_kind', q.group.kind)
+    p.set('group_detail', q.group.detail)
+    if (q.group.asset_id) p.set('group_asset', q.group.asset_id)
+  }
   p.set('limit', '50')
   if (cursor) p.set('cursor', cursor)
   return `/api/v1/easm/changes?${p.toString()}`

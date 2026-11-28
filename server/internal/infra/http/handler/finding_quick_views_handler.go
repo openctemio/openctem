@@ -10,6 +10,7 @@ import (
 
 	"github.com/openctemio/openctem/server/internal/infra/http/middleware"
 	"github.com/openctemio/openctem/server/pkg/apierror"
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
 	"github.com/openctemio/openctem/server/pkg/logger"
 )
@@ -53,10 +54,14 @@ type FindingQuickViewsResponse struct {
 // @Description  (503 when it runs out). Responses may be cached privately for 60 s. The work views (active, my_queue,
 // @Description  sla_breached) leave informational findings out (informational=false) unless the caller's preference,
 // @Description  else the organization's default, includes them; needs_triage always leaves them out.
+// @Description  practice is the list's practice view the counts are taken under (vulnerabilities, the list's
+// @Description  default and the dashboards' population: every finding but compliance checks; all; or one practice).
 // @Tags         Findings
 // @Produce      json
 // @Security     BearerAuth
+// @Param        practice  query  string  false  "Practice view: vulnerabilities (default), all, or a practice"
 // @Success      200  {object}  FindingQuickViewsResponse
+// @Failure      400  {object}  apierror.Response
 // @Failure      401  {object}  apierror.Response
 // @Failure      403  {object}  apierror.Response
 // @Failure      503  {object}  apierror.Response
@@ -68,8 +73,12 @@ func (h *VulnerabilityHandler) FindingQuickViews(w http.ResponseWriter, r *http.
 		memberChoice = u.Preferences().FindingsIncludeInformational
 	}
 	include := h.service.IncludeInformational(ctx, middleware.GetTenantID(ctx), memberChoice)
-	views, err := h.service.CountQuickViews(ctx, filterCaller(r), include)
+	views, err := h.service.CountQuickViewsIn(ctx, filterCaller(r), include, r.URL.Query().Get("practice"), nil)
 	if err != nil {
+		if errors.Is(err, shared.ErrValidation) {
+			apierror.BadRequest("practice must be vulnerabilities, all or one practice").WriteJSON(w)
+			return
+		}
 		if errors.Is(err, vulnerability.ErrFindingCountTimeout) {
 			apierror.ServiceUnavailable("Counting findings took too long; try again shortly").WriteJSON(w)
 			return

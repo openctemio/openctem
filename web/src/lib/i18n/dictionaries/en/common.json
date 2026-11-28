@@ -210,6 +210,7 @@
   "common.oneTimeLink.handOver": "Give this link to the person over a channel you trust. Anyone who opens it can use it.",
   "common.oneTimeLink.notShownAgain": "It will not be shown again; copy a new link if it is lost.",
   "common.oneTimeLink.shownOnce": "Shown once",
+  "common.openAllInAssetList": "Open all {total} in the asset list",
   "common.openFullPage": "Open full page",
   "common.opensNewTab": "(opens in a new tab)",
   "common.pageNotFound.description": "The page you are looking for does not exist or has been moved.",

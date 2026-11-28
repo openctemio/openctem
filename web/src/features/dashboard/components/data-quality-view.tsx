@@ -326,9 +326,11 @@ export function DataQualityView() {
                   },
                   {
                     key: 'findings',
-                    label: t('insights.dataQuality.totalFindings', 'Total findings'),
+                    // Every status (the score is over all findings), so the
+                    // link opens the list in every state, not only Active.
+                    label: t('insights.dataQuality.totalFindings', 'All findings, any status'),
                     value: q?.total_findings ?? 0,
-                    href: '/findings',
+                    href: '/findings?state=all',
                   },
                 ]}
               />

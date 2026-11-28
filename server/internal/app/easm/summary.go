@@ -39,7 +39,11 @@ type SummaryData struct {
 	CTNeverSucceeded   int
 }
 
-// RiskRow is one open exposure on the external surface.
+// RiskRow is one group of open exposures on the external surface: every
+// open exposure with the same type, severity and title (the same issue on
+// several assets) is one row. ID, AssetID and AssetName are the most recently
+// seen exposure of the group; Count is how many open exposures the group
+// holds and Assets on how many distinct assets.
 type RiskRow struct {
 	ID        string
 	Type      string
@@ -48,6 +52,8 @@ type RiskRow struct {
 	AssetID   *string
 	AssetName *string
 	LastSeen  time.Time
+	Count     int
+	Assets    int
 }
 
 // Service builds the overview.
@@ -62,7 +68,7 @@ func NewService(repo SummaryReader, scope *datascope.Enforcer) *Service {
 	return &Service{repo: repo, dataScope: scope, now: func() time.Time { return time.Now().UTC() }}
 }
 
-// topRisks is how many open exposures the overview lists.
+// topRisks is how many groups of open exposures the overview lists.
 const topRisks = 10
 
 // Summary is the overview response.
@@ -124,7 +130,11 @@ type TypeCount struct {
 	Count int    `json:"count"`
 }
 
-// Risk is one open exposure in the top list.
+// Risk is one issue in the top list: the open exposures that share a type,
+// severity and title. ID, AssetID and AssetName are its most recently seen
+// exposure; Count is how many open exposures share the issue and Assets on
+// how many distinct assets, so the same issue on many assets is one row and
+// every asset stays reachable from the exposure list.
 type Risk struct {
 	ID        string    `json:"id"`
 	Type      string    `json:"type"`
@@ -133,6 +143,8 @@ type Risk struct {
 	AssetID   *string   `json:"asset_id,omitempty"`
 	AssetName *string   `json:"asset_name,omitempty"`
 	LastSeen  time.Time `json:"last_seen"`
+	Count     int       `json:"count"`
+	Assets    int       `json:"assets"`
 }
 
 // MonitoringBlock is the freshness of the passive CT monitoring.

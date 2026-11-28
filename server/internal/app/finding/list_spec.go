@@ -446,6 +446,18 @@ func (s *VulnerabilityService) CountQuickViews(ctx context.Context, c FilterCall
 // counts its four finding queues this way: the same params and the same
 // compile path as the quick views, without the facets it does not show.
 func (s *VulnerabilityService) CountQuickViewsOf(ctx context.Context, c FilterCaller, includeInformational bool, keys []string) ([]QuickViewCount, error) {
+	return s.CountQuickViewsIn(ctx, c, includeInformational, "", keys)
+}
+
+// CountQuickViewsIn is CountQuickViewsOf under a practice view of the list
+// (vulnerability.PracticeViewParams; "" is the list's default view,
+// vulnerabilities): the practice is the list's scope, so each count equals the
+// list the view opens under the practice the person is looking at.
+func (s *VulnerabilityService) CountQuickViewsIn(ctx context.Context, c FilterCaller, includeInformational bool, practiceView string, keys []string) ([]QuickViewCount, error) {
+	practiceParams, err := vulnerability.PracticeViewParams(practiceView)
+	if err != nil {
+		return nil, fmt.Errorf("%w: unknown practice view", shared.ErrValidation)
+	}
 	repo, ok := s.findingRepo.(findingFacetRepo)
 	if !ok {
 		return nil, errNoFindingWhereRepo
@@ -492,7 +504,11 @@ func (s *VulnerabilityService) CountQuickViewsOf(ctx context.Context, c FilterCa
 		hiddenAt[i] = len(facets)
 		facets = append(facets, hidden)
 	}
-	where, preds, err := filterspec.CompileFacets(vulnerability.WithBranchOnlyDefault(&filterspec.Spec{}), facets, vulnerability.FindingFields, actor)
+	base, err := parse("practice", practiceParams)
+	if err != nil {
+		return nil, err
+	}
+	where, preds, err := filterspec.CompileFacets(vulnerability.WithBranchOnlyDefault(base), facets, vulnerability.FindingFields, actor)
 	if err != nil {
 		return nil, err
 	}

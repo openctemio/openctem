@@ -64,7 +64,7 @@ func TestAssetAggregateStats_CountsOpenFindingsOnly(t *testing.T) {
 	finding(other, otherAsset, "new", false)
 	finding(other, otherAsset, "confirmed", false)
 
-	stats, err := repo.GetAggregateStats(ctx, shared.MustIDFromString(tenant), asset.AccessScope{}, nil, nil, nil, "")
+	stats, err := repo.GetAggregateStats(ctx, shared.MustIDFromString(tenant), asset.AccessScope{}, nil, nil, nil, "", nil)
 	if err != nil {
 		t.Fatalf("GetAggregateStats: %v", err)
 	}

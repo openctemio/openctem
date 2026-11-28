@@ -14,6 +14,7 @@ import Link from '@/components/link'
 import { Settings2, ShieldCheck } from 'lucide-react'
 import { useTranslation } from '@/context/i18n-provider'
 import { Button } from '@/components/ui/button'
+import { safeHref } from '@/lib/safe-href'
 import {
   Card,
   CardAction,
@@ -73,6 +74,14 @@ export const TITLE_LINK_HEADER_CLASS =
 /** The attribution review queue page. */
 export const EASM_REVIEW_HREF = '/attack-surface/review'
 
+/**
+ * The exposure list narrowed to one issue of the "Fix first" list: every
+ * asset the issue is open on (the overview row names only the latest).
+ */
+export function riskGroupHref(title: string | undefined): string {
+  return `/exposures?q=${encodeURIComponent(title ?? '')}`
+}
+
 /** The API's severity string as a known severity (unknown → info). */
 export function toSeverity(s: string | undefined): Severity {
   return SEVERITIES.includes(s as Severity) ? (s as Severity) : 'info'
@@ -93,7 +102,6 @@ export function EASMTopRisks() {
   const { summary, isLoading, error, mutate } = useEASMSummary()
   useSettleSignal(isLoading)
   const risks = summary?.top_risks ?? []
-  const open = summary?.exposures?.open ?? 0
 
   return (
     <Card className="lg:col-span-2" data-testid="easm-fix-first">
@@ -105,11 +113,9 @@ export function EASMTopRisks() {
         </CardTitle>
         <CardAction className="row-span-1">
           <Button size="sm" variant="outline" asChild>
-            <Link href="/exposures">
-              {open > 0
-                ? t('easmReview.overview.allOpen', 'All {n} open', { n: open })
-                : t('easmReview.overview.allExposures', 'All exposures')}
-            </Link>
+            {/* No count here: the list it opens holds every exposure, not only
+                the external ones this card counts, so a number would disagree. */}
+            <Link href="/exposures">{t('easmReview.overview.allExposures', 'All exposures')}</Link>
           </Button>
         </CardAction>
         <CardDescription className="col-span-2">
@@ -152,6 +158,19 @@ export function EASMTopRisks() {
                       <AssetPeekLink assetId={r.asset_id} className="truncate text-xs">
                         {r.asset_name}
                       </AssetPeekLink>
+                    )}
+                    {/* The same issue on several assets is one row: the rest
+                        open in the exposure list, narrowed to this issue. */}
+                    {(r.assets ?? 0) > 1 && (
+                      <Link
+                        href={safeHref(riskGroupHref(r.title)) ?? '/exposures'}
+                        className="shrink-0 text-primary hover:underline"
+                        data-testid="easm-risk-more"
+                      >
+                        {t('easmReview.overview.moreAssets', '+{count} more', {
+                          count: (r.assets ?? 1) - (r.asset_name ? 1 : 0),
+                        })}
+                      </Link>
                     )}
                   </div>
                 </div>

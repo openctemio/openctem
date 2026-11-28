@@ -84,7 +84,7 @@ export function EASMPosture() {
     return [
       {
         key: 'assets',
-        label: t('attackSurface.posture.strip.assets', 'Surface assets'),
+        label: t('attackSurface.posture.strip.assets', 'External assets measured'),
         value: posture.score.assets,
         href: '/attack-surface/external',
       },
@@ -251,7 +251,7 @@ export function EASMPosture() {
                   {t('attackSurface.posture.planEmpty', 'Nothing to fix to reach the next grade.')}
                 </p>
               ) : (
-                <PosturePlanList steps={posture.plan.steps} />
+                <PosturePlanList steps={posture.plan.steps} currentScore={posture.score.score} />
               )}
             </CardContent>
           </Card>

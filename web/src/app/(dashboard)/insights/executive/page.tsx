@@ -460,9 +460,12 @@ export default function ExecutiveSummaryPage() {
                 {
                   key: 'no-owner',
                   notMeasuredLabel,
-                  label: t('insights.executive.noOwner', 'Findings without owner'),
+                  label: t('insights.executive.noOwner', 'Unassigned open findings'),
                   value: formatCount(processMetrics.findings_without_owner, locale),
-                  caption: t('insights.executive.needTriage', 'Need triage assignment'),
+                  caption: t(
+                    'insights.executive.needTriage',
+                    'Opened in the last 90 days, nobody assigned'
+                  ),
                 },
                 {
                   key: 'assign',

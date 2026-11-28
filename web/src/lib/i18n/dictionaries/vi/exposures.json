@@ -236,7 +236,7 @@
   "exposures.list.subject": "danh sách phơi nhiễm",
   "exposures.list.total": "{count, plural, other {# phơi nhiễm}}",
   "exposures.metrics.closed": "Đã đóng",
-  "exposures.metrics.total": "Tổng số phơi nhiễm",
+  "exposures.metrics.total": "Mọi phơi nhiễm, mọi trạng thái",
   "exposures.misconfigurations.assetsByType": "Tài sản theo loại",
   "exposures.misconfigurations.assetsDescription": "Cơ cấu tài sản của bạn trên {count} tài sản",
   "exposures.misconfigurations.assetsEmpty": "Chưa có dữ liệu loại tài sản",

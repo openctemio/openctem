@@ -226,6 +226,21 @@ func (r *Recorder) Record(ctx context.Context, actor *admin.AdminUser, ch Change
 	}
 	r.log.Warn("platform setting changed", "alert", "platform_setting_changed", "key", ch.Key,
 		"action", ch.Action, "admin_id", actor.ID().String())
+	r.writeAudit(ctx, actor, ch, ip, userAgent)
+	r.notify(ctx, actor, ch, ip)
+}
+
+// RecordUse writes the admin audit row of an action on a setting that
+// changes nothing (a test fetch, for instance): no change alert and no
+// notice, whatever ch.Notify says.
+func (r *Recorder) RecordUse(ctx context.Context, actor *admin.AdminUser, ch Change, ip, userAgent string) {
+	if r == nil || actor == nil {
+		return
+	}
+	r.writeAudit(ctx, actor, ch, ip, userAgent)
+}
+
+func (r *Recorder) writeAudit(ctx context.Context, actor *admin.AdminUser, ch Change, ip, userAgent string) {
 	if r.audit != nil {
 		body := map[string]any{}
 		for k, v := range ch.Details {
@@ -249,6 +264,9 @@ func (r *Recorder) Record(ctx context.Context, actor *admin.AdminUser, ch Change
 			r.log.Error("write admin audit for a platform setting change", "key", ch.Key, "error", err)
 		}
 	}
+}
+
+func (r *Recorder) notify(ctx context.Context, actor *admin.AdminUser, ch Change, ip string) {
 	if ch.Notify && r.notifier != nil {
 		name := r.appName
 		if name == "" {

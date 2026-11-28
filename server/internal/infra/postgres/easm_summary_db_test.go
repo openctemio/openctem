@@ -129,3 +129,65 @@ func TestEASMSummaryRepository(t *testing.T) {
 		t.Errorf("scoped summary leaks: types %v sev %v review %v", s.AssetsByType, s.OpenBySeverity, s.OldestReviewSince)
 	}
 }
+
+// The same issue on many assets is one "Fix first" row with its count, the
+// latest exposure standing for it; another tenant's identical issue never
+// joins the group, and a scoped member counts only the assets it may see.
+func TestEASMSummaryTopRisksGroupIdenticalIssues(t *testing.T) {
+	db := openSensorDB(t)
+	ctx := context.Background()
+	repo := NewEASMSummaryRepository(&DB{DB: db})
+	tenant := seedTestTenant(ctx, t, db)
+	other := seedTestTenant(ctx, t, db)
+	now := time.Now().UTC()
+
+	var ips []string
+	for _, n := range []string{"198.51.100.10", "198.51.100.11", "198.51.100.12"} {
+		ips = append(ips, seedSurfaceAsset(ctx, t, db, tenant, n, "ip_address", now.Add(-48*time.Hour)))
+	}
+	for _, id := range ips {
+		seedExposure(ctx, t, db, tenant, id, "port_open", "critical", "active")
+	}
+	// The latest one stands for the group.
+	if _, err := db.ExecContext(ctx, `UPDATE exposure_events SET last_seen_at = now() + interval '1 minute'
+		WHERE tenant_id = $1 AND asset_id = $2`, tenant.String(), ips[2]); err != nil {
+		t.Fatal(err)
+	}
+	single := seedSurfaceAsset(ctx, t, db, tenant, "www.example.com", "subdomain", now)
+	seedExposure(ctx, t, db, tenant, single, "certificate_expiring", "high", "active")
+	otherAsset := seedSurfaceAsset(ctx, t, db, other, "203.0.113.9", "ip_address", now)
+	seedExposure(ctx, t, db, other, otherAsset, "port_open", "critical", "active")
+
+	d, err := repo.Summary(ctx, tenant, nil, now, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.TopRisks) != 2 {
+		t.Fatalf("top risks = %+v, want 2 groups", d.TopRisks)
+	}
+	g := d.TopRisks[0]
+	if g.Type != "port_open" || g.Count != 3 || g.Assets != 3 || g.AssetName == nil || *g.AssetName != "198.51.100.12" {
+		t.Errorf("group = %+v (count/assets must be 3, latest asset 198.51.100.12; the other tenant's row must not join)", g)
+	}
+	if s := d.TopRisks[1]; s.Type != "certificate_expiring" || s.Count != 1 || s.Assets != 1 {
+		t.Errorf("single = %+v", s)
+	}
+
+	// A member scoped to one address sees a group of one.
+	user := shared.NewID()
+	if _, err := db.ExecContext(ctx, `INSERT INTO users (id, email, name) VALUES ($1, $2, 'scoped')`, user.String(), user.String()+"@easm.test"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), `DELETE FROM users WHERE id = $1`, user.String()) })
+	if _, err := db.ExecContext(ctx, `INSERT INTO user_accessible_assets (user_id, tenant_id, asset_id) VALUES ($1, $2, $3)`,
+		user.String(), tenant.String(), ips[0]); err != nil {
+		t.Fatal(err)
+	}
+	s, err := repo.Summary(ctx, tenant, &shared.DataScope{TenantID: tenant, UserID: user}, now, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.TopRisks) != 1 || s.TopRisks[0].Count != 1 || *s.TopRisks[0].AssetName != "198.51.100.10" {
+		t.Errorf("scoped top risks = %+v", s.TopRisks)
+	}
+}

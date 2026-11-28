@@ -278,13 +278,16 @@ export default function CrownJewelsPage() {
     tags: '',
   })
 
+  // The register's total is the server's count, not the rows loaded: past the
+  // row cap the tile still says how many crown jewels the organization has.
+  const registerTotal = apiCrownJewels?.total
   const stats = useMemo(() => {
     const jewels = crownJewels
     return {
-      total: jewels.length,
+      total: Math.max(registerTotal ?? 0, jewels.length),
       exposed: jewels.filter(isExposed).length,
     }
-  }, [crownJewels])
+  }, [crownJewels, registerTotal])
 
   const assetTypes = useMemo(
     () => [...new Set(crownJewels.map((j) => j.assetType).filter(Boolean) as string[])].sort(),
@@ -701,6 +704,7 @@ export default function CrownJewelsPage() {
           <CappedNotice
             loaded={(apiCrownJewels?.data ?? []).length}
             total={apiCrownJewels?.total ?? 0}
+            allHref="/assets?is_crown_jewel=true"
           />
         </PageStack>
       </Main>
