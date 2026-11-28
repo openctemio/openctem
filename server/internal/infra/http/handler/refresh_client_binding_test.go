@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -21,7 +22,7 @@ func TestRefreshClientBinding(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := httptest.NewRequest("POST", "/api/v1/auth/refresh", nil)
+			r := httptest.NewRequestWithContext(context.Background(), "POST", "/api/v1/auth/refresh", nil)
 			if tc.value != "" {
 				r.Header.Set(RefreshClientBindingHeader, tc.value)
 			}
