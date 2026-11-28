@@ -20,7 +20,7 @@
   "src/app/(dashboard)/(scoping)/crown-jewels/page.tsx": 6,
   "src/app/(dashboard)/(scoping)/cycles/page.tsx": 5,
   "src/app/(dashboard)/(validation)/attack-simulation/page.tsx": 5,
-  "src/app/(dashboard)/(validation)/control-testing/page.tsx": 11,
+  "src/app/(dashboard)/(validation)/control-testing/page.tsx": 10,
   "src/app/(dashboard)/(validation)/controls/page.tsx": 6,
   "src/app/(dashboard)/(validation)/pentest/campaigns/page.tsx": 7,
   "src/app/(dashboard)/insights/executive/page.tsx": 5,
