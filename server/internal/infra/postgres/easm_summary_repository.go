@@ -273,14 +273,27 @@ func (r *EASMSummaryRepository) exposureCounts(ctx context.Context, tenantID sha
 func (r *EASMSummaryRepository) topRisks(ctx context.Context, tenantID shared.ID, scope *shared.DataScope, topN int) ([]easm.RiskRow, error) {
 	args := []any{tenantID.String(), pq.Array(EASMExposureTypes), topN}
 	sc, args := scopeClause("e.asset_id", scope, args)
+	// One row per issue (type, severity, title): the same issue on many
+	// assets is one row with its count, represented by the most recently
+	// seen exposure. Most severe first, then the widest spread.
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT e.id, e.event_type, e.severity, e.title, e.asset_id, a.name, e.last_seen_at
-		FROM exposure_events e
-		LEFT JOIN assets a ON a.id = e.asset_id AND a.tenant_id = e.tenant_id
-		WHERE e.tenant_id = $1 AND e.state IN ('active', 'in_progress') AND e.event_type = ANY($2)
-		  AND e.severity IN ('critical', 'high', 'medium')
-		  AND (a.id IS NULL OR a.deleted_at IS NULL)`+notRejectedFor("e.asset_id")+sc+`
-		ORDER BY CASE e.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 ELSE 2 END, e.last_seen_at DESC
+		WITH open AS (
+			SELECT e.id, e.event_type, e.severity, e.title, e.asset_id, a.name AS asset_name, e.last_seen_at
+			FROM exposure_events e
+			LEFT JOIN assets a ON a.id = e.asset_id AND a.tenant_id = e.tenant_id
+			WHERE e.tenant_id = $1 AND e.state IN ('active', 'in_progress') AND e.event_type = ANY($2)
+			  AND e.severity IN ('critical', 'high', 'medium')
+			  AND (a.id IS NULL OR a.deleted_at IS NULL)`+notRejectedFor("e.asset_id")+sc+`
+		)
+		SELECT (array_agg(o.id ORDER BY o.last_seen_at DESC, o.id DESC))[1],
+		       o.event_type, o.severity, o.title,
+		       (array_agg(o.asset_id ORDER BY o.last_seen_at DESC, o.id DESC))[1],
+		       (array_agg(o.asset_name ORDER BY o.last_seen_at DESC, o.id DESC))[1],
+		       max(o.last_seen_at), count(*), count(DISTINCT o.asset_id)
+		FROM open o
+		GROUP BY o.event_type, o.severity, o.title
+		ORDER BY CASE o.severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 ELSE 2 END,
+		         count(*) DESC, max(o.last_seen_at) DESC, o.title
 		LIMIT $3`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("easm top risks: %w", err)
@@ -290,7 +303,7 @@ func (r *EASMSummaryRepository) topRisks(ctx context.Context, tenantID shared.ID
 	for rows.Next() {
 		var rk easm.RiskRow
 		var assetID, assetName sql.NullString
-		if err := rows.Scan(&rk.ID, &rk.Type, &rk.Severity, &rk.Title, &assetID, &assetName, &rk.LastSeen); err != nil {
+		if err := rows.Scan(&rk.ID, &rk.Type, &rk.Severity, &rk.Title, &assetID, &assetName, &rk.LastSeen, &rk.Count, &rk.Assets); err != nil {
 			return nil, err
 		}
 		if assetID.Valid {

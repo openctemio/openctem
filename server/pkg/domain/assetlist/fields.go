@@ -3,6 +3,7 @@ package assetlist
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -540,4 +541,42 @@ func attributionExpand() map[string][]string {
 func storedAttributionStates() []attribution.State {
 	return []attribution.State{attribution.StateConfirmed, attribution.StateDiscovered, attribution.StateNeedsReview,
 		attribution.StateCandidate, attribution.StateDependency, attribution.StateMonitorOnly, attribution.StateRejected}
+}
+
+// AttributionInSQL is the list's "attribution" filter (?attribution=a,b) as a
+// predicate on the assets alias "a", whose one bind arg ($argIndex) is the
+// text array of the expanded values returned.
+// It reads the list field itself (its SQL, values and expansions), so an
+// aggregate that takes the same ?attribution= counts exactly the assets the
+// list shows. No values (or "all") means no filter: ok is false. An unknown
+// value is an error.
+func AttributionInSQL(values []string, argIndex int) (cond string, expanded []string, ok bool, err error) {
+	f, found := Fields.Field("attribution")
+	if !found {
+		return "", nil, false, fmt.Errorf("attribution field missing")
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if v == attribution.FilterAll {
+			return "", nil, false, nil
+		}
+		if !slices.Contains(f.Enum, v) {
+			return "", nil, false, fmt.Errorf("unknown attribution filter %q", v)
+		}
+		for _, x := range append([]string{v}, f.EnumExpand[v]...) {
+			if !seen[x] {
+				seen[x] = true
+				out = append(out, x)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return "", nil, false, nil
+	}
+	return fmt.Sprintf("(%s = ANY($%d::text[]))", attributionStateSQL, argIndex), out, true, nil
 }

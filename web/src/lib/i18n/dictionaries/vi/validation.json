@@ -100,6 +100,7 @@
   "validation.controlTesting.mitreDesc": "Tỷ lệ phát hiện và ngăn chặn theo từng kỹ thuật, từ các mô phỏng.",
   "validation.controlTesting.mitreTitle": "Độ phủ MITRE ATT&CK",
   "validation.controlTesting.never": "Chưa bao giờ",
+  "validation.controlTesting.notTestedYet": "Chưa kiểm thử",
   "validation.controlTesting.passCount": "{count} đạt",
   "validation.controlTesting.passing": "{pct}% đạt",
   "validation.controlTesting.recordAria": "Ghi kết quả kiểm thử cho {name}",

@@ -303,6 +303,10 @@ func (h *EASMHandler) HasChanges() bool { return h.changes != nil }
 // @Param        kind    query  string  false  "Comma-separated kinds"
 // @Param        limit   query  int     false  "Page size (max 200)"
 // @Param        cursor  query  string  false  "Next page cursor"
+// @Param        grouped       query  bool    false  "Fold the changes of one kind, detail and asset into one row (groups instead of items)"
+// @Param        group_kind    query  string  false  "Only the changes of this group: its kind (with group_detail and group_asset)"
+// @Param        group_detail  query  string  false  "Only the changes of this group: its detail"
+// @Param        group_asset   query  string  false  "Only the changes of this group: its asset id (empty: changes without an asset)"
 // @Success      200  {object}  easmchange.Page
 // @Failure      400  {object}  apierror.Error
 // @Failure      401  {object}  apierror.Error
@@ -340,6 +344,10 @@ func (h *EASMHandler) Changes(w http.ResponseWriter, r *http.Request) {
 	}
 	q.Limit = limit
 	q.Cursor = v.Get("cursor")
+	q.Grouped = v.Get("grouped") == queryParamTrue || v.Get("grouped") == "1"
+	if k := v.Get("group_kind"); k != "" {
+		q.Group = &easmchange.GroupKey{Kind: easmchange.Kind(k), Detail: v.Get("group_detail"), AssetID: v.Get("group_asset")}
+	}
 	page, err := h.changes.List(r.Context(), tenantID, q)
 	if err != nil {
 		if errors.Is(err, easmchange.ErrInvalidQuery) {

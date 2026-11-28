@@ -5,7 +5,9 @@ package authscenarios
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -79,6 +81,9 @@ type browser struct {
 	h      *http.Client
 	ip     string
 	bearer string
+	// binding is the per-browser refresh client binding the console server
+	// forwards (X-Refresh-Client-Binding); tabs of one browser share it.
+	binding string
 }
 
 func newBrowser(base string) *browser {
@@ -88,8 +93,15 @@ func newBrowser(base string) *browser {
 		jar:  jar,
 		h: &http.Client{Timeout: 90 * time.Second, Jar: jar,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
-		ip: nextIP(),
+		ip:      nextIP(),
+		binding: newBinding(),
 	}
+}
+
+func newBinding() string {
+	b := make([]byte, 24)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // do sends one request; a transport error (a busy stack) is retried twice.
@@ -122,6 +134,7 @@ func (b *browser) once(method, path string, body any) (response, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Forwarded-For", b.ip)
+	req.Header.Set("X-Refresh-Client-Binding", b.binding)
 	if b.bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+b.bearer)
 	}
@@ -175,6 +188,7 @@ func (b *browser) setRefresh(token string) {
 func (b *browser) clone() *browser {
 	c := newBrowser(b.base)
 	c.ip = b.ip
+	c.binding = b.binding
 	u, _ := url.Parse(b.base)
 	c.jar.SetCookies(u, b.jar.Cookies(u))
 	return c

@@ -69,6 +69,7 @@ func NewControlTest(tenantID shared.ID, name, framework, controlID string) (*Con
 	if name == "" {
 		return nil, fmt.Errorf("%w: name is required", shared.ErrValidation)
 	}
+	framework = CanonicalFramework(framework)
 	if framework == "" {
 		return nil, fmt.Errorf("%w: framework is required", shared.ErrValidation)
 	}

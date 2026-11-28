@@ -153,7 +153,10 @@ type Repository interface {
 	// GetAggregateStats computes all asset statistics using SQL aggregation.
 	// Filters: types (asset_type ANY), tags (overlap, matches List semantics).
 	// access applies the acting user's data scope, the same predicate as List.
-	GetAggregateStats(ctx context.Context, tenantID shared.ID, access AccessScope, types, lenses, tags []string, subType string, countByFields ...string) (*AggregateStats, error)
+	// attributionValues are the list's ?attribution= values, applied through
+	// the list's own field, so a count matches the list it opens (none = every
+	// attribution state).
+	GetAggregateStats(ctx context.Context, tenantID shared.ID, access AccessScope, types, lenses, tags []string, subType string, attributionValues []string, countByFields ...string) (*AggregateStats, error)
 
 	// GetInventoryOverview counts the caller's assets per (lens, type,
 	// sub-type) for the inventory overview, in one aggregate query.

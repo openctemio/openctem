@@ -31,6 +31,22 @@ describe('browserContextHeaders', () => {
     expect(await browserContextHeaders()).toEqual({ 'User-Agent': 'Browser/1.0' })
   })
 
+  it('forwards the refresh client binding from its cookie, never another cookie', async () => {
+    const binding = 'c'.repeat(64)
+    incoming.headers = new Headers({
+      'user-agent': 'Browser/1.0',
+      cookie: `refresh_token=secret; refresh_bind=${binding}`,
+    })
+    const sent = await browserContextHeaders()
+    expect(sent['X-Refresh-Client-Binding']).toBe(binding)
+    expect(JSON.stringify(sent)).not.toContain('secret')
+  })
+
+  it('drops a malformed binding cookie', async () => {
+    incoming.headers = new Headers({ cookie: 'refresh_bind=not-hex' })
+    expect(await browserContextHeaders()).toEqual({})
+  })
+
   describe('with TRUST_PROXY_HEADERS off', () => {
     it.each(['', 'false', '1'])('sends no client address (TRUST_PROXY_HEADERS=%j)', async (v) => {
       vi.stubEnv('TRUST_PROXY_HEADERS', v)

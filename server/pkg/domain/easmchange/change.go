@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/openctemio/openctem/server/pkg/domain/shared"
 )
 
 // Kind is the type of an attack-surface change.
@@ -124,6 +126,29 @@ type Query struct {
 	Limit    int
 	// Cursor continues a previous page (opaque, from Page.NextCursor).
 	Cursor string
+	// Grouped returns Page.Groups instead of Page.Items: the changes of
+	// one kind, detail and asset folded into one row (the same lookalike
+	// on one domain 400 times is one row with its count).
+	Grouped bool
+	// Group narrows the items to one group (Group.Key of a grouped page):
+	// the changes behind a grouped row.
+	Group *GroupKey
+}
+
+// GroupKey is what folds changes into one group: the kind, the detail
+// (the exposure type for exposure kinds) and the asset (empty: no asset).
+type GroupKey struct {
+	Kind    Kind   `json:"kind"`
+	Detail  string `json:"detail"`
+	AssetID string `json:"asset_id,omitempty"`
+}
+
+// Group is one grouped row: Latest is the newest change of the group (its
+// fields stand for the group) and Count how many changes it folds.
+type Group struct {
+	Key    GroupKey `json:"key"`
+	Count  int      `json:"count"`
+	Latest Change   `json:"latest"`
 }
 
 // Normalize fills the defaults and checks the window.
@@ -140,6 +165,19 @@ func (q *Query) Normalize(now time.Time) error {
 	if q.To.Sub(q.From) > MaxWindow {
 		return fmt.Errorf("%w: the window is at most 31 days", ErrInvalidQuery)
 	}
+	if q.Group != nil {
+		if !q.Group.Kind.IsValid() {
+			return fmt.Errorf("%w: unknown change kind %q", ErrInvalidQuery, q.Group.Kind)
+		}
+		if q.Group.AssetID != "" {
+			if _, err := shared.IDFromString(q.Group.AssetID); err != nil {
+				return fmt.Errorf("%w: group asset must be an id", ErrInvalidQuery)
+			}
+		}
+		if q.Grouped {
+			return fmt.Errorf("%w: a group's changes are not grouped again", ErrInvalidQuery)
+		}
+	}
 	if q.Limit <= 0 || q.Limit > MaxPageSize {
 		q.Limit = 50
 	}
@@ -149,12 +187,14 @@ func (q *Query) Normalize(now time.Time) error {
 // Page is one page of changes plus the count of every kind in the window
 // (the counts ignore the kind filter and the cursor).
 type Page struct {
-	From       time.Time    `json:"from"`
-	To         time.Time    `json:"to"`
-	Counts     map[Kind]int `json:"counts"`
-	Total      int          `json:"total"`
-	Items      []Change     `json:"items"`
-	NextCursor string       `json:"next_cursor,omitempty"`
+	From   time.Time    `json:"from"`
+	To     time.Time    `json:"to"`
+	Counts map[Kind]int `json:"counts"`
+	Total  int          `json:"total"`
+	Items  []Change     `json:"items"`
+	// Groups is set instead of Items for a grouped query, newest first.
+	Groups     []Group `json:"groups,omitempty"`
+	NextCursor string  `json:"next_cursor,omitempty"`
 }
 
 // DigestHourUTC is the hour of the day the weekly digest goes out.

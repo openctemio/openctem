@@ -1050,9 +1050,8 @@ export interface FeedProbeResult {
   keyset_version?: number
   /** the newest release there is older than the one applied */
   behind?: boolean
-  /** blocked_address, unreachable, not_found, http_error, root_mismatch, pointer_invalid, not_configured */
+  /** blocked_address, not_verified or not_configured (the cause is only in the server log) */
   error?: string
-  http_status?: number
 }
 
 export interface PrivateDestinationsSettings extends SettingChange {

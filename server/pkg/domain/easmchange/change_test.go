@@ -52,6 +52,11 @@ func TestQueryNormalize(t *testing.T) {
 	bad := []Query{
 		{From: now, To: now},
 		{From: now.Add(-32 * 24 * time.Hour), To: now},
+		// A group key must name a known kind and an asset id, and a
+		// group's changes are never grouped again.
+		{Group: &GroupKey{Kind: "nope"}},
+		{Group: &GroupKey{Kind: KindExposureNew, AssetID: "' OR 1=1 --"}},
+		{Group: &GroupKey{Kind: KindExposureNew}, Grouped: true},
 	}
 	for _, b := range bad {
 		if err := b.Normalize(now); !errors.Is(err, ErrInvalidQuery) {

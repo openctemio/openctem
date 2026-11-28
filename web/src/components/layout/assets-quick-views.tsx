@@ -7,6 +7,7 @@ import { useUrlParams } from '@/hooks/use-url-param'
 import { usePermissions, Permission } from '@/lib/permissions'
 import { useAssetTypeRegistry } from '@/features/asset-types/api/use-asset-type-registry'
 import { useAssetStats } from '@/features/assets/hooks/use-assets'
+import { DEFAULT_ATTRIBUTION } from '@/features/assets/lib/inventory-url'
 import {
   activeQuickView,
   assetQuickViews,
@@ -19,8 +20,8 @@ import { isAssetInventoryPath } from './assets-quick-views-lazy'
  * The inventory's quick views under the Assets row: All assets, then each lens
  * that holds an asset, then "Other", with counts. They show only while the
  * inventory is open. The counts come from the data-scoped `/assets/stats`
- * response the inventory itself reads (same SWR key), so the sidebar adds no
- * request and a count always matches the list it opens.
+ * with the list's default attribution (the server applies the list's own
+ * attribution field), so a count always matches the list it opens.
  */
 export function AssetsQuickViews() {
   const pathname = usePathname()
@@ -37,7 +38,9 @@ function AssetsQuickViewList() {
   const { t } = useTranslation()
   const search = useUrlParams()
   const { registry } = useAssetTypeRegistry()
-  const { stats, isLoading, error } = useAssetStats()
+  // The inventory's own attribution default, so "All assets 615" here is
+  // the total the list opens with (not every name awaiting review).
+  const { stats, isLoading, error } = useAssetStats({ attribution: DEFAULT_ATTRIBUTION })
   const counts = useMemo(
     () => lensCounts(registry, stats.byTypeSubType),
     [registry, stats.byTypeSubType]

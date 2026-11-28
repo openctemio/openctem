@@ -46,7 +46,7 @@ vi.mock('@/features/asset-types/api/use-asset-type-registry', () => ({
   useAssetTypeRegistry: () => ({ registry: REGISTRY }),
 }))
 
-const statsCalls: number[] = []
+const statsCalls: unknown[] = []
 const stats = {
   total: 557,
   byTypeSubType: { subdomain: 400, certificate: 109, application: 6, unclassified: 1 } as Record<
@@ -55,8 +55,8 @@ const stats = {
   >,
 }
 vi.mock('@/features/assets/hooks/use-assets', () => ({
-  useAssetStats: () => {
-    statsCalls.push(1)
+  useAssetStats: (q?: unknown) => {
+    statsCalls.push(q)
     return { stats, isLoading: false, error: undefined }
   },
 }))
@@ -83,6 +83,13 @@ describe('AssetsQuickViews', () => {
     ])
     // Code has no asset in the caller's scope: not listed.
     expect(within(list).queryByRole('link', { name: /^Code/ })).toBeNull()
+  })
+
+  it('counts the population the list opens with (its default attribution)', () => {
+    render(<AssetsQuickViews />)
+    // Without it "All assets" counted names awaiting review the list leaves
+    // out (814 in the sidebar against 615 on the page).
+    expect(statsCalls.at(-1)).toEqual({ attribution: ['approved'] })
   })
 
   it('marks the open lens, and All assets on a plain list', () => {

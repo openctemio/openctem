@@ -42,6 +42,9 @@ const SettingKey = "vulnfeed.sources"
 // ActionChanged is the admin audit action of a change.
 const ActionChanged = "platform.vulnfeed_sources_changed"
 
+// ActionTested is the admin audit action of a test fetch.
+const ActionTested = "platform.vulnfeed_sources_tested"
+
 // Environment variables that set (and pin) the value.
 const (
 	EnvBaseURL = "VULNFEED_BASE_URL"
@@ -271,8 +274,38 @@ func (s *Service) Update(ctx context.Context, actor *admin.AdminUser, in Input, 
 // Test fetches the newest signed pointer from base and each mirror (the
 // values in force when base is empty) and verifies it against the pinned
 // root, without importing anything. Refused in relay mode and with a bundle
-// directory: the platform then makes no outbound request.
-func (s *Service) Test(ctx context.Context, base string, mirrors []string) ([]vulnfeed.ProbeResult, error) {
+// directory: the platform then makes no outbound request. Every call is in
+// the admin audit (ActionTested: the addresses asked for, the outcome per
+// address or the refusal), and the precise cause of a failed address goes to
+// the server log only (vulnfeed.ProbeResult.Cause).
+func (s *Service) Test(ctx context.Context, actor *admin.AdminUser, base string, mirrors []string, ip, userAgent string) ([]vulnfeed.ProbeResult, error) {
+	if actor == nil {
+		return nil, ErrNoActor
+	}
+	res, err := s.test(ctx, base, mirrors)
+	details := map[string]any{"release": base, "mirrors": nonNil(mirrors)}
+	if err != nil {
+		details["refused"] = testRefusal(err)
+	} else {
+		outcomes := make([]map[string]any, 0, len(res))
+		for _, r := range res {
+			o := map[string]any{"origin": r.Origin, "ok": r.OK}
+			if !r.OK {
+				o["error"] = r.Error
+				s.log.Info("vulnerability feed test fetch failed", "origin", r.Origin, "cause", r.Cause, "http_status", r.HTTPStatus)
+			}
+			outcomes = append(outcomes, o)
+		}
+		details["results"] = outcomes
+	}
+	s.recorder.RecordUse(ctx, actor, consolesetting.Change{
+		Action: ActionTested, Key: SettingKey, Title: "Vulnerability feed address",
+		Method: "POST", Path: "/api/v1/admin/settings/vulnfeed-sources/test", Details: details,
+	}, ip, userAgent)
+	return res, err
+}
+
+func (s *Service) test(ctx context.Context, base string, mirrors []string) ([]vulnfeed.ProbeResult, error) {
 	if s.prober == nil || s.env.RootKeyID == "" {
 		return nil, ErrNotConfigured
 	}
@@ -290,6 +323,22 @@ func (s *Service) Test(ctx context.Context, base string, mirrors []string) ([]vu
 		return nil, err
 	}
 	return s.prober.Probe(ctx, base, mirrors), nil
+}
+
+// testRefusal is the fixed audit word of a refused test.
+func testRefusal(err error) string {
+	switch {
+	case errors.Is(err, ErrNotConfigured):
+		return "not_configured"
+	case errors.Is(err, ErrBundleDir):
+		return "bundle_dir"
+	case errors.Is(err, ErrRelayMode):
+		return "relay_mode"
+	case errors.Is(err, shared.ErrValidation):
+		return "invalid_address"
+	default:
+		return "error"
+	}
 }
 
 // originReason is the fixed text of a ValidateOrigin refusal.

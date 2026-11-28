@@ -116,6 +116,7 @@
   "prioritization.businessImpact.crown.open": "Open crown jewels",
   "prioritization.businessImpact.crown.title": "Crown jewels",
   "prioritization.businessImpact.description": "Where vulnerabilities hit the business hardest, by asset criticality, crown jewel and business unit.",
+  "prioritization.businessImpact.noAssets": "No assets assigned",
   "prioritization.businessImpact.stat.assets": "Assets",
   "prioritization.businessImpact.stat.critical": "Critical findings",
   "prioritization.businessImpact.stat.criticalAssets": "Critical assets",
