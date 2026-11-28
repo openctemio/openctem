@@ -469,6 +469,20 @@ func (i *Integration) SetFailure(code, message string) {
 	i.updatedAt = now
 }
 
+// StatusCodeDisabledByUser is the status code of a connection a member turned
+// off. Its message is "Disabled by user at <RFC 3339 time, UTC>": clients word
+// the code in the reader's language and take the time from the message.
+const StatusCodeDisabledByUser = "INTEGRATION_DISABLED_BY_USER"
+
+// SetDisabledByUser turns the connection off at the given time, with its
+// stable code and an English message that carries the time.
+func (i *Integration) SetDisabledByUser(at time.Time) {
+	i.status = StatusDisabled
+	i.statusMessage = "Disabled by user at " + at.UTC().Format(time.RFC3339)
+	i.statusCode = StatusCodeDisabledByUser
+	i.updatedAt = time.Now()
+}
+
 // RestoreStatusCode sets the stored failure code when the integration is
 // read back from storage.
 func (i *Integration) RestoreStatusCode(code string) { i.statusCode = code }

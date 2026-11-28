@@ -13,6 +13,7 @@ import (
 	"github.com/openctemio/openctem/server/pkg/domain/permission"
 	"github.com/openctemio/openctem/server/pkg/domain/shared"
 	"github.com/openctemio/openctem/server/pkg/domain/vulnerability"
+	"github.com/openctemio/openctem/server/pkg/logger"
 	"github.com/openctemio/openctem/server/pkg/pagination"
 	"github.com/openctemio/openctem/server/pkg/report"
 )
@@ -206,7 +207,7 @@ func (h *MCPHandler) handlePromptsGet(w http.ResponseWriter, r *http.Request, re
 
 	result, err := prompt.build(ctx, tenantID, p.Arguments)
 	if err != nil {
-		h.logger.Warn("mcp prompt error", "prompt", prompt.Name, "error", err.Error())
+		h.logger.Warn("mcp prompt error", "prompt", prompt.Name, "error", logger.SanitizeError(err))
 		h.auditPromptGet(r, tenantID, prompt.Name, rawArgs, auditdom.ResultFailure, true)
 		e := classifyMCPError(err)
 		code := rpcInvalidParams

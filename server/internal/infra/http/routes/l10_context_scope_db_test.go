@@ -150,6 +150,8 @@ func (h *l10cHarness) seed() {
 	// Threat models: a tenant-wide one with one threat per asset, and a
 	// crown-jewel model per asset.
 	h.exec(`INSERT INTO threat_models (id, tenant_id, scope_type, name) VALUES ($1, $2, 'tenant', 'l10c tenant')`, h.modelTenant, h.tenantA)
+	// Its stored rollups count both threats, as generation does.
+	h.exec(`UPDATE threat_models SET threats_total = 2 WHERE id = $1`, h.modelTenant)
 	h.exec(`INSERT INTO threat_models (id, tenant_id, scope_type, scope_ref_id, name) VALUES ($1, $2, 'crown_jewel', $3, 'l10c in')`, h.modelIn, h.tenantA, h.assetIn)
 	h.exec(`INSERT INTO threat_models (id, tenant_id, scope_type, scope_ref_id, name) VALUES ($1, $2, 'crown_jewel', $3, $4)`, h.modelOut, h.tenantA, h.assetOut, "Threat model: "+h.outName)
 	h.exec(`INSERT INTO threat_model_threats (id, tenant_id, threat_model_id, target_asset_id, technique_id, tactic, hop_index, chain_fingerprint, mitigation_id, status_reason) VALUES ($1::uuid, $2, $3, $4, 'T1190', 'initial-access', 0, $1::text, '', '')`,
@@ -234,6 +236,25 @@ func TestThreatModels_DataScope_DB(t *testing.T) {
 	}
 	if body := h.expect(h.admin, true, http.MethodGet, "/api/v1/threat-models/"+h.modelTenant, nil, http.StatusOK); !strings.Contains(body, h.threatOut) {
 		t.Errorf("tenant model for the admin misses a threat: %.300s", body)
+	}
+
+	// The tenant model's totals follow the reader's scope: the member counts
+	// only the in-scope threat, in the model, the list and the coverage view;
+	// the admin keeps the stored organization totals.
+	for _, path := range []string{"/api/v1/threat-models/" + h.modelTenant, "/api/v1/threat-models/?scope_type=tenant",
+		"/api/v1/threat-models/" + h.modelTenant + "/coverage"} {
+		body := h.expect(h.scoped, false, http.MethodGet, path, nil, http.StatusOK)
+		if strings.Contains(body, `"threats_total":2`) {
+			t.Errorf("%s for the member shows the organization totals: %.500s", path, body)
+		}
+	}
+	for _, path := range []string{"/api/v1/threat-models/" + h.modelTenant, "/api/v1/threat-models/?scope_type=tenant"} {
+		if body := h.expect(h.scoped, false, http.MethodGet, path, nil, http.StatusOK); !strings.Contains(body, `"threats_total":1`) {
+			t.Errorf("%s for the member: %.500s, want threats_total 1", path, body)
+		}
+		if body := h.expect(h.admin, true, http.MethodGet, path, nil, http.StatusOK); !strings.Contains(body, `"threats_total":2`) {
+			t.Errorf("%s for the admin: %.500s, want the stored threats_total 2", path, body)
+		}
 	}
 
 	// Generating a crown-jewel model names the asset: out of scope → 404.

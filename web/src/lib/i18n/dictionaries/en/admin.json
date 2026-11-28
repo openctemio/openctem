@@ -1923,6 +1923,7 @@
   "admin.privateNetworks.hard.linkLocal": "a link-local address, where cloud metadata services answer",
   "admin.privateNetworks.hard.loopback": "the platform host itself (loopback)",
   "admin.privateNetworks.hard.multicast": "a multicast address",
+  "admin.privateNetworks.hard.platformService": "one of the platform's own services (database, cache, gateway or the API)",
   "admin.privateNetworks.hard.reserved": "a reserved address",
   "admin.privateNetworks.hard.sharedAddress": "carrier network address space",
   "admin.privateNetworks.hard.unspecified": "an unspecified address",

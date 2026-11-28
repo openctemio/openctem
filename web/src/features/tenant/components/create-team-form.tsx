@@ -19,6 +19,7 @@ import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { PrefixedInput } from '@/features/shared/components/prefixed-input'
 import {
   Form,
   FormControl,
@@ -389,21 +390,13 @@ function CreateTeamFormUI({
             <FormItem>
               <FormLabel>{t('org.createTeam.url', 'Organization URL')}</FormLabel>
               <FormControl>
-                <div className="border-input bg-background focus-within:border-ring focus-within:ring-ring/50 flex h-9 items-center rounded-md border shadow-xs transition-[color,box-shadow] focus-within:ring-[3px]">
-                  <span
-                    data-testid="slug-host-prefix"
-                    className="text-muted-foreground select-none ps-3 text-sm"
-                  >
-                    {appHost}/
-                  </span>
-                  <Input
-                    placeholder="acme-corp"
-                    className="border-0 shadow-none focus-visible:ring-0 ps-1"
-                    disabled={isMutating || isSubmitting}
-                    {...field}
-                    onChange={handleSlugChange}
-                  />
-                </div>
+                <PrefixedInput
+                  prefix={`${appHost}/`}
+                  placeholder="acme-corp"
+                  disabled={isMutating || isSubmitting}
+                  {...field}
+                  onChange={handleSlugChange}
+                />
               </FormControl>
               <FormDescription className="text-xs">
                 {t('org.createTeam.urlHint', 'Lowercase letters, numbers, and hyphens only.')}

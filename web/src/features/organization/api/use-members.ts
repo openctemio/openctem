@@ -54,6 +54,11 @@ export interface UseMembersOptions {
   kind?: MemberKind
   /** Only these members (server-side, at most 100); the names of known ids, not a picker. */
   userIds?: string[]
+  /**
+   * People or service accounts only (server-side); both when unset. The
+   * member directory lists people: service accounts have their own page.
+   */
+  account?: 'person' | 'service'
 }
 
 /**
@@ -113,6 +118,9 @@ export function useMembers(tenantIdOrSlug: string | undefined, options?: UseMemb
   }
   if (options?.userIds) {
     params.set('user_ids', options.userIds.slice(0, 100).join(','))
+  }
+  if (options?.account) {
+    params.set('account', options.account)
   }
 
   const { data, error, isLoading, mutate } = useSWR<MemberListResponse>(

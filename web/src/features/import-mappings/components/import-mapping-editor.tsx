@@ -364,10 +364,9 @@ export function ImportMappingEditor({ id }: { id?: string }) {
                 <>
                   {mapping.description && <span className="block">{mapping.description}</span>}
                   <span className="block">
-                    {t(
-                      'importMappings.editor.usage',
-                      'Choose it as the format when you import results.'
-                    )}
+                    {t('importMappings.editor.usage', 'Imports choose it as format {format}.', {
+                      format: mapping.name,
+                    })}
                   </span>
                 </>
               ) : (

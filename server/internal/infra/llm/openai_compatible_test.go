@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/openctemio/openctem/server/internal/config"
 	"github.com/openctemio/openctem/server/pkg/domain/tenant"
+	"github.com/openctemio/openctem/server/pkg/httpsec"
 )
 
 // The request is the chat-completions shape at <base>/chat/completions, with
@@ -137,6 +139,30 @@ func TestPlatformBaseURL_PrivateOnlyWithToggle(t *testing.T) {
 		_, err := ValidateBaseURL(ctx, u, true)
 		assert.Error(t, err, "must refuse %q even with the toggle", u)
 	}
+}
+
+// The platform toggle opens private addresses, but never the platform's own
+// services (database, cache, gateway, the API) inside them, at validation
+// and at dial time: it goes through the same guard as every outbound call.
+func TestPlatformBaseURL_ToggleRefusesPlatformServices(t *testing.T) {
+	httpsec.SetPlatformServiceAddrs([]net.IP{net.ParseIP("10.0.0.7")})
+	t.Cleanup(func() { httpsec.SetPlatformServiceAddrs(nil) })
+	ctx := context.Background()
+	_, err := ValidateBaseURL(ctx, "http://10.0.0.7:5432/v1", true)
+	assert.Error(t, err, "a platform service must stay refused with the toggle")
+	_, err = ValidateBaseURL(ctx, "http://10.0.0.8:11434/v1", true)
+	require.NoError(t, err)
+
+	p, err := NewOpenAICompatibleProvider(OpenAICompatibleConfig{BaseURL: "http://10.0.0.7:5432/v1", Model: "m", AllowPrivate: true, MaxRetries: 1, Timeout: 2 * time.Second})
+	require.NoError(t, err)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://10.0.0.7:5432/v1/models", nil)
+	require.NoError(t, err)
+	resp, err := p.httpClient.Do(req)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	require.Error(t, err)
+	assert.ErrorIs(t, err, httpsec.ErrBlockedDestination)
 }
 
 // The dial is guarded too: a provider pointed at the loopback test server

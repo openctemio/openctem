@@ -989,6 +989,12 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 		args = append(args, filters.Kind)
 		argIndex++
 	}
+	switch filters.Account {
+	case tenant.MemberAccountPerson:
+		whereClause += " AND u.kind = 'person'"
+	case tenant.MemberAccountService:
+		whereClause += " AND u.kind = 'service'"
+	}
 	if len(filters.UserIDs) > 0 {
 		whereClause += fmt.Sprintf(" AND m.user_id = ANY($%d::uuid[])", argIndex)
 		args = append(args, pq.Array(filters.UserIDs))
@@ -1012,6 +1018,7 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 			EXISTS (SELECT 1 FROM verified_domains vd
 			        WHERE vd.tenant_id = m.tenant_id AND vd.purpose = 'sso' AND vd.status <> 'verified'
 			          AND vd.lapsed_at IS NOT NULL AND vd.domain = lower(split_part(u.email, '@', 2))) AS domain_lapsed,
+			u.kind = 'service' AS service_account,
 			COUNT(*) OVER() as total_count
 		FROM tenant_members m
 		INNER JOIN users u ON u.id = m.user_id
@@ -1066,6 +1073,7 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 			expiresAt                 sql.NullTime
 			suspendedReason           sql.NullString
 			domainLapsed              bool
+			serviceAccount            bool
 		)
 
 		if err := rows.Scan(
@@ -1073,6 +1081,7 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 			&email, &name, &avatarURL, &status, &lastLoginAt,
 			&mfaStatus, &pendingSetup,
 			&kind, &homeDomain, &homeName, &expiresAt, &suspendedReason, &domainLapsed,
+			&serviceAccount,
 			&totalCount,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan member: %w", err)
@@ -1119,6 +1128,7 @@ func (r *TenantRepository) SearchMembersWithUserInfo(ctx context.Context, tenant
 			ExpiresAt:       nullTimeValue(expiresAt),
 			SuspendedReason: suspendedReason.String,
 			DomainLapsed:    domainLapsed,
+			ServiceAccount:  serviceAccount,
 		})
 	}
 
@@ -1220,6 +1230,9 @@ func (r *TenantRepository) GetMemberStats(ctx context.Context, tenantID shared.I
 		WITH members AS (
 			SELECT m.user_id, COALESCE(m.status, 'active') AS status, ver.role AS effective_role
 			FROM tenant_members m
+			-- People only: service accounts have their own page and are not
+			-- members of the directory these figures sum up.
+			JOIN users u ON u.id = m.user_id AND u.kind = 'person'
 			LEFT JOIN v_user_effective_role ver
 			    ON ver.user_id = m.user_id AND ver.tenant_id = m.tenant_id
 			WHERE m.tenant_id = $1
