@@ -51,7 +51,7 @@ func TestAssetChildReads_PinnedToTenant_DB(t *testing.T) {
 	fid := shared.NewID().String()
 	if _, err := conn.ExecContext(ctx, `
 		INSERT INTO findings (id, tenant_id, asset_id, source, tool_name, message, severity, fingerprint, status)
-		VALUES ($1, $2, $3, 'sca', 'test', 'msg', 'critical', $1, 'new')`, fid, tenantB.String(), a.ID().String()); err != nil {
+		VALUES ($1, $2, $3, 'sca', 'test', 'msg', 'critical', $4, 'new')`, fid, tenantB.String(), a.ID().String(), fid); err != nil {
 		t.Fatalf("plant finding: %v", err)
 	}
 	if _, err := conn.ExecContext(ctx, `RESET session_replication_role`); err != nil {
