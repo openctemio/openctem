@@ -72,6 +72,8 @@ export interface MemberWithUser extends Member {
   domain_lapsed?: boolean
   /** External, with a consumer address (gmail.com, ...) nobody manages. */
   personal?: boolean
+  /** An organization-owned service account, not a person (pickers mark it). */
+  service_account?: boolean
 }
 
 export type MemberKind = 'internal' | 'external'

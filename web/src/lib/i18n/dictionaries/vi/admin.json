@@ -1927,6 +1927,7 @@
   "admin.privateNetworks.hard.linkLocal": "địa chỉ link-local, nơi dịch vụ metadata đám mây trả lời",
   "admin.privateNetworks.hard.loopback": "chính máy chủ của nền tảng (loopback)",
   "admin.privateNetworks.hard.multicast": "địa chỉ multicast",
+  "admin.privateNetworks.hard.platformService": "một dịch vụ của chính nền tảng (cơ sở dữ liệu, bộ nhớ đệm, cổng hoặc API)",
   "admin.privateNetworks.hard.reserved": "địa chỉ dành riêng",
   "admin.privateNetworks.hard.sharedAddress": "không gian địa chỉ của nhà mạng",
   "admin.privateNetworks.hard.unspecified": "địa chỉ không xác định",

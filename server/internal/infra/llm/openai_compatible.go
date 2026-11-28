@@ -37,8 +37,9 @@ type OpenAICompatibleConfig struct {
 // normalized (no trailing slash). It rejects a missing or non-http(s) scheme,
 // plain http unless allowPrivate, credentials, query or fragment in the URL,
 // "localhost" and cloud-metadata names, and a host that resolves to a blocked
-// address: loopback, link-local and cloud metadata always, RFC1918 / ULA
-// unless allowPrivate. The dialer repeats the address check at connect time
+// address: loopback, link-local, cloud metadata and the platform's own
+// service addresses always (the same never-openable list as every outbound
+// call), RFC1918 / ULA unless allowPrivate. The dialer repeats the address check at connect time
 // (resolve once, dial the vetted IP), which defeats DNS rebinding.
 func ValidateBaseURL(ctx context.Context, raw string, allowPrivate bool) (string, error) {
 	raw = strings.TrimSpace(raw)

@@ -677,6 +677,8 @@ export default function UsersPage() {
     status: statusFilter,
     role: roleFilter === 'all' ? undefined : roleFilter,
     kind: kindFilter === 'all' ? undefined : kindFilter,
+    // People only: service accounts are listed under Settings > Service accounts.
+    account: 'person',
     limit,
     offset,
   })

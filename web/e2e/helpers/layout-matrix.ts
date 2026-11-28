@@ -110,6 +110,16 @@ import { submitSignIn } from './auth'
  *                    (probeRowMix of helpers/page-anatomy.ts with `fonts`, on
  *                    the page, not over an overlay): "All severities" wrapped
  *                    taller than the search beside it
+ *   unfilledPlaceholder  visible text that still shows a `{name}` placeholder
+ *                    of its catalog string ("Imports choose it as format
+ *                    {format}."), outside code, a field and an editor.
+ *                    Reported in the run's JSON, not yet failed on (see
+ *                    MATRIX_REPORT_ONLY)
+ *   phoneTable       at 480 px and narrower, a table wider than the box that
+ *                    shows it (it scrolls sideways) or a cell taller than
+ *                    three lines: a list without its phone card layout
+ *                    (sensor products, scope letters). Reported only, like
+ *                    unfilledPlaceholder
  *   cellCrowd        in a table row or a ruled list row, a text line or a
  *                    chip closer than 3 px (the kit pads 4, a glyph may
  *                    overhang its line by 1) to the row's ruled top or bottom
@@ -144,6 +154,8 @@ export type MatrixBreaks = {
   cellCrowd: string[]
   repeatedRows: string[]
   cardPerRow: string[]
+  unfilledPlaceholder: string[]
+  phoneTable: string[]
 }
 
 export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
@@ -166,6 +178,13 @@ export const MATRIX_KINDS: (keyof MatrixBreaks)[] = [
   'repeatedRows',
   'cardPerRow',
 ]
+
+/**
+ * Detectors that report into the run's JSON but do not fail it yet: a new
+ * class is measured over a full sweep first, then moves to MATRIX_KINDS
+ * with the debt that sweep finds.
+ */
+export const MATRIX_REPORT_ONLY: (keyof MatrixBreaks)[] = ['unfilledPlaceholder', 'phoneTable']
 
 /** Widths of the v2 matrix with the height of their device class. */
 export const MATRIX_V2: { width: number; height: number }[] = [
@@ -705,6 +724,8 @@ export async function findMatrixBreaks(
       cellCrowd: [] as string[],
       repeatedRows: [] as string[],
       cardPerRow: [] as string[],
+      unfilledPlaceholder: [] as string[],
+      phoneTable: [] as string[],
     }
     const roots = Array.from(document.querySelectorAll(scope))
     if (!roots.length) return out
@@ -2145,6 +2166,61 @@ export async function findMatrixBreaks(
         out.underPinned.push(`"${text}" ${key}${n > 1 ? ` (${n} texts)` : ''}`)
       scroller.scrollTo({ top: start, behavior: 'instant' as ScrollBehavior })
       await wait(100)
+    }
+
+    // ---- unfilledPlaceholder: visible text that still holds a `{name}`
+    // placeholder of its catalog string ("Imports choose it as format
+    // {format}.", audit 2026-11-27 D5). Text in code, a field's value or an
+    // editor is data, not a sentence of the page.
+    for (const root of roots) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const text = n.textContent ?? ''
+        const m = text.match(/\{[a-z][a-zA-Z_]*\}/)
+        if (!m) continue
+        const el = n.parentElement
+        if (!el || !shown(el)) continue
+        if (el.closest('code, pre, kbd, samp, textarea, [contenteditable], [data-raw-text]'))
+          continue
+        out.unfilledPlaceholder.push(`"${short(text, 60)}" shows ${m[0]} at ${selectorOf(el)}`)
+      }
+    }
+
+    // ---- phoneTable: on a phone (480 px and narrower), a table wider than
+    // the box that shows it (it scrolls sideways) or a cell taller than three
+    // lines (names broken into stacks): the list needs its phone card layout
+    // (audit 2026-11-27 D9: sensor products, scope letters).
+    if (vw <= 480) {
+      for (const root of roots) {
+        for (const table of Array.from(root.querySelectorAll('table'))) {
+          if (!shown(table)) continue
+          const tr = table.getBoundingClientRect()
+          let frame: Element | null = table.parentElement
+          while (frame && frame !== root && !isScroller(frame)) frame = frame.parentElement
+          const room = frame && frame !== root ? frame.clientWidth : root.clientWidth
+          if (tr.width > room + 4) {
+            out.phoneTable.push(
+              `table ${Math.round(tr.width)}px wide in ${Math.round(room)}px at ${selectorOf(table)}`
+            )
+            continue
+          }
+          for (const cell of Array.from(table.querySelectorAll('td'))) {
+            if (!shown(cell)) continue
+            const cs = getComputedStyle(cell)
+            const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.4
+            const inner =
+              cell.getBoundingClientRect().height -
+              parseFloat(cs.paddingTop) -
+              parseFloat(cs.paddingBottom)
+            if (inner > line * 3 + 2) {
+              out.phoneTable.push(
+                `cell "${short(cell.textContent, 30)}" ${Math.round(inner)}px tall (over 3 lines) at ${selectorOf(table)}`
+              )
+              break
+            }
+          }
+        }
+      }
     }
 
     for (const k of Object.keys(out) as (keyof typeof out)[]) out[k] = [...new Set(out[k])]
